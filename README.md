@@ -1,2 +1,2 @@
 # summer-framework
-Light Java distributed RPC framework
+A light Java distributed RPC framework
