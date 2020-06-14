@@ -11,6 +11,7 @@
         <module>summer-core</module>
         <module>summer-transport-netty</module>
         <module>summer-registry-zookeeper</module>
+        <module>summer-spring</module>
     </modules>
 
     <properties>

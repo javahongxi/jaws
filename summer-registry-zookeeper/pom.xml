@@ -15,7 +15,7 @@
         <dependency>
             <groupId>org.hongxi</groupId>
             <artifactId>summer-core</artifactId>
-            <version>${project.parent.version}</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.zookeeper</groupId>
