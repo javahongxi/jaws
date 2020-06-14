@@ -9,7 +9,9 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>summer-registry-zookeeper</artifactId>
+    <artifactId>summer</artifactId>
+    <packaging>jar</packaging>
+    <name>summer-all</name>
 
     <dependencies>
         <dependency>
@@ -18,19 +20,19 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.zookeeper</groupId>
-            <artifactId>zookeeper</artifactId>
-            <version>3.4.8</version>
+            <groupId>org.hongxi</groupId>
+            <artifactId>summer-transport-netty</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.101tec</groupId>
-            <artifactId>zkclient</artifactId>
-            <version>0.9</version>
+            <groupId>org.hongxi</groupId>
+            <artifactId>summer-registry-zookeeper</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>log4j</groupId>
-            <artifactId>log4j</artifactId>
-            <version>1.2.17</version>
+            <groupId>org.hongxi</groupId>
+            <artifactId>summer-spring</artifactId>
+            <version>${project.version}</version>
         </dependency>
     </dependencies>
 
