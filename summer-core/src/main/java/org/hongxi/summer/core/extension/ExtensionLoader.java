@@ -1,0 +1,174 @@
+package org.hongxi.summer.core.extension;
+
+import org.hongxi.summer.common.SummerConstants;
+import org.hongxi.summer.exception.SummerFrameworkException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
+/**
+ * Created by shenhongxi on 2020/6/25.
+ */
+public class ExtensionLoader<T> {
+    private static final Logger logger = LoggerFactory.getLogger(ExtensionLoader.class);
+
+    private static ConcurrentMap<Class<?>, ExtensionLoader<?>> extensionLoaders = new ConcurrentHashMap<>();
+
+    private ConcurrentMap<String, Class<T>> extensionClasses;
+    private ConcurrentMap<String, T> singletonInstances;
+
+    private Class<T> type;
+    private volatile boolean init;
+    
+    private static final String SERVICES_DIRECTORY = "META-INF/services/";
+    private ClassLoader classLoader;
+
+    private ExtensionLoader(Class<T> type) {
+        this(type, Thread.currentThread().getContextClassLoader());
+    }
+
+    private ExtensionLoader(Class<T> type, ClassLoader classLoader) {
+        this.type = type;
+        this.classLoader = classLoader;
+    }
+    
+    private void checkInit() {
+        if (!init) {
+            loadExtensionClasses();
+        }
+    }
+
+    private synchronized void loadExtensionClasses() {
+        if (init) return;
+        
+        extensionClasses = loadExtensionClasses(SERVICES_DIRECTORY);
+        singletonInstances = new ConcurrentHashMap<>();
+        
+        init = true;
+    }
+
+    private ConcurrentMap<String, Class<T>> loadExtensionClasses(String dir) {
+        String fullName = dir + type.getName();
+        List<String> classNames = new ArrayList<>();
+
+        try {
+            Enumeration<URL> urls;
+            if (classLoader == null) {
+                urls = ClassLoader.getSystemResources(fullName);
+            } else {
+                urls = classLoader.getResources(fullName);
+            }
+
+            if (urls == null || !urls.hasMoreElements()) {
+                return new ConcurrentHashMap<>();
+            }
+
+            while (urls.hasMoreElements()) {
+                URL url = urls.nextElement();
+                parseUrl(type, url, classNames);
+            }
+        } catch (Exception e) {
+            throw new SummerFrameworkException(
+                    "ExtensionLoader loadExtensionClasses error, services dir: " + dir + ", type: " + type.getClass(), e);
+        }
+
+        return loadClasses(classNames);
+    }
+
+    private void parseUrl(Class<T> type, URL url, List<String> classNames) {
+        InputStream inputStream = null;
+        BufferedReader reader = null;
+        try {
+            inputStream = url.openStream();
+            reader = new BufferedReader(new InputStreamReader(inputStream, SummerConstants.DEFAULT_CHARSET));
+            String line;
+            int lineNumber = 0;
+            while ((line = reader.readLine()) != null) {
+                parseLine(type, url, line, ++lineNumber, classNames);
+            }
+        } catch (Exception e) {
+            logger.error("{}: Error reading spi configuration file", type.getName(), e);
+        } finally {
+            try {
+                if (reader != null) reader.close();
+                if (inputStream != null) inputStream.close();
+            } catch (IOException e) {
+                logger.error("{}: Error closing spi configuration file", type.getName(), e);
+            }
+        }
+    }
+
+    private void parseLine(Class<T> type, URL url, String line, int lineNumber, List<String> classNames) {
+        int ci = line.indexOf('#');
+        if (ci > 0) line = line.substring(0, ci);
+        line = line.trim();
+
+        if (line.isEmpty()) return;
+
+        if (line.indexOf(' ') >= 0 || line.indexOf('\t') >= 0) {
+            throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi configuration-file syntax");
+        }
+
+        int cp = line.codePointAt(0);
+        if (!Character.isJavaIdentifierStart(cp)) {
+            throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
+        }
+
+        for (int i = Character.charCount(cp); i < line.length(); i += Character.charCount(cp)) {
+            cp = line.codePointAt(i);
+            if (!Character.isJavaIdentifierStart(cp) && cp != '.') {
+                throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
+            }
+        }
+
+        if (!classNames.contains(line)) {
+            classNames.add(line);
+        }
+    }
+
+    private ConcurrentMap<String, Class<T>> loadClasses(List<String> classNames) {
+        ConcurrentMap<String, Class<T>> classes = new ConcurrentHashMap<>();
+        for (String className : classNames) {
+            try {
+                Class<T> clazz;
+                if (classLoader == null) {
+                    clazz = (Class<T>) Class.forName(className);
+                } else {
+                    clazz = (Class<T>) Class.forName(className, true, classLoader);
+                }
+
+                checkExtensionType(clazz);
+
+                String spiName = getSpiName(clazz);
+                if (classes.containsKey(spiName)) {
+                    throw new SummerFrameworkException(clazz + ": spi name already exists: " + spiName);
+                } else {
+                    classes.put(spiName, clazz);
+                }
+            } catch (Exception e) {
+                logger.error(type.getName() + ": Error load spi class", e);
+            }
+        }
+
+        return classes;
+    }
+
+    private void checkExtensionType(Class<T> clazz) {
+
+    }
+
+    private String getSpiName(Class<T> clazz) {
+        SpiMeta spiMeta = clazz.getAnnotation(SpiMeta.class);
+        return (spiMeta != null && !"".equals(spiMeta.name())) ? spiMeta.name() : clazz.getSimpleName();
+    }
+}
