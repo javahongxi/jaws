@@ -1,2 +1,2 @@
 # Summer Framework
-A light Java distributed RPC framework
+RPC framework based on Netty
