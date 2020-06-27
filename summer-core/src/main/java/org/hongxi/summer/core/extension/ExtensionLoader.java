@@ -9,6 +9,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -41,7 +43,80 @@ public class ExtensionLoader<T> {
         this.type = type;
         this.classLoader = classLoader;
     }
-    
+
+    public T getExtension(String name) {
+        if (name == null) return null;
+
+        checkInit();
+
+        try {
+            Spi spi = type.getAnnotation(Spi.class);
+            if (spi.scope() == Scope.SINGLETON) {
+                return getSingletonInstance(name);
+            }
+
+            Class<T> clazz = extensionClasses.get(name);
+            if (clazz == null) {
+                return null;
+            }
+            return clazz.newInstance();
+        } catch (Exception e) {
+            throw new SummerFrameworkException(type.getName() + ": Error get extension " + name, e);
+        }
+    }
+
+    private T getSingletonInstance(String name) throws IllegalAccessException, InstantiationException {
+        T obj = singletonInstances.get(name);
+
+        if (obj != null) {
+            return obj;
+        }
+
+        Class<T> clazz = extensionClasses.get(name);
+        if (clazz == null) {
+            return null;
+        }
+
+        synchronized (singletonInstances) {
+            obj = singletonInstances.get(name);
+            if (obj != null) {
+                return obj;
+            }
+            obj = clazz.newInstance();
+            singletonInstances.put(name, obj);
+        }
+
+        return obj;
+    }
+
+    public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
+        checkInterfaceType(type);
+
+        ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
+        if (loader == null) {
+            loader = initExtensionLoader(type);
+        }
+        return loader;
+    }
+
+    private static <T> void checkInterfaceType(Class<T> clazz) {
+        if (!clazz.isInterface()) {
+            throw new SummerFrameworkException(clazz.getName() + ": Extension type is not interface");
+        }
+        if (!clazz.isAnnotationPresent(Spi.class)) {
+            throw new SummerFrameworkException(clazz.getName() + ": Extension type without @Spi annotation");
+        }
+    }
+
+    private static synchronized <T> ExtensionLoader<T> initExtensionLoader(Class<T> type) {
+        ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
+        if (loader == null) {
+            loader = new ExtensionLoader<>(type);
+            extensionLoaders.put(type, loader);
+        }
+        return loader;
+    }
+
     private void checkInit() {
         if (!init) {
             loadExtensionClasses();
@@ -164,7 +239,35 @@ public class ExtensionLoader<T> {
     }
 
     private void checkExtensionType(Class<T> clazz) {
+        checkClassPublic(clazz);
+        checkConstructorPublic(clazz);
+        checkClassInherit(clazz);
+    }
 
+    private void checkClassPublic(Class<T> clazz) {
+        if (!Modifier.isPublic(clazz.getModifiers())) {
+            throw new SummerFrameworkException(clazz.getName() + "is not a public class");
+        }
+    }
+
+    private void checkConstructorPublic(Class<T> clazz) {
+        Constructor<?>[] constructors = clazz.getConstructors();
+        if (constructors == null || constructors.length == 0) {
+            throw new SummerFrameworkException(clazz.getName() + "has no public no-args constructor");
+        }
+
+        for (Constructor<?> constructor : constructors) {
+            if (Modifier.isPublic(constructor.getModifiers()) && constructor.getParameterTypes().length == 0) {
+                return;
+            }
+        }
+        throw new SummerFrameworkException(clazz.getName() + "has no public no-args constructor");
+    }
+
+    private void checkClassInherit(Class<T> clazz) {
+        if (!type.isAssignableFrom(clazz)) {
+            throw new SummerFrameworkException(clazz.getName() + "is not instanceof " + type.getName());
+        }
     }
 
     private String getSpiName(Class<T> clazz) {
