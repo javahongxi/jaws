@@ -14,7 +14,7 @@ public enum ChannelState {
 
     CLOSE(4);
 
-    public final int value;
+    private final int value;
 
     ChannelState(int value) {
         this.value = value;
