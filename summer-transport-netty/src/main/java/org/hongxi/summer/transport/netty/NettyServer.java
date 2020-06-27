@@ -3,6 +3,9 @@ package org.hongxi.summer.transport.netty;
 import io.netty.channel.Channel;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import org.hongxi.summer.common.SummerConstants;
+import org.hongxi.summer.common.URLParamType;
+import org.hongxi.summer.core.StandardThreadPoolExecutor;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.rpc.Request;
 import org.hongxi.summer.rpc.Response;
@@ -26,6 +29,7 @@ public class NettyServer extends AbstractServer {
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
     private MessageHandler messageHandler;
+    private StandardThreadPoolExecutor standardThreadPoolExecutor;
 
     private AtomicInteger rejectCounter = new AtomicInteger(0);
 
@@ -61,7 +65,28 @@ public class NettyServer extends AbstractServer {
         }
 
         logger.warn("server channel start open, url: {}", url);
+        boolean shareChannel = url.getBooleanParameter(
+                URLParamType.shareChannel.getName(), URLParamType.shareChannel.getBoolValue());
+        int maxContentLength = url.getIntParameter(
+                URLParamType.maxContentLength.getName(), URLParamType.maxContentLength.getIntValue());
+        int maxServerConnections = url.getIntParameter(
+                URLParamType.maxServerConnections.getName(), URLParamType.maxServerConnections.getIntValue());
+        int maxQueueSize = url.getIntParameter(
+                URLParamType.workerQueueSize.getName(), URLParamType.workerQueueSize.getIntValue());
 
+        int minWorkerThreads;
+        int maxWorkerThreads;
+        if (shareChannel) {
+            minWorkerThreads = url.getIntParameter(URLParamType.minWorkerThreads.getName(),
+                    SummerConstants.NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS);
+            maxWorkerThreads = url.getIntParameter(URLParamType.maxWorkerThreads.getName(),
+                    SummerConstants.NETTY_SHARE_CHANNEL_MAX_WORKER_THREADS);
+        } else {
+            minWorkerThreads = url.getIntParameter(URLParamType.minWorkerThreads.getName(),
+                    SummerConstants.NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS);
+            maxWorkerThreads = url.getIntParameter(URLParamType.maxWorkerThreads.getName(),
+                    SummerConstants.NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS);
+        }
 
         return state.isAliveState();
     }
