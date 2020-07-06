@@ -30,19 +30,44 @@ public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
     protected AtomicInteger submittedTasksCount;
     private int maxSubmittedTasks;
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue) {
-        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
+    public StandardThreadPoolExecutor() {
+        this(DEFAULT_MIN_THREADS, DEFAULT_MAX_THREADS);
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue, ThreadFactory threadFactory) {
-        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue, threadFactory);
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize) {
+        this(corePoolSize, maximumPoolSize, maximumPoolSize);
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue, RejectedExecutionHandler handler) {
-        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue, handler);
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit) {
+        this(corePoolSize, maximumPoolSize, keepAliveTime, unit, maximumPoolSize);
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue, ThreadFactory threadFactory, RejectedExecutionHandler handler) {
-        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue, threadFactory, handler);
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, int queueCapacity) {
+        this(corePoolSize, maximumPoolSize, queueCapacity, Executors.defaultThreadFactory());
+    }
+
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, int queueCapacity, ThreadFactory threadFactory) {
+        this(corePoolSize, maximumPoolSize, DEFAULT_MAX_IDLE_TIME, TimeUnit.MILLISECONDS, queueCapacity, threadFactory);
+    }
+
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueCapacity) {
+        this(corePoolSize, maximumPoolSize, keepAliveTime, unit, queueCapacity, Executors.defaultThreadFactory());
+    }
+
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueCapacity, ThreadFactory threadFactory) {
+        this(corePoolSize, maximumPoolSize, keepAliveTime, unit, queueCapacity, threadFactory, new AbortPolicy());
+    }
+
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueCapacity, ThreadFactory threadFactory, RejectedExecutionHandler handler) {
+        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, new ExecutorQueue(), threadFactory, handler);
+        ((ExecutorQueue) getQueue()).setThreadPoolExecutor(this);
+
+        submittedTasksCount = new AtomicInteger(0);
+
+        maxSubmittedTasks = maximumPoolSize + queueCapacity;
+    }
+
+    public int getSubmittedTasksCount() {
+        return submittedTasksCount.get();
     }
 }
