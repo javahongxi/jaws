@@ -26,28 +26,28 @@ public class ExecutorQueue extends LinkedTransferQueue<Runnable> {
         this.threadPoolExecutor = threadPoolExecutor;
     }
 
-    public boolean force(Runnable task) {
+    public boolean force(Runnable command) {
         if (threadPoolExecutor.isShutdown()) {
             throw new RejectedExecutionException("Executor not running, cannot force a task into the queue");
         }
-        return super.offer(task);
+        return super.offer(command);
     }
 
-    public boolean offer(Runnable task) {
+    public boolean offer(Runnable command) {
         int poolSize = threadPoolExecutor.getPoolSize();
 
         if (poolSize == threadPoolExecutor.getMaximumPoolSize()) {
-            return super.offer(task);
+            return super.offer(command);
         }
 
         if (threadPoolExecutor.getSubmittedTasksCount() <= poolSize) {
-            return super.offer(task);
+            return super.offer(command);
         }
 
         if (poolSize < threadPoolExecutor.getMaximumPoolSize()) {
             return false;
         }
 
-        return super.offer(task);
+        return super.offer(command);
     }
 }

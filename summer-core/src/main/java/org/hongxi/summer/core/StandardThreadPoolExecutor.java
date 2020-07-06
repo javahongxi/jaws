@@ -67,7 +67,35 @@ public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
         maxSubmittedTasks = maximumPoolSize + queueCapacity;
     }
 
+    @Override
+    public void execute(Runnable command) {
+        int count = submittedTasksCount.incrementAndGet();
+
+        if (count > maxSubmittedTasks) {
+            submittedTasksCount.decrementAndGet();
+            getRejectedExecutionHandler().rejectedExecution(command, this);
+        }
+
+        try {
+            super.execute(command);
+        } catch (RejectedExecutionException e) {
+            if (!((ExecutorQueue) getQueue()).force(command)) {
+                submittedTasksCount.decrementAndGet();
+                getRejectedExecutionHandler().rejectedExecution(command, this);
+            }
+        }
+    }
+
+    @Override
+    protected void afterExecute(Runnable r, Throwable t) {
+        submittedTasksCount.decrementAndGet();
+    }
+
     public int getSubmittedTasksCount() {
         return submittedTasksCount.get();
+    }
+
+    public int getMaxSubmittedTasks() {
+        return maxSubmittedTasks;
     }
 }
