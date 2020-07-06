@@ -1,10 +1,14 @@
 package org.hongxi.summer.transport.netty;
 
-import io.netty.channel.Channel;
-import io.netty.channel.EventLoopGroup;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import org.hongxi.summer.common.ChannelState;
 import org.hongxi.summer.common.SummerConstants;
 import org.hongxi.summer.common.URLParamType;
+import org.hongxi.summer.core.DefaultThreadFactory;
 import org.hongxi.summer.core.StandardThreadPoolExecutor;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.rpc.Request;
@@ -16,6 +20,7 @@ import org.hongxi.summer.transport.TransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -29,7 +34,7 @@ public class NettyServer extends AbstractServer {
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
     private MessageHandler messageHandler;
-    private StandardThreadPoolExecutor standardThreadPoolExecutor;
+    private StandardThreadPoolExecutor threadPoolExecutor;
 
     private AtomicInteger rejectCounter = new AtomicInteger(0);
 
@@ -88,31 +93,60 @@ public class NettyServer extends AbstractServer {
                     SummerConstants.NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS);
         }
 
+        if (threadPoolExecutor == null || threadPoolExecutor.isShutdown()) {
+            threadPoolExecutor = new StandardThreadPoolExecutor(minWorkerThreads, maxWorkerThreads,
+                    maxQueueSize, new DefaultThreadFactory("NettyServer-" + url.getServerPortStr(), true));
+        }
+        threadPoolExecutor.prestartAllCoreThreads();
+
+        channelManage = new NettyServerChannelManage(maxServerConnections);
+
+        ServerBootstrap serverBootstrap = new ServerBootstrap();
+        serverBootstrap.group(bossGroup, workerGroup)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel socketChannel) throws Exception {
+                        ChannelPipeline pipeline = socketChannel.pipeline();
+                        pipeline.addLast("channel_manage", channelManage);
+                        pipeline.addLast("decoder", new NettyDecoder(codec, NettyServer.this, maxContentLength));
+                        pipeline.addLast("encoder", new NettyEncoder());
+                        NettyChannelHandler handler = new NettyChannelHandler(threadPoolExecutor, messageHandler, NettyServer.this);
+                        pipeline.addLast("handler", handler);
+                    }
+                });
+        serverBootstrap.childOption(ChannelOption.TCP_NODELAY, true);
+        serverBootstrap.childOption(ChannelOption.SO_KEEPALIVE, true);
+        ChannelFuture channelFuture = serverBootstrap.bind(new InetSocketAddress(url.getPort()));
+        channelFuture.syncUninterruptibly();
+        serverChannel = channelFuture.channel();
+        state = ChannelState.ALIVE;
+        logger.info("ServerChannel finished open: url={}", url);
         return state.isAliveState();
     }
 
     @Override
-    public void close() {
-
+    public synchronized void close() {
+        close(0);
     }
 
     @Override
-    public void close(int timeout) {
+    public synchronized void close(int timeout) {
 
     }
 
     @Override
     public boolean isClosed() {
-        return false;
+        return state.isCloseState();
     }
 
     @Override
     public boolean isAvailable() {
-        return false;
+        return state.isAliveState();
     }
 
     @Override
     public URL getUrl() {
-        return null;
+        return url;
     }
 }
