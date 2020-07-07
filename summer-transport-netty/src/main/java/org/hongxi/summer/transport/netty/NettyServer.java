@@ -132,7 +132,40 @@ public class NettyServer extends AbstractServer {
 
     @Override
     public synchronized void close(int timeout) {
+        if (state.isCloseState()) return;
 
+        try {
+            cleanup();
+            if (state.isUnInitState()) {
+                logger.info("Server close failed, state={}, uri={}", state.value(), url.getUri());
+                return;
+            }
+
+            state = ChannelState.CLOSE;
+            logger.info("Server close success, uri={}", url.getUri());
+        } catch (Exception e) {
+            logger.error("Server close error, uri={}", url.getUri(), e);
+        }
+    }
+
+    private void cleanup() {
+        if (serverChannel != null) {
+            serverChannel.close();
+        }
+        if (bossGroup != null) {
+            bossGroup.shutdownGracefully();
+            bossGroup = null;
+        }
+        if (workerGroup != null) {
+            workerGroup.shutdownGracefully();
+            workerGroup = null;
+        }
+        if (channelManage != null) {
+            channelManage.close();
+        }
+        if (threadPoolExecutor != null) {
+            threadPoolExecutor.shutdownNow();
+        }
     }
 
     @Override

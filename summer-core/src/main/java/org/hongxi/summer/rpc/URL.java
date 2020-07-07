@@ -1,5 +1,8 @@
 package org.hongxi.summer.rpc;
 
+import org.hongxi.summer.common.SummerConstants;
+
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -84,5 +87,10 @@ public class URL {
 
     public int getPort() {
         return port;
+    }
+
+    public Object getUri() {
+        return protocol + SummerConstants.PROTOCOL_SEPARATOR + host + ":" + port
+                + File.separator + path;
     }
 }

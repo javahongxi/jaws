@@ -20,6 +20,10 @@ public enum ChannelState {
         this.value = value;
     }
 
+    public int value() {
+        return value;
+    }
+
     public boolean isUnInitState() {
         return this == UNINIT;
     }
