@@ -1,6 +1,8 @@
 package org.hongxi.summer.rpc;
 
 import org.hongxi.summer.common.SummerConstants;
+import org.hongxi.summer.common.URLParamType;
+import org.hongxi.summer.util.SummerFrameworkUtils;
 
 import java.io.File;
 import java.util.HashMap;
@@ -89,8 +91,38 @@ public class URL {
         return port;
     }
 
+    public String getPath() {
+        return path;
+    }
+
+    public void setPath(String path) {
+        this.path = removeAsyncPath(path);
+    }
+
     public Object getUri() {
         return protocol + SummerConstants.PROTOCOL_SEPARATOR + host + ":" + port
                 + File.separator + path;
+    }
+
+    /**
+     * 返回一个service or referer的identity,如果两个url的identity相同，则表示相同的一个service或者referer
+     *
+     * @return
+     */
+    public String getIdentity() {
+        return protocol + SummerConstants.PROTOCOL_SEPARATOR + host + ":" + port +
+                "/" + getParameter(URLParamType.group.getName(), URLParamType.group.value()) + "/" +
+                getPath() + "/" + getParameter(URLParamType.version.getName(), URLParamType.version.value()) +
+                "/" + getParameter(URLParamType.nodeType.getName(), URLParamType.nodeType.value());
+    }
+
+    /**
+     * because async call in client path with Async suffix,we need
+     * remove Async suffix in path for subscribe.
+     * @param path
+     * @return
+     */
+    private String removeAsyncPath(String path){
+        return SummerFrameworkUtils.removeAsyncSuffix(path);
     }
 }

@@ -71,13 +71,13 @@ public class NettyServer extends AbstractServer {
 
         logger.warn("server channel start open, url: {}", url);
         boolean shareChannel = url.getBooleanParameter(
-                URLParamType.shareChannel.getName(), URLParamType.shareChannel.getBoolValue());
+                URLParamType.shareChannel.getName(), URLParamType.shareChannel.boolValue());
         int maxContentLength = url.getIntParameter(
-                URLParamType.maxContentLength.getName(), URLParamType.maxContentLength.getIntValue());
+                URLParamType.maxContentLength.getName(), URLParamType.maxContentLength.intValue());
         int maxServerConnections = url.getIntParameter(
-                URLParamType.maxServerConnections.getName(), URLParamType.maxServerConnections.getIntValue());
+                URLParamType.maxServerConnections.getName(), URLParamType.maxServerConnections.intValue());
         int maxQueueSize = url.getIntParameter(
-                URLParamType.workerQueueSize.getName(), URLParamType.workerQueueSize.getIntValue());
+                URLParamType.workerQueueSize.getName(), URLParamType.workerQueueSize.intValue());
 
         int minWorkerThreads;
         int maxWorkerThreads;

@@ -27,7 +27,7 @@ public abstract class AbstractServer implements Server {
     public AbstractServer(URL url) {
         this.url = url;
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                url.getParameter(URLParamType.codec.getName(), URLParamType.codec.getValue()));
+                url.getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
     }
 
     @Override

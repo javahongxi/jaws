@@ -5,6 +5,8 @@ package org.hongxi.summer.common;
  */
 public enum URLParamType {
 
+    version("version", SummerConstants.DEFAULT_VERSION),
+
     minWorkerThreads("minWorkerThreads", 20),
 
     maxWorkerThreads("maxWorkerThreads", 200),
@@ -21,7 +23,11 @@ public enum URLParamType {
 
     codec("codec", "summer"),
 
-    /************************** SPI start ******************************/
+    /************************** SPI end ******************************/
+
+    group("group", "default_rpc"),
+
+    nodeType("nodeType", SummerConstants.NODE_TYPE_SERVICE),
 
     workerQueueSize("workerQueueSize", 0);
 
@@ -58,19 +64,19 @@ public enum URLParamType {
         return name;
     }
 
-    public String getValue() {
+    public String value() {
         return value;
     }
 
-    public int getIntValue() {
+    public int intValue() {
         return intValue;
     }
 
-    public long getLongValue() {
+    public long longValue() {
         return longValue;
     }
 
-    public boolean getBoolValue() {
+    public boolean boolValue() {
         return boolValue;
     }
 }

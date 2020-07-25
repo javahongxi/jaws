@@ -22,7 +22,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         this.messageHandler = messageHandler;
         this.channel = channel;
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                channel.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.getValue()));
+                channel.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
     }
 
     public NettyChannelHandler(ThreadPoolExecutor threadPoolExecutor, MessageHandler messageHandler, Channel channel) {
@@ -30,6 +30,6 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         this.messageHandler = messageHandler;
         this.channel = channel;
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                channel.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.getValue()));
+                channel.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
     }
 }
