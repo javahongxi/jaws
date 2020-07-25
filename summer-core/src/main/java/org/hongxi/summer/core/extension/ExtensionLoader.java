@@ -1,5 +1,6 @@
 package org.hongxi.summer.core.extension;
 
+import org.apache.commons.lang3.StringUtils;
 import org.hongxi.summer.common.SummerConstants;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.slf4j.Logger;
@@ -12,9 +13,7 @@ import java.io.InputStreamReader;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Enumeration;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -115,6 +114,45 @@ public class ExtensionLoader<T> {
             extensionLoaders.put(type, loader);
         }
         return loader;
+    }
+
+    public List<T> getExtensions() {
+        return getExtensions(null);
+    }
+
+    /**
+     * 有些地方需要spi的所有激活的instances，所以需要能返回一个列表的方法
+     * 注意：1 SpiMeta 中的active 为true
+     *      2 按照spiMeta中的sequence进行排序
+     *
+     * @return
+     */
+    public List<T> getExtensions(String key) {
+        checkInit();
+
+        if (extensionClasses.size() == 0) {
+            return Collections.emptyList();
+        }
+
+        // 如果只有一个实现，直接返回
+        List<T> exts = new ArrayList<T>(extensionClasses.size());
+
+        // 多个实现，按优先级排序返回
+        for (Map.Entry<String, Class<T>> entry : extensionClasses.entrySet()) {
+            Activation activation = entry.getValue().getAnnotation(Activation.class);
+            if (StringUtils.isBlank(key)) {
+                exts.add(getExtension(entry.getKey()));
+            } else if (activation != null && activation.key() != null) {
+                for (String k : activation.key()) {
+                    if (key.equals(k)) {
+                        exts.add(getExtension(entry.getKey()));
+                        break;
+                    }
+                }
+            }
+        }
+        Collections.sort(exts, new ActivationComparator<T>());
+        return exts;
     }
 
     private void checkInit() {
@@ -270,7 +308,7 @@ public class ExtensionLoader<T> {
         }
     }
 
-    private String getSpiName(Class<T> clazz) {
+    public String getSpiName(Class<?> clazz) {
         SpiMeta spiMeta = clazz.getAnnotation(SpiMeta.class);
         return (spiMeta != null && !"".equals(spiMeta.name())) ? spiMeta.name() : clazz.getSimpleName();
     }

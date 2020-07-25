@@ -18,10 +18,13 @@ public class SummerErrorMsgConstants {
     // framework error
     public static final int FRAMEWORK_DEFAULT_ERROR_CODE = 20001;
     public static final int FRAMEWORK_ENCODE_ERROR_CODE = 20002;
+    public static final int FRAMEWORK_DECODE_ERROR_CODE = 20003;
 
     public static final SummerErrorMsg FRAMEWORK_DEFAULT_ERROR =
             new SummerErrorMsg(503, FRAMEWORK_DEFAULT_ERROR_CODE, "framework default error");
 
     public static final SummerErrorMsg FRAMEWORK_ENCODE_ERROR =
             new SummerErrorMsg(503, FRAMEWORK_ENCODE_ERROR_CODE, "framework encode error");
+    public static final SummerErrorMsg FRAMEWORK_DECODE_ERROR =
+            new SummerErrorMsg(503, FRAMEWORK_DECODE_ERROR_CODE, "framework decode error");
 }
