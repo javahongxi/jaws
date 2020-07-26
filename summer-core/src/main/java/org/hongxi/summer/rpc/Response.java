@@ -61,7 +61,7 @@ public interface Response {
      *
      * @param number
      */
-    void setSerializeNumber(int number);
+    void setSerializationNumber(int number);
 
-    int getSerializeNumber();
+    int getSerializationNumber();
 }

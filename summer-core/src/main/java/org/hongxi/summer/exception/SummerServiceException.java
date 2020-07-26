@@ -34,7 +34,7 @@ public class SummerServiceException extends SummerAbstractException {
         super(cause, SummerErrorMsgConstants.SERVICE_DEFAULT_ERROR);
     }
 
-    public SummerServiceException(Throwable cause, SummerErrorMsg motanErrorMsg) {
-        super(cause, motanErrorMsg);
+    public SummerServiceException(Throwable cause, SummerErrorMsg summerErrorMsg) {
+        super(cause, summerErrorMsg);
     }
 }

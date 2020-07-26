@@ -17,7 +17,7 @@ public class SummerHeader {
     private boolean proxy = false;// 是否需要代理请求。summer agent使用。
     private boolean request = true; //消息类型是否是request
     private int status = 0; //消息状态。最大能表示8种状态，最大值为7。 0表示正常消息，1表示异常消息。其他待扩展
-    private int serialize = 1;// 消息body序列化方式，最大支持32种方式，最大值31。0 hessian、1 grpc-pb、2 json、3 msgpack、4 hprose、5 pb、6 simple、7 grpc-pb-json
+    private int serializationNumber = 1;// 消息body序列化方式，最大支持32种方式，最大值31。0 hessian、1 grpc-pb、2 json、3 msgpack、4 hprose、5 pb、6 simple、7 grpc-pb-json
     private long requestId;
 
     public int getVersion() {
@@ -76,12 +76,12 @@ public class SummerHeader {
         this.status = status;
     }
 
-    public int getSerialize() {
-        return serialize;
+    public int getSerializationNumber() {
+        return serializationNumber;
     }
 
-    public void setSerialize(int serialize) {
-        this.serialize = serialize;
+    public void setSerializationNumber(int serializationNumber) {
+        this.serializationNumber = serializationNumber;
     }
 
     public long getRequestId() {
@@ -122,8 +122,8 @@ public class SummerHeader {
         }
         buf.put(vs);
         byte se = 0x08;
-        if (serialize != 1) {
-            se = (byte) ((serialize << 3) & 0xf8);
+        if (serializationNumber != 1) {
+            se = (byte) ((serializationNumber << 3) & 0xf8);
         }
         buf.put(se);
         buf.putLong(requestId);
@@ -161,7 +161,7 @@ public class SummerHeader {
         header.setStatus(b & 0x07);
 
         b = buf.get();
-        header.setSerialize((b >>> 3) & 0x1f);
+        header.setSerializationNumber((b >>> 3) & 0x1f);
 
         header.setRequestId(buf.getLong());
 
@@ -182,7 +182,7 @@ public class SummerHeader {
         if (proxy != that.proxy) return false;
         if (request != that.request) return false;
         if (status != that.status) return false;
-        if (serialize != that.serialize) return false;
+        if (serializationNumber != that.serializationNumber) return false;
         return requestId == that.requestId;
     }
 
@@ -195,7 +195,7 @@ public class SummerHeader {
         result = 31 * result + (proxy ? 1 : 0);
         result = 31 * result + (request ? 1 : 0);
         result = 31 * result + status;
-        result = 31 * result + serialize;
+        result = 31 * result + serializationNumber;
         result = 31 * result + (int) (requestId ^ (requestId >>> 32));
         return result;
     }

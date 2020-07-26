@@ -21,6 +21,8 @@ public enum URLParamType {
 
     /************************** SPI start ******************************/
 
+    serialization("serialization", "hessian2"),
+
     codec("codec", "summer"),
 
     /************************** SPI end ******************************/
@@ -28,6 +30,9 @@ public enum URLParamType {
     group("group", "default_rpc"),
 
     nodeType("nodeType", SummerConstants.NODE_TYPE_SERVICE),
+
+    gzip("gzip", false), // 是否开启gzip压缩
+    minGzipSize("minGzipSize", 1000), // 进行gz压缩的最小数据大小。超过此阈值才进行gz压缩
 
     workerQueueSize("workerQueueSize", 0);
 
