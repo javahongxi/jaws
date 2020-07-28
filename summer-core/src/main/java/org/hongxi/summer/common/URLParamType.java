@@ -14,6 +14,9 @@ public enum URLParamType {
     maxContentLength("maxContentLength", 10 * 1024 * 1024),
 
     maxServerConnections("maxServerConnections", 100000),
+
+    minClientConnections("minClientConnections", 2),
+
     /**
      * multi referer share the same channel
      */
