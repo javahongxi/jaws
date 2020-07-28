@@ -34,6 +34,9 @@ public enum URLParamType {
     gzip("gzip", false), // 是否开启gzip压缩
     minGzipSize("minGzipSize", 1000), // 进行gz压缩的最小数据大小。超过此阈值才进行gz压缩
 
+    application("application", SummerConstants.FRAMEWORK_NAME),
+    module("module", SummerConstants.FRAMEWORK_NAME),
+
     workerQueueSize("workerQueueSize", 0);
 
     private String name;

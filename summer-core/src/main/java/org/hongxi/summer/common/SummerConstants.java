@@ -5,6 +5,8 @@ package org.hongxi.summer.common;
  */
 public class SummerConstants {
 
+    public static final String FRAMEWORK_NAME = "summer";
+
     public static final String DEFAULT_CHARSET = "UTF-8";
     public static final String PROTOCOL_SEPARATOR = "://";
 
