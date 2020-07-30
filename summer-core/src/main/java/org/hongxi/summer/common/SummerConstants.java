@@ -24,6 +24,8 @@ public class SummerConstants {
     public static final int NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS = 20;
     public static final int NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS = 200;
 
+    public static final int NETTY_TIMEOUT_TIMER_PERIOD = 100;
+
     public static final String ASYNC_SUFFIX = "Async";// suffix for async call.
 
     public static final String DEFAULT_VERSION = "1.0";

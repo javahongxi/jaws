@@ -23,4 +23,20 @@ public class RpcContext {
         if (request != null) return String.valueOf(request.getRequestId());
         return null;
     }
+
+    public void putAttribute(Object key, Object value) {
+        attributes.put(key, value);
+    }
+
+    public Object getAttribute(Object key) {
+        return attributes.get(key);
+    }
+
+    public void removeAttribute(Object key) {
+        attributes.remove(key);
+    }
+
+    public Map<Object, Object> getAttributes() {
+        return attributes;
+    }
 }
