@@ -17,6 +17,8 @@ public class SummerErrorMsgConstants {
     public static final int FRAMEWORK_DEFAULT_ERROR_CODE = 20001;
     public static final int FRAMEWORK_ENCODE_ERROR_CODE = 20002;
     public static final int FRAMEWORK_DECODE_ERROR_CODE = 20003;
+    public static final int FRAMEWORK_INIT_ERROR_CODE = 20004;
+    public static final int FRAMEWORK_EXPORT_ERROR_CODE = 20005;
     // biz error
     public static final int BIZ_DEFAULT_ERROR_CODE = 30001;
 
@@ -27,6 +29,10 @@ public class SummerErrorMsgConstants {
             new SummerErrorMsg(503, FRAMEWORK_ENCODE_ERROR_CODE, "framework encode error");
     public static final SummerErrorMsg FRAMEWORK_DECODE_ERROR =
             new SummerErrorMsg(503, FRAMEWORK_DECODE_ERROR_CODE, "framework decode error");
+    public static final SummerErrorMsg FRAMEWORK_INIT_ERROR =
+            new SummerErrorMsg(500, FRAMEWORK_INIT_ERROR_CODE, "framework init error");
+    public static final SummerErrorMsg FRAMEWORK_EXPORT_ERROR =
+            new SummerErrorMsg(503, FRAMEWORK_EXPORT_ERROR_CODE, "framework export error");
 
     public static final SummerErrorMsg BIZ_DEFAULT_EXCEPTION =
             new SummerErrorMsg(503, BIZ_DEFAULT_ERROR_CODE, "provider error");

@@ -87,6 +87,23 @@ public class URL {
         return host;
     }
 
+    public URL createCopy() {
+        Map<String, String> params = new HashMap<String, String>();
+        if (this.parameters != null) {
+            params.putAll(this.parameters);
+        }
+
+        return new URL(protocol, host, port, path, params);
+    }
+
+    public String getProtocol() {
+        return protocol;
+    }
+
+    public void setProtocol(String protocol) {
+        this.protocol = protocol;
+    }
+
     public String getHost() {
         return host;
     }
@@ -105,6 +122,14 @@ public class URL {
 
     public void setPath(String path) {
         this.path = removeAsyncPath(path);
+    }
+
+    public String getVersion() {
+        return getParameter(URLParamType.version.getName(), URLParamType.version.value());
+    }
+
+    public String getGroup() {
+        return getParameter(URLParamType.group.getName(), URLParamType.group.value());
     }
 
     public Object getUri() {

@@ -1,6 +1,5 @@
-package org.hongxi.summer.transport.netty;
+package org.hongxi.summer.codec;
 
-import org.hongxi.summer.codec.Codec;
 import org.hongxi.summer.exception.SummerErrorMsgConstants;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.protocol.summer.SummerHeader;

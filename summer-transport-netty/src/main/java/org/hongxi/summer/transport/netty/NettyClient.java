@@ -1,16 +1,21 @@
 package org.hongxi.summer.transport.netty;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import org.hongxi.summer.common.ChannelState;
 import org.hongxi.summer.common.SummerConstants;
 import org.hongxi.summer.common.URLParamType;
 import org.hongxi.summer.exception.SummerAbstractException;
+import org.hongxi.summer.exception.SummerErrorMsgConstants;
+import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.exception.SummerServiceException;
 import org.hongxi.summer.rpc.*;
-import org.hongxi.summer.transport.AbstractSharedPoolClient;
-import org.hongxi.summer.transport.Channel;
-import org.hongxi.summer.transport.SharedObjectFactory;
-import org.hongxi.summer.transport.TransportException;
+import org.hongxi.summer.transport.*;
 import org.hongxi.summer.util.SummerFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +50,8 @@ public class NettyClient extends AbstractSharedPoolClient {
 
     public NettyClient(URL url) {
         super(url);
-        fusingThreshold = url.getIntParameter(URLParamType.fusingThreshold.getName(), URLParamType.fusingThreshold.intValue());
+        fusingThreshold = url.getIntParameter(URLParamType.fusingThreshold.getName(),
+                URLParamType.fusingThreshold.intValue());
         timeMonitorFuture = scheduledExecutor.scheduleWithFixedDelay(
                 new TimeoutMonitor("timeout_monitor_" + url.getHost() + "_" + url.getPort()),
                 SummerConstants.NETTY_TIMEOUT_TIMER_PERIOD, SummerConstants.NETTY_TIMEOUT_TIMER_PERIOD,
@@ -124,36 +130,175 @@ public class NettyClient extends AbstractSharedPoolClient {
 
     @Override
     public synchronized boolean open() {
-        return false;
+        if (isAvailable()) {
+            return true;
+        }
+
+        bootstrap = new Bootstrap();
+        int timeout = getUrl().getIntParameter(URLParamType.connectTimeout.getName(),
+                URLParamType.connectTimeout.intValue());
+        if (timeout <= 0) {
+            throw new SummerFrameworkException("NettyClient init Error: timeout(" +
+                    timeout + ") <= 0 is forbid.",
+                    SummerErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+        }
+        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout);
+        bootstrap.option(ChannelOption.TCP_NODELAY, true);
+        bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
+        // 最大响应包限制
+        final int maxContentLength = url.getIntParameter(URLParamType.maxContentLength.getName(),
+                URLParamType.maxContentLength.intValue());
+        bootstrap.group(nioEventLoopGroup)
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) throws Exception {
+                        ChannelPipeline pipeline = ch.pipeline();
+                        pipeline.addLast("decoder", new NettyDecoder(codec, NettyClient.this, maxContentLength));
+                        pipeline.addLast("encoder", new NettyEncoder());
+                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, new DefaultMessageHandler()));
+                    }
+                });
+
+        // 初始化连接池
+        initPool();
+
+        logger.info("NettyClient finished Open: url={}", url);
+
+        // 设置可用状态
+        state = ChannelState.ALIVE;
+        return true;
+    }
+
+    class DefaultMessageHandler implements MessageHandler {
+
+        @Override
+        public Object handle(Channel channel, Object message) {
+            Response response = (Response) message;
+            ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
+
+            if (responseFuture == null) {
+                logger.warn("NettyClient has response from server, but responseFuture not exist, requestId={}",
+                        response.getRequestId());
+                return null;
+            }
+            if (response.getException() != null) {
+                responseFuture.onFailure(response);
+            } else {
+                responseFuture.onSuccess(response);
+            }
+            return null;
+        }
     }
 
     @Override
     public synchronized void close() {
-
+        close(0);
     }
 
     @Override
     public synchronized void close(int timeout) {
+        if (state.isCloseState()) {
+            return;
+        }
 
+        try {
+            cleanup();
+            if (state.isUnInitState()) {
+                logger.info("NettyClient close failed: state={}, url={}", state.value(), url.getUri());
+                return;
+            }
+
+            // 设置close状态
+            state = ChannelState.CLOSE;
+            logger.info("NettyClient close Success: url={}", url.getUri());
+        } catch (Exception e) {
+            logger.error("NettyClient close Error: url={}", url.getUri(), e);
+        }
+    }
+
+    public void cleanup() {
+        // 取消定期的回收任务
+        timeMonitorFuture.cancel(true);
+        // 清空callback
+        callbackMap.clear();
+        // 关闭client持有的channel
+        closeAllChannels();
     }
 
     @Override
     public boolean isClosed() {
-        return false;
+        return state.isCloseState();
     }
 
     @Override
     public boolean isAvailable() {
-        return false;
+        return state.isAliveState();
     }
 
     @Override
     public URL getUrl() {
-        return null;
+        return url;
     }
 
     public ResponseFuture removeCallback(long requestId) {
         return callbackMap.remove(requestId);
+    }
+
+    /**
+     * 增加调用失败的次数：
+     * <p>
+     * <pre>
+     * 	 	如果连续失败的次数 >= maxClientConnection, 那么把client设置成不可用状态
+     * </pre>
+     */
+    void incrErrorCount() {
+        long count = errorCount.incrementAndGet();
+
+        // 如果节点是可用状态，同时当前连续失败的次数超过熔断阈值，那么把该节点标示为不可用
+        if (count >= fusingThreshold && state.isAliveState()) {
+            synchronized (this) {
+                count = errorCount.longValue();
+
+                if (count >= fusingThreshold && state.isAliveState()) {
+                    logger.error("NettyClient unavailable Error: url={} {}",
+                            url.getIdentity(), url.getServerPortStr());
+                    state = ChannelState.UNALIVE;
+                }
+            }
+        }
+    }
+
+    /**
+     * 重置调用失败的计数 ：
+     * <pre>
+     * 把节点设置成可用
+     * </pre>
+     */
+    void resetErrorCount() {
+        errorCount.set(0);
+
+        if (state.isAliveState()) {
+            return;
+        }
+
+        synchronized (this) {
+            if (state.isAliveState()) {
+                return;
+            }
+
+            // 如果节点是unalive才进行设置，而如果是 close 或者 uninit，那么直接忽略
+            if (state.isUnAliveState()) {
+                long count = errorCount.longValue();
+
+                // 过程中有其他并发更新errorCount的，因此这里需要进行一次判断
+                if (count < fusingThreshold) {
+                    state = ChannelState.ALIVE;
+                    logger.info("NettyClient recover available: url={} {}",
+                            url.getIdentity(), url.getServerPortStr());
+                }
+            }
+        }
     }
 
     /**

@@ -7,6 +7,8 @@ public enum URLParamType {
 
     version("version", SummerConstants.DEFAULT_VERSION),
 
+    connectTimeout("connectTimeout", 1000),
+
     minWorkerThreads("minWorkerThreads", 20),
 
     maxWorkerThreads("maxWorkerThreads", 200),
@@ -23,6 +25,8 @@ public enum URLParamType {
     shareChannel("shareChannel", false),
     asyncInitConnection("asyncInitConnection", false),
     fusingThreshold("fusingThreshold", 10),
+
+    heartbeatFactory("heartbeatFactory", "summer"),
 
     /************************** SPI start ******************************/
 

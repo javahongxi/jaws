@@ -18,18 +18,15 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private Channel channel;
     private Codec codec;
 
-    public NettyChannelHandler(MessageHandler messageHandler, Channel channel) {
-        this.messageHandler = messageHandler;
+    public NettyChannelHandler(Channel channel, MessageHandler messageHandler) {
         this.channel = channel;
+        this.messageHandler = messageHandler;
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
                 channel.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
     }
 
-    public NettyChannelHandler(ThreadPoolExecutor threadPoolExecutor, MessageHandler messageHandler, Channel channel) {
+    public NettyChannelHandler(Channel channel, MessageHandler messageHandler, ThreadPoolExecutor threadPoolExecutor) {
+        this(channel, messageHandler);
         this.threadPoolExecutor = threadPoolExecutor;
-        this.messageHandler = messageHandler;
-        this.channel = channel;
-        this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                channel.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
     }
 }

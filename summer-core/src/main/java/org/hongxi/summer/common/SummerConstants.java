@@ -1,5 +1,7 @@
 package org.hongxi.summer.common;
 
+import java.io.File;
+
 /**
  * Created by shenhongxi on 2020/6/26.
  */
@@ -9,6 +11,7 @@ public class SummerConstants {
 
     public static final String DEFAULT_CHARSET = "UTF-8";
     public static final String PROTOCOL_SEPARATOR = "://";
+    public static final String PATH_SEPARATOR = File.separator;
 
     public static final String NODE_TYPE_SERVICE = "service";
 
