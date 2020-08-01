@@ -1,7 +1,7 @@
 package org.hongxi.summer.transport.netty;
 
-import org.hongxi.summer.core.DefaultThreadFactory;
-import org.hongxi.summer.core.StandardThreadPoolExecutor;
+import org.hongxi.summer.common.threadpool.DefaultThreadFactory;
+import org.hongxi.summer.common.threadpool.StandardThreadPoolExecutor;
 import org.hongxi.summer.transport.SharedObjectFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

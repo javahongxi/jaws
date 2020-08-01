@@ -9,8 +9,8 @@ import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.exception.SummerServiceException;
 import org.hongxi.summer.rpc.Response;
 import org.hongxi.summer.transport.Channel;
-import org.hongxi.summer.codec.CodecUtils;
-import org.hongxi.summer.util.SummerFrameworkUtils;
+import org.hongxi.summer.CodecUtils;
+import org.hongxi.summer.common.util.SummerFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

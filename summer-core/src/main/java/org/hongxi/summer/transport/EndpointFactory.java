@@ -1,7 +1,7 @@
 package org.hongxi.summer.transport;
 
-import org.hongxi.summer.core.extension.Scope;
-import org.hongxi.summer.core.extension.Spi;
+import org.hongxi.summer.common.extension.Scope;
+import org.hongxi.summer.common.extension.Spi;
 import org.hongxi.summer.rpc.URL;
 
 /**

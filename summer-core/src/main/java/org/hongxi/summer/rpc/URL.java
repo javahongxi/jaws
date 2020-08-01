@@ -2,7 +2,7 @@ package org.hongxi.summer.rpc;
 
 import org.hongxi.summer.common.SummerConstants;
 import org.hongxi.summer.common.URLParamType;
-import org.hongxi.summer.util.SummerFrameworkUtils;
+import org.hongxi.summer.common.util.SummerFrameworkUtils;
 
 import java.io.File;
 import java.util.HashMap;

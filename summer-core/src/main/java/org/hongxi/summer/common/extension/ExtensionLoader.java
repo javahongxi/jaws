@@ -1,4 +1,4 @@
-package org.hongxi.summer.core.extension;
+package org.hongxi.summer.common.extension;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.summer.common.SummerConstants;

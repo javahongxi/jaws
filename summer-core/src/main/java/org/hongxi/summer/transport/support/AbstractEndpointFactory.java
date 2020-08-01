@@ -4,11 +4,8 @@ import org.hongxi.summer.common.URLParamType;
 import org.hongxi.summer.exception.SummerErrorMsgConstants;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.rpc.URL;
-import org.hongxi.summer.transport.Client;
-import org.hongxi.summer.transport.EndpointFactory;
-import org.hongxi.summer.transport.MessageHandler;
-import org.hongxi.summer.transport.Server;
-import org.hongxi.summer.util.SummerFrameworkUtils;
+import org.hongxi.summer.transport.*;
+import org.hongxi.summer.common.util.SummerFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,8 +55,8 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
             String ipPort = url.getServerPortStr();
             String protocolKey = SummerFrameworkUtils.getProtocolKey(url);
 
-            boolean shareChannel =
-                    url.getBooleanParameter(URLParamType.shareChannel.getName(), URLParamType.shareChannel.boolValue());
+            boolean shareChannel = url.getBooleanParameter(URLParamType.shareChannel.getName(),
+                    URLParamType.shareChannel.boolValue());
 
             if (!shareChannel) { // 独享一个端口
                 logger.info(this.getClass().getSimpleName() + " create no_share_channel server: url={}", url);
@@ -101,17 +98,47 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
 
     @Override
     public Client createClient(URL url) {
-        return null;
+        logger.info(this.getClass().getSimpleName() + " create client: url={}", url);
+        return innerCreateClient(url);
     }
 
     @Override
     public void safeReleaseResource(Server server, URL url) {
+        boolean shareChannel = url.getBooleanParameter(URLParamType.shareChannel.getName(),
+                URLParamType.shareChannel.boolValue());
 
+        if (!shareChannel) {
+            destroy(server);
+            return;
+        }
+
+        synchronized (ipPort2ServerShareChannel) {
+            String ipPort = url.getServerPortStr();
+            String protocolKey = SummerFrameworkUtils.getProtocolKey(url);
+
+            if (server != ipPort2ServerShareChannel.get(ipPort)) {
+                destroy(server);
+                return;
+            }
+
+            Set<String> urls = server2UrlsShareChannel.get(server);
+            urls.remove(protocolKey);
+
+            if (urls.isEmpty()) {
+                destroy(server);
+                ipPort2ServerShareChannel.remove(ipPort);
+                server2UrlsShareChannel.remove(server);
+            }
+        }
     }
 
     @Override
     public void safeReleaseResource(Client client, URL url) {
+        destroy(client);
+    }
 
+    private <T extends Endpoint> void destroy(T endpoint) {
+        endpoint.close();
     }
 
     protected abstract Server innerCreateServer(URL url, MessageHandler messageHandler);

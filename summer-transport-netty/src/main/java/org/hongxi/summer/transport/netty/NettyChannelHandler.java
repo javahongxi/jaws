@@ -3,7 +3,7 @@ package org.hongxi.summer.transport.netty;
 import io.netty.channel.ChannelDuplexHandler;
 import org.hongxi.summer.codec.Codec;
 import org.hongxi.summer.common.URLParamType;
-import org.hongxi.summer.core.extension.ExtensionLoader;
+import org.hongxi.summer.common.extension.ExtensionLoader;
 import org.hongxi.summer.transport.Channel;
 import org.hongxi.summer.transport.MessageHandler;
 

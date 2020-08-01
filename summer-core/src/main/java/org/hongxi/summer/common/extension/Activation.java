@@ -1,4 +1,4 @@
-package org.hongxi.summer.core.extension;
+package org.hongxi.summer.common.extension;
 
 import java.lang.annotation.*;
 

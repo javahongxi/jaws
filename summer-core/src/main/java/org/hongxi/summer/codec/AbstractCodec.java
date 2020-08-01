@@ -1,7 +1,7 @@
 package org.hongxi.summer.codec;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.summer.core.extension.ExtensionLoader;
+import org.hongxi.summer.common.extension.ExtensionLoader;
 import org.hongxi.summer.exception.SummerErrorMsgConstants;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.exception.SummerServiceException;

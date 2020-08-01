@@ -1,4 +1,4 @@
-package org.hongxi.summer.util;
+package org.hongxi.summer.common.util;
 
 import java.util.Collection;
 import java.util.Map;

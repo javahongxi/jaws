@@ -6,7 +6,7 @@ import java.util.Collection;
 /**
  * Created by shenhongxi on 2020/6/25.
  */
-public interface Server extends Channel {
+public interface Server extends Endpoint {
 
     boolean isBound();
 

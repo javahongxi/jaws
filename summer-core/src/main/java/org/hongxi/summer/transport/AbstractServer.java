@@ -3,7 +3,7 @@ package org.hongxi.summer.transport;
 import org.hongxi.summer.codec.Codec;
 import org.hongxi.summer.common.ChannelState;
 import org.hongxi.summer.common.URLParamType;
-import org.hongxi.summer.core.extension.ExtensionLoader;
+import org.hongxi.summer.common.extension.ExtensionLoader;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.rpc.URL;
 

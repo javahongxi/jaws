@@ -1,6 +1,6 @@
 package org.hongxi.summer.transport.netty;
 
-import org.hongxi.summer.core.extension.SpiMeta;
+import org.hongxi.summer.common.extension.SpiMeta;
 import org.hongxi.summer.rpc.URL;
 import org.hongxi.summer.transport.Client;
 import org.hongxi.summer.transport.MessageHandler;

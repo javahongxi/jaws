@@ -1,4 +1,4 @@
-package org.hongxi.summer.core;
+package org.hongxi.summer.common.threadpool;
 
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.RejectedExecutionException;

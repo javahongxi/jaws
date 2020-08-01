@@ -1,12 +1,13 @@
-package org.hongxi.summer.codec;
+package org.hongxi.summer;
 
+import org.hongxi.summer.codec.Codec;
 import org.hongxi.summer.exception.SummerErrorMsgConstants;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.protocol.summer.SummerHeader;
 import org.hongxi.summer.rpc.Response;
 import org.hongxi.summer.transport.Channel;
-import org.hongxi.summer.util.ByteUtils;
-import org.hongxi.summer.util.SummerFrameworkUtils;
+import org.hongxi.summer.common.util.ByteUtils;
+import org.hongxi.summer.common.util.SummerFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

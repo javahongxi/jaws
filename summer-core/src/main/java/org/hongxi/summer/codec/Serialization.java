@@ -1,7 +1,7 @@
 package org.hongxi.summer.codec;
 
-import org.hongxi.summer.core.extension.Scope;
-import org.hongxi.summer.core.extension.Spi;
+import org.hongxi.summer.common.extension.Scope;
+import org.hongxi.summer.common.extension.Spi;
 
 import java.io.IOException;
 

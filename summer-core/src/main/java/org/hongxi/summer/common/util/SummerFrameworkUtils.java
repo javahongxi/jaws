@@ -1,4 +1,4 @@
-package org.hongxi.summer.util;
+package org.hongxi.summer.common.util;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.summer.common.SummerConstants;
@@ -69,7 +69,8 @@ public class SummerFrameworkUtils {
             return false;
         }
 
-        if (!StringUtils.equals(source.getParameter(URLParamType.codec.getName()), target.getParameter(URLParamType.codec.getName()))) {
+        if (!StringUtils.equals(source.getParameter(URLParamType.codec.getName()),
+                target.getParameter(URLParamType.codec.getName()))) {
             return false;
         }
 

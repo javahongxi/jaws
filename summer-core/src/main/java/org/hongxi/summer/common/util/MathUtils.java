@@ -1,4 +1,4 @@
-package org.hongxi.summer.util;
+package org.hongxi.summer.common.util;
 
 /**
  * Created by shenhongxi on 2020/7/28.
