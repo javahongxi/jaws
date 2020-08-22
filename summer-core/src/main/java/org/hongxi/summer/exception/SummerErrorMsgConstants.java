@@ -7,11 +7,14 @@ public class SummerErrorMsgConstants {
 
     // service error status 503
     public static final int SERVICE_DEFAULT_ERROR_CODE = 10001;
+    public static final int SERVICE_REJECT_ERROR_CODE = 10002;
 
     // service error start
 
     public static final SummerErrorMsg SERVICE_DEFAULT_ERROR =
             new SummerErrorMsg(503, SERVICE_DEFAULT_ERROR_CODE, "service error");
+    public static final SummerErrorMsg SERVICE_REJECT =
+            new SummerErrorMsg(503, SERVICE_REJECT_ERROR_CODE, "service reject");
 
     // framework error
     public static final int FRAMEWORK_DEFAULT_ERROR_CODE = 20001;

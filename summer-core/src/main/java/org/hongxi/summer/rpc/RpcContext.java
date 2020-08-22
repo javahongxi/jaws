@@ -1,5 +1,7 @@
 package org.hongxi.summer.rpc;
 
+import org.hongxi.summer.common.URLParamType;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,6 +18,27 @@ public class RpcContext {
 
     public static RpcContext getContext() {
         return LOCAL_CONTEXT.get();
+    }
+
+    public static void destroy() {
+        LOCAL_CONTEXT.remove();
+    }
+
+    /**
+     * init new rpcContext with request
+     *
+     * @param request
+     * @return
+     */
+    public static RpcContext init(Request request) {
+        RpcContext context = new RpcContext();
+        if (request != null) {
+            context.setRequest(request);
+            context.setClientRequestId(
+                    request.getAttachments().get(URLParamType.requestIdFromClient.getName()));
+        }
+        LOCAL_CONTEXT.set(context);
+        return context;
     }
 
     public String getRequestId() {
@@ -38,5 +61,29 @@ public class RpcContext {
 
     public Map<Object, Object> getAttributes() {
         return attributes;
+    }
+
+    public Request getRequest() {
+        return request;
+    }
+
+    public void setRequest(Request request) {
+        this.request = request;
+    }
+
+    public Response getResponse() {
+        return response;
+    }
+
+    public void setResponse(Response response) {
+        this.response = response;
+    }
+
+    public String getClientRequestId() {
+        return clientRequestId;
+    }
+
+    public void setClientRequestId(String clientRequestId) {
+        this.clientRequestId = clientRequestId;
     }
 }

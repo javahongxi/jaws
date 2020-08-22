@@ -19,6 +19,10 @@ public class SummerFrameworkUtils {
         return path;
     }
 
+    public static DefaultResponse buildErrorResponse(Request request, Exception e) {
+        return buildErrorResponse(request.getRequestId(), e);
+    }
+
     public static DefaultResponse buildErrorResponse(long requestId, Exception e) {
         DefaultResponse response = new DefaultResponse();
         response.setRequestId(requestId);

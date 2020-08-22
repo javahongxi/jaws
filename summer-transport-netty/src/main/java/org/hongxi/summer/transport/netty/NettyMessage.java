@@ -4,13 +4,23 @@ package org.hongxi.summer.transport.netty;
  * Created by shenhongxi on 2020/7/25.
  */
 public class NettyMessage {
+    private boolean isRequest;
     private long requestId;
     private byte[] data;
     private long startTime;
 
-    public NettyMessage(long requestId, byte[] data) {
+    public NettyMessage(boolean isRequest, long requestId, byte[] data) {
+        this.isRequest = isRequest;
         this.requestId = requestId;
         this.data = data;
+    }
+
+    public boolean isRequest() {
+        return isRequest;
+    }
+
+    public void setRequest(boolean request) {
+        isRequest = request;
     }
 
     public long getRequestId() {

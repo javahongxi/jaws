@@ -47,4 +47,9 @@ public class SummerConstants {
     public static final String SUMMER_ERROR = "S_e";
     public static final String SUMMER_PROCESS_TIME = "S_pt";
 
+    public static final String CONTENT_LENGTH = "Content-Length";
+
+    public static final String PROTOCOL_INJVM = "injvm";
+    public static final String PROTOCOL_SUMMER = "summer";
+
 }

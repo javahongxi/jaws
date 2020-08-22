@@ -7,6 +7,9 @@ public enum URLParamType {
 
     version("version", SummerConstants.DEFAULT_VERSION),
 
+    /** request id from http interface **/
+    requestIdFromClient("requestIdFromClient", 0),
+
     connectTimeout("connectTimeout", 1000),
 
     minWorkerThreads("minWorkerThreads", 20),
@@ -18,6 +21,11 @@ public enum URLParamType {
     maxServerConnections("maxServerConnections", 100000),
 
     minClientConnections("minClientConnections", 2),
+
+    protocol("protocol", SummerConstants.PROTOCOL_SUMMER),
+    path("path", ""),
+    host("host", ""),
+    port("port", 0),
 
     /**
      * multi referer share the same channel

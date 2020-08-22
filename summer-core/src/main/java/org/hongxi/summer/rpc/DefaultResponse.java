@@ -6,11 +6,12 @@ import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 /**
  * Created by shenhongxi on 2020/7/25.
  */
-public class DefaultResponse implements Response, Serializable {
+public class DefaultResponse implements Response, Callbackable, Serializable {
     private static final long serialVersionUID = -46598719225168485L;
 
     private Object value;
@@ -110,4 +111,13 @@ public class DefaultResponse implements Response, Serializable {
         return serializationNumber;
     }
 
+    @Override
+    public void addFinishCallback(Runnable runnable, Executor executor) {
+
+    }
+
+    @Override
+    public void onFinish() {
+
+    }
 }

@@ -56,7 +56,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
             return;
         }
         in.skipBytes(2);
-        in.readByte(); // v2 flag: (b & 0x01) == 0x00
+        boolean isRequest = isRequest(in.readByte());
         in.skipBytes(2);
         long requestId = in.readLong();
         int size = 13;
@@ -88,7 +88,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         in.resetReaderIndex();
         in.readBytes(data);
 
-        NettyMessage message = new NettyMessage(requestId, data);
+        NettyMessage message = new NettyMessage(isRequest, requestId, data);
         message.setStartTime(startTime);
         out.add(message);
     }
@@ -103,5 +103,9 @@ public class NettyDecoder extends ByteToMessageDecoder {
             ctx.channel().writeAndFlush(msg);
             throw e;
         }
+    }
+
+    private boolean isRequest(byte b) {
+        return (b & 0x01) == 0x00;
     }
 }
