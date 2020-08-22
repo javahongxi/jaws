@@ -163,7 +163,7 @@ public class NettyClient extends AbstractSharedPoolClient {
         // 初始化连接池
         initPool();
 
-        logger.info("NettyClient finished Open: url={}", url);
+        logger.info("NettyClient finished open: url={}", url);
 
         // 设置可用状态
         state = ChannelState.ALIVE;

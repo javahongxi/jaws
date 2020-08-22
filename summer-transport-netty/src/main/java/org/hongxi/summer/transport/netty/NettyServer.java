@@ -60,7 +60,7 @@ public class NettyServer extends AbstractServer {
     @Override
     public boolean open() {
         if (isAvailable()) {
-            logger.warn("server channel already open, url: {}", url);
+            logger.warn("server channel already open, url={}", url);
             return state.isAliveState();
         }
 
@@ -69,7 +69,7 @@ public class NettyServer extends AbstractServer {
             workerGroup = new NioEventLoopGroup();
         }
 
-        logger.warn("server channel start open, url: {}", url);
+        logger.info("server channel start open, url={}", url);
         boolean shareChannel = url.getBooleanParameter(
                 URLParamType.shareChannel.getName(), URLParamType.shareChannel.boolValue());
         int maxContentLength = url.getIntParameter(
@@ -121,7 +121,7 @@ public class NettyServer extends AbstractServer {
         channelFuture.syncUninterruptibly();
         serverChannel = channelFuture.channel();
         state = ChannelState.ALIVE;
-        logger.info("ServerChannel finished open: url={}", url);
+        logger.info("server channel finished open: url={}", url);
         return state.isAliveState();
     }
 

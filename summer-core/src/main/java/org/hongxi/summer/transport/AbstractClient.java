@@ -32,7 +32,7 @@ public abstract class AbstractClient implements Client {
         this.codec =
                 ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
                         url.getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
-        logger.info("init netty client. url:" + url.getHost() + "-" + url.getPath() + ", use codec:" + codec.getClass().getSimpleName());
+        logger.info("init netty client. url: " + url.getHost() + "-" + url.getPath() + ", use codec: " + codec.getClass().getSimpleName());
     }
 
     @Override

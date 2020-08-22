@@ -7,6 +7,7 @@ import org.hongxi.summer.common.util.SummerFrameworkUtils;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Created by shenhongxi on 2020/6/14.
@@ -157,5 +158,48 @@ public class URL {
      */
     private String removeAsyncPath(String path){
         return SummerFrameworkUtils.removeAsyncSuffix(path);
+    }
+
+    @Override
+    public int hashCode() {
+        int factor = 31;
+        int rs = 1;
+        rs = factor * rs + Objects.hashCode(protocol);
+        rs = factor * rs + Objects.hashCode(host);
+        rs = factor * rs + Objects.hashCode(port);
+        rs = factor * rs + Objects.hashCode(path);
+        rs = factor * rs + Objects.hashCode(parameters);
+        return rs;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null || !(obj instanceof URL)) {
+            return false;
+        }
+        URL ou = (URL) obj;
+        if (!Objects.equals(this.protocol, ou.protocol)) {
+            return false;
+        }
+        if (!Objects.equals(this.host, ou.host)) {
+            return false;
+        }
+        if (!Objects.equals(this.port, ou.port)) {
+            return false;
+        }
+        if (!Objects.equals(this.path, ou.path)) {
+            return false;
+        }
+        return Objects.equals(this.parameters, ou.parameters);
+    }
+
+    @Override
+    public String toString() {
+        return toSimpleString();
+    }
+
+    // 包含协议、host、port、path、group
+    public String toSimpleString() {
+        return getUri() + "?group=" + getGroup();
     }
 }
