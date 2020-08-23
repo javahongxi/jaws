@@ -237,12 +237,12 @@ public class ExtensionLoader<T> {
             throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
         }
 
-        for (int i = Character.charCount(cp); i < line.length(); i += Character.charCount(cp)) {
-            cp = line.codePointAt(i);
-            if (!Character.isJavaIdentifierStart(cp) && cp != '.') {
-                throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
-            }
-        }
+//        for (int i = Character.charCount(cp); i < line.length(); i += Character.charCount(cp)) {
+//            cp = line.codePointAt(i);
+//            if (!Character.isJavaIdentifierStart(cp) && cp != '.') {
+//                throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
+//            }
+//        }
 
         if (!classNames.contains(line)) {
             classNames.add(line);
