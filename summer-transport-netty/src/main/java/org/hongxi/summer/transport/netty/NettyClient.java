@@ -110,8 +110,6 @@ public class NettyClient extends AbstractSharedPoolClient {
 
         // aysnc or sync result
         response = asyncResponse(response, async);
-        System.out.println("==========================response:" + response.getClass().getSimpleName());
-        System.out.println("==========================value:" + response.getValue());
 
         return response;
     }
@@ -127,7 +125,6 @@ public class NettyClient extends AbstractSharedPoolClient {
         if (async || !(response instanceof ResponseFuture)) {
             return response;
         }
-        System.out.println("==========================response:" + response.getClass().getSimpleName());
         return new DefaultResponse(response);
     }
 
@@ -159,21 +156,24 @@ public class NettyClient extends AbstractSharedPoolClient {
                         ChannelPipeline pipeline = ch.pipeline();
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyClient.this, maxContentLength));
                         pipeline.addLast("encoder", new NettyEncoder());
-                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (channel, message) -> {
-                            Response response = (Response) message;
-                            ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
+                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, new MessageHandler() {
+                            @Override
+                            public Object handle(Channel channel, Object message) {
+                                Response response = (Response) message;
+                                ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
 
-                            if (responseFuture == null) {
-                                logger.warn("has response from server, but responseFuture not exist, requestId={}",
-                                        response.getRequestId());
+                                if (responseFuture == null) {
+                                    logger.warn("has response from server, but responseFuture not exist, requestId={}",
+                                            response.getRequestId());
+                                    return null;
+                                }
+                                if (response.getException() != null) {
+                                    responseFuture.onFailure(response);
+                                } else {
+                                    responseFuture.onSuccess(response);
+                                }
                                 return null;
                             }
-                            if (response.getException() != null) {
-                                responseFuture.onFailure(response);
-                            } else {
-                                responseFuture.onSuccess(response);
-                            }
-                            return null;
                         }));
                     }
                 });

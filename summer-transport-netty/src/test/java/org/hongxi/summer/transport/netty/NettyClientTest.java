@@ -4,6 +4,7 @@ import org.hongxi.summer.common.util.RequestIdGenerator;
 import org.hongxi.summer.exception.SummerServiceException;
 import org.hongxi.summer.rpc.*;
 import org.hongxi.summer.transport.Channel;
+import org.hongxi.summer.transport.MessageHandler;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -39,13 +40,16 @@ public class NettyClientTest {
         request.setMethodName("hello");
         request.setParametersDesc("void");
 
-        nettyServer = new NettyServer(url, (channel, message) -> {
-            Request request = (Request) message;
-            DefaultResponse response = new DefaultResponse();
-            response.setRequestId(request.getRequestId());
-            response.setValue("method: " + request.getMethodName() + " requestId: " + request.getRequestId());
+        nettyServer = new NettyServer(url, new MessageHandler() {
+            @Override
+            public Object handle(Channel channel, Object message) {
+                Request request = (Request) message;
+                DefaultResponse response = new DefaultResponse();
+                response.setRequestId(request.getRequestId());
+                response.setValue("method: " + request.getMethodName() + " requestId: " + request.getRequestId());
 
-            return response;
+                return response;
+            }
         });
 
         nettyServer.open();
