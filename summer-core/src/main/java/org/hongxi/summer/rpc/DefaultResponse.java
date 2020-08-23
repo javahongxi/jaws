@@ -35,6 +35,16 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
         this.requestId = requestId;
     }
 
+    public DefaultResponse(Response response) {
+        this.value = response.getValue();
+        this.exception = response.getException();
+        this.requestId = response.getRequestId();
+        this.processTime = response.getProcessTime();
+        this.timeout = response.getTimeout();
+        this.serializationNumber = response.getSerializationNumber();
+        this.attachments = response.getAttachments();
+    }
+
     public DefaultResponse(Object value) {
         this.value = value;
     }

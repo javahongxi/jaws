@@ -110,6 +110,8 @@ public class NettyClient extends AbstractSharedPoolClient {
 
         // aysnc or sync result
         response = asyncResponse(response, async);
+        System.out.println("==========================response:" + response.getClass().getSimpleName());
+        System.out.println("==========================value:" + response.getValue());
 
         return response;
     }
@@ -125,6 +127,7 @@ public class NettyClient extends AbstractSharedPoolClient {
         if (async || !(response instanceof ResponseFuture)) {
             return response;
         }
+        System.out.println("==========================response:" + response.getClass().getSimpleName());
         return new DefaultResponse(response);
     }
 
