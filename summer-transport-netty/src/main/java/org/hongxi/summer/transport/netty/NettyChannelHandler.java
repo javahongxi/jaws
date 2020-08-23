@@ -51,25 +51,17 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         this.threadPoolExecutor = threadPoolExecutor;
     }
 
-    private String getRemoteIp(ChannelHandlerContext ctx) {
-        String ip = "";
-        SocketAddress remote = ctx.channel().remoteAddress();
-        if (remote != null) {
-            try {
-                ip = ((InetSocketAddress) remote).getAddress().getHostAddress();
-            } catch (Exception e) {
-                logger.warn("get remoteIp error! default will use. msg:{}, remote:{}", e.getMessage(), remote);
-            }
-        }
-        return ip;
-    }
-
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) {
         if (msg instanceof NettyMessage) {
             if (threadPoolExecutor != null) {
                 try {
-                    threadPoolExecutor.submit(() -> processMessage(ctx, ((NettyMessage) msg)));
+                    threadPoolExecutor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            processMessage(ctx, ((NettyMessage) msg));
+                        }
+                    });
                 } catch (RejectedExecutionException rejectException) {
                     if (((NettyMessage) msg).isRequest()) {
                         rejectMessage(ctx, (NettyMessage) msg);
@@ -201,5 +193,18 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         logger.error("exceptionCaught: remote={} local={} event={}",
                 ctx.channel().remoteAddress(), ctx.channel().localAddress(), cause.getMessage(), cause);
         ctx.channel().close();
+    }
+
+    private String getRemoteIp(ChannelHandlerContext ctx) {
+        String ip = "";
+        SocketAddress remote = ctx.channel().remoteAddress();
+        if (remote != null) {
+            try {
+                ip = ((InetSocketAddress) remote).getAddress().getHostAddress();
+            } catch (Exception e) {
+                logger.warn("get remoteIp error! default will use. msg:{}, remote:{}", e.getMessage(), remote);
+            }
+        }
+        return ip;
     }
 }
