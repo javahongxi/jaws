@@ -156,7 +156,22 @@ public class NettyClient extends AbstractSharedPoolClient {
                         ChannelPipeline pipeline = ch.pipeline();
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyClient.this, maxContentLength));
                         pipeline.addLast("encoder", new NettyEncoder());
-                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, new DefaultMessageHandler()));
+                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (channel, message) -> {
+                            Response response = (Response) message;
+                            ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
+
+                            if (responseFuture == null) {
+                                logger.warn("has response from server, but responseFuture not exist, requestId={}",
+                                        response.getRequestId());
+                                return null;
+                            }
+                            if (response.getException() != null) {
+                                responseFuture.onFailure(response);
+                            } else {
+                                responseFuture.onSuccess(response);
+                            }
+                            return null;
+                        }));
                     }
                 });
 
@@ -168,27 +183,6 @@ public class NettyClient extends AbstractSharedPoolClient {
         // 设置可用状态
         state = ChannelState.ALIVE;
         return true;
-    }
-
-    class DefaultMessageHandler implements MessageHandler {
-
-        @Override
-        public Object handle(Channel channel, Object message) {
-            Response response = (Response) message;
-            ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
-
-            if (responseFuture == null) {
-                logger.warn("NettyClient has response from server, but responseFuture not exist, requestId={}",
-                        response.getRequestId());
-                return null;
-            }
-            if (response.getException() != null) {
-                responseFuture.onFailure(response);
-            } else {
-                responseFuture.onSuccess(response);
-            }
-            return null;
-        }
     }
 
     @Override
@@ -299,6 +293,26 @@ public class NettyClient extends AbstractSharedPoolClient {
                 }
             }
         }
+    }
+
+    /**
+     * 注册回调的resposne
+     * <pre>
+     * 进行最大的请求并发数的控制，如果超过NETTY_CLIENT_MAX_REQUEST的话，那么throw reject exception
+     * </pre>
+     *
+     * @param requestId
+     * @param responseFuture
+     * @throws SummerServiceException
+     */
+    public void registerCallback(long requestId, ResponseFuture responseFuture) {
+        if (this.callbackMap.size() >= SummerConstants.NETTY_CLIENT_MAX_REQUEST) {
+            // reject request, prevent from OutOfMemoryError
+            throw new SummerServiceException("NettyClient over of max concurrent request, drop request, url: "
+                    + url.getUri() + " requestId=" + requestId, SummerErrorMsgConstants.SERVICE_REJECT);
+        }
+
+        this.callbackMap.put(requestId, responseFuture);
     }
 
     /**

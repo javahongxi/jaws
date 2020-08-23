@@ -8,6 +8,7 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created by shenhongxi on 2020/6/14.
@@ -148,6 +149,36 @@ public class URL {
                 "/" + getParameter(URLParamType.group.getName(), URLParamType.group.value()) + "/" +
                 getPath() + "/" + getParameter(URLParamType.version.getName(), URLParamType.version.value()) +
                 "/" + getParameter(URLParamType.nodeType.getName(), URLParamType.nodeType.value());
+    }
+
+    public Integer getMethodParameter(String methodName, String paramDesc, String name, int defaultValue) {
+        String key = methodName + "(" + paramDesc + ")." + name;
+        Number n = getNumbers().get(key);
+        if (n != null) {
+            return n.intValue();
+        }
+        String value = getMethodParameter(methodName, paramDesc, name);
+        if (value == null || value.length() == 0) {
+            return defaultValue;
+        }
+        int i = Integer.parseInt(value);
+        getNumbers().put(key, i);
+        return i;
+    }
+
+    public String getMethodParameter(String methodName, String paramDesc, String name) {
+        String value = getParameter(SummerConstants.METHOD_CONFIG_PREFIX + methodName + "(" + paramDesc + ")." + name);
+        if (value == null || value.length() == 0) {
+            return getParameter(name);
+        }
+        return value;
+    }
+
+    private Map<String, Number> getNumbers() {
+        if (numbers == null) { // 允许并发重复创建
+            numbers = new ConcurrentHashMap<String, Number>();
+        }
+        return numbers;
     }
 
     /**

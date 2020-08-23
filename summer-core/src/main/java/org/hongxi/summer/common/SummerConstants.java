@@ -33,6 +33,9 @@ public class SummerConstants {
 
     public static final String DEFAULT_VERSION = "1.0";
 
+    // netty client max concurrent request TODO 2W is suitable?
+    public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
+
     // ------------------ summer protocol constants -----------------
     public static final String SUMMER_GROUP = "S_g";
     public static final String SUMMER_VERSION = "S_v";
@@ -51,5 +54,7 @@ public class SummerConstants {
 
     public static final String PROTOCOL_INJVM = "injvm";
     public static final String PROTOCOL_SUMMER = "summer";
+
+    public static final String METHOD_CONFIG_PREFIX = "methodconfig.";
 
 }

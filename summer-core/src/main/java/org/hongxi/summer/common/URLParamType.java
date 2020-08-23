@@ -7,6 +7,7 @@ public enum URLParamType {
 
     version("version", SummerConstants.DEFAULT_VERSION),
 
+    requestTimeout("requestTimeout", 200),
     /** request id from http interface **/
     requestIdFromClient("requestIdFromClient", 0),
 
