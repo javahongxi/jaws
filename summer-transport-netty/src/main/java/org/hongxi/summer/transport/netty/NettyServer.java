@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -34,7 +35,7 @@ public class NettyServer extends AbstractServer {
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
     private MessageHandler messageHandler;
-    private StandardThreadPoolExecutor threadPoolExecutor;
+    private ThreadPoolExecutor threadPoolExecutor;
 
     private AtomicInteger rejectCounter = new AtomicInteger(0);
 
@@ -98,6 +99,7 @@ public class NettyServer extends AbstractServer {
                     maxQueueSize, new DefaultThreadFactory("NettyServer-" + url.getServerPortStr(), true));
         }
         threadPoolExecutor.prestartAllCoreThreads();
+        threadPoolExecutor = null; // test
 
         channelManage = new NettyServerChannelManage(maxServerConnections);
 

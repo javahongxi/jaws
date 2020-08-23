@@ -69,7 +69,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         if (msg instanceof NettyMessage) {
             if (threadPoolExecutor != null) {
                 try {
-                    threadPoolExecutor.execute(() -> processMessage(ctx, ((NettyMessage) msg)));
+                    threadPoolExecutor.submit(() -> processMessage(ctx, ((NettyMessage) msg)));
                 } catch (RejectedExecutionException rejectException) {
                     if (((NettyMessage) msg).isRequest()) {
                         rejectMessage(ctx, (NettyMessage) msg);
