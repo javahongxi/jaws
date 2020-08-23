@@ -20,7 +20,6 @@ public class SummerConstants {
      */
 
     public static final short NETTY_MAGIC_TYPE = (short) 0xF1F1;
-    public static final int NETTY_HEADER_LENGTH = 16;
 
     public static final int NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS = 40;
     public static final int NETTY_SHARE_CHANNEL_MAX_WORKER_THREADS = 800;

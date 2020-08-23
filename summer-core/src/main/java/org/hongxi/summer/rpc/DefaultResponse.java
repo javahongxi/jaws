@@ -36,9 +36,7 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
     }
 
     public DefaultResponse(Response response) {
-        System.out.println("==========================response:" + response.getClass().getSimpleName());
         this.value = response.getValue();
-        System.out.println("==========================value:" + this.value);
         this.exception = response.getException();
         this.requestId = response.getRequestId();
         this.processTime = response.getProcessTime();

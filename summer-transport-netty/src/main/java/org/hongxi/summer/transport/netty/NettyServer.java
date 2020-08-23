@@ -99,7 +99,7 @@ public class NettyServer extends AbstractServer {
                     maxQueueSize, new DefaultThreadFactory("NettyServer-" + url.getServerPortStr(), true));
         }
         threadPoolExecutor.prestartAllCoreThreads();
-        threadPoolExecutor = null; // test
+        threadPoolExecutor = null; // TODO test
 
         channelManage = new NettyServerChannelManage(maxServerConnections);
 

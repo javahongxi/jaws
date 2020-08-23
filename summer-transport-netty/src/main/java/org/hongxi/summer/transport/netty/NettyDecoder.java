@@ -3,14 +3,15 @@ package org.hongxi.summer.transport.netty;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
+import org.hongxi.summer.CodecUtils;
 import org.hongxi.summer.codec.Codec;
 import org.hongxi.summer.common.SummerConstants;
+import org.hongxi.summer.common.util.SummerFrameworkUtils;
 import org.hongxi.summer.exception.SummerFrameworkException;
 import org.hongxi.summer.exception.SummerServiceException;
+import org.hongxi.summer.protocol.summer.SummerCodec;
 import org.hongxi.summer.rpc.Response;
 import org.hongxi.summer.transport.Channel;
-import org.hongxi.summer.CodecUtils;
-import org.hongxi.summer.common.util.SummerFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +35,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-        if (in.readableBytes() <= SummerConstants.NETTY_HEADER_LENGTH) {
+        if (in.readableBytes() <= SummerCodec.HEADER_LENGTH) {
             return;
         }
 
@@ -46,66 +47,46 @@ public class NettyDecoder extends ByteToMessageDecoder {
         }
         in.skipBytes(1);
         int rpcVersion = (in.readByte() & 0xff) >>> 3;
-        decode0(ctx, in, out);
+        decodeV1(ctx, in, out);
     }
 
-    private void decode0(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
+    private void decodeV1(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         long startTime = System.currentTimeMillis();
         in.resetReaderIndex();
-        if (in.readableBytes() < 21) {
-            return;
-        }
-        in.skipBytes(2);
-        boolean isRequest = isRequest(in.readByte());
-        in.skipBytes(2);
+        in.skipBytes(2);// skip magic num
+        byte messageType = (byte) in.readShort();
         long requestId = in.readLong();
-        int size = 13;
-        int metaSize = in.readInt();
-        size += 4;
-        if (metaSize > 0) {
-            size += metaSize;
-            if (in.readableBytes() < metaSize) {
-                in.resetReaderIndex();
-                return;
-            }
-            in.skipBytes(metaSize);
-        }
-        if (in.readableBytes() < 4) {
+        int dataLength = in.readInt();
+
+        boolean isRequest = messageType == SummerConstants.FLAG_REQUEST;
+
+        checkMaxContent(dataLength, ctx, in, isRequest, requestId);
+        if (in.readableBytes() < dataLength) {
             in.resetReaderIndex();
             return;
         }
-        int bodySize = in.readInt();
-        checkMaxContent(bodySize, ctx, requestId);
-        size += 4;
-        if (bodySize > 0) {
-            size += bodySize;
-            if (in.readableBytes() < bodySize) {
-                in.resetReaderIndex();
-                return;
-            }
-        }
-        byte[] data = new byte[size];
-        in.resetReaderIndex();
+        byte[] data = new byte[dataLength];
         in.readBytes(data);
 
         NettyMessage message = new NettyMessage(isRequest, requestId, data);
-        message.setStartTime(startTime);
         out.add(message);
+        message.setStartTime(startTime);
     }
 
-    private void checkMaxContent(int contentLength, ChannelHandlerContext ctx, long requestId) throws Exception {
-        if (maxContentLength > 0 && contentLength > maxContentLength) {
+    private void checkMaxContent(int dataLength, ChannelHandlerContext ctx, ByteBuf byteBuf, boolean isRequest, long requestId) throws Exception {
+        if (maxContentLength > 0 && dataLength > maxContentLength) {
             logger.warn("transport data content length over of limit, size: {}  > {}. remote={} local={}",
-                    contentLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
-            Exception e = new SummerServiceException("NettyDecoder transport data content length over of limit, size: " + contentLength + " > " + maxContentLength);
-            Response response = SummerFrameworkUtils.buildErrorResponse(requestId, e);
-            byte[] msg = CodecUtils.encodeObjectToBytes(channel, codec, response);
-            ctx.channel().writeAndFlush(msg);
+                    dataLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
+            // skip all readable Bytes in order to release this no-readable bytebuf in super.channelRead()
+            // that avoid this.decode() being invoked again after channel.close()
+            byteBuf.skipBytes(byteBuf.readableBytes());
+            Exception e = new SummerServiceException("NettyDecoder transport data content length over of limit, size: " + dataLength + " > " + maxContentLength);
+            if (isRequest) {
+                Response response = SummerFrameworkUtils.buildErrorResponse(requestId, e);
+                byte[] msg = CodecUtils.encodeObjectToBytes(channel, codec, response);
+                ctx.channel().writeAndFlush(msg);
+            }
             throw e;
         }
-    }
-
-    private boolean isRequest(byte b) {
-        return (b & 0x01) == 0x00;
     }
 }
