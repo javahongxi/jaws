@@ -25,13 +25,13 @@ public class NettyClientTest {
     private NettyClient nettyClient;
     private DefaultRequest request;
     private URL url;
-    private String interfaceName = "org.hongxi.summer.protocol.example.HelloService";
 
     @Before
     public void setUp() {
         Map<String, String> parameters = new HashMap<>();
         parameters.put("requestTimeout", "500");
 
+        String interfaceName = "org.hongxi.summer.protocol.example.HelloService";
         url = new URL("netty", "localhost", 18080, interfaceName, parameters);
 
         request = new DefaultRequest();
@@ -76,11 +76,10 @@ public class NettyClientTest {
             Assert.assertNotNull(result);
             Assert.assertEquals("method: " + request.getMethodName() + " requestId: " + request.getRequestId(), result);
         } catch (SummerServiceException e) {
-            assertTrue(false);
+            fail(e.getMessage());
         } catch (Exception e) {
-            assertTrue(false);
+            fail();
         }
-
     }
 
     @Test
@@ -100,6 +99,7 @@ public class NettyClientTest {
         try {
             nettyClient.request(request);
         } catch (Exception e) {
+            fail("request error");
         }
 
         Thread.sleep(3000);
@@ -108,7 +108,7 @@ public class NettyClientTest {
         }
     }
 
-    class NettyTestClient extends NettyClient {
+    static class NettyTestClient extends NettyClient {
 
         public NettyTestClient(URL url) {
             super(url);
