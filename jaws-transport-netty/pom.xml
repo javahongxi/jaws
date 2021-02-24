@@ -3,23 +3,24 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>summer-parent</artifactId>
+        <artifactId>jaws-parent</artifactId>
         <groupId>org.hongxi</groupId>
         <version>0.0.2</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>summer-registry-zookeeper</artifactId>
+    <artifactId>jaws-transport-netty</artifactId>
 
     <dependencies>
         <dependency>
             <groupId>org.hongxi</groupId>
-            <artifactId>summer-core</artifactId>
+            <artifactId>jaws-core</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.curator</groupId>
-            <artifactId>curator-framework</artifactId>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.42.Final</version>
         </dependency>
     </dependencies>
 

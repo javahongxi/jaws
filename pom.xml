@@ -2,16 +2,16 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>summer-parent</artifactId>
+    <artifactId>jaws-parent</artifactId>
     <groupId>org.hongxi</groupId>
     <version>0.0.2</version>
     <packaging>pom</packaging>
 
     <modules>
-        <module>summer-core</module>
-        <module>summer-transport-netty</module>
-        <module>summer-registry-zookeeper</module>
-        <module>summer-spring</module>
+        <module>jaws-core</module>
+        <module>jaws-transport-netty</module>
+        <module>jaws-registry-zookeeper</module>
+        <module>jaws-spring</module>
         <module>all</module>
     </modules>
 
