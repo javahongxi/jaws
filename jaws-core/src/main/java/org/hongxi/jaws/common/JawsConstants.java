@@ -5,7 +5,7 @@ import java.io.File;
 /**
  * Created by shenhongxi on 2020/6/26.
  */
-public class SummerConstants {
+public class JawsConstants {
 
     public static final String FRAMEWORK_NAME = "summer";
 

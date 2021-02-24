@@ -2,15 +2,15 @@ package org.hongxi.jaws.protocol.jaws;
 
 import org.hongxi.jaws.codec.AbstractCodec;
 import org.hongxi.jaws.codec.Serialization;
-import org.hongxi.jaws.common.SummerConstants;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.ByteUtils;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
-import org.hongxi.jaws.exception.SummerErrorMsgConstants;
-import org.hongxi.jaws.exception.SummerFrameworkException;
+import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
@@ -25,7 +25,7 @@ import java.util.Map;
  * Created by shenhongxi on 2020/7/25.
  */
 @SpiMeta(name = "summer")
-public class SummerCodec extends AbstractCodec {
+public class JawsCodec extends AbstractCodec {
 
     public static final short MAGIC = (short) 0xF0F0;
 
@@ -47,13 +47,13 @@ public class SummerCodec extends AbstractCodec {
             if (ExceptionUtils.isSummerException(e)) {
                 throw (RuntimeException) e;
             } else {
-                throw new SummerFrameworkException("encode error: isResponse=" + (message instanceof Response), e,
-                        SummerErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
+                throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response), e,
+                        JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
             }
         }
 
-        throw new SummerFrameworkException("encode error: message type not support, " + message.getClass(),
-                SummerErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
+        throw new JawsFrameworkException("encode error: message type not support, " + message.getClass(),
+                JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
     }
 
     /**
@@ -71,32 +71,32 @@ public class SummerCodec extends AbstractCodec {
     @Override
     public Object decode(Channel channel, String remoteIp, byte[] data) throws IOException {
         if (data.length <= HEADER_LENGTH) {
-            throw new SummerFrameworkException("decode error: format problem",
-                    SummerErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: format problem",
+                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
         short type = ByteUtils.bytes2short(data, 0);
 
         if (type != MAGIC) {
-            throw new SummerFrameworkException("decode error: magic error",
-                    SummerErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: magic error",
+                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
         if (data[2] != VERSION) {
-            throw new SummerFrameworkException("decode error: version error",
-                    SummerErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: version error",
+                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
         int bodyLength = ByteUtils.bytes2int(data, 12);
 
         if (HEADER_LENGTH + bodyLength != data.length) {
-            throw new SummerFrameworkException("decode error: content length error",
-                    SummerErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: content length error",
+                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
         byte flag = data[3];
         byte dataType = (byte) (flag & MASK);
-        boolean isResponse = (dataType != SummerConstants.FLAG_REQUEST);
+        boolean isResponse = (dataType != JawsConstants.FLAG_REQUEST);
 
         byte[] body = new byte[bodyLength];
 
@@ -114,15 +114,15 @@ public class SummerCodec extends AbstractCodec {
                 return decodeRequest(body, requestId, serialization);
             }
         } catch (ClassNotFoundException e) {
-            throw new SummerFrameworkException("decode " + (isResponse ? "response" : "request") +
+            throw new JawsFrameworkException("decode " + (isResponse ? "response" : "request") +
                     " error: class not found", e,
-                    SummerErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         } catch (Exception e) {
             if (ExceptionUtils.isSummerException(e)) {
                 throw (RuntimeException) e;
             } else {
-                throw new SummerFrameworkException("decode error: isResponse=" + isResponse,
-                        e, SummerErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+                throw new JawsFrameworkException("decode error: isResponse=" + isResponse,
+                        e, JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
             }
         }
     }
@@ -182,7 +182,7 @@ public class SummerCodec extends AbstractCodec {
         output.flush();
         byte[] body = outputStream.toByteArray();
 
-        byte flag = SummerConstants.FLAG_REQUEST;
+        byte flag = JawsConstants.FLAG_REQUEST;
 
         output.close();
 
@@ -220,13 +220,13 @@ public class SummerCodec extends AbstractCodec {
         if (value.getException() != null) {
             output.writeUTF(value.getException().getClass().getName());
             serialize(output, value.getException(), serialization);
-            flag = SummerConstants.FLAG_RESPONSE_EXCEPTION;
+            flag = JawsConstants.FLAG_RESPONSE_EXCEPTION;
         } else if (value.getValue() == null) {
-            flag = SummerConstants.FLAG_RESPONSE_VOID;
+            flag = JawsConstants.FLAG_RESPONSE_VOID;
         } else {
             output.writeUTF(value.getValue().getClass().getName());
             serialize(output, value.getValue(), serialization);
-            flag = SummerConstants.FLAG_RESPONSE;
+            flag = JawsConstants.FLAG_RESPONSE;
         }
 
         output.flush();
@@ -354,7 +354,7 @@ public class SummerCodec extends AbstractCodec {
         response.setRequestId(requestId);
         response.setProcessTime(processTime);
 
-        if (dataType == SummerConstants.FLAG_RESPONSE_VOID) {
+        if (dataType == JawsConstants.FLAG_RESPONSE_VOID) {
             return response;
         }
 
@@ -363,13 +363,13 @@ public class SummerCodec extends AbstractCodec {
 
         Object result = deserialize((byte[]) input.readObject(), clz, serialization);
 
-        if (dataType == SummerConstants.FLAG_RESPONSE) {
+        if (dataType == JawsConstants.FLAG_RESPONSE) {
             response.setValue(result);
-        } else if (dataType == SummerConstants.FLAG_RESPONSE_EXCEPTION) {
+        } else if (dataType == JawsConstants.FLAG_RESPONSE_EXCEPTION) {
             response.setException((Exception) result);
         } else {
-            throw new SummerFrameworkException("decode error: response dataType not support " + dataType,
-                    SummerErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: response dataType not support " + dataType,
+                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
         response.setRequestId(requestId);

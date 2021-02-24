@@ -8,15 +8,15 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import org.hongxi.jaws.common.ChannelState;
-import org.hongxi.jaws.common.SummerConstants;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.exception.SummerAbstractException;
-import org.hongxi.jaws.exception.SummerErrorMsgConstants;
-import org.hongxi.jaws.exception.SummerFrameworkException;
-import org.hongxi.jaws.exception.SummerServiceException;
+import org.hongxi.jaws.exception.JawsAbstractException;
+import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.*;
-import org.hongxi.jaws.common.util.SummerFrameworkUtils;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +54,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                 URLParamType.fusingThreshold.intValue());
         timeMonitorFuture = scheduledExecutor.scheduleWithFixedDelay(
                 new TimeoutMonitor("timeout_monitor_" + url.getHost() + "_" + url.getPort()),
-                SummerConstants.NETTY_TIMEOUT_TIMER_PERIOD, SummerConstants.NETTY_TIMEOUT_TIMER_PERIOD,
+                JawsConstants.NETTY_TIMEOUT_TIMER_PERIOD, JawsConstants.NETTY_TIMEOUT_TIMER_PERIOD,
                 TimeUnit.MILLISECONDS);
     }
 
@@ -70,11 +70,11 @@ public class NettyClient extends AbstractSharedPoolClient {
     @Override
     public Response request(Request request) throws TransportException {
         if (!isAvailable()) {
-            throw new SummerServiceException("NettyChannel is unavailable: url="
-                    + url.getUri() + SummerFrameworkUtils.toString(request));
+            throw new JawsServiceException("NettyChannel is unavailable: url="
+                    + url.getUri() + JawsFrameworkUtils.toString(request));
         }
         boolean isAsync = false;
-        Object async = RpcContext.getContext().getAttribute(SummerConstants.ASYNC_SUFFIX);
+        Object async = RpcContext.getContext().getAttribute(JawsConstants.ASYNC_SUFFIX);
         if (async != null && async instanceof Boolean) {
             isAsync = (Boolean) async;
         }
@@ -90,7 +90,7 @@ public class NettyClient extends AbstractSharedPoolClient {
 
             if (channel == null) {
                 logger.error("borrowObject null: url={} {}", url.getUri(),
-                        SummerFrameworkUtils.toString(request));
+                        JawsFrameworkUtils.toString(request));
                 return null;
             }
 
@@ -98,13 +98,13 @@ public class NettyClient extends AbstractSharedPoolClient {
             response = channel.request(request);
         } catch (Exception e) {
             logger.error("request Error: url={} {}, {}", url.getUri(),
-                    SummerFrameworkUtils.toString(request), e.getMessage());
+                    JawsFrameworkUtils.toString(request), e.getMessage());
 
-            if (e instanceof SummerAbstractException) {
-                throw (SummerAbstractException) e;
+            if (e instanceof JawsAbstractException) {
+                throw (JawsAbstractException) e;
             } else {
-                throw new SummerServiceException("NettyClient request Error: url=" +
-                        url.getUri() + " " + SummerFrameworkUtils.toString(request), e);
+                throw new JawsServiceException("NettyClient request Error: url=" +
+                        url.getUri() + " " + JawsFrameworkUtils.toString(request), e);
             }
         }
 
@@ -138,9 +138,9 @@ public class NettyClient extends AbstractSharedPoolClient {
         int timeout = getUrl().getIntParameter(URLParamType.connectTimeout.getName(),
                 URLParamType.connectTimeout.intValue());
         if (timeout <= 0) {
-            throw new SummerFrameworkException("NettyClient init Error: timeout(" +
+            throw new JawsFrameworkException("NettyClient init Error: timeout(" +
                     timeout + ") <= 0 is forbid.",
-                    SummerErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
         bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout);
         bootstrap.option(ChannelOption.TCP_NODELAY, true);
@@ -306,13 +306,13 @@ public class NettyClient extends AbstractSharedPoolClient {
      *
      * @param requestId
      * @param responseFuture
-     * @throws SummerServiceException
+     * @throws JawsServiceException
      */
     public void registerCallback(long requestId, ResponseFuture responseFuture) {
-        if (this.callbackMap.size() >= SummerConstants.NETTY_CLIENT_MAX_REQUEST) {
+        if (this.callbackMap.size() >= JawsConstants.NETTY_CLIENT_MAX_REQUEST) {
             // reject request, prevent from OutOfMemoryError
-            throw new SummerServiceException("NettyClient over of max concurrent request, drop request, url: "
-                    + url.getUri() + " requestId=" + requestId, SummerErrorMsgConstants.SERVICE_REJECT);
+            throw new JawsServiceException("NettyClient over of max concurrent request, drop request, url: "
+                    + url.getUri() + " requestId=" + requestId, JawsErrorMsgConstants.SERVICE_REJECT);
         }
 
         this.callbackMap.put(requestId, responseFuture);

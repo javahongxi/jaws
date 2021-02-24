@@ -2,9 +2,9 @@ package org.hongxi.jaws.codec;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.exception.SummerErrorMsgConstants;
-import org.hongxi.jaws.exception.SummerFrameworkException;
-import org.hongxi.jaws.exception.SummerServiceException;
+import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,8 +42,8 @@ public abstract class AbstractCodec implements Codec {
         try {
             return new ObjectOutputStream(out);
         } catch (Exception e) {
-            throw new SummerFrameworkException(this.getClass().getSimpleName() + " createOutput error", e,
-                    SummerErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " createOutput error", e,
+                    JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
         }
     }
 
@@ -51,8 +51,8 @@ public abstract class AbstractCodec implements Codec {
         try {
             return new ObjectInputStream(in);
         } catch (Exception e) {
-            throw new SummerFrameworkException(this.getClass().getSimpleName() + " createInput error", e,
-                    SummerErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " createInput error", e,
+                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
     }
 
@@ -85,7 +85,7 @@ public abstract class AbstractCodec implements Codec {
             s = ExtensionLoader.getExtensionLoader(Serialization.class).getExtension(name);
         }
         if (s == null) {
-            throw new SummerServiceException("can not find serialization by number " + serializationNum);
+            throw new JawsServiceException("can not find serialization by number " + serializationNum);
         }
         return s;
     }

@@ -1,7 +1,7 @@
 package org.hongxi.jaws.transport.netty;
 
 import org.hongxi.jaws.common.util.RequestIdGenerator;
-import org.hongxi.jaws.exception.SummerServiceException;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
@@ -75,7 +75,7 @@ public class NettyClientTest {
 
             Assert.assertNotNull(result);
             Assert.assertEquals("method: " + request.getMethodName() + " requestId: " + request.getRequestId(), result);
-        } catch (SummerServiceException e) {
+        } catch (JawsServiceException e) {
             fail(e.getMessage());
         } catch (Exception e) {
             fail();

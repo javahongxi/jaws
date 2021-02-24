@@ -6,14 +6,14 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import org.hongxi.jaws.CodecUtils;
 import org.hongxi.jaws.codec.Codec;
-import org.hongxi.jaws.common.SummerConstants;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.NetUtils;
-import org.hongxi.jaws.common.util.SummerFrameworkUtils;
-import org.hongxi.jaws.exception.SummerErrorMsgConstants;
-import org.hongxi.jaws.exception.SummerFrameworkException;
-import org.hongxi.jaws.exception.SummerServiceException;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
@@ -79,7 +79,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             }
         } else {
             logger.error("messageReceived type not support: class={}", msg.getClass());
-            throw new SummerFrameworkException(
+            throw new JawsFrameworkException(
                     "NettyChannelHandler messageReceived type not support: class=" + msg.getClass());
         }
     }
@@ -87,12 +87,12 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private void rejectMessage(ChannelHandlerContext ctx, NettyMessage msg) {
         if (msg.isRequest()) {
             sendResponse(ctx, 
-                    SummerFrameworkUtils.buildErrorResponse(
+                    JawsFrameworkUtils.buildErrorResponse(
                             (Request) msg, 
-                            new SummerServiceException(
+                            new JawsServiceException(
                                     "process thread pool is full, reject by server: " 
                                             + ctx.channel().localAddress(), 
-                                    SummerErrorMsgConstants.SERVICE_REJECT
+                                    JawsErrorMsgConstants.SERVICE_REJECT
                             )
                     )
             );
@@ -116,7 +116,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         } catch (Exception e) {
             logger.error("NettyDecoder decode fail! requestid: {}, size: {}, ip: {}", 
                     msg.getRequestId(), msg.getData().length, remoteIp, e);
-            Response response = SummerFrameworkUtils.buildErrorResponse(msg.getRequestId(), e);
+            Response response = JawsFrameworkUtils.buildErrorResponse(msg.getRequestId(), e);
             if (msg.isRequest()) {
                 sendResponse(ctx, response);
             } else {
@@ -141,9 +141,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             try {
                 result = messageHandler.handle(channel, request);
             } catch (Exception e) {
-                logger.error("processRequest fail! request: {}", SummerFrameworkUtils.toString(request), e);
-                result = SummerFrameworkUtils.buildErrorResponse(request, 
-                        new SummerServiceException("process request fail. errmsg:" + e.getMessage()));
+                logger.error("processRequest fail! request: {}", JawsFrameworkUtils.toString(request), e);
+                result = JawsFrameworkUtils.buildErrorResponse(request,
+                        new JawsServiceException("process request fail. errmsg:" + e.getMessage()));
             }
             final DefaultResponse response;
             if (result instanceof DefaultResponse) {
@@ -165,7 +165,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     private ChannelFuture sendResponse(ChannelHandlerContext ctx, Response response) {
         byte[] msg = CodecUtils.encodeObjectToBytes(channel, codec, response);
-        response.setAttachment(SummerConstants.CONTENT_LENGTH, String.valueOf(msg.length));
+        response.setAttachment(JawsConstants.CONTENT_LENGTH, String.valueOf(msg.length));
         if (ctx.channel().isActive()) {
             return ctx.channel().writeAndFlush(msg);
         }

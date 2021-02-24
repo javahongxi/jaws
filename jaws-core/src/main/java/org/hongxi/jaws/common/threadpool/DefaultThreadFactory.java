@@ -1,6 +1,6 @@
 package org.hongxi.jaws.common.threadpool;
 
-import org.hongxi.jaws.common.SummerConstants;
+import org.hongxi.jaws.common.JawsConstants;
 
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,7 +18,7 @@ public class DefaultThreadFactory implements ThreadFactory {
     private boolean isDaemon = false;
 
     public DefaultThreadFactory() {
-        this(SummerConstants.FRAMEWORK_NAME);
+        this(JawsConstants.FRAMEWORK_NAME);
     }
 
     public DefaultThreadFactory(String prefix) {

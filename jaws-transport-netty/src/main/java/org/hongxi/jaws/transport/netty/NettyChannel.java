@@ -7,10 +7,10 @@ import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
-import org.hongxi.jaws.common.util.SummerFrameworkUtils;
-import org.hongxi.jaws.exception.SummerErrorMsgConstants;
-import org.hongxi.jaws.exception.SummerFrameworkException;
-import org.hongxi.jaws.exception.SummerServiceException;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.TransportException;
@@ -58,9 +58,9 @@ public class NettyChannel implements Channel {
                 request.getMethodName(), request.getParametersDesc(),
                 URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
         if (timeout <= 0) {
-            throw new SummerFrameworkException(
+            throw new JawsFrameworkException(
                     "NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
-                    SummerErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
         ResponseFuture response = new DefaultResponseFuture(request, timeout, this.nettyClient.getUrl());
         this.nettyClient.registerCallback(request.getRequestId(), response);
@@ -93,13 +93,13 @@ public class NettyChannel implements Channel {
         nettyClient.incrErrorCount();
 
         if (writeFuture.cause() != null) {
-            throw new SummerServiceException("NettyChannel send request to server Error: url="
+            throw new JawsServiceException("NettyChannel send request to server Error: url="
                     + nettyClient.getUrl().getUri() + " local=" + localAddress + " "
-                    + SummerFrameworkUtils.toString(request), writeFuture.cause());
+                    + JawsFrameworkUtils.toString(request), writeFuture.cause());
         } else {
-            throw new SummerServiceException("NettyChannel send request to server Timeout: url="
+            throw new JawsServiceException("NettyChannel send request to server Timeout: url="
                     + nettyClient.getUrl().getUri() + " local=" + localAddress + " "
-                    + SummerFrameworkUtils.toString(request));
+                    + JawsFrameworkUtils.toString(request));
         }
     }
 
@@ -118,8 +118,8 @@ public class NettyChannel implements Channel {
             int timeout = nettyClient.getUrl().getIntParameter(
                     URLParamType.connectTimeout.getName(), URLParamType.connectTimeout.intValue());
             if (timeout <= 0) {
-                throw new SummerFrameworkException("NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
-                        SummerErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                throw new JawsFrameworkException("NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
+                        JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
             }
             // 不去依赖于connectTimeout
             boolean result = channelFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
@@ -140,27 +140,27 @@ public class NettyChannel implements Channel {
 
             if (channelFuture.cause() != null) {
                 channelFuture.cancel(true);
-                throw new SummerServiceException(
+                throw new JawsServiceException(
                         "NettyChannel failed to connect to server, url: " +
                                 nettyClient.getUrl().getUri() + ", result: " + result +
                                 ", success: " + success +
                                 ", connected: " + connected, channelFuture.cause());
             } else {
                 channelFuture.cancel(true);
-                throw new SummerServiceException("NettyChannel connect to server timeout url: " +
+                throw new JawsServiceException("NettyChannel connect to server timeout url: " +
                         nettyClient.getUrl().getUri() +
                         ", cost: " + (System.currentTimeMillis() - start) +
                         ", result: " + result +
                         ", success: " + success +
                         ", connected: " + connected);
             }
-        } catch (SummerServiceException e) {
+        } catch (JawsServiceException e) {
             throw e;
         } catch (Exception e) {
             if (channelFuture != null) {
                 channelFuture.channel().close();
             }
-            throw new SummerServiceException("NettyChannel failed to connect to server, url: " +
+            throw new JawsServiceException("NettyChannel failed to connect to server, url: " +
                     nettyClient.getUrl().getUri(), e);
         } finally {
             if (!state.isAliveState()) {

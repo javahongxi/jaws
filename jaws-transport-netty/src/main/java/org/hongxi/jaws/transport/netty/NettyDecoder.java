@@ -5,11 +5,11 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import org.hongxi.jaws.CodecUtils;
 import org.hongxi.jaws.codec.Codec;
-import org.hongxi.jaws.common.SummerConstants;
-import org.hongxi.jaws.common.util.SummerFrameworkUtils;
-import org.hongxi.jaws.exception.SummerFrameworkException;
-import org.hongxi.jaws.exception.SummerServiceException;
-import org.hongxi.jaws.protocol.jaws.SummerCodec;
+import org.hongxi.jaws.common.JawsConstants;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.exception.JawsServiceException;
+import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.transport.Channel;
 import org.slf4j.Logger;
@@ -35,15 +35,15 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-        if (in.readableBytes() <= SummerCodec.HEADER_LENGTH) {
+        if (in.readableBytes() <= JawsCodec.HEADER_LENGTH) {
             return;
         }
 
         in.markReaderIndex();
         short type = in.readShort();
-        if (type != SummerConstants.NETTY_MAGIC_TYPE) {
+        if (type != JawsConstants.NETTY_MAGIC_TYPE) {
             in.resetReaderIndex();
-            throw new SummerFrameworkException("NettyDecoder transport header not support, type: " + type);
+            throw new JawsFrameworkException("NettyDecoder transport header not support, type: " + type);
         }
         in.skipBytes(1);
         int rpcVersion = (in.readByte() & 0xff) >>> 3;
@@ -58,7 +58,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         long requestId = in.readLong();
         int dataLength = in.readInt();
 
-        boolean isRequest = messageType == SummerConstants.FLAG_REQUEST;
+        boolean isRequest = messageType == JawsConstants.FLAG_REQUEST;
 
         checkMaxContent(dataLength, ctx, in, isRequest, requestId);
         if (in.readableBytes() < dataLength) {
@@ -80,9 +80,9 @@ public class NettyDecoder extends ByteToMessageDecoder {
             // skip all readable Bytes in order to release this no-readable bytebuf in super.channelRead()
             // that avoid this.decode() being invoked again after channel.close()
             byteBuf.skipBytes(byteBuf.readableBytes());
-            Exception e = new SummerServiceException("NettyDecoder transport data content length over of limit, size: " + dataLength + " > " + maxContentLength);
+            Exception e = new JawsServiceException("NettyDecoder transport data content length over of limit, size: " + dataLength + " > " + maxContentLength);
             if (isRequest) {
-                Response response = SummerFrameworkUtils.buildErrorResponse(requestId, e);
+                Response response = JawsFrameworkUtils.buildErrorResponse(requestId, e);
                 byte[] msg = CodecUtils.encodeObjectToBytes(channel, codec, response);
                 ctx.channel().writeAndFlush(msg);
             }

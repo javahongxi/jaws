@@ -1,7 +1,7 @@
 package org.hongxi.jaws.common.util;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.SummerConstants;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
@@ -10,11 +10,11 @@ import org.hongxi.jaws.rpc.URL;
 /**
  * Created by shenhongxi on 2020/7/25.
  */
-public class SummerFrameworkUtils {
+public class JawsFrameworkUtils {
 
     public static String removeAsyncSuffix(String path) {
-        if (path != null && path.endsWith(SummerConstants.ASYNC_SUFFIX)) {
-            return path.substring(0, path.length() - SummerConstants.ASYNC_SUFFIX.length());
+        if (path != null && path.endsWith(JawsConstants.ASYNC_SUFFIX)) {
+            return path.substring(0, path.length() - JawsConstants.ASYNC_SUFFIX.length());
         }
         return path;
     }
@@ -39,13 +39,13 @@ public class SummerFrameworkUtils {
     public static String getProtocolKey(URL url) {
         StringBuilder key = new StringBuilder();
         key.append(url.getProtocol());
-        key.append(SummerConstants.PROTOCOL_SEPARATOR);
+        key.append(JawsConstants.PROTOCOL_SEPARATOR);
         key.append(url.getServerPortStr());
-        key.append(SummerConstants.PATH_SEPARATOR);
+        key.append(JawsConstants.PATH_SEPARATOR);
         key.append(url.getGroup());
-        key.append(SummerConstants.PATH_SEPARATOR);
+        key.append(JawsConstants.PATH_SEPARATOR);
         key.append(url.getPath());
-        key.append(SummerConstants.PATH_SEPARATOR);
+        key.append(JawsConstants.PATH_SEPARATOR);
         key.append(url.getVersion());
         return key.toString();
     }

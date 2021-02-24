@@ -1,7 +1,7 @@
 package org.hongxi.jaws.rpc;
 
 import org.apache.commons.lang3.tuple.Pair;
-import org.hongxi.jaws.exception.SummerServiceException;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +56,7 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
     @Override
     public Object getValue() {
         if (exception != null) {
-            throw (exception instanceof RuntimeException) ? (RuntimeException) exception : new SummerServiceException(
+            throw (exception instanceof RuntimeException) ? (RuntimeException) exception : new JawsServiceException(
                     exception.getMessage(), exception);
         }
 

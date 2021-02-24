@@ -5,14 +5,14 @@ import java.io.Serializable;
 /**
  * Created by shenhongxi on 2020/6/26.
  */
-public class SummerErrorMsg implements Serializable {
+public class JawsErrorMsg implements Serializable {
     private static final long serialVersionUID = -5483348908144912517L;
 
     private int status;
     private int errorCode;
     private String message;
 
-    public SummerErrorMsg(int status, int errorCode, String message) {
+    public JawsErrorMsg(int status, int errorCode, String message) {
         this.status = status;
         this.errorCode = errorCode;
         this.message = message;

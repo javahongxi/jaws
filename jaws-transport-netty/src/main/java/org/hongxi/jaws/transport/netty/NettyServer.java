@@ -6,11 +6,11 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import org.hongxi.jaws.common.ChannelState;
-import org.hongxi.jaws.common.SummerConstants;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.StandardThreadPoolExecutor;
-import org.hongxi.jaws.exception.SummerFrameworkException;
+import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
@@ -55,7 +55,7 @@ public class NettyServer extends AbstractServer {
 
     @Override
     public Response request(Request request) throws TransportException {
-        throw new SummerFrameworkException("NettyServer request(Request) method not support, url: " + url);
+        throw new JawsFrameworkException("NettyServer request(Request) method not support, url: " + url);
     }
 
     @Override
@@ -84,14 +84,14 @@ public class NettyServer extends AbstractServer {
         int maxWorkerThreads;
         if (shareChannel) {
             minWorkerThreads = url.getIntParameter(URLParamType.minWorkerThreads.getName(),
-                    SummerConstants.NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS);
+                    JawsConstants.NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS);
             maxWorkerThreads = url.getIntParameter(URLParamType.maxWorkerThreads.getName(),
-                    SummerConstants.NETTY_SHARE_CHANNEL_MAX_WORKER_THREADS);
+                    JawsConstants.NETTY_SHARE_CHANNEL_MAX_WORKER_THREADS);
         } else {
             minWorkerThreads = url.getIntParameter(URLParamType.minWorkerThreads.getName(),
-                    SummerConstants.NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS);
+                    JawsConstants.NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS);
             maxWorkerThreads = url.getIntParameter(URLParamType.maxWorkerThreads.getName(),
-                    SummerConstants.NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS);
+                    JawsConstants.NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS);
         }
 
         if (threadPoolExecutor == null || threadPoolExecutor.isShutdown()) {

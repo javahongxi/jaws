@@ -1,11 +1,11 @@
 package org.hongxi.jaws.transport.support;
 
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.exception.SummerErrorMsgConstants;
-import org.hongxi.jaws.exception.SummerFrameworkException;
+import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.*;
-import org.hongxi.jaws.common.util.SummerFrameworkUtils;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,7 +53,7 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
     public Server createServer(URL url, MessageHandler messageHandler) {
         synchronized (ipPort2ServerShareChannel) {
             String ipPort = url.getServerPortStr();
-            String protocolKey = SummerFrameworkUtils.getProtocolKey(url);
+            String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
 
             boolean shareChannel = url.getBooleanParameter(URLParamType.shareChannel.getName(),
                     URLParamType.shareChannel.boolValue());
@@ -71,12 +71,12 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
 
             if (server != null) {
                 // can't share service channel
-                if (!SummerFrameworkUtils.checkIfCanShareServiceChannel(server.getUrl(), url)) {
-                    throw new SummerFrameworkException(
+                if (!JawsFrameworkUtils.checkIfCanShareServiceChannel(server.getUrl(), url)) {
+                    throw new JawsFrameworkException(
                             "Service export Error: share channel but some config param is different, " +
                                     "protocol or codec or serialize or maxContentLength or maxServerConnection " +
                                     "or maxWorkerThread or heartbeatFactory, source="
-                                    + server.getUrl() + " target=" + url, SummerErrorMsgConstants.FRAMEWORK_EXPORT_ERROR);
+                                    + server.getUrl() + " target=" + url, JawsErrorMsgConstants.FRAMEWORK_EXPORT_ERROR);
                 }
 
                 saveEndpoint2Urls(server2UrlsShareChannel, server, protocolKey);
@@ -114,7 +114,7 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
 
         synchronized (ipPort2ServerShareChannel) {
             String ipPort = url.getServerPortStr();
-            String protocolKey = SummerFrameworkUtils.getProtocolKey(url);
+            String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
 
             if (server != ipPort2ServerShareChannel.get(ipPort)) {
                 destroy(server);

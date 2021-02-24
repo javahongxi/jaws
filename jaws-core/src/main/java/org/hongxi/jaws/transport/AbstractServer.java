@@ -4,7 +4,7 @@ import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.exception.SummerFrameworkException;
+import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
 
 import java.net.InetSocketAddress;
@@ -32,12 +32,12 @@ public abstract class AbstractServer implements Server {
 
     @Override
     public Collection<Channel> getChannels() {
-        throw new SummerFrameworkException(this.getClass().getName() + " getChannels() method not support " + url);
+        throw new JawsFrameworkException(this.getClass().getName() + " getChannels() method not support " + url);
     }
 
     @Override
     public Channel getChannel(InetSocketAddress remoteAddress) {
-        throw new SummerFrameworkException(this.getClass().getName() + " getChannels(InetSocketAddress) method not support " + url);
+        throw new JawsFrameworkException(this.getClass().getName() + " getChannels(InetSocketAddress) method not support " + url);
     }
 
     @Override

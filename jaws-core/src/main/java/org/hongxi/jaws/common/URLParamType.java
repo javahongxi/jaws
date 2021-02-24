@@ -5,7 +5,7 @@ package org.hongxi.jaws.common;
  */
 public enum URLParamType {
 
-    version("version", SummerConstants.DEFAULT_VERSION),
+    version("version", JawsConstants.DEFAULT_VERSION),
 
     requestTimeout("requestTimeout", 200),
     /** request id from http interface **/
@@ -23,7 +23,7 @@ public enum URLParamType {
 
     minClientConnections("minClientConnections", 2),
 
-    protocol("protocol", SummerConstants.PROTOCOL_SUMMER),
+    protocol("protocol", JawsConstants.PROTOCOL_SUMMER),
     path("path", ""),
     host("host", ""),
     port("port", 0),
@@ -47,13 +47,13 @@ public enum URLParamType {
 
     group("group", "default_rpc"),
 
-    nodeType("nodeType", SummerConstants.NODE_TYPE_SERVICE),
+    nodeType("nodeType", JawsConstants.NODE_TYPE_SERVICE),
 
     gzip("gzip", false), // 是否开启gzip压缩
     minGzipSize("minGzipSize", 1000), // 进行gz压缩的最小数据大小。超过此阈值才进行gz压缩
 
-    application("application", SummerConstants.FRAMEWORK_NAME),
-    module("module", SummerConstants.FRAMEWORK_NAME),
+    application("application", JawsConstants.FRAMEWORK_NAME),
+    module("module", JawsConstants.FRAMEWORK_NAME),
 
     workerQueueSize("workerQueueSize", 0);
 

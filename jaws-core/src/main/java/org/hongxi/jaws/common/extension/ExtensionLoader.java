@@ -1,8 +1,8 @@
 package org.hongxi.jaws.common.extension;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.SummerConstants;
-import org.hongxi.jaws.exception.SummerFrameworkException;
+import org.hongxi.jaws.common.JawsConstants;
+import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,7 +60,7 @@ public class ExtensionLoader<T> {
             }
             return clazz.newInstance();
         } catch (Exception e) {
-            throw new SummerFrameworkException(type.getName() + ": Error get extension " + name, e);
+            throw new JawsFrameworkException(type.getName() + ": Error get extension " + name, e);
         }
     }
 
@@ -100,10 +100,10 @@ public class ExtensionLoader<T> {
 
     private static <T> void checkInterfaceType(Class<T> clazz) {
         if (!clazz.isInterface()) {
-            throw new SummerFrameworkException(clazz.getName() + ": Extension type is not interface");
+            throw new JawsFrameworkException(clazz.getName() + ": Extension type is not interface");
         }
         if (!clazz.isAnnotationPresent(Spi.class)) {
-            throw new SummerFrameworkException(clazz.getName() + ": Extension type without @Spi annotation");
+            throw new JawsFrameworkException(clazz.getName() + ": Extension type without @Spi annotation");
         }
     }
 
@@ -191,7 +191,7 @@ public class ExtensionLoader<T> {
                 parseUrl(type, url, classNames);
             }
         } catch (Exception e) {
-            throw new SummerFrameworkException(
+            throw new JawsFrameworkException(
                     "ExtensionLoader loadExtensionClasses error, services dir: " + dir + ", type: " + type.getClass(), e);
         }
 
@@ -203,7 +203,7 @@ public class ExtensionLoader<T> {
         BufferedReader reader = null;
         try {
             inputStream = url.openStream();
-            reader = new BufferedReader(new InputStreamReader(inputStream, SummerConstants.DEFAULT_CHARSET));
+            reader = new BufferedReader(new InputStreamReader(inputStream, JawsConstants.DEFAULT_CHARSET));
             String line;
             int lineNumber = 0;
             while ((line = reader.readLine()) != null) {
@@ -229,12 +229,12 @@ public class ExtensionLoader<T> {
         if (line.isEmpty()) return;
 
         if (line.indexOf(' ') >= 0 || line.indexOf('\t') >= 0) {
-            throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi configuration-file syntax");
+            throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi configuration-file syntax");
         }
 
         int cp = line.codePointAt(0);
         if (!Character.isJavaIdentifierStart(cp)) {
-            throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
+            throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
         }
 
 //        for (int i = Character.charCount(cp); i < line.length(); i += Character.charCount(cp)) {
@@ -264,7 +264,7 @@ public class ExtensionLoader<T> {
 
                 String spiName = getSpiName(clazz);
                 if (classes.containsKey(spiName)) {
-                    throw new SummerFrameworkException(clazz + ": spi name already exists: " + spiName);
+                    throw new JawsFrameworkException(clazz + ": spi name already exists: " + spiName);
                 } else {
                     classes.put(spiName, clazz);
                 }
@@ -284,14 +284,14 @@ public class ExtensionLoader<T> {
 
     private void checkClassPublic(Class<T> clazz) {
         if (!Modifier.isPublic(clazz.getModifiers())) {
-            throw new SummerFrameworkException(clazz.getName() + "is not a public class");
+            throw new JawsFrameworkException(clazz.getName() + "is not a public class");
         }
     }
 
     private void checkConstructorPublic(Class<T> clazz) {
         Constructor<?>[] constructors = clazz.getConstructors();
         if (constructors == null || constructors.length == 0) {
-            throw new SummerFrameworkException(clazz.getName() + "has no public no-args constructor");
+            throw new JawsFrameworkException(clazz.getName() + "has no public no-args constructor");
         }
 
         for (Constructor<?> constructor : constructors) {
@@ -299,12 +299,12 @@ public class ExtensionLoader<T> {
                 return;
             }
         }
-        throw new SummerFrameworkException(clazz.getName() + "has no public no-args constructor");
+        throw new JawsFrameworkException(clazz.getName() + "has no public no-args constructor");
     }
 
     private void checkClassInherit(Class<T> clazz) {
         if (!type.isAssignableFrom(clazz)) {
-            throw new SummerFrameworkException(clazz.getName() + "is not instanceof " + type.getName());
+            throw new JawsFrameworkException(clazz.getName() + "is not instanceof " + type.getName());
         }
     }
 

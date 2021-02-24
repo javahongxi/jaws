@@ -1,8 +1,8 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.common.SummerConstants;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.util.SummerFrameworkUtils;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 
 import java.io.File;
 import java.util.HashMap;
@@ -135,7 +135,7 @@ public class URL {
     }
 
     public Object getUri() {
-        return protocol + SummerConstants.PROTOCOL_SEPARATOR + host + ":" + port
+        return protocol + JawsConstants.PROTOCOL_SEPARATOR + host + ":" + port
                 + File.separator + path;
     }
 
@@ -145,7 +145,7 @@ public class URL {
      * @return
      */
     public String getIdentity() {
-        return protocol + SummerConstants.PROTOCOL_SEPARATOR + host + ":" + port +
+        return protocol + JawsConstants.PROTOCOL_SEPARATOR + host + ":" + port +
                 "/" + getParameter(URLParamType.group.getName(), URLParamType.group.value()) + "/" +
                 getPath() + "/" + getParameter(URLParamType.version.getName(), URLParamType.version.value()) +
                 "/" + getParameter(URLParamType.nodeType.getName(), URLParamType.nodeType.value());
@@ -167,7 +167,7 @@ public class URL {
     }
 
     public String getMethodParameter(String methodName, String paramDesc, String name) {
-        String value = getParameter(SummerConstants.METHOD_CONFIG_PREFIX + methodName + "(" + paramDesc + ")." + name);
+        String value = getParameter(JawsConstants.METHOD_CONFIG_PREFIX + methodName + "(" + paramDesc + ")." + name);
         if (value == null || value.length() == 0) {
             return getParameter(name);
         }
@@ -188,7 +188,7 @@ public class URL {
      * @return
      */
     private String removeAsyncPath(String path){
-        return SummerFrameworkUtils.removeAsyncSuffix(path);
+        return JawsFrameworkUtils.removeAsyncSuffix(path);
     }
 
     @Override

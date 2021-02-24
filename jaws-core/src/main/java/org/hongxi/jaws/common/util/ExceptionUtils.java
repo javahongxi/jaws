@@ -27,7 +27,7 @@ public class ExceptionUtils {
      * @return
      */
     public static boolean isBizException(Throwable t) {
-        return t instanceof SummerBizException;
+        return t instanceof JawsBizException;
     }
 
 
@@ -38,7 +38,7 @@ public class ExceptionUtils {
      * @return
      */
     public static boolean isSummerException(Throwable t) {
-        return t instanceof SummerAbstractException;
+        return t instanceof JawsAbstractException;
     }
 
     public static String toMessage(Exception e) {
@@ -47,18 +47,18 @@ public class ExceptionUtils {
         int code = 500;
         String errmsg = null;
 
-        if (e instanceof SummerFrameworkException) {
-            SummerFrameworkException sfe = (SummerFrameworkException) e;
+        if (e instanceof JawsFrameworkException) {
+            JawsFrameworkException sfe = (JawsFrameworkException) e;
             type = 0;
             code = sfe.getErrorCode();
             errmsg = sfe.getOriginMessage();
-        } else if (e instanceof SummerServiceException) {
-            SummerServiceException mse = (SummerServiceException) e;
+        } else if (e instanceof JawsServiceException) {
+            JawsServiceException mse = (JawsServiceException) e;
             type = 1;
             code = mse.getErrorCode();
             errmsg = mse.getOriginMessage();
-        } else if (e instanceof SummerBizException) {
-            SummerBizException sbe = (SummerBizException) e;
+        } else if (e instanceof JawsBizException) {
+            JawsBizException sbe = (JawsBizException) e;
             type = 2;
             code = sbe.getErrorCode();
             errmsg = sbe.getOriginMessage();
@@ -74,23 +74,23 @@ public class ExceptionUtils {
         return jsonObject.toString();
     }
 
-    public static SummerAbstractException fromMessage(String msg) {
+    public static JawsAbstractException fromMessage(String msg) {
         if (StringUtils.isNotBlank(msg)) {
             try {
                 JSONObject jsonObject = JSONObject.parseObject(msg);
                 int type = jsonObject.getIntValue("errtype");
                 int errcode = jsonObject.getIntValue("errcode");
                 String errmsg = jsonObject.getString("errmsg");
-                SummerAbstractException e = null;
+                JawsAbstractException e = null;
                 switch (type) {
                     case 1:
-                        e = new SummerServiceException(errmsg, new SummerErrorMsg(errcode, errcode, errmsg));
+                        e = new JawsServiceException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
                         break;
                     case 2:
-                        e = new SummerBizException(errmsg, new SummerErrorMsg(errcode, errcode, errmsg));
+                        e = new JawsBizException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
                         break;
                     default:
-                        e = new SummerFrameworkException(errmsg, new SummerErrorMsg(errcode, errcode, errmsg));
+                        e = new JawsFrameworkException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
                 }
                 return e;
             } catch (Exception e) {

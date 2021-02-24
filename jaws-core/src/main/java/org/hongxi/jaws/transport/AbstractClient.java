@@ -4,10 +4,10 @@ import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.exception.SummerFrameworkException;
+import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.common.util.SummerFrameworkUtils;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,7 +47,7 @@ public abstract class AbstractClient implements Client {
 
     @Override
     public void heartbeat(Request request) {
-        throw new SummerFrameworkException("heartbeat not support: " + SummerFrameworkUtils.toString(request));
+        throw new JawsFrameworkException("heartbeat not support: " + JawsFrameworkUtils.toString(request));
     }
 
     public void setLocalAddress(InetSocketAddress localAddress) {
