@@ -2,7 +2,7 @@
 <configuration status="info">
 
     <properties>
-        <property name="log.path">/tmp/logs/summer-transport-netty</property>
+        <property name="log.path">/tmp/logs/jaws-transport-netty</property>
     </properties>
 
     <appenders>
