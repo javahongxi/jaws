@@ -31,7 +31,7 @@ public class NettyClientTest {
         Map<String, String> parameters = new HashMap<>();
         parameters.put("requestTimeout", "500");
 
-        String interfaceName = "org.hongxi.summer.protocol.example.HelloService";
+        String interfaceName = "org.hongxi.jaws.protocol.example.HelloService";
         url = new URL("netty", "localhost", 18080, interfaceName, parameters);
 
         request = new DefaultRequest();

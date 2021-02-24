@@ -37,7 +37,7 @@ public class ExceptionUtils {
      * @param t
      * @return
      */
-    public static boolean isSummerException(Throwable t) {
+    public static boolean isJawsException(Throwable t) {
         return t instanceof JawsAbstractException;
     }
 

@@ -7,7 +7,7 @@ import java.io.File;
  */
 public class JawsConstants {
 
-    public static final String FRAMEWORK_NAME = "summer";
+    public static final String FRAMEWORK_NAME = "jaws";
 
     public static final String DEFAULT_CHARSET = "UTF-8";
     public static final String PROTOCOL_SEPARATOR = "://";
@@ -35,24 +35,24 @@ public class JawsConstants {
     // netty client max concurrent request TODO 2W is suitable?
     public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
 
-    // ------------------ summer protocol constants -----------------
-    public static final String SUMMER_GROUP = "S_g";
-    public static final String SUMMER_VERSION = "S_v";
-    public static final String SUMMER_PATH = "S_p";
-    public static final String SUMMER_METHOD = "S_m";
-    public static final String SUMMER_METHOD_DESC = "S_md";
-    public static final String SUMMER_AUTH = "S_a";
-    public static final String SUMMER_SOURCE = "S_s";// 调用方来源标识,等同与application
-    public static final String SUMMER_MODULE = "S_mdu";
-    public static final String SUMMER_PROXY_PROTOCOL = "S_pp";
-    public static final String SUMMER_INFO_SIGN = "S_is";
-    public static final String SUMMER_ERROR = "S_e";
-    public static final String SUMMER_PROCESS_TIME = "S_pt";
+    // ------------------ jaws protocol constants -----------------
+    public static final String JAWS_GROUP = "S_g";
+    public static final String JAWS_VERSION = "S_v";
+    public static final String JAWS_PATH = "S_p";
+    public static final String JAWS_METHOD = "S_m";
+    public static final String JAWS_METHOD_DESC = "S_md";
+    public static final String JAWS_AUTH = "S_a";
+    public static final String JAWS_SOURCE = "S_s";// 调用方来源标识,等同与application
+    public static final String JAWS_MODULE = "S_mdu";
+    public static final String JAWS_PROXY_PROTOCOL = "S_pp";
+    public static final String JAWS_INFO_SIGN = "S_is";
+    public static final String JAWS_ERROR = "S_e";
+    public static final String JAWS_PROCESS_TIME = "S_pt";
 
     public static final String CONTENT_LENGTH = "Content-Length";
 
     public static final String PROTOCOL_INJVM = "injvm";
-    public static final String PROTOCOL_SUMMER = "summer";
+    public static final String PROTOCOL_JAWS = "jaws";
 
     public static final String METHOD_CONFIG_PREFIX = "methodconfig.";
 

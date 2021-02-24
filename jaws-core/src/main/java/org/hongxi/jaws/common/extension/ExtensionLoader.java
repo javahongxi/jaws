@@ -240,7 +240,7 @@ public class ExtensionLoader<T> {
 //        for (int i = Character.charCount(cp); i < line.length(); i += Character.charCount(cp)) {
 //            cp = line.codePointAt(i);
 //            if (!Character.isJavaIdentifierStart(cp) && cp != '.') {
-//                throw new SummerFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
+//                throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
 //            }
 //        }
 

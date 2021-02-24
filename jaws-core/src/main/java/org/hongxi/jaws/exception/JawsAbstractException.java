@@ -75,7 +75,7 @@ public abstract class JawsAbstractException extends RuntimeException {
         return jawsErrorMsg != null ? jawsErrorMsg.getErrorCode() : 0;
     }
 
-    public JawsErrorMsg getSummerErrorMsg() {
+    public JawsErrorMsg getJawsErrorMsg() {
         return jawsErrorMsg;
     }
 }

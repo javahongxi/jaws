@@ -24,7 +24,7 @@ import java.util.Map;
 /**
  * Created by shenhongxi on 2020/7/25.
  */
-@SpiMeta(name = "summer")
+@SpiMeta(name = "jaws")
 public class JawsCodec extends AbstractCodec {
 
     public static final short MAGIC = (short) 0xF0F0;
@@ -44,7 +44,7 @@ public class JawsCodec extends AbstractCodec {
                 return encodeResponse(channel, (Response) message);
             }
         } catch (Exception e) {
-            if (ExceptionUtils.isSummerException(e)) {
+            if (ExceptionUtils.isJawsException(e)) {
                 throw (RuntimeException) e;
             } else {
                 throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response), e,
@@ -118,7 +118,7 @@ public class JawsCodec extends AbstractCodec {
                     " error: class not found", e,
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         } catch (Exception e) {
-            if (ExceptionUtils.isSummerException(e)) {
+            if (ExceptionUtils.isJawsException(e)) {
                 throw (RuntimeException) e;
             } else {
                 throw new JawsFrameworkException("decode error: isResponse=" + isResponse,

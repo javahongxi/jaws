@@ -23,7 +23,7 @@ public enum URLParamType {
 
     minClientConnections("minClientConnections", 2),
 
-    protocol("protocol", JawsConstants.PROTOCOL_SUMMER),
+    protocol("protocol", JawsConstants.PROTOCOL_JAWS),
     path("path", ""),
     host("host", ""),
     port("port", 0),
@@ -35,13 +35,13 @@ public enum URLParamType {
     asyncInitConnection("asyncInitConnection", false),
     fusingThreshold("fusingThreshold", 10),
 
-    heartbeatFactory("heartbeatFactory", "summer"),
+    heartbeatFactory("heartbeatFactory", "jaws"),
 
     /************************** SPI start ******************************/
 
     serialization("serialization", "hessian2"),
 
-    codec("codec", "summer"),
+    codec("codec", "jaws"),
 
     /************************** SPI end ******************************/
 
