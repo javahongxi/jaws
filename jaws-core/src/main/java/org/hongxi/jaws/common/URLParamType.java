@@ -47,6 +47,7 @@ public enum URLParamType {
 
     group("group", "default_rpc"),
 
+    refreshTimestamp("refreshTimestamp", 0),
     nodeType("nodeType", JawsConstants.NODE_TYPE_SERVICE),
 
     gzip("gzip", false), // 是否开启gzip压缩

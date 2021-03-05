@@ -1,6 +1,7 @@
 package org.hongxi.jaws.common;
 
 import java.io.File;
+import java.util.regex.Pattern;
 
 /**
  * Created by shenhongxi on 2020/6/26.
@@ -12,6 +13,8 @@ public class JawsConstants {
     public static final String DEFAULT_CHARSET = "UTF-8";
     public static final String PROTOCOL_SEPARATOR = "://";
     public static final String PATH_SEPARATOR = File.separator;
+
+    public static final Pattern COMMA_SPLIT_PATTERN = Pattern.compile("\\s*[,]+\\s*");
 
     public static final String NODE_TYPE_SERVICE = "service";
 
@@ -30,6 +33,7 @@ public class JawsConstants {
 
     public static final String ASYNC_SUFFIX = "Async";// suffix for async call.
 
+    public static final int DEFAULT_INT_VALUE = 0;
     public static final String DEFAULT_VERSION = "1.0";
 
     // netty client max concurrent request TODO 2W is suitable?
@@ -62,5 +66,12 @@ public class JawsConstants {
     public static final byte FLAG_RESPONSE_EXCEPTION = 0x05;
     public static final byte FLAG_RESPONSE_ATTACHMENT = 0x07;
     public static final byte FLAG_OTHER = (byte) 0xFF;
+
+    public static final String REGISTRY_PROTOCOL_LOCAL = "local";
+
+    public static final Pattern REGISTRY_SPLIT_PATTERN = Pattern.compile("\\s*[|;]+\\s*");
+    public static final Pattern QUERY_PARAM_PATTERN = Pattern.compile("\\s*[&]+\\s*");
+    public static final String EQUAL_SIGN_SEPERATOR = "=";
+    public static final Pattern EQUAL_SIGN_PATTERN = Pattern.compile("\\s*[=]\\s*");
 
 }
