@@ -36,7 +36,7 @@ public class UrlUtils {
         String refer = StringTools.urlDecode(rawRefer);
         String[] kvs = JawsConstants.QUERY_PARAM_PATTERN.split(refer);
         for (String kv : kvs) {
-            if (kv != null && kv.contains(JawsConstants.EQUAL_SIGN_SEPERATOR)) {
+            if (kv != null && kv.contains(JawsConstants.EQUAL_SIGN_SEPARATOR)) {
                 String[] kvArr = JawsConstants.EQUAL_SIGN_PATTERN.split(kv);
                 if (kvArr.length == 2) {
                     map.put(kvArr[0].trim(), kvArr[1].trim());

@@ -14,9 +14,12 @@ public class JawsConstants {
     public static final String PROTOCOL_SEPARATOR = "://";
     public static final String PATH_SEPARATOR = File.separator;
 
+    public static final String ACCESS_LOG_SEPARATOR = "|";
+    public static final String COMMA_SEPARATOR = ",";
     public static final Pattern COMMA_SPLIT_PATTERN = Pattern.compile("\\s*[,]+\\s*");
 
     public static final String NODE_TYPE_SERVICE = "service";
+    public static final String NODE_TYPE_REFERER = "referer";
 
     /**
      * netty channel constants start
@@ -33,6 +36,7 @@ public class JawsConstants {
 
     public static final String ASYNC_SUFFIX = "Async";// suffix for async call.
 
+    public static final String DEFAULT_VALUE = "default";
     public static final int DEFAULT_INT_VALUE = 0;
     public static final String DEFAULT_VERSION = "1.0";
 
@@ -71,7 +75,7 @@ public class JawsConstants {
 
     public static final Pattern REGISTRY_SPLIT_PATTERN = Pattern.compile("\\s*[|;]+\\s*");
     public static final Pattern QUERY_PARAM_PATTERN = Pattern.compile("\\s*[&]+\\s*");
-    public static final String EQUAL_SIGN_SEPERATOR = "=";
+    public static final String EQUAL_SIGN_SEPARATOR = "=";
     public static final Pattern EQUAL_SIGN_PATTERN = Pattern.compile("\\s*[=]\\s*");
 
 }

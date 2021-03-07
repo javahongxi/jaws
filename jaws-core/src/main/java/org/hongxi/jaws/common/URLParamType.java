@@ -27,6 +27,7 @@ public enum URLParamType {
     path("path", ""),
     host("host", ""),
     port("port", 0),
+    filter("filter", ""),
 
     /**
      * multi referer share the same channel
@@ -46,6 +47,7 @@ public enum URLParamType {
     /************************** SPI end ******************************/
 
     group("group", "default_rpc"),
+    accessLog("accessLog", false),
 
     refreshTimestamp("refreshTimestamp", 0),
     nodeType("nodeType", JawsConstants.NODE_TYPE_SERVICE),
@@ -55,6 +57,11 @@ public enum URLParamType {
 
     application("application", JawsConstants.FRAMEWORK_NAME),
     module("module", JawsConstants.FRAMEWORK_NAME),
+
+    register("register", true),
+    subscribe("subscribe", true),
+    throwException("throwException", "true"),
+    transExceptionStack("transExceptionStack", true),
 
     workerQueueSize("workerQueueSize", 0);
 

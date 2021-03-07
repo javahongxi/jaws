@@ -31,6 +31,7 @@ import java.util.*;
 
 public class AbstractInterfaceConfig extends AbstractConfig {
 
+    private static final long serialVersionUID = 4841644071068578653L;
     // 暴露、使用的协议，暴露可以使用多种协议，但client只能用一种协议进行访问，原因是便于client的管理
     protected List<ProtocolConfig> protocols;
 
@@ -392,8 +393,8 @@ public class AbstractInterfaceConfig extends AbstractConfig {
             for (MethodConfig methodBean : methods) {
                 String methodName = methodBean.getName();
                 if (methodName == null || methodName.length() == 0) {
-                    throw new IllegalStateException("<motan:method> name attribute is required! Please check: <motan:service interface=\""
-                            + interfaceClass.getName() + "\" ... ><motan:method name=\"\" ... /></<motan:referer>");
+                    throw new IllegalStateException("<jaws:method> name attribute is required! Please check: <jaws:service interface=\""
+                            + interfaceClass.getName() + "\" ... ><jaws:method name=\"\" ... /></<jaws:referer>");
                 }
                 java.lang.reflect.Method hasMethod = null;
                 for (java.lang.reflect.Method method : interfaceClass.getMethods()) {

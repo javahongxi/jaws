@@ -131,7 +131,7 @@ public class AbstractConfig implements Serializable {
     public String toString() {
         try {
             StringBuilder buf = new StringBuilder();
-            buf.append("<motan:");
+            buf.append("<jaws:");
             buf.append(getTagName(getClass()));
             Method[] methods = getClass().getMethods();
             for (Method method : methods) {

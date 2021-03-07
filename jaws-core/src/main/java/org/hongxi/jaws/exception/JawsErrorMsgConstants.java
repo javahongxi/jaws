@@ -32,6 +32,7 @@ public class JawsErrorMsgConstants {
     public static final int FRAMEWORK_DECODE_ERROR_CODE = 20003;
     public static final int FRAMEWORK_INIT_ERROR_CODE = 20004;
     public static final int FRAMEWORK_EXPORT_ERROR_CODE = 20005;
+    public static final int FRAMEWORK_REGISTER_ERROR_CODE = 20008;
     // biz error
     public static final int BIZ_DEFAULT_ERROR_CODE = 30001;
 
