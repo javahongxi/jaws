@@ -164,11 +164,11 @@ public class JawsFrameworkUtils {
      * <p>
      * <pre>
      * 		比如：
-     * 			package com.weibo.api.motan;
+     * 			package org.hongxi.jaws;
      *
      * 		 	interface A { public hello(int age); }
      *
-     * 			那么return "com.weibo.api.motan.A.hell(int)"
+     * 			那么return "org.hongxi.jaws.A.hell(int)"
      * </pre>
      *
      * @param request
