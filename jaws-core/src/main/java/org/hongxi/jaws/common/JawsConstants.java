@@ -44,21 +44,24 @@ public class JawsConstants {
     public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
 
     // ------------------ jaws protocol constants -----------------
-    public static final String JAWS_GROUP = "S_g";
-    public static final String JAWS_VERSION = "S_v";
-    public static final String JAWS_PATH = "S_p";
-    public static final String JAWS_METHOD = "S_m";
-    public static final String JAWS_METHOD_DESC = "S_md";
-    public static final String JAWS_AUTH = "S_a";
-    public static final String JAWS_SOURCE = "S_s";// 调用方来源标识,等同与application
-    public static final String JAWS_MODULE = "S_mdu";
-    public static final String JAWS_PROXY_PROTOCOL = "S_pp";
-    public static final String JAWS_INFO_SIGN = "S_is";
-    public static final String JAWS_ERROR = "S_e";
-    public static final String JAWS_PROCESS_TIME = "S_pt";
+    public static final String JAWS_GROUP = "J_g";
+    public static final String JAWS_VERSION = "J_v";
+    public static final String JAWS_PATH = "J_p";
+    public static final String JAWS_METHOD = "J_m";
+    public static final String JAWS_METHOD_DESC = "J_md";
+    public static final String JAWS_AUTH = "J_a";
+    public static final String JAWS_SOURCE = "J_s";// 调用方来源标识,等同与application
+    public static final String JAWS_MODULE = "J_mdu";
+    public static final String JAWS_PROXY_PROTOCOL = "J_pp";
+    public static final String JAWS_INFO_SIGN = "J_is";
+    public static final String JAWS_ERROR = "J_e";
+    public static final String JAWS_PROCESS_TIME = "J_pt";
 
     public static final String CONTENT_LENGTH = "Content-Length";
 
+    public static final String REGISTRY_PROTOCOL_LOCAL = "local";
+    public static final String REGISTRY_PROTOCOL_DIRECT = "direct";
+    public static final String REGISTRY_PROTOCOL_ZOOKEEPER = "zookeeper";
     public static final String PROTOCOL_INJVM = "injvm";
     public static final String PROTOCOL_JAWS = "jaws";
 
@@ -70,8 +73,6 @@ public class JawsConstants {
     public static final byte FLAG_RESPONSE_EXCEPTION = 0x05;
     public static final byte FLAG_RESPONSE_ATTACHMENT = 0x07;
     public static final byte FLAG_OTHER = (byte) 0xFF;
-
-    public static final String REGISTRY_PROTOCOL_LOCAL = "local";
 
     public static final Pattern REGISTRY_SPLIT_PATTERN = Pattern.compile("\\s*[|;]+\\s*");
     public static final Pattern QUERY_PARAM_PATTERN = Pattern.compile("\\s*[&]+\\s*");

@@ -185,6 +185,10 @@ public class URL {
         return port;
     }
 
+    public void setPort(int port) {
+        this.port = port;
+    }
+
     public String getPath() {
         return path;
     }

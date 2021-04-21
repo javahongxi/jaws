@@ -90,7 +90,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
 
     public synchronized void export() {
         if (exported.get()) {
-            logger.warn("{} has already been expoted, so ignore the export request!", interfaceClass.getName());
+            logger.warn("{} has already been exported, so ignore the export request!", interfaceClass.getName());
             return;
         }
 
@@ -105,7 +105,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
         for (ProtocolConfig protocolConfig : protocols) {
             Integer port = protocolPorts.get(protocolConfig.getId());
             if (port == null) {
-                throw new JawsServiceException(String.format("Unknow port in service:%s, protocol:%s",
+                throw new JawsServiceException(String.format("Unknown port in service:%s, protocol:%s",
                         interfaceClass.getName(),
                         protocolConfig.getId()));
             }

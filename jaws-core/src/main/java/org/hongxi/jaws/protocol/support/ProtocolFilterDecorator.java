@@ -3,6 +3,7 @@ package org.hongxi.jaws.protocol.support;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.ActivationComparator;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
@@ -40,6 +41,11 @@ public class ProtocolFilterDecorator implements Protocol {
     @Override
     public <T> Exporter<T> export(Provider<T> provider, URL url) {
         return protocol.export(decorateWithFilter(provider, url), url);
+    }
+
+    @Override
+    public <T> Referer<T> refer(Class<T> clz, URL url, URL serviceUrl) {
+        return decorateWithFilter(protocol.refer(clz, url, serviceUrl), url);
     }
 
     @Override
@@ -107,6 +113,70 @@ public class ProtocolFilterDecorator implements Protocol {
             };
         }
         return lastProvider;
+    }
+
+    private <T> Referer<T> decorateWithFilter(Referer<T> referer, URL url) {
+        List<Filter> filters = getFilters(url, JawsConstants.NODE_TYPE_REFERER);
+        Referer<T> lastRef = referer;
+        for (Filter filter : filters) {
+            final Filter f = filter;
+            if (f instanceof InitializableFilter) {
+                ((InitializableFilter) f).init(lastRef);
+            }
+            final Referer<T> lf = lastRef;
+            lastRef = new Referer<T>() {
+                @Override
+                public Response call(Request request) {
+                    Activation activation = f.getClass().getAnnotation(Activation.class);
+                    if (activation != null && !activation.retry() && request.getRetries() != 0) {
+                        return lf.call(request);
+                    }
+                    return f.filter(lf, request);
+                }
+
+                @Override
+                public String desc() {
+                    return lf.desc();
+                }
+
+                @Override
+                public void destroy() {
+                    lf.destroy();
+                }
+
+                @Override
+                public Class<T> getInterface() {
+                    return lf.getInterface();
+                }
+
+                @Override
+                public URL getUrl() {
+                    return lf.getUrl();
+                }
+
+                @Override
+                public void init() {
+                    lf.init();
+                }
+
+                @Override
+                public boolean isAvailable() {
+                    return lf.isAvailable();
+                }
+
+                @Override
+                public int activeRefererCount() {
+                    return lf.activeRefererCount();
+                }
+
+
+                @Override
+                public URL getServiceUrl() {
+                    return lf.getServiceUrl();
+                }
+            };
+        }
+        return lastRef;
     }
 
     /**

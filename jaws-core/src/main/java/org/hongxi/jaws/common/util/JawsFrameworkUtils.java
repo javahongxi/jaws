@@ -12,6 +12,58 @@ import org.hongxi.jaws.rpc.URL;
  */
 public class JawsFrameworkUtils {
 
+    /**
+     * 目前根据 group/interface/version 来唯一标示一个服务
+     *
+     * @param request
+     * @return
+     */
+
+    public static String getServiceKey(Request request) {
+        String version = getVersionFromRequest(request);
+        String group = getGroupFromRequest(request);
+
+        return getServiceKey(group, request.getInterfaceName(), version);
+    }
+
+    /**
+     * 目前根据 group/interface/version 来唯一标示一个服务
+     *
+     * @param url
+     * @return
+     */
+    public static String getServiceKey(URL url) {
+        return getServiceKey(url.getGroup(), url.getPath(), url.getVersion());
+    }
+
+    /**
+     * serviceKey: group/interface/version
+     *
+     * @param group
+     * @param interfaceName
+     * @param version
+     * @return
+     */
+    private static String getServiceKey(String group, String interfaceName, String version) {
+        return group + JawsConstants.PATH_SEPARATOR + interfaceName + JawsConstants.PATH_SEPARATOR + version;
+    }
+
+    public static String getGroupFromRequest(Request request) {
+        return getValueFromRequest(request, URLParamType.group.name(), URLParamType.group.value());
+    }
+
+    public static String getVersionFromRequest(Request request) {
+        return getValueFromRequest(request, URLParamType.version.name(), URLParamType.version.value());
+    }
+
+    public static String getValueFromRequest(Request request, String key, String defaultValue) {
+        String value = defaultValue;
+        if (request.getAttachments() != null && request.getAttachments().containsKey(key)) {
+            value = request.getAttachments().get(key);
+        }
+        return value;
+    }
+
     public static String removeAsyncSuffix(String path) {
         if (path != null && path.endsWith(JawsConstants.ASYNC_SUFFIX)) {
             return path.substring(0, path.length() - JawsConstants.ASYNC_SUFFIX.length());

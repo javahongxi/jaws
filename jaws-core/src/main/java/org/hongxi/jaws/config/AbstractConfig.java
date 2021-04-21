@@ -40,7 +40,9 @@ public class AbstractConfig implements Serializable {
      */
     protected static void collectConfigParams(Map<String, String> parameters, AbstractConfig... configs) {
         for (AbstractConfig config : configs) {
-            config.appendConfigParams(parameters);
+            if (config != null) {
+                config.appendConfigParams(parameters);
+            }
         }
     }
 

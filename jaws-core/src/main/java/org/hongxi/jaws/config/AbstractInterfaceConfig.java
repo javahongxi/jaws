@@ -12,6 +12,7 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.registry.RegistryService;
 import org.hongxi.jaws.rpc.URL;
 
+import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.util.*;
 
@@ -396,8 +397,8 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                     throw new IllegalStateException("<jaws:method> name attribute is required! Please check: <jaws:service interface=\""
                             + interfaceClass.getName() + "\" ... ><jaws:method name=\"\" ... /></<jaws:referer>");
                 }
-                java.lang.reflect.Method hasMethod = null;
-                for (java.lang.reflect.Method method : interfaceClass.getMethods()) {
+                Method hasMethod = null;
+                for (Method method : interfaceClass.getMethods()) {
                     if (method.getName().equals(methodName)) {
                         if (methodBean.getArgumentTypes() != null
                                 && ReflectUtils.getMethodParamDesc(method).equals(methodBean.getArgumentTypes())) {

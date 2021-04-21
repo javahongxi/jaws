@@ -43,6 +43,7 @@ public enum URLParamType {
     serialization("serialization", "hessian2"),
 
     codec("codec", "jaws"),
+    endpointFactory("endpointFactory", "jaws"),
 
     /************************** SPI end ******************************/
 
@@ -58,10 +59,15 @@ public enum URLParamType {
     application("application", JawsConstants.FRAMEWORK_NAME),
     module("module", JawsConstants.FRAMEWORK_NAME),
 
+    retries("retries", 0),
+
     register("register", true),
     subscribe("subscribe", true),
     throwException("throwException", "true"),
     transExceptionStack("transExceptionStack", true),
+
+    // 消息处理分发策略
+    providerProtectedStrategy("providerProtectedStrategy", "jaws"),
 
     workerQueueSize("workerQueueSize", 0);
 
