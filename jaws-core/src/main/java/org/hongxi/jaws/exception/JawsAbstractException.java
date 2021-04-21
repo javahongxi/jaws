@@ -42,6 +42,16 @@ public abstract class JawsAbstractException extends RuntimeException {
         this.errorMsg = message;
     }
 
+    public JawsAbstractException(String message, JawsErrorMsg jawsErrorMsg, boolean writableStackTrace) {
+        this(message, null, jawsErrorMsg, writableStackTrace);
+    }
+
+    public JawsAbstractException(String message, Throwable cause, JawsErrorMsg jawsErrorMsg, boolean writableStackTrace) {
+        super(message, cause, false, writableStackTrace);
+        this.jawsErrorMsg = jawsErrorMsg;
+        this.errorMsg = message;
+    }
+
     public JawsAbstractException(Throwable cause) {
         super(cause);
     }

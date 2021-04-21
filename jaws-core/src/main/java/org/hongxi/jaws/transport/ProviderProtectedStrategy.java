@@ -8,6 +8,9 @@ import org.hongxi.jaws.rpc.Response;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Created by shenhongxi on 2021/4/21.
+ */
 @Spi(scope = Scope.PROTOTYPE)
 public interface ProviderProtectedStrategy {
 

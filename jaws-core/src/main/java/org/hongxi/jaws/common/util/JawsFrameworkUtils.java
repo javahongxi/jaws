@@ -157,7 +157,26 @@ public class JawsFrameworkUtils {
 
         return StringUtils.equals(source.getParameter(URLParamType.heartbeatFactory.getName()),
                 target.getParameter(URLParamType.heartbeatFactory.getName()));
+    }
 
+    /**
+     * 根据Request得到 interface.method(paramDesc) 的 desc
+     * <p>
+     * <pre>
+     * 		比如：
+     * 			package com.weibo.api.motan;
+     *
+     * 		 	interface A { public hello(int age); }
+     *
+     * 			那么return "com.weibo.api.motan.A.hell(int)"
+     * </pre>
+     *
+     * @param request
+     * @return
+     */
+    public static String getFullMethodString(Request request) {
+        return request.getInterfaceName() + "." + request.getMethodName() + "("
+                + request.getParametersDesc() + ")";
     }
 
     /**

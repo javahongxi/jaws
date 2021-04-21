@@ -22,6 +22,10 @@ public class JawsServiceException extends JawsAbstractException {
         super(message, jawsErrorMsg);
     }
 
+    public JawsServiceException(String message, JawsErrorMsg jawsErrorMsg, boolean writableStackTrace) {
+        super(message, jawsErrorMsg, writableStackTrace);
+    }
+
     public JawsServiceException(String message, Throwable cause) {
         super(message, cause, JawsErrorMsgConstants.SERVICE_DEFAULT_ERROR);
     }
