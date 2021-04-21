@@ -43,7 +43,14 @@ public class ServiceConfigTest extends BaseTestCase {
         assertTrue(serviceConfig.getExported().get());
         assertEquals(serviceConfig.getExporters().size(), 1);
         assertEquals(serviceConfig.getRegistryUrls().size(), 1);
+    }
 
+    @Test
+    public void testUnexport() {
+        testExport();
+        serviceConfig.unexport();
+        assertFalse(serviceConfig.getExported().get());
+        assertEquals(serviceConfig.getExporters().size(), 0);
     }
 
     @Test
@@ -60,7 +67,7 @@ public class ServiceConfigTest extends BaseTestCase {
         // export null
         try {
             serviceConfig.export();
-            assertTrue(false);
+            fail();
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("export should not empty"));
         }
@@ -70,7 +77,7 @@ public class ServiceConfigTest extends BaseTestCase {
         serviceConfig.setExport("notExist" + ":" + 0);
         try {
             serviceConfig.export();
-            assertTrue(false);
+            fail();
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("Protocol is null"));
         }
@@ -87,7 +94,7 @@ public class ServiceConfigTest extends BaseTestCase {
         newServiceConfig.setExport(JawsConstants.PROTOCOL_INJVM + ":" + 0);
         try {
             newServiceConfig.export();
-            assertTrue(false);
+            fail();
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("for same service"));
         }
@@ -130,7 +137,6 @@ public class ServiceConfigTest extends BaseTestCase {
                 2,
                 serviceUrl.getMethodParameter("worldSleep", "java.lang.String,int", URLParamType.retries.getName(),
                         URLParamType.retries.intValue()).intValue());
-
     }
 
     @Test
@@ -139,7 +145,6 @@ public class ServiceConfigTest extends BaseTestCase {
         serviceConfig.setExport(JawsConstants.PROTOCOL_INJVM + ":" + 0 + "," + JawsConstants.PROTOCOL_JAWS + ":8002");
         serviceConfig.export();
         assertEquals(serviceConfig.getExporters().size(), 2);
-
     }
 
     @Test
@@ -147,13 +152,5 @@ public class ServiceConfigTest extends BaseTestCase {
         serviceConfig.setRegistries(getMultiRegister(JawsConstants.REGISTRY_PROTOCOL_LOCAL, JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
         serviceConfig.loadRegistryUrls();
         assertEquals(2, serviceConfig.getRegistryUrls().size());
-    }
-
-    @Test
-    public void testUnexport() {
-        testExport();
-        serviceConfig.unexport();
-        assertFalse(serviceConfig.getExported().get());
-        assertEquals(serviceConfig.getExporters().size(), 0);
     }
 }

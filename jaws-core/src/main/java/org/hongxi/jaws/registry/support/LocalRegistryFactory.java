@@ -6,6 +6,9 @@ import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.rpc.URL;
 
+/**
+ * Created by shenhongxi on 2021/4/21.
+ */
 @SpiMeta(name = "local")
 public class LocalRegistryFactory extends AbstractRegistryFactory {
 

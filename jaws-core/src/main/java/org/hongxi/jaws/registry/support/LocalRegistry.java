@@ -16,10 +16,13 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+/**
+ * Created by shenhongxi on 2021/4/21.
+ */
 @SpiMeta(name = "local")
-public class LocalRegistryService extends AbstractRegistry {
+public class LocalRegistry extends AbstractRegistry {
     
-    private static final Logger log = LoggerFactory.getLogger(LocalRegistryService.class);
+    private static final Logger log = LoggerFactory.getLogger(LocalRegistry.class);
 
     /** Map<interface/nodeType, List<URL>>, List 中的url用identity/id来区分唯一性 */
     private ConcurrentMap<String, List<URL>> registeredServices = new ConcurrentHashMap<>();
@@ -28,12 +31,12 @@ public class LocalRegistryService extends AbstractRegistry {
             new ConcurrentHashMap<>();
     private URL registryUrl;
 
-    public LocalRegistryService() {
+    public LocalRegistry() {
         this(new URL(JawsConstants.REGISTRY_PROTOCOL_LOCAL, NetUtils.LOCALHOST, JawsConstants.DEFAULT_INT_VALUE,
                 RegistryService.class.getName()));
     }
 
-    public LocalRegistryService(URL url) {
+    public LocalRegistry(URL url) {
         super(url);
         this.registryUrl = url;
     }
@@ -61,7 +64,7 @@ public class LocalRegistryService extends AbstractRegistry {
             listener.notify(getUrl(), urls);
         }
 
-        log.info("LocalRegistryService subscribe: url={}", url);
+        log.info("LocalRegistry subscribe: url={}", url);
     }
 
     @Override
@@ -72,7 +75,7 @@ public class LocalRegistryService extends AbstractRegistry {
             urlListeners.remove(url);
         }
 
-        log.info("LocalRegistryService unsubscribe: url={}", url);
+        log.info("LocalRegistry unsubscribe: url={}", url);
     }
 
     @Override
@@ -102,7 +105,7 @@ public class LocalRegistryService extends AbstractRegistry {
             }
             add(url, urls);
 
-            log.info("LocalRegistryService register: url={}", url);
+            log.info("LocalRegistry register: url={}", url);
 
             notifyListeners(url);
         }
@@ -119,7 +122,7 @@ public class LocalRegistryService extends AbstractRegistry {
 
             remove(url, urls);
 
-            log.info("LocalRegistryService unregister: url={}", url);
+            log.info("LocalRegistry unregister: url={}", url);
             // 在变更后立即进行通知
             notifyListeners(url);
         }

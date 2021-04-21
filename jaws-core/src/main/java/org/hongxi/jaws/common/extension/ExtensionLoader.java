@@ -290,8 +290,8 @@ public class ExtensionLoader<T> {
 
     private void checkConstructorPublic(Class<T> clazz) {
         Constructor<?>[] constructors = clazz.getConstructors();
-        if (constructors == null || constructors.length == 0) {
-            throw new JawsFrameworkException(clazz.getName() + "has no public no-args constructor");
+        if (constructors.length == 0) {
+            throw new JawsFrameworkException(clazz.getName() + " has no public no-args constructor");
         }
 
         for (Constructor<?> constructor : constructors) {
@@ -299,7 +299,7 @@ public class ExtensionLoader<T> {
                 return;
             }
         }
-        throw new JawsFrameworkException(clazz.getName() + "has no public no-args constructor");
+        throw new JawsFrameworkException(clazz.getName() + " has no public no-args constructor");
     }
 
     private void checkClassInherit(Class<T> clazz) {
