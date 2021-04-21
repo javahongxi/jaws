@@ -205,7 +205,7 @@ public class URL {
         return getParameter(URLParamType.group.getName(), URLParamType.group.value());
     }
 
-    public Object getUri() {
+    public String getUri() {
         return protocol + JawsConstants.PROTOCOL_SEPARATOR + host + ":" + port
                 + File.separator + path;
     }
