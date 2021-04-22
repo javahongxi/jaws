@@ -27,7 +27,7 @@ public class ConfigUtils {
         if (StringUtils.isBlank(export)) {
             return Collections.emptyMap();
         }
-        Map<String, Integer> pps = new HashMap<String, Integer>();
+        Map<String, Integer> pps = new HashMap<>();
         String[] protocolAndPorts = JawsConstants.COMMA_SPLIT_PATTERN.split(export);
         for (String pp : protocolAndPorts) {
             if (StringUtils.isBlank(pp)) {
