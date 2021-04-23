@@ -2,17 +2,16 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>jaws-parent</artifactId>
     <groupId>org.hongxi</groupId>
-    <version>0.0.2</version>
+    <artifactId>jaws-parent</artifactId>
+    <version>0.0.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
         <module>jaws-core</module>
         <module>jaws-transport-netty</module>
         <module>jaws-registry-zookeeper</module>
-        <module>jaws-spring</module>
-        <module>all</module>
+        <module>jaws-spring-boot-starter</module>
     </modules>
 
     <properties>
@@ -21,8 +20,8 @@
         <mvn.compiler.target>1.8</mvn.compiler.target>
 
         <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
-        <maven-resources-plugin.version>3.1.0</maven-resources-plugin.version>
-        <maven-source-plugin.version>3.1.0</maven-source-plugin.version>
+        <maven-resources-plugin.version>3.2.0</maven-resources-plugin.version>
+        <maven-source-plugin.version>3.2.1</maven-source-plugin.version>
 
         <commons-lang3.version>3.10</commons-lang3.version>
         <commons-pool.version>1.6</commons-pool.version>
@@ -158,10 +157,10 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
+                <version>${maven-resources-plugin.version}</version>
                 <configuration>
                     <encoding>${project.build.sourceEncoding}</encoding>
                 </configuration>
-                <version>${maven-resources-plugin.version}</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -3,7 +3,7 @@ package org.hongxi.jaws.transport.netty;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
-import org.hongxi.jaws.CodecUtils;
+import org.hongxi.jaws.codec.CodecUtils;
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;

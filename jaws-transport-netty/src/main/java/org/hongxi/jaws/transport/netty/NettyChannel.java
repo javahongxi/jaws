@@ -1,7 +1,7 @@
 package org.hongxi.jaws.transport.netty;
 
 import io.netty.channel.ChannelFuture;
-import org.hongxi.jaws.CodecUtils;
+import org.hongxi.jaws.codec.CodecUtils;
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;

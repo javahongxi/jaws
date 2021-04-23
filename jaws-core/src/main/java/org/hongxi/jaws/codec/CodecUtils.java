@@ -1,6 +1,5 @@
-package org.hongxi.jaws;
+package org.hongxi.jaws.codec;
 
-import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
