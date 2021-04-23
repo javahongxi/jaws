@@ -1,0 +1,6 @@
+org.hongxi.jaws.cluster.loadbalance.LocalFirstLoadBalance
+org.hongxi.jaws.cluster.loadbalance.ConfigurableWeightLoadBalance
+org.hongxi.jaws.cluster.loadbalance.ActiveWeightLoadBalance
+org.hongxi.jaws.cluster.loadbalance.ConsistentHashLoadBalance
+org.hongxi.jaws.cluster.loadbalance.RandomLoadBalance
+org.hongxi.jaws.cluster.loadbalance.RoundRobinLoadBalance

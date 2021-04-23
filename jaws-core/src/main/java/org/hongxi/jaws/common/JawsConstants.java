@@ -22,6 +22,11 @@ public class JawsConstants {
     public static final String NODE_TYPE_REFERER = "referer";
 
     /**
+     * 默认的consistent的hash的数量
+     */
+    public static final int DEFAULT_CONSISTENT_HASH_BASE_LOOP = 1000;
+
+    /**
      * netty channel constants start
      */
 
@@ -33,6 +38,8 @@ public class JawsConstants {
     public static final int NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS = 200;
 
     public static final int NETTY_TIMEOUT_TIMER_PERIOD = 100;
+
+    public static final int REFRESH_PERIOD = 60;
 
     public static final String ASYNC_SUFFIX = "Async";// suffix for async call.
 
@@ -64,6 +71,9 @@ public class JawsConstants {
     public static final String REGISTRY_PROTOCOL_ZOOKEEPER = "zookeeper";
     public static final String PROTOCOL_INJVM = "injvm";
     public static final String PROTOCOL_JAWS = "jaws";
+
+    public static final String PROXY_JDK = "jdk";
+    public static final String PROXY_COMMON = "common";
 
     public static final String METHOD_CONFIG_PREFIX = "methodconfig.";
 

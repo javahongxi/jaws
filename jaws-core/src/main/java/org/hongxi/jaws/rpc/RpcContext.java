@@ -63,6 +63,28 @@ public class RpcContext {
         return attributes;
     }
 
+    public void setRpcAttachment(String key, String value) {
+        attachments.put(key, value);
+    }
+
+    /**
+     * get attachments from rpccontext only. not from request or response
+     *
+     * @param key
+     * @return
+     */
+    public String getRpcAttachment(String key) {
+        return attachments.get(key);
+    }
+
+    public void removeRpcAttachment(String key) {
+        attachments.remove(key);
+    }
+
+    public Map<String, String> getRpcAttachments() {
+        return attachments;
+    }
+
     public Request getRequest() {
         return request;
     }

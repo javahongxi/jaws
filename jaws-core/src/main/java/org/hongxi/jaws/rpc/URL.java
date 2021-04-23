@@ -1,5 +1,6 @@
 package org.hongxi.jaws.rpc;
 
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
@@ -128,6 +129,13 @@ public class URL {
         parameters.putAll(params);
     }
 
+    public void addParameter(String name, String value) {
+        if (StringUtils.isEmpty(name) || StringUtils.isEmpty(value)) {
+            return;
+        }
+        parameters.put(name, value);
+    }
+
     public void removeParameter(String name) {
         if (name != null) {
             parameters.remove(name);
@@ -205,6 +213,14 @@ public class URL {
         return getParameter(URLParamType.group.getName(), URLParamType.group.value());
     }
 
+    public String getApplication() {
+        return getParameter(URLParamType.application.getName(), URLParamType.application.value());
+    }
+
+    public String getModule() {
+        return getParameter(URLParamType.module.getName(), URLParamType.module.value());
+    }
+
     public String getUri() {
         return protocol + JawsConstants.PROTOCOL_SEPARATOR + host + ":" + port
                 + File.separator + path;
@@ -220,6 +236,54 @@ public class URL {
                 "/" + getParameter(URLParamType.group.getName(), URLParamType.group.value()) + "/" +
                 getPath() + "/" + getParameter(URLParamType.version.getName(), URLParamType.version.value()) +
                 "/" + getParameter(URLParamType.nodeType.getName(), URLParamType.nodeType.value());
+    }
+
+    /**
+     * check if this url can serve the refUrl.
+     *
+     * @param refUrl
+     * @return
+     */
+    public boolean canServe(URL refUrl) {
+        if (refUrl == null || !this.getPath().equals(refUrl.getPath())) {
+            return false;
+        }
+
+        if (!ObjectUtils.equals(protocol, refUrl.protocol)) {
+            return false;
+        }
+
+        if (!StringUtils.equals(this.getParameter(URLParamType.nodeType.getName()), JawsConstants.NODE_TYPE_SERVICE)) {
+            return false;
+        }
+
+        String version = getParameter(URLParamType.version.getName(), URLParamType.version.value());
+        String refVersion = refUrl.getParameter(URLParamType.version.getName(), URLParamType.version.value());
+        if (!version.equals(refVersion)) {
+            return false;
+        }
+        // check serialize
+        String serialize = getParameter(URLParamType.serialization.getName(), URLParamType.serialization.value());
+        String refSerialize = refUrl.getParameter(URLParamType.serialization.getName(), URLParamType.serialization.value());
+        if (!serialize.equals(refSerialize)) {
+            return false;
+        }
+        // 由于需要提供跨group访问rpc的能力，所以不再验证group是否一致。
+        return true;
+    }
+
+    public String toFullStr() {
+        StringBuilder builder = new StringBuilder();
+        builder.append(getUri()).append("?");
+
+        for (Map.Entry<String, String> entry : parameters.entrySet()) {
+            String name = entry.getKey();
+            String value = entry.getValue();
+
+            builder.append(name).append("=").append(value).append("&");
+        }
+
+        return builder.toString();
     }
 
     public Integer getMethodParameter(String methodName, String paramDesc, String name, int defaultValue) {

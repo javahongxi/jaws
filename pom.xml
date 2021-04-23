@@ -32,6 +32,7 @@
         <hessian.version>4.0.38</hessian.version>
         <log4j2.version>2.13.2</log4j2.version>
         <netty.version>4.1.49.Final</netty.version>
+        <servlet.version>3.1.0</servlet.version>
         <slf4j.version>1.7.30</slf4j.version>
     </properties>
 
@@ -71,6 +72,13 @@
                 <groupId>io.netty</groupId>
                 <artifactId>netty-all</artifactId>
                 <version>${netty.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>javax.servlet</groupId>
+                <artifactId>javax.servlet-api</artifactId>
+                <version>${servlet.version}</version>
+                <scope>provided</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>

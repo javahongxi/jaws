@@ -1,0 +1,2 @@
+org.hongxi.jaws.proxy.support.CommonProxyFactory
+org.hongxi.jaws.proxy.support.JdkProxyFactory

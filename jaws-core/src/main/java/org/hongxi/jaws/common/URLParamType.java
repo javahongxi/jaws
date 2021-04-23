@@ -22,11 +22,17 @@ public enum URLParamType {
     maxServerConnections("maxServerConnections", 100000),
 
     minClientConnections("minClientConnections", 2),
+    maxClientConnections("maxClientConnections", 10),
+    maxConnectionsPerGroup("maxConnectionsPerGroup", 0),
 
+    cluster("cluster", JawsConstants.DEFAULT_VALUE),
+    loadbalance("loadbalance", "activeWeight"),
+    haStrategy("haStrategy", "failover"),
     protocol("protocol", JawsConstants.PROTOCOL_JAWS),
     path("path", ""),
     host("host", ""),
     port("port", 0),
+    proxy("proxy", JawsConstants.PROXY_JDK),
     filter("filter", ""),
 
     /**
@@ -48,6 +54,7 @@ public enum URLParamType {
     /************************** SPI end ******************************/
 
     group("group", "default_rpc"),
+    clientGroup("clientGroup", "default_rpc"),
     accessLog("accessLog", false),
 
     refreshTimestamp("refreshTimestamp", 0),
@@ -60,11 +67,22 @@ public enum URLParamType {
     module("module", JawsConstants.FRAMEWORK_NAME),
 
     retries("retries", 0),
+    mock("mock", "false"),
+    mean("mean", "2"),
+    p90("p90", "4"),
+    p99("p99", "10"),
+    p999("p999", "70"),
+    errorRate("errorRate", "0.01"),
+    check("check", "true"),
+    directUrl("directUrl", ""),
 
     register("register", true),
     subscribe("subscribe", true),
     throwException("throwException", "true"),
     transExceptionStack("transExceptionStack", true),
+
+    // 切换group时，各个group的权重比。默认无权重
+    weights("weights", ""),
 
     // 消息处理分发策略
     providerProtectedStrategy("providerProtectedStrategy", "jaws"),

@@ -1,5 +1,7 @@
 package org.hongxi.jaws.config.handler;
 
+import org.hongxi.jaws.cluster.Cluster;
+import org.hongxi.jaws.cluster.support.ClusterSupport;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -8,6 +10,7 @@ import org.hongxi.jaws.exception.JawsErrorMsg;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.protocol.support.ProtocolFilterDecorator;
+import org.hongxi.jaws.proxy.ProxyFactory;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
 import org.hongxi.jaws.rpc.*;
@@ -56,6 +59,19 @@ public class SimpleConfigHandler implements ConfigHandler {
                 logger.warn("Exception when unexport exporters: {}", exporters);
             }
         }
+    }
+
+    @Override
+    public <T> ClusterSupport<T> buildClusterSupport(Class<T> interfaceClass, List<URL> registryUrls, URL refUrl) {
+        ClusterSupport<T> clusterSupport = new ClusterSupport<>(interfaceClass, registryUrls, refUrl);
+        clusterSupport.init();
+        return clusterSupport;
+    }
+
+    @Override
+    public <T> T refer(Class<T> interfaceClass, List<Cluster<T>> clusters, String proxyType) {
+        ProxyFactory proxyFactory = ExtensionLoader.getExtensionLoader(ProxyFactory.class).getExtension(proxyType);
+        return proxyFactory.getProxy(interfaceClass, clusters);
     }
 
     private void register(List<URL> registryUrls, URL serviceUrl) {
