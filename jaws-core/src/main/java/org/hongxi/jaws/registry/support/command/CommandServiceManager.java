@@ -22,7 +22,6 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
 
     private static final Logger log = LoggerFactory.getLogger(CommandServiceManager.class);
 
-    public static final String MOTAN_COMMAND_SWITCHER = "feature.motanrpc.command.enable";
     private static Pattern IP_PATTERN = Pattern.compile("^!?[0-9.]*\\*?$");
 
     private URL refUrl;
