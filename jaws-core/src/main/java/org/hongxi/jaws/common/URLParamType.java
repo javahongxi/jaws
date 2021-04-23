@@ -1,5 +1,7 @@
 package org.hongxi.jaws.common;
 
+import org.hongxi.jaws.config.RegistryConfig;
+
 /**
  * Created by shenhongxi on 2020/6/27.
  */
@@ -25,6 +27,9 @@ public enum URLParamType {
     maxClientConnections("maxClientConnections", 10),
     maxConnectionsPerGroup("maxConnectionsPerGroup", 0),
 
+    registryRetryPeriod("registryRetryPeriod", 30 * JawsConstants.SECOND_MILLS),
+    /* 注册中心不可用节点剔除方式 */
+    excise("excise", RegistryConfig.Excise.excise_dynamic.getName()),
     cluster("cluster", JawsConstants.DEFAULT_VALUE),
     loadbalance("loadbalance", "activeWeight"),
     haStrategy("haStrategy", "failover"),
@@ -74,6 +79,7 @@ public enum URLParamType {
     p999("p999", "70"),
     errorRate("errorRate", "0.01"),
     check("check", "true"),
+    registrySessionTimeout("registrySessionTimeout", 1 * JawsConstants.MINUTE_MILLS),
     directUrl("directUrl", ""),
 
     register("register", true),

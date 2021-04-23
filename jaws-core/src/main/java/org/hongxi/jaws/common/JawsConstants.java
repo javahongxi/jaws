@@ -21,6 +21,9 @@ public class JawsConstants {
     public static final String NODE_TYPE_SERVICE = "service";
     public static final String NODE_TYPE_REFERER = "referer";
 
+    public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
+    public static final String ZOOKEEPER_REGISTRY_COMMAND = "/command";
+
     /**
      * 默认的consistent的hash的数量
      */
@@ -46,6 +49,9 @@ public class JawsConstants {
     public static final String DEFAULT_VALUE = "default";
     public static final int DEFAULT_INT_VALUE = 0;
     public static final String DEFAULT_VERSION = "1.0";
+
+    public static final int SECOND_MILLS = 1000;
+    public static final int MINUTE_MILLS = 60 * SECOND_MILLS;
 
     // netty client max concurrent request TODO 2W is suitable?
     public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
