@@ -8,7 +8,6 @@ import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.protocol.example.IWorld;
 import org.hongxi.jaws.protocol.example.MockWorld;
-import org.hongxi.jaws.rpc.URL;
 import org.jmock.integration.junit4.JUnit4Mockery;
 import org.jmock.lib.legacy.ClassImposteriser;
 import org.junit.After;
@@ -164,13 +163,5 @@ public class BaseTestCase {
             registries.add(registryConfig);
         }
         return registries;
-    }
-
-    static class MockServiceConfig<T> extends ServiceConfig<T> {
-        private static final long serialVersionUID = 7965700855475224943L;
-
-        protected boolean serviceExists(URL url) {
-            return false;
-        }
     }
 }

@@ -79,7 +79,7 @@ public class RefererConfigTest extends BaseTestCase {
         refererConfig.setProtocols(protocols);
         try {
             ref = refererConfig.getRef();
-            assertTrue(false);
+            fail();
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("protocol not set correctly"));
         }
@@ -88,7 +88,7 @@ public class RefererConfigTest extends BaseTestCase {
         protocols.add(mockProtocolConfig("notExist"));
         try {
             ref = refererConfig.getRef();
-            assertTrue(false);
+            fail();
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("Protocol is null"));
         }
@@ -100,7 +100,7 @@ public class RefererConfigTest extends BaseTestCase {
         refererConfig.setMethods(mConfig);
         try {
             ref = refererConfig.getRef();
-            assertTrue(false);
+            fail();
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("not found method"));
         }
