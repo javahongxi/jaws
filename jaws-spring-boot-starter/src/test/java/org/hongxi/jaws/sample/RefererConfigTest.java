@@ -46,6 +46,8 @@ public class RefererConfigTest extends BaseTestCase {
 
     @Test
     public void testInvocation() {
+        serviceConfig.export();
+
         HelloService world = refererConfig.getRef();
         String r = world.world("hello");
         assertEquals("hello", r);

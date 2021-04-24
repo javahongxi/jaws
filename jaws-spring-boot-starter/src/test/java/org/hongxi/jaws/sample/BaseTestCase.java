@@ -39,25 +39,11 @@ public class BaseTestCase {
     }
 
     protected static ServiceConfig<HelloService> createServiceConfig() {
-        ServiceConfig<HelloService> serviceConfig = new ServiceConfig<>();
-        serviceConfig.setRef(new HelloServiceImpl());
-        serviceConfig.setApplication(application);
-        serviceConfig.setModule(module);
-        serviceConfig.setCheck("true");
-        serviceConfig.setInterface(HelloService.class);
-        serviceConfig.setGroup(group);
-        serviceConfig.setShareChannel(true);
-
-        return serviceConfig;
+        return createServiceConfig(HelloService.class, new HelloServiceImpl());
     }
 
     protected static RefererConfig<HelloService> createRefererConfig() {
-        RefererConfig<HelloService> refererConfig = new RefererConfig<>();
-        refererConfig.setInterface(HelloService.class);
-        refererConfig.setApplication(application);
-        refererConfig.setModule(module);
-        refererConfig.setGroup(group);
-        return refererConfig;
+        return createRefererConfig(HelloService.class);
     }
 
     protected static <T> ServiceConfig<T> createServiceConfig(Class<T> clz, T impl) {
