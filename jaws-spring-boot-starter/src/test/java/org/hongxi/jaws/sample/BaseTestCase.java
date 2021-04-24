@@ -1,4 +1,4 @@
-package org.hongxi.jaws;
+package org.hongxi.jaws.sample;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.util.NetUtils;
@@ -6,10 +6,8 @@ import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
-import org.hongxi.jaws.protocol.example.IWorld;
-import org.hongxi.jaws.protocol.example.World;
-import org.jmock.integration.junit4.JUnit4Mockery;
-import org.jmock.lib.legacy.ClassImposteriser;
+import org.hongxi.jaws.sample.service.HelloService;
+import org.hongxi.jaws.sample.service.HelloServiceImpl;
 import org.junit.After;
 import org.junit.Before;
 
@@ -29,15 +27,8 @@ public class BaseTestCase {
 
     protected static String group = "test-2021";
 
-    public static JUnit4Mockery mockery = null;
-
     @Before
     public void setUp() throws Exception {
-        mockery = new JUnit4Mockery() {
-            {
-                setImposteriser(ClassImposteriser.INSTANCE);
-            }
-        };
         InetAddress address = NetUtils.getLocalAddress();
         if (address != null) {
             localAddress = address.getHostAddress();
@@ -45,24 +36,25 @@ public class BaseTestCase {
     }
 
     @After
-    public void tearDown() throws Exception {}
+    public void tearDown() throws Exception {
+    }
 
-    protected static ServiceConfig<IWorld> mockIWorldServiceConfig() {
-        ServiceConfig<IWorld> serviceConfig = new ServiceConfig<>();
-        serviceConfig.setRef(new World());
+    protected static ServiceConfig<HelloService> mockIWorldServiceConfig() {
+        ServiceConfig<HelloService> serviceConfig = new ServiceConfig<>();
+        serviceConfig.setRef(new HelloServiceImpl());
         serviceConfig.setApplication(application);
         serviceConfig.setModule(module);
         serviceConfig.setCheck("true");
-        serviceConfig.setInterface(IWorld.class);
+        serviceConfig.setInterface(HelloService.class);
         serviceConfig.setGroup(group);
         serviceConfig.setShareChannel(true);
 
         return serviceConfig;
     }
 
-    protected static RefererConfig<IWorld> mockIWorldRefererConfig() {
-        RefererConfig<IWorld> rc = new RefererConfig<IWorld>();
-        rc.setInterface(IWorld.class);
+    protected static RefererConfig<HelloService> mockIWorldRefererConfig() {
+        RefererConfig<HelloService> rc = new RefererConfig<>();
+        rc.setInterface(HelloService.class);
         rc.setApplication(application);
         rc.setModule(module);
         rc.setGroup(group);
@@ -70,7 +62,7 @@ public class BaseTestCase {
     }
 
     protected static <T> ServiceConfig<T> createServiceConfig(Class<T> clz, T impl) {
-        ServiceConfig<T> serviceConfig = new MockServiceConfig<T>();
+        ServiceConfig<T> serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(impl);
         serviceConfig.setApplication(application);
         serviceConfig.setModule(module);
@@ -85,7 +77,7 @@ public class BaseTestCase {
 
     protected static <T> ServiceConfig<T> createServiceConfig(Class<T> clz, T impl, String group, String version, ProtocolConfig protocl,
                                                               RegistryConfig registryConfig, String export) {
-        ServiceConfig<T> serviceConfig = new MockServiceConfig<T>();
+        ServiceConfig<T> serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(impl);
         serviceConfig.setApplication(application);
         serviceConfig.setModule(module);
@@ -101,7 +93,7 @@ public class BaseTestCase {
     }
 
     protected static <T> RefererConfig<T> createRefererConfig(Class<T> clz) {
-        RefererConfig<T> rc = new RefererConfig<T>();
+        RefererConfig<T> rc = new RefererConfig<>();
         rc.setInterface(clz);
         rc.setApplication(application);
         rc.setModule(module);
@@ -149,7 +141,7 @@ public class BaseTestCase {
     }
 
     protected static List<ProtocolConfig> getMultiProtocols(String... protocolNames) {
-        List<ProtocolConfig> protocols = new ArrayList<ProtocolConfig>();
+        List<ProtocolConfig> protocols = new ArrayList<>();
         for (String protocol : protocolNames) {
             protocols.add(mockProtocolConfig(protocol));
         }
@@ -157,7 +149,7 @@ public class BaseTestCase {
     }
 
     protected static List<RegistryConfig> getMultiRegister(String... registerName) {
-        List<RegistryConfig> registries = new ArrayList<RegistryConfig>();
+        List<RegistryConfig> registries = new ArrayList<>();
         for (String register : registerName) {
             RegistryConfig registryConfig = createLocalRegistryConfig(register, register);
             registries.add(registryConfig);

@@ -1,8 +1,8 @@
-package org.hongxi.jaws.config;
+package org.hongxi.jaws.sample;
 
-import org.hongxi.jaws.BaseTestCase;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.protocol.example.IWorld;
+import org.hongxi.jaws.config.ServiceConfig;
+import org.hongxi.jaws.sample.service.HelloService;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -12,7 +12,7 @@ import static org.junit.Assert.*;
  */
 public class ServiceConfigTest extends BaseTestCase {
 
-    private ServiceConfig<IWorld> serviceConfig = null;
+    private ServiceConfig<HelloService> serviceConfig = null;
 
     @Override
     public void setUp() throws Exception {
