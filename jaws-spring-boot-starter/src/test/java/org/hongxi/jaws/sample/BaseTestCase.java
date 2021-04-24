@@ -113,19 +113,10 @@ public class BaseTestCase {
     protected static RegistryConfig createRegistryConfig(String protocolName) {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setRegProtocol(protocolName);
-        registryConfig.setName(protocolName);
+        registryConfig.setName("defaultRegistry");
         registryConfig.setId(registryConfig.getName());
-        return registryConfig;
-    }
-
-    protected static RegistryConfig createRemoteRegistryConfig(String protocol, String name, String address, int port) {
-        RegistryConfig registryConfig = new RegistryConfig();
-        registryConfig.setRegProtocol(protocol);
-        registryConfig.setName(name);
-        registryConfig.setId(registryConfig.getName());
-        registryConfig.setAddress(address);
-        registryConfig.setPort(port);
-
+        registryConfig.setAddress("127.0.0.1");
+        registryConfig.setPort(2181);
         return registryConfig;
     }
 
