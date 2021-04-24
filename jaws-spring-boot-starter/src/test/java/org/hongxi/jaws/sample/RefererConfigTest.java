@@ -23,8 +23,8 @@ public class RefererConfigTest extends BaseTestCase {
 
         serviceConfig = createServiceConfig();
         serviceConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
+        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
         serviceConfig.setRegistry(registryConfig);
-        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS);
 
         refererConfig = createRefererConfig();
         refererConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
@@ -48,8 +48,8 @@ public class RefererConfigTest extends BaseTestCase {
     public void testInvocation() {
         serviceConfig.export();
 
-        HelloService world = refererConfig.getRef();
-        String r = world.world("hello");
+        HelloService helloService = refererConfig.getRef();
+        String r = helloService.world("hello");
         assertEquals("hello", r);
     }
 }
