@@ -51,6 +51,11 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
                 reconnectService();
                 reconnectClient();
             }
+
+            @Override
+            public void handleSessionEstablishmentError(Throwable throwable) throws Exception {
+                // do nothing
+            }
         };
         zkClient.subscribeStateChanges(zkStateListener);
         ShutdownHook.registerShutdownHook(this);
@@ -79,7 +84,7 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
                     @Override
                     public void handleChildChange(String parentPath, List<String> currentChilds) {
                         serviceListener.notifyService(url, getUrl(), nodeChildsToUrls(url, parentPath, currentChilds));
-                        log.info(String.format("[ZookeeperRegistry] service list change: path=%s, currentChilds=%s", parentPath, currentChilds.toString()));
+                        log.info("[ZookeeperRegistry] service list change: path={}, currentChilds={}", parentPath, currentChilds);
                     }
                 });
                 zkChildListener = childChangeListeners.get(serviceListener);
@@ -90,12 +95,12 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
                 removeNode(url, ZkNodeType.CLIENT);
                 createNode(url, ZkNodeType.CLIENT);
             } catch (Exception e) {
-                log.warn("[ZookeeperRegistry] subscribe service: create node error, path=%s, msg=%s", ZkUtils.toNodePath(url, ZkNodeType.CLIENT), e.getMessage());
+                log.warn("[ZookeeperRegistry] subscribe service: create node error, path={}, msg={}", ZkUtils.toNodePath(url, ZkNodeType.CLIENT), e.getMessage());
             }
 
             String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
             zkClient.subscribeChildChanges(serverTypePath, zkChildListener);
-            log.info(String.format("[ZookeeperRegistry] subscribe service: path=%s, info=%s", ZkUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr()));
+            log.info("[ZookeeperRegistry] subscribe service: path={}, info={}", ZkUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr());
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         } finally {
@@ -118,13 +123,13 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
                     @Override
                     public void handleDataChange(String dataPath, Object data) throws Exception {
                         commandListener.notifyCommand(url, (String) data);
-                        log.info(String.format("[ZookeeperRegistry] command data change: path=%s, command=%s", dataPath, (String) data));
+                        log.info("[ZookeeperRegistry] command data change: path={}, command={}", dataPath, data);
                     }
 
                     @Override
                     public void handleDataDeleted(String dataPath) throws Exception {
                         commandListener.notifyCommand(url, null);
-                        log.info(String.format("[ZookeeperRegistry] command deleted: path=%s", dataPath));
+                        log.info("[ZookeeperRegistry] command deleted: path={}", dataPath);
                     }
                 });
                 zkDataListener = dataChangeListeners.get(commandListener);
@@ -287,14 +292,14 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
                 try {
                     data = zkClient.readData(nodePath, true);
                 } catch (Exception e) {
-                    log.warn("get zkdata fail!" + e.getMessage());
+                    log.warn("get zkdata fail! {}", e.getMessage());
                 }
                 URL newurl = null;
                 if (StringUtils.isNotBlank(data)) {
                     try {
                         newurl = URL.valueOf(data);
                     } catch (Exception e) {
-                        log.warn(String.format("Found malformed urls from ZookeeperRegistry, path=%s", nodePath), e);
+                        log.warn("Found malformed urls from ZookeeperRegistry, path={}", nodePath, e);
                     }
                 }
                 if (newurl == null) {
