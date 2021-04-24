@@ -19,12 +19,12 @@ import java.util.List;
  */
 public class BaseTestCase {
 
-    protected static String application = "api";
-    protected static String module = "test";
+    protected static String application = "jaws-sample";
+    protected static String module = "sample";
 
     protected String localAddress = null;
 
-    protected static String group = "test-2021";
+    protected static String group = "test";
 
     @Before
     public void setUp() throws Exception {
