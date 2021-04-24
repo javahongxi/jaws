@@ -17,10 +17,10 @@ public class ServiceConfigTest extends BaseTestCase {
     @Override
     public void setUp() throws Exception {
         super.setUp();
-        serviceConfig = mockIWorldServiceConfig();
-        serviceConfig.setProtocol(mockProtocolConfig(JawsConstants.PROTOCOL_INJVM));
-        serviceConfig.setRegistry(mockLocalRegistryConfig());
-        serviceConfig.setExport(JawsConstants.PROTOCOL_INJVM + ":" + 0);
+        serviceConfig = createServiceConfig();
+        serviceConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
+        serviceConfig.setRegistry(createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
+        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 0);
     }
 
     @Override

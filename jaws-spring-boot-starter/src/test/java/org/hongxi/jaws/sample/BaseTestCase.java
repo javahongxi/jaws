@@ -1,6 +1,5 @@
 package org.hongxi.jaws.sample;
 
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
@@ -39,7 +38,7 @@ public class BaseTestCase {
     public void tearDown() throws Exception {
     }
 
-    protected static ServiceConfig<HelloService> mockIWorldServiceConfig() {
+    protected static ServiceConfig<HelloService> createServiceConfig() {
         ServiceConfig<HelloService> serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(new HelloServiceImpl());
         serviceConfig.setApplication(application);
@@ -52,13 +51,13 @@ public class BaseTestCase {
         return serviceConfig;
     }
 
-    protected static RefererConfig<HelloService> mockIWorldRefererConfig() {
-        RefererConfig<HelloService> rc = new RefererConfig<>();
-        rc.setInterface(HelloService.class);
-        rc.setApplication(application);
-        rc.setModule(module);
-        rc.setGroup(group);
-        return rc;
+    protected static RefererConfig<HelloService> createRefererConfig() {
+        RefererConfig<HelloService> refererConfig = new RefererConfig<>();
+        refererConfig.setInterface(HelloService.class);
+        refererConfig.setApplication(application);
+        refererConfig.setModule(module);
+        refererConfig.setGroup(group);
+        return refererConfig;
     }
 
     protected static <T> ServiceConfig<T> createServiceConfig(Class<T> clz, T impl) {
@@ -75,7 +74,7 @@ public class BaseTestCase {
         return serviceConfig;
     }
 
-    protected static <T> ServiceConfig<T> createServiceConfig(Class<T> clz, T impl, String group, String version, ProtocolConfig protocl,
+    protected static <T> ServiceConfig<T> createServiceConfig(Class<T> clz, T impl, String group, String version, ProtocolConfig protocol,
                                                               RegistryConfig registryConfig, String export) {
         ServiceConfig<T> serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(impl);
@@ -86,7 +85,7 @@ public class BaseTestCase {
         serviceConfig.setGroup(group);
         serviceConfig.setShareChannel(true);
         serviceConfig.setVersion(version);
-        serviceConfig.setProtocol(protocl);
+        serviceConfig.setProtocol(protocol);
         serviceConfig.setRegistry(registryConfig);
         serviceConfig.setExport(export);
         return serviceConfig;
@@ -103,47 +102,37 @@ public class BaseTestCase {
         return rc;
     }
 
-    protected static ProtocolConfig mockProtocolConfig(String protocolName) {
-        ProtocolConfig pc = createProtocol(protocolName);
-        pc.setEndpointFactory("mockEndpoint");
-        return pc;
+    protected static ProtocolConfig createProtocolConfig(String protocolName) {
+        ProtocolConfig protocolConfig = new ProtocolConfig();
+        protocolConfig.setName(protocolName);
+        protocolConfig.setId(protocolConfig.getName());
+        protocolConfig.setEndpointFactory("jaws");
+        return protocolConfig;
     }
 
-    protected static ProtocolConfig createProtocol(String protocolName) {
-        ProtocolConfig pc = new ProtocolConfig();
-        pc.setName(protocolName);
-        pc.setId(pc.getName());
-        return pc;
-    }
-
-    protected static RegistryConfig mockLocalRegistryConfig() {
-        return createLocalRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_LOCAL, JawsConstants.REGISTRY_PROTOCOL_LOCAL);
-    }
-
-    protected static RegistryConfig createLocalRegistryConfig(String protocol, String name) {
-        RegistryConfig rc = new RegistryConfig();
-        rc.setRegProtocol(protocol);
-        rc.setName(name);
-        rc.setId(rc.getName());
-
-        return rc;
+    protected static RegistryConfig createRegistryConfig(String protocolName) {
+        RegistryConfig registryConfig = new RegistryConfig();
+        registryConfig.setRegProtocol(protocolName);
+        registryConfig.setName(protocolName);
+        registryConfig.setId(registryConfig.getName());
+        return registryConfig;
     }
 
     protected static RegistryConfig createRemoteRegistryConfig(String protocol, String name, String address, int port) {
-        RegistryConfig rc = new RegistryConfig();
-        rc.setRegProtocol(protocol);
-        rc.setName(name);
-        rc.setId(rc.getName());
-        rc.setAddress(address);
-        rc.setPort(port);
+        RegistryConfig registryConfig = new RegistryConfig();
+        registryConfig.setRegProtocol(protocol);
+        registryConfig.setName(name);
+        registryConfig.setId(registryConfig.getName());
+        registryConfig.setAddress(address);
+        registryConfig.setPort(port);
 
-        return rc;
+        return registryConfig;
     }
 
     protected static List<ProtocolConfig> getMultiProtocols(String... protocolNames) {
         List<ProtocolConfig> protocols = new ArrayList<>();
         for (String protocol : protocolNames) {
-            protocols.add(mockProtocolConfig(protocol));
+            protocols.add(createProtocolConfig(protocol));
         }
         return protocols;
     }
@@ -151,7 +140,7 @@ public class BaseTestCase {
     protected static List<RegistryConfig> getMultiRegister(String... registerName) {
         List<RegistryConfig> registries = new ArrayList<>();
         for (String register : registerName) {
-            RegistryConfig registryConfig = createLocalRegistryConfig(register, register);
+            RegistryConfig registryConfig = createRegistryConfig(register);
             registries.add(registryConfig);
         }
         return registries;

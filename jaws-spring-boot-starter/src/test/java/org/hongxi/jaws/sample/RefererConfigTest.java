@@ -19,15 +19,15 @@ public class RefererConfigTest extends BaseTestCase {
     public void setUp() throws Exception {
         super.setUp();
 
-        RegistryConfig registryConfig = mockLocalRegistryConfig();
+        RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
 
-        serviceConfig = mockIWorldServiceConfig();
-        serviceConfig.setProtocol(mockProtocolConfig(JawsConstants.PROTOCOL_INJVM));
+        serviceConfig = createServiceConfig();
+        serviceConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
         serviceConfig.setRegistry(registryConfig);
-        serviceConfig.setExport(JawsConstants.PROTOCOL_INJVM);
+        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS);
 
-        refererConfig = mockIWorldRefererConfig();
-        refererConfig.setProtocol(mockProtocolConfig(JawsConstants.PROTOCOL_INJVM));
+        refererConfig = createRefererConfig();
+        refererConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
         refererConfig.setRegistry(registryConfig);
 
         refererConfig.setCheck("false");
