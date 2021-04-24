@@ -13,7 +13,6 @@ import java.util.Properties;
  */
 public class EmbeddedZookeeper {
     private ZooKeeperServerMain zookeeperServer;
-    private Thread t1;
 
     public void start() throws IOException, QuorumPeerConfig.ConfigException {
         Properties properties = new Properties();
@@ -28,12 +27,11 @@ public class EmbeddedZookeeper {
         final ServerConfig configuration = new ServerConfig();
         configuration.readFrom(quorumConfiguration);
 
-        t1 = new Thread(() -> {
+        new Thread(() -> {
             try {
                 zookeeperServer.runFromConfig(configuration);
             } catch (IOException ignore) {
             }
-        });
-        t1.start();
+        }).start();
     }
 }

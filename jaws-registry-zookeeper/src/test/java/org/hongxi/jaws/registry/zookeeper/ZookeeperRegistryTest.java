@@ -156,5 +156,4 @@ public class ZookeeperRegistryTest {
         available = zkClient.getChildren(availablePath);
         assertFalse(available.contains(node));
     }
-
 }
