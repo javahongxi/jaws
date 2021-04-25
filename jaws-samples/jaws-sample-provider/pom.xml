@@ -30,7 +30,7 @@
 
         <dependency>
             <groupId>org.hongxi</groupId>
-            <artifactId>sample-api</artifactId>
+            <artifactId>jaws-sample-api</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

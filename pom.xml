@@ -28,7 +28,7 @@
         <!-- refer to spring-boot-dependencies -->
         <commons-lang3.version>3.11</commons-lang3.version>
         <commons-pool.version>1.6</commons-pool.version>
-        <curator.version>2.12.0</curator.version>
+        <curator.version>5.1.0</curator.version>
         <fastjson.version>1.2.70</fastjson.version>
         <guava.version>18.0</guava.version>
         <hessian.version>4.0.38</hessian.version>
@@ -36,6 +36,8 @@
         <netty.version>4.1.59.Final</netty.version>
         <servlet.version>3.1.0</servlet.version>
         <slf4j.version>1.7.30</slf4j.version>
+        <zookeeper.version>3.4.13</zookeeper.version>
+        <zkclient.version>0.11</zkclient.version>
     </properties>
 
     <dependencyManagement>
@@ -49,11 +51,6 @@
                 <groupId>commons-pool</groupId>
                 <artifactId>commons-pool</artifactId>
                 <version>${commons-pool.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.curator</groupId>
-                <artifactId>curator-framework</artifactId>
-                <version>${curator.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.caucho</groupId>
@@ -74,6 +71,32 @@
                 <groupId>io.netty</groupId>
                 <artifactId>netty-all</artifactId>
                 <version>${netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.zookeeper</groupId>
+                <artifactId>zookeeper</artifactId>
+                <version>${zookeeper.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.slf4j</groupId>
+                        <artifactId>slf4j-log4j12</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>com.101tec</groupId>
+                <artifactId>zkclient</artifactId>
+                <version>${zkclient.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.curator</groupId>
+                <artifactId>curator-framework</artifactId>
+                <version>${curator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.curator</groupId>
+                <artifactId>curator-test</artifactId>
+                <version>${curator.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

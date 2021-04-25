@@ -4,21 +4,18 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <groupId>org.hongxi</groupId>
-        <artifactId>jaws-parent</artifactId>
+        <artifactId>jaws-samples</artifactId>
         <version>0.0.2-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>jaws-samples</artifactId>
-    <packaging>pom</packaging>
+    <artifactId>zkcli</artifactId>
 
-    <modules>
-        <module>jaws-sample-provider</module>
-        <module>jaws-sample-consumer</module>
-        <module>jaws-sample-api</module>
-        <module>zk-embed</module>
-        <module>zkcli</module>
-        <module>jaws-test</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.zookeeper</groupId>
+            <artifactId>zookeeper</artifactId>
+        </dependency>
+    </dependencies>
 
 </project>
