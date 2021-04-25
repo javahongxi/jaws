@@ -8,8 +8,6 @@ import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.protocol.example.IWorld;
 import org.hongxi.jaws.protocol.example.World;
-import org.jmock.integration.junit4.JUnit4Mockery;
-import org.jmock.lib.legacy.ClassImposteriser;
 import org.junit.After;
 import org.junit.Before;
 
@@ -29,15 +27,8 @@ public class BaseTestCase {
 
     protected static String group = "test-2021";
 
-    public static JUnit4Mockery mockery = null;
-
     @Before
     public void setUp() throws Exception {
-        mockery = new JUnit4Mockery() {
-            {
-                setImposteriser(ClassImposteriser.INSTANCE);
-            }
-        };
         InetAddress address = NetUtils.getLocalAddress();
         if (address != null) {
             localAddress = address.getHostAddress();

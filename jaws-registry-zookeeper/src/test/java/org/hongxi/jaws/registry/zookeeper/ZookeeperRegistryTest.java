@@ -23,7 +23,7 @@ public class ZookeeperRegistryTest {
     private static URL serviceUrl, clientUrl;
     private static EmbeddedZookeeper zookeeper;
     private static ZkClient zkClient;
-    private static String service = "org.hongxi.jaws.demoService";
+    private static String service = "org.hongxi.jaws.DemoService";
 
     @BeforeClass
     public static void setUp() throws Exception {
