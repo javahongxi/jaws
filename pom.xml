@@ -12,6 +12,7 @@
         <module>jaws-transport-netty</module>
         <module>jaws-registry-zookeeper</module>
         <module>jaws-spring-boot-starter</module>
+        <module>jaws-samples</module>
     </modules>
 
     <properties>

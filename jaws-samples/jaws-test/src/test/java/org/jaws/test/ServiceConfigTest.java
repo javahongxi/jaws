@@ -1,8 +1,8 @@
-package org.hongxi.jaws.sample;
+package org.jaws.test;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ServiceConfig;
-import org.hongxi.jaws.sample.service.HelloService;
+import org.hongxi.jaws.sample.api.HelloService;
 import org.junit.Test;
 
 import static org.junit.Assert.*;

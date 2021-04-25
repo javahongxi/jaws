@@ -1,11 +1,13 @@
-package org.hongxi.jaws.sample;
+package org.jaws.test;
 
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.config.*;
-import org.hongxi.jaws.sample.service.HelloService;
+import org.hongxi.jaws.config.RefererConfig;
+import org.hongxi.jaws.config.RegistryConfig;
+import org.hongxi.jaws.config.ServiceConfig;
+import org.hongxi.jaws.sample.api.HelloService;
 import org.junit.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 /**
  * Created by shenhongxi on 2021/4/23.
@@ -49,7 +51,7 @@ public class RefererConfigTest extends BaseTestCase {
         serviceConfig.export();
 
         HelloService helloService = refererConfig.getRef();
-        String r = helloService.world("hello");
+        String r = helloService.hello("hello");
         assertEquals("hello", r);
     }
 }
