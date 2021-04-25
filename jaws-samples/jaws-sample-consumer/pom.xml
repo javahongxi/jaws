@@ -11,6 +11,28 @@
 
     <artifactId>jaws-sample-consumer</artifactId>
 
+    <dependencies>
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-transport-netty</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-registry-zookeeper</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>sample-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
 
 </project>

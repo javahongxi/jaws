@@ -1,6 +1,7 @@
 package org.jaws.test;
 
 import org.hongxi.jaws.common.JawsConstants;
+import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
@@ -22,16 +23,16 @@ public class RefererConfigTest extends BaseTestCase {
         super.setUp();
 
         RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
+        ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
 
         serviceConfig = createServiceConfig();
-        serviceConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
-        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
+        serviceConfig.setProtocol(protocolConfig);
         serviceConfig.setRegistry(registryConfig);
+        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
 
         refererConfig = createRefererConfig();
-        refererConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
+        refererConfig.setProtocol(protocolConfig);
         refererConfig.setRegistry(registryConfig);
-
         refererConfig.setCheck("false");
     }
 
