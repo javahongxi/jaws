@@ -1,11 +1,18 @@
 package org.hongxi.jaws.sample.consumer;
 
+import com.google.common.collect.Lists;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.sample.api.DemoService;
+import org.hongxi.jaws.sample.api.model.Contacts;
+import org.hongxi.jaws.sample.api.model.Phone;
 import org.hongxi.jaws.sample.api.model.User;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Created by shenhongxi on 2021/4/25.
@@ -27,11 +34,35 @@ public class SampleConsumer {
         DemoService demoService = refererConfig.getRef();
         String r = demoService.hello("lily");
         System.out.println(r);
-        User user = new User();
-        user.setName("lily");
-        user.setAge(24);
+
+        User user = new User("lily", 24);
         User newUser = demoService.rename(user, "lucy");
         System.out.println(newUser);
+
+        List<User> users = demoService.getUsers();
+        System.out.println(users);
+
+        Map<String, User> map = demoService.map(users);
+        System.out.println(map);
+
+        Contacts contacts = new Contacts();
+        contacts.setId(123L);
+        contacts.setUser(user);
+        contacts.setAddresses(Lists.newArrayList("Beijing", "Wuhan"));
+        contacts.setPhones(Lists.newArrayList(new Phone(10010), new Phone(10086)));
+        demoService.save(contacts);
+
+        Contacts contacts2 = new Contacts();
+        contacts2.setId(124L);
+        contacts2.setUser(newUser);
+        contacts2.setAddresses(Lists.newArrayList("Chengdu", "Shenzhen"));
+        contacts2.setPhones(Lists.newArrayList(new Phone(10011), new Phone(10087)));
+
+        List<Contacts> contactsList = new ArrayList<>();
+        contactsList.add(contacts);
+        contactsList.add(contacts2);
+        int size = demoService.save(contactsList);
+        System.out.println(size);
     }
 
     protected static ProtocolConfig createProtocolConfig(String protocolName) {

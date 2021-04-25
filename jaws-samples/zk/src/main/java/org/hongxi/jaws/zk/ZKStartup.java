@@ -10,13 +10,13 @@ import java.util.Properties;
 public class ZKStartup {
 
     public static void main(String[] args) throws Exception {
-        QuorumPeerConfig config = new QuorumPeerConfig();
-        InputStream is = ZKStartup.class.getResourceAsStream("/zookeeper.properties");
+        QuorumPeerConfig quorumPeerConfig = new QuorumPeerConfig();
+        InputStream inputStream = ZKStartup.class.getResourceAsStream("/zookeeper.properties");
         Properties properties = new Properties();
-        properties.load(is);
-        config.parseProperties(properties);
-        ServerConfig serverconfig = new ServerConfig();
-        serverconfig.readFrom(config);
-        new ZooKeeperServerMain().runFromConfig(serverconfig);
+        properties.load(inputStream);
+        quorumPeerConfig.parseProperties(properties);
+        ServerConfig serverConfig = new ServerConfig();
+        serverConfig.readFrom(quorumPeerConfig);
+        new ZooKeeperServerMain().runFromConfig(serverConfig);
     }
 }

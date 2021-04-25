@@ -7,16 +7,13 @@ import lombok.NoArgsConstructor;
 import java.io.Serializable;
 
 /**
- * Created by shenhongxi on 2021/4/25.
+ * Created by shenhongxi on 2021/4/26.
  */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class User implements Serializable {
+public class Phone implements Serializable {
+    private static final long serialVersionUID = -56932839374275492L;
 
-    private static final long serialVersionUID = 6190590587012468969L;
-
-    private String name;
-
-    private int age;
+    private Integer number;
 }
