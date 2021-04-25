@@ -4,7 +4,8 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
-import org.hongxi.jaws.sample.api.HelloService;
+import org.hongxi.jaws.sample.api.DemoService;
+import org.hongxi.jaws.sample.api.model.User;
 
 /**
  * Created by shenhongxi on 2021/4/25.
@@ -12,8 +13,8 @@ import org.hongxi.jaws.sample.api.HelloService;
 public class SampleConsumer {
 
     public static void main(String[] args) {
-        RefererConfig<HelloService> refererConfig = new RefererConfig<>();
-        refererConfig.setInterface(HelloService.class);
+        RefererConfig<DemoService> refererConfig = new RefererConfig<>();
+        refererConfig.setInterface(DemoService.class);
         refererConfig.setApplication("sample-consumer");
         refererConfig.setModule("sample");
         refererConfig.setGroup("test");
@@ -23,9 +24,14 @@ public class SampleConsumer {
         refererConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
         refererConfig.setRegistry(createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
 
-        HelloService helloService = refererConfig.getRef();
-        String r = helloService.hello("lily");
+        DemoService demoService = refererConfig.getRef();
+        String r = demoService.hello("lily");
         System.out.println(r);
+        User user = new User();
+        user.setName("lily");
+        user.setAge(24);
+        User newUser = demoService.rename(user, "lucy");
+        System.out.println(newUser);
     }
 
     protected static ProtocolConfig createProtocolConfig(String protocolName) {

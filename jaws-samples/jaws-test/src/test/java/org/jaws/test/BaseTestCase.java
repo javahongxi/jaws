@@ -5,7 +5,6 @@ import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
-import org.hongxi.jaws.sample.api.HelloService;
 import org.junit.After;
 import org.junit.Before;
 

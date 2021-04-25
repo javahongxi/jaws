@@ -1,4 +1,4 @@
-package org.hongxi.jaws.sample.api;
+package org.jaws.test;
 
 /**
  * Created by shenhongxi on 2021/4/25.
@@ -6,4 +6,6 @@ package org.hongxi.jaws.sample.api;
 public interface HelloService {
 
     String hello(String name);
+
+    User rename(User user, String name);
 }

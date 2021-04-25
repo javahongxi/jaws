@@ -12,9 +12,9 @@ public class ZKStartup {
     public static void main(String[] args) throws Exception {
         QuorumPeerConfig config = new QuorumPeerConfig();
         InputStream is = ZKStartup.class.getResourceAsStream("/zookeeper.properties");
-        Properties p = new Properties();
-        p.load(is);
-        config.parseProperties(p);
+        Properties properties = new Properties();
+        properties.load(is);
+        config.parseProperties(properties);
         ServerConfig serverconfig = new ServerConfig();
         serverconfig.readFrom(config);
         new ZooKeeperServerMain().runFromConfig(serverconfig);

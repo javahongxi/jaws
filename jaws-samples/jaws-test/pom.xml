@@ -27,12 +27,6 @@
             <artifactId>jaws-registry-zookeeper</artifactId>
             <version>${project.version}</version>
         </dependency>
-
-        <dependency>
-            <groupId>org.hongxi</groupId>
-            <artifactId>jaws-sample-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
     </dependencies>
 
 </project>

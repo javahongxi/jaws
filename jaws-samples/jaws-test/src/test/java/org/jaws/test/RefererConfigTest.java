@@ -5,7 +5,6 @@ import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
-import org.hongxi.jaws.sample.api.HelloService;
 import org.hongxi.jaws.switcher.JawsSwitcherUtils;
 import org.junit.Test;
 
@@ -56,5 +55,11 @@ public class RefererConfigTest extends BaseTestCase {
         HelloService helloService = refererConfig.getRef();
         String r = helloService.hello("lily");
         assertEquals("Hello, lily", r);
+
+        User user = new User();
+        user.setName("lily");
+        user.setAge(24);
+        User newUser = helloService.rename(user, "lucy");
+        assertEquals("lucy", newUser.getName());
     }
 }
