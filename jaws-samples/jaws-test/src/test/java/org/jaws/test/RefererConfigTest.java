@@ -6,6 +6,7 @@ import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.api.HelloService;
+import org.hongxi.jaws.switcher.JawsSwitcherUtils;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -50,9 +51,10 @@ public class RefererConfigTest extends BaseTestCase {
     @Test
     public void testInvocation() {
         serviceConfig.export();
+        JawsSwitcherUtils.setSwitcherValue(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, true);
 
         HelloService helloService = refererConfig.getRef();
-        String r = helloService.hello("hello");
-        assertEquals("hello", r);
+        String r = helloService.hello("lily");
+        assertEquals("Hello, lily", r);
     }
 }
