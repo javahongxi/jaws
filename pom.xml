@@ -28,7 +28,6 @@
         <!-- refer to spring-boot-dependencies -->
         <commons-lang3.version>3.11</commons-lang3.version>
         <commons-pool.version>1.6</commons-pool.version>
-        <curator.version>5.1.0</curator.version>
         <fastjson.version>1.2.70</fastjson.version>
         <guava.version>18.0</guava.version>
         <hessian.version>4.0.38</hessian.version>
@@ -87,16 +86,6 @@
                 <groupId>com.101tec</groupId>
                 <artifactId>zkclient</artifactId>
                 <version>${zkclient.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.curator</groupId>
-                <artifactId>curator-framework</artifactId>
-                <version>${curator.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.curator</groupId>
-                <artifactId>curator-test</artifactId>
-                <version>${curator.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

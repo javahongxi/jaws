@@ -20,7 +20,7 @@ public class ServiceConfigTest extends BaseTestCase {
         serviceConfig = createServiceConfig();
         serviceConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
         serviceConfig.setRegistry(createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
-        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
+        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10001);
     }
 
     @Override

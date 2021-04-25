@@ -16,9 +16,8 @@
         <module>jaws-sample-provider</module>
         <module>jaws-sample-consumer</module>
         <module>jaws-sample-api</module>
-        <module>zk-embed</module>
-        <module>zkcli</module>
         <module>jaws-test</module>
+        <module>zk</module>
     </modules>
 
 </project>

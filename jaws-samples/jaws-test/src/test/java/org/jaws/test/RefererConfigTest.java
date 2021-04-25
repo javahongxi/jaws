@@ -29,7 +29,7 @@ public class RefererConfigTest extends BaseTestCase {
         serviceConfig = createServiceConfig();
         serviceConfig.setProtocol(protocolConfig);
         serviceConfig.setRegistry(registryConfig);
-        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
+        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10001);
 
         refererConfig = createRefererConfig();
         refererConfig.setProtocol(protocolConfig);
