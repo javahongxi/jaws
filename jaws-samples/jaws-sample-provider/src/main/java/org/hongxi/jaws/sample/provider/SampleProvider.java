@@ -6,6 +6,7 @@ import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.api.HelloService;
 import org.hongxi.jaws.sample.provider.service.HelloServiceImpl;
+import org.hongxi.jaws.switcher.JawsSwitcherUtils;
 
 /**
  * Created by shenhongxi on 2021/4/25.
@@ -27,6 +28,8 @@ public class SampleProvider {
         serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
 
         serviceConfig.export();
+
+        JawsSwitcherUtils.setSwitcherValue(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, true);
     }
 
     private static ProtocolConfig createProtocolConfig(String protocolName) {

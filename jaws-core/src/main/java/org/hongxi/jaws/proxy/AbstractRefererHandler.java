@@ -4,6 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -11,6 +12,8 @@ import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.serialize.DeserializableObject;
+import org.hongxi.jaws.switcher.Switcher;
+import org.hongxi.jaws.switcher.SwitcherService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,7 +33,12 @@ public class AbstractRefererHandler<T> {
     protected Class<T> clz;
     protected String interfaceName;
 
+    protected SwitcherService switcherService = null;
+
     void init() {
+        // clusters 不应该为空
+        String switchName = this.clusters.get(0).getUrl().getParameter(URLParamType.switcherService.getName(), URLParamType.switcherService.value());
+        switcherService = ExtensionLoader.getExtensionLoader(SwitcherService.class).getExtension(switchName);
     }
 
     Object invokeRequest(Request request, Class returnType, boolean async) throws Throwable {
@@ -53,6 +61,14 @@ public class AbstractRefererHandler<T> {
         // 当 referer配置多个protocol的时候，比如A,B,C，
         // 那么正常情况下只会使用A，如果A被开关降级，那么就会使用B，B也被降级，那么会使用C
         for (Cluster<T> cluster : clusters) {
+            String protocolSwitcher = JawsConstants.PROTOCOL_SWITCHER_PREFIX + cluster.getUrl().getProtocol();
+
+            Switcher switcher = switcherService.getSwitcher(protocolSwitcher);
+
+            if (switcher != null && !switcher.isOn()) {
+                continue;
+            }
+
             request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
             request.setAttachment(URLParamType.clientGroup.getName(), cluster.getUrl().getGroup());
             // 带上client的application和module

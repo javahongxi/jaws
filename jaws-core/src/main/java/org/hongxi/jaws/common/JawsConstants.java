@@ -24,6 +24,10 @@ public class JawsConstants {
     public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
     public static final String ZOOKEEPER_REGISTRY_COMMAND = "/command";
 
+    public static final String REGISTRY_HEARTBEAT_SWITCHER = "feature.configserver.heartbeat";
+
+    public static final String PROTOCOL_SWITCHER_PREFIX = "protocol:";
+
     /**
      * 默认的consistent的hash的数量
      */

@@ -56,6 +56,8 @@ public enum URLParamType {
     codec("codec", "jaws"),
     endpointFactory("endpointFactory", "jaws"),
 
+    switcherService("switcherService", "localSwitcherService"),
+
     /************************** SPI end ******************************/
 
     group("group", "default_rpc"),

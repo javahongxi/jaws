@@ -1,6 +1,7 @@
 package org.hongxi.jaws.registry.support.command;
 
 import org.apache.commons.lang3.StringUtils;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
@@ -8,6 +9,7 @@ import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.switcher.JawsSwitcherUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,7 +24,12 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
 
     private static final Logger log = LoggerFactory.getLogger(CommandServiceManager.class);
 
+    public static final String JAWS_COMMAND_SWITCHER = "feature.jawsrpc.command.enable";
     private static Pattern IP_PATTERN = Pattern.compile("^!?[0-9.]*\\*?$");
+
+    static {
+        JawsSwitcherUtils.initSwitcher(JAWS_COMMAND_SWITCHER, true);
+    }
 
     private URL refUrl;
     private ConcurrentHashSet<NotifyListener> notifySet;

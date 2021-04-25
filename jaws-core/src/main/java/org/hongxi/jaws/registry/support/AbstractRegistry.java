@@ -1,10 +1,13 @@
 package org.hongxi.jaws.registry.support;
 
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.switcher.JawsSwitcherUtils;
+import org.hongxi.jaws.switcher.SwitcherListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +37,18 @@ public abstract class AbstractRegistry implements Registry {
 
     public AbstractRegistry(URL url) {
         this.registryUrl = url.createCopy();
+
+        // register a heartbeat switcher to perceive service state change and change available state
+        JawsSwitcherUtils.initSwitcher(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, false);
+        JawsSwitcherUtils.registerSwitcherListener(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, (key, value) -> {
+            if (key != null && value != null) {
+                if (value) {
+                    available(null);
+                } else {
+                    unavailable(null);
+                }
+            }
+        });
     }
 
     @Override
@@ -45,6 +60,10 @@ public abstract class AbstractRegistry implements Registry {
         log.info("[{}] Url ({}) will register to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
         doRegister(removeUnnecessaryParmas(url.createCopy()));
         registeredServiceUrls.add(url);
+        // available if heartbeat switcher already open
+        if (JawsSwitcherUtils.isOpen(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER)) {
+            available(url);
+        }
     }
 
     @Override

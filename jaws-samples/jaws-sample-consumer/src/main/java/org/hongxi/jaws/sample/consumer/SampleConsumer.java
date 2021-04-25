@@ -24,7 +24,7 @@ public class SampleConsumer {
         refererConfig.setRegistry(createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
 
         HelloService helloService = refererConfig.getRef();
-        String r = helloService.hello("hello");
+        String r = helloService.hello("lily");
         System.out.println(r);
     }
 
