@@ -36,7 +36,7 @@
         <netty.version>4.1.59.Final</netty.version>
         <servlet.version>4.0.1</servlet.version>
         <slf4j.version>1.7.30</slf4j.version>
-        <zookeeper.version>3.4.13</zookeeper.version>
+        <zookeeper.version>3.4.14</zookeeper.version>
         <zkclient.version>0.11</zkclient.version>
     </properties>
 
