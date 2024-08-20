@@ -12,7 +12,10 @@ public class JawsConstants {
 
     public static final String DEFAULT_CHARSET = "UTF-8";
     public static final String PROTOCOL_SEPARATOR = "://";
-    public static final String PATH_SEPARATOR = File.separator;
+    /**
+     * 这里如果用 File.separator，在Windows下读写zk有问题
+     */
+    public static final String PATH_SEPARATOR = "/";
 
     public static final String ACCESS_LOG_SEPARATOR = "|";
     public static final String COMMA_SEPARATOR = ",";
