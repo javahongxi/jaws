@@ -2,6 +2,7 @@ package org.hongxi.jaws.registry.zookeeper;
 
 import org.apache.zookeeper.server.ServerConfig;
 import org.apache.zookeeper.server.ZooKeeperServerMain;
+import org.apache.zookeeper.server.admin.AdminServer;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig;
 
 import java.io.IOException;
@@ -30,7 +31,7 @@ public class EmbeddedZookeeper {
         new Thread(() -> {
             try {
                 zookeeperServer.runFromConfig(configuration);
-            } catch (IOException ignore) {
+            } catch (IOException | AdminServer.AdminServerException ignore) {
             }
         }).start();
     }

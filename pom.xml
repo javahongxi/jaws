@@ -11,33 +11,30 @@
         <module>jaws-core</module>
         <module>jaws-transport-netty</module>
         <module>jaws-registry-zookeeper</module>
-        <module>jaws-spring-boot-starter</module>
         <module>jaws-samples</module>
     </modules>
 
     <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <mvn.compiler.source>1.8</mvn.compiler.source>
-        <mvn.compiler.target>1.8</mvn.compiler.target>
+        <java.version>17</java.version>
 
         <!-- refer to spring-boot-dependencies -->
-        <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
-        <maven-resources-plugin.version>3.2.0</maven-resources-plugin.version>
-        <maven-source-plugin.version>3.2.1</maven-source-plugin.version>
+        <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
+        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
+        <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
 
         <!-- refer to spring-boot-dependencies -->
-        <commons-lang3.version>3.11</commons-lang3.version>
+        <commons-lang3.version>3.17.0</commons-lang3.version>
         <commons-pool.version>1.6</commons-pool.version>
-        <fastjson.version>1.2.76</fastjson.version>
-        <guava.version>30.1.1-jre</guava.version>
-        <hessian.version>4.0.38</hessian.version>
+        <curator.version>5.9.0</curator.version>
+        <fastjson.version>2.0.61</fastjson.version>
+        <guava.version>33.6.0-jre</guava.version>
+        <hessian.version>4.0.66</hessian.version>
         <junit.version>4.13.2</junit.version>
-        <logback.version>1.2.3</logback.version>
-        <netty.version>4.1.59.Final</netty.version>
-        <servlet.version>4.0.1</servlet.version>
-        <slf4j.version>1.7.30</slf4j.version>
-        <zookeeper.version>3.4.14</zookeeper.version>
-        <zkclient.version>0.11</zkclient.version>
+        <logback.version>1.5.32</logback.version>
+        <netty.version>4.1.132.Final</netty.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <zookeeper.version>3.9.3</zookeeper.version>
     </properties>
 
     <dependencyManagement>
@@ -69,24 +66,25 @@
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
-                <artifactId>netty-all</artifactId>
+                <artifactId>netty-bom</artifactId>
                 <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>org.apache.zookeeper</groupId>
                 <artifactId>zookeeper</artifactId>
                 <version>${zookeeper.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>org.slf4j</groupId>
-                        <artifactId>slf4j-log4j12</artifactId>
-                    </exclusion>
-                </exclusions>
             </dependency>
             <dependency>
-                <groupId>com.101tec</groupId>
-                <artifactId>zkclient</artifactId>
-                <version>${zkclient.version}</version>
+                <groupId>org.apache.curator</groupId>
+                <artifactId>curator-recipes</artifactId>
+                <version>${curator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -97,13 +95,6 @@
             <artifactId>logback-classic</artifactId>
             <version>${logback.version}</version>
             <optional>true</optional>
-        </dependency>
-
-        <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>javax.servlet-api</artifactId>
-            <version>${servlet.version}</version>
-            <scope>provided</scope>
         </dependency>
 
         <dependency>
@@ -121,9 +112,9 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven-compiler-plugin.version}</version>
                 <configuration>
-                    <encoding>${project.build.sourceEncoding}</encoding>
-                    <source>${mvn.compiler.source}</source>
-                    <target>${mvn.compiler.target}</target>
+                    <encoding>UTF-8</encoding>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
                 </configuration>
             </plugin>
             <plugin>
@@ -131,7 +122,7 @@
                 <artifactId>maven-resources-plugin</artifactId>
                 <version>${maven-resources-plugin.version}</version>
                 <configuration>
-                    <encoding>${project.build.sourceEncoding}</encoding>
+                    <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>
             <plugin>
