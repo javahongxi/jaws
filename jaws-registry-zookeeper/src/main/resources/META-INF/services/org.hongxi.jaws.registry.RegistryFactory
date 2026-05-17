@@ -1,2 +1,1 @@
 org.hongxi.jaws.registry.zookeeper.ZookeeperRegistryFactory
-org.hongxi.jaws.registry.zookeeper.ZookeeperStringSerializerRegistryFactory

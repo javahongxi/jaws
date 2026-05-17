@@ -1,6 +1,9 @@
 package org.hongxi.jaws.registry.zookeeper;
 
-import org.I0Itec.zkclient.ZkClient;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.retry.ExponentialBackoffRetry;
+import org.apache.zookeeper.CreateMode;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.registry.support.command.CommandListener;
 import org.hongxi.jaws.registry.support.command.ServiceListener;
@@ -9,9 +12,7 @@ import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.io.InputStream;
 import java.util.List;
-import java.util.Properties;
 
 import static org.junit.Assert.*;
 
@@ -22,7 +23,7 @@ public class ZookeeperRegistryTest {
     private static ZookeeperRegistry registry;
     private static URL serviceUrl, clientUrl;
     private static EmbeddedZookeeper zookeeper;
-    private static ZkClient zkClient;
+    private static CuratorFramework curator;
     private static String service = "org.hongxi.jaws.DemoService";
 
     @BeforeClass
@@ -43,13 +44,21 @@ public class ZookeeperRegistryTest {
 //        zookeeper = new EmbeddedZookeeper();
 //        zookeeper.start();
         Thread.sleep(1000);
-        zkClient = new ZkClient("127.0.0.1:" + 2181, 5000);
-        registry = new ZookeeperRegistry(zkUrl, zkClient);
+        curator = CuratorFrameworkFactory.builder()
+                .connectString("127.0.0.1:" + 2181)
+                .sessionTimeoutMs(5000)
+                .connectionTimeoutMs(5000)
+                .retryPolicy(new ExponentialBackoffRetry(1000, 3))
+                .build();
+        curator.start();
+        registry = new ZookeeperRegistry(zkUrl, curator);
     }
 
     @After
-    public void tearDown() {
-        zkClient.deleteRecursive(JawsConstants.ZOOKEEPER_REGISTRY_NAMESPACE);
+    public void tearDown() throws Exception {
+        if (curator.checkExists().forPath(JawsConstants.ZOOKEEPER_REGISTRY_NAMESPACE) != null) {
+            curator.delete().deletingChildrenIfNeeded().forPath(JawsConstants.ZOOKEEPER_REGISTRY_NAMESPACE);
+        }
     }
 
     @Test
@@ -70,7 +79,8 @@ public class ZookeeperRegistryTest {
     }
 
     private boolean containsServiceListener(URL clientUrl, ServiceListener serviceListener) {
-        return registry.getServiceListeners().get(clientUrl).containsKey(serviceListener);
+        return registry.getServiceListeners().get(clientUrl) != null &&
+               registry.getServiceListeners().get(clientUrl).containsKey(serviceListener);
     }
 
     @Test
@@ -85,20 +95,21 @@ public class ZookeeperRegistryTest {
         assertTrue(containsCommandListener(clientUrl, commandListener));
 
         String commandPath = ZkUtils.toCommandPath(clientUrl);
-        if (!zkClient.exists(commandPath)) {
-            zkClient.createPersistent(commandPath, true);
+        if (curator.checkExists().forPath(commandPath) == null) {
+            curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(commandPath);
         }
-        zkClient.writeData(commandPath, command);
+        curator.setData().forPath(commandPath, command.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         Thread.sleep(2000);
 
-        zkClient.delete(commandPath);
+        curator.delete().forPath(commandPath);
 
         registry.unsubscribeCommand(clientUrl, commandListener);
         assertFalse(containsCommandListener(clientUrl, commandListener));
     }
 
     private boolean containsCommandListener(URL clientUrl, CommandListener commandListener) {
-        return registry.getCommandListeners().get(clientUrl).containsKey(commandListener);
+        return registry.getCommandListeners().get(clientUrl) != null &&
+               registry.getCommandListeners().get(clientUrl).containsKey(commandListener);
     }
 
     @Test
@@ -119,10 +130,10 @@ public class ZookeeperRegistryTest {
 
         String command = "{\"index\":0,\"mergeGroups\":[\"aaa:1\",\"bbb:1\"],\"pattern\":\"*\",\"routeRules\":[]}\n";
         String commandPath = ZkUtils.toCommandPath(clientUrl);
-        if (!zkClient.exists(commandPath)) {
-            zkClient.createPersistent(commandPath, true);
+        if (curator.checkExists().forPath(commandPath) == null) {
+            curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(commandPath);
         }
-        zkClient.writeData(commandPath, command);
+        curator.setData().forPath(commandPath, command.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         result = registry.discoverCommand(clientUrl);
         assertEquals(result, command);
     }
@@ -135,25 +146,25 @@ public class ZookeeperRegistryTest {
         String availablePath = ZkUtils.toNodeTypePath(serviceUrl, ZkNodeType.AVAILABLE_SERVER);
 
         registry.doRegister(serviceUrl);
-        unavailable = zkClient.getChildren(unavailablePath);
+        unavailable = curator.getChildren().forPath(unavailablePath);
         assertTrue(unavailable.contains(node));
 
         registry.doAvailable(serviceUrl);
-        unavailable = zkClient.getChildren(unavailablePath);
+        unavailable = curator.getChildren().forPath(unavailablePath);
         assertFalse(unavailable.contains(node));
-        available = zkClient.getChildren(availablePath);
+        available = curator.getChildren().forPath(availablePath);
         assertTrue(available.contains(node));
 
         registry.doUnavailable(serviceUrl);
-        unavailable = zkClient.getChildren(unavailablePath);
+        unavailable = curator.getChildren().forPath(unavailablePath);
         assertTrue(unavailable.contains(node));
-        available = zkClient.getChildren(availablePath);
+        available = curator.getChildren().forPath(availablePath);
         assertFalse(available.contains(node));
 
         registry.doUnregister(serviceUrl);
-        unavailable = zkClient.getChildren(unavailablePath);
+        unavailable = curator.getChildren().forPath(unavailablePath);
         assertFalse(unavailable.contains(node));
-        available = zkClient.getChildren(availablePath);
+        available = curator.getChildren().forPath(availablePath);
         assertFalse(available.contains(node));
     }
 }

@@ -1,11 +1,13 @@
 package org.hongxi.jaws.registry.zookeeper;
 
-import org.I0Itec.zkclient.IZkChildListener;
-import org.I0Itec.zkclient.IZkDataListener;
-import org.I0Itec.zkclient.IZkStateListener;
-import org.I0Itec.zkclient.ZkClient;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.zookeeper.Watcher;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.recipes.cache.ChildData;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
+import org.apache.curator.framework.state.ConnectionState;
+import org.apache.curator.framework.state.ConnectionStateListener;
+import org.apache.zookeeper.CreateMode;
 import org.hongxi.jaws.closable.Closable;
 import org.hongxi.jaws.closable.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
@@ -18,6 +20,7 @@ import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -31,41 +34,30 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
     
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
-    private ZkClient zkClient;
+    private final CuratorFramework curator;
     private Set<URL> availableServices = new ConcurrentHashSet<>();
-    private ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, IZkChildListener>> serviceListeners = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, IZkDataListener>> commandListeners = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, CuratorCache>> serviceListeners = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, CuratorCache>> commandListeners = new ConcurrentHashMap<>();
 
-    public ZookeeperRegistry(URL url, ZkClient client) {
+    public ZookeeperRegistry(URL url, CuratorFramework client) {
         super(url);
-        this.zkClient = client;
-        IZkStateListener zkStateListener = new IZkStateListener() {
-            @Override
-            public void handleStateChanged(Watcher.Event.KeeperState state) throws Exception {
-                // do nothing
-            }
-
-            @Override
-            public void handleNewSession() throws Exception {
-                log.info("zkRegistry get new session notify.");
+        this.curator = client;
+        ConnectionStateListener connectionStateListener = (curatorFramework, connectionState) -> {
+            if (connectionState == ConnectionState.RECONNECTED) {
+                log.info("zkRegistry get reconnected notify.");
                 reconnectService();
                 reconnectClient();
             }
-
-            @Override
-            public void handleSessionEstablishmentError(Throwable throwable) throws Exception {
-                // do nothing
-            }
         };
-        zkClient.subscribeStateChanges(zkStateListener);
+        curator.getConnectionStateListenable().addListener(connectionStateListener);
         ShutdownHook.registerShutdownHook(this);
     }
 
-    public ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, IZkChildListener>> getServiceListeners() {
+    public ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, CuratorCache>> getServiceListeners() {
         return serviceListeners;
     }
 
-    public ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, IZkDataListener>> getCommandListeners() {
+    public ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, CuratorCache>> getCommandListeners() {
         return commandListeners;
     }
 
@@ -73,21 +65,32 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
     protected void subscribeService(final URL url, final ServiceListener serviceListener) {
         try {
             clientLock.lock();
-            ConcurrentHashMap<ServiceListener, IZkChildListener> childChangeListeners = serviceListeners.get(url);
+            ConcurrentHashMap<ServiceListener, CuratorCache> childChangeListeners = serviceListeners.get(url);
             if (childChangeListeners == null) {
-                serviceListeners.putIfAbsent(url, new ConcurrentHashMap<ServiceListener, IZkChildListener>());
+                serviceListeners.putIfAbsent(url, new ConcurrentHashMap<>());
                 childChangeListeners = serviceListeners.get(url);
             }
-            IZkChildListener zkChildListener = childChangeListeners.get(serviceListener);
-            if (zkChildListener == null) {
-                childChangeListeners.putIfAbsent(serviceListener, new IZkChildListener() {
+            CuratorCache curatorCache = childChangeListeners.get(serviceListener);
+            if (curatorCache == null) {
+                String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
+                curatorCache = CuratorCache.build(curator, serverTypePath);
+                curatorCache.listenable().addListener(new CuratorCacheListener() {
                     @Override
-                    public void handleChildChange(String parentPath, List<String> currentChilds) {
-                        serviceListener.notifyService(url, getUrl(), nodeChildsToUrls(url, parentPath, currentChilds));
-                        log.info("[ZookeeperRegistry] service list change: path={}, currentChilds={}", parentPath, currentChilds);
+                    public void event(Type type, ChildData oldData, ChildData data) {
+                        if (type == Type.NODE_CREATED || type == Type.NODE_DELETED) {
+                            try {
+                                List<String> currentChildren = curator.getChildren().forPath(serverTypePath);
+                                serviceListener.notifyService(url, getUrl(), nodeChildrenToUrls(url, serverTypePath, currentChildren));
+                                log.info("[ZookeeperRegistry] service list change: path={}, currentChildren={}", serverTypePath, currentChildren);
+                            } catch (Exception e) {
+                                log.warn("[ZookeeperRegistry] failed to get children for path {}", serverTypePath, e);
+                            }
+                        }
                     }
                 });
-                zkChildListener = childChangeListeners.get(serviceListener);
+                childChangeListeners.putIfAbsent(serviceListener, curatorCache);
+                curatorCache = childChangeListeners.get(serviceListener);
+                curatorCache.start();
             }
 
             try {
@@ -98,8 +101,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
                 log.warn("[ZookeeperRegistry] subscribe service: create node error, path={}, msg={}", ZkUtils.toNodePath(url, ZkNodeType.CLIENT), e.getMessage());
             }
 
-            String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
-            zkClient.subscribeChildChanges(serverTypePath, zkChildListener);
             log.info("[ZookeeperRegistry] subscribe service: path={}, info={}", ZkUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr());
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -112,31 +113,34 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
     protected void subscribeCommand(final URL url, final CommandListener commandListener) {
         try {
             clientLock.lock();
-            ConcurrentHashMap<CommandListener, IZkDataListener> dataChangeListeners = commandListeners.get(url);
+            ConcurrentHashMap<CommandListener, CuratorCache> dataChangeListeners = commandListeners.get(url);
             if (dataChangeListeners == null) {
-                commandListeners.putIfAbsent(url, new ConcurrentHashMap<CommandListener, IZkDataListener>());
+                commandListeners.putIfAbsent(url, new ConcurrentHashMap<>());
                 dataChangeListeners = commandListeners.get(url);
             }
-            IZkDataListener zkDataListener = dataChangeListeners.get(commandListener);
-            if (zkDataListener == null) {
-                dataChangeListeners.putIfAbsent(commandListener, new IZkDataListener() {
+            CuratorCache curatorCache = dataChangeListeners.get(commandListener);
+            if (curatorCache == null) {
+                final String commandPath = ZkUtils.toCommandPath(url);
+                curatorCache = CuratorCache.build(curator, commandPath);
+                curatorCache.listenable().addListener(new CuratorCacheListener() {
                     @Override
-                    public void handleDataChange(String dataPath, Object data) throws Exception {
-                        commandListener.notifyCommand(url, (String) data);
-                        log.info("[ZookeeperRegistry] command data change: path={}, command={}", dataPath, data);
-                    }
-
-                    @Override
-                    public void handleDataDeleted(String dataPath) throws Exception {
-                        commandListener.notifyCommand(url, null);
-                        log.info("[ZookeeperRegistry] command deleted: path={}", dataPath);
+                    public void event(Type type, ChildData oldData, ChildData data) {
+                        if (type == Type.NODE_CHANGED || type == Type.NODE_CREATED) {
+                            String command = data == null || data.getData() == null ? null : new String(data.getData(), StandardCharsets.UTF_8);
+                            commandListener.notifyCommand(url, command);
+                            log.info("[ZookeeperRegistry] command data change: path={}, command={}", commandPath, command);
+                        } else if (type == Type.NODE_DELETED) {
+                            commandListener.notifyCommand(url, null);
+                            log.info("[ZookeeperRegistry] command deleted: path={}", commandPath);
+                        }
                     }
                 });
-                zkDataListener = dataChangeListeners.get(commandListener);
+                dataChangeListeners.putIfAbsent(commandListener, curatorCache);
+                curatorCache = dataChangeListeners.get(commandListener);
+                curatorCache.start();
             }
 
             String commandPath = ZkUtils.toCommandPath(url);
-            zkClient.subscribeDataChanges(commandPath, zkDataListener);
             log.info("[ZookeeperRegistry] subscribe command: path={}, info={}", commandPath, url.toFullStr());
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -149,11 +153,11 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
     protected void unsubscribeService(URL url, ServiceListener serviceListener) {
         try {
             clientLock.lock();
-            Map<ServiceListener, IZkChildListener> childChangeListeners = serviceListeners.get(url);
+            Map<ServiceListener, CuratorCache> childChangeListeners = serviceListeners.get(url);
             if (childChangeListeners != null) {
-                IZkChildListener zkChildListener = childChangeListeners.get(serviceListener);
-                if (zkChildListener != null) {
-                    zkClient.unsubscribeChildChanges(ZkUtils.toNodeTypePath(url, ZkNodeType.CLIENT), zkChildListener);
+                CuratorCache curatorCache = childChangeListeners.get(serviceListener);
+                if (curatorCache != null) {
+                    curatorCache.close();
                     childChangeListeners.remove(serviceListener);
                 }
             }
@@ -168,11 +172,11 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
     protected void unsubscribeCommand(URL url, CommandListener commandListener) {
         try {
             clientLock.lock();
-            Map<CommandListener, IZkDataListener> dataChangeListeners = commandListeners.get(url);
+            Map<CommandListener, CuratorCache> dataChangeListeners = commandListeners.get(url);
             if (dataChangeListeners != null) {
-                IZkDataListener zkDataListener = dataChangeListeners.get(commandListener);
-                if (zkDataListener != null) {
-                    zkClient.unsubscribeDataChanges(ZkUtils.toCommandPath(url), zkDataListener);
+                CuratorCache curatorCache = dataChangeListeners.get(commandListener);
+                if (curatorCache != null) {
+                    curatorCache.close();
                     dataChangeListeners.remove(commandListener);
                 }
             }
@@ -187,11 +191,11 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
     protected List<URL> discoverService(URL url) {
         try {
             String parentPath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
-            List<String> currentChilds = new ArrayList<>();
-            if (zkClient.exists(parentPath)) {
-                currentChilds = zkClient.getChildren(parentPath);
+            List<String> currentChildren = new ArrayList<>();
+            if (curator.checkExists().forPath(parentPath) != null) {
+                currentChildren = curator.getChildren().forPath(parentPath);
             }
-            return nodeChildsToUrls(url, parentPath, currentChilds);
+            return nodeChildrenToUrls(url, parentPath, currentChildren);
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to discover service %s from zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         }
@@ -202,8 +206,11 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
         try {
             String commandPath = ZkUtils.toCommandPath(url);
             String command = "";
-            if (zkClient.exists(commandPath)) {
-                command = zkClient.readData(commandPath);
+            if (curator.checkExists().forPath(commandPath) != null) {
+                byte[] data = curator.getData().forPath(commandPath);
+                if (data != null) {
+                    command = new String(data, StandardCharsets.UTF_8);
+                }
             }
             return command;
         } catch (Throwable e) {
@@ -283,16 +290,19 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
         }
     }
 
-    private List<URL> nodeChildsToUrls(URL url, String parentPath, List<String> currentChilds) {
+    private List<URL> nodeChildrenToUrls(URL url, String parentPath, List<String> currentChildren) {
         List<URL> urls = new ArrayList<>();
-        if (currentChilds != null) {
-            for (String node : currentChilds) {
+        if (currentChildren != null) {
+            for (String node : currentChildren) {
                 String nodePath = parentPath + JawsConstants.PATH_SEPARATOR + node;
                 String data = null;
                 try {
-                    data = zkClient.readData(nodePath, true);
+                    byte[] bytes = curator.getData().forPath(nodePath);
+                    if (bytes != null) {
+                        data = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                    }
                 } catch (Exception e) {
-                    log.warn("get zkdata fail! {}", e.getMessage());
+                    log.warn("get zk data failed! {}", e.getMessage());
                 }
                 URL newurl = null;
                 if (StringUtils.isNotBlank(data)) {
@@ -306,7 +316,7 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
                     newurl = url.createCopy();
                     String host = "";
                     int port = 80;
-                    if (node.indexOf(":") > -1) {
+                    if (node.contains(":")) {
                         String[] hp = node.split(":");
                         if (hp.length > 1) {
                             host = hp[0];
@@ -328,17 +338,26 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
     }
 
     private void createNode(URL url, ZkNodeType nodeType) {
-        String nodeTypePath = ZkUtils.toNodeTypePath(url, nodeType);
-        if (!zkClient.exists(nodeTypePath)) {
-            zkClient.createPersistent(nodeTypePath, true);
+        try {
+            String nodeTypePath = ZkUtils.toNodeTypePath(url, nodeType);
+            if (curator.checkExists().forPath(nodeTypePath) == null) {
+                curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(nodeTypePath);
+            }
+            curator.create().withMode(CreateMode.EPHEMERAL)
+                    .forPath(ZkUtils.toNodePath(url, nodeType), url.toFullStr().getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-        zkClient.createEphemeral(ZkUtils.toNodePath(url, nodeType), url.toFullStr());
     }
 
     private void removeNode(URL url, ZkNodeType nodeType) {
-        String nodePath = ZkUtils.toNodePath(url, nodeType);
-        if (zkClient.exists(nodePath)) {
-            zkClient.delete(nodePath);
+        try {
+            String nodePath = ZkUtils.toNodePath(url, nodeType);
+            if (curator.checkExists().forPath(nodePath) != null) {
+                curator.delete().forPath(nodePath);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -366,26 +385,25 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
         }
     }
 
-    @SuppressWarnings("rawtypes")
     private void reconnectClient() {
         if (serviceListeners != null && !serviceListeners.isEmpty()) {
             try {
                 clientLock.lock();
-                for (Map.Entry entry : serviceListeners.entrySet()) {
-                    URL url = (URL) entry.getKey();
-                    ConcurrentHashMap<ServiceListener, IZkChildListener> childChangeListeners = serviceListeners.get(url);
+                for (Map.Entry<URL, ConcurrentHashMap<ServiceListener, CuratorCache>> entry : serviceListeners.entrySet()) {
+                    URL url = entry.getKey();
+                    ConcurrentHashMap<ServiceListener, CuratorCache> childChangeListeners = serviceListeners.get(url);
                     if (childChangeListeners != null) {
-                        for (Map.Entry e : childChangeListeners.entrySet()) {
-                            subscribeService(url, (ServiceListener) e.getKey());
+                        for (Map.Entry<ServiceListener, CuratorCache> e : childChangeListeners.entrySet()) {
+                            subscribeService(url, e.getKey());
                         }
                     }
                 }
-                for (Map.Entry entry : commandListeners.entrySet()) {
-                    URL url = (URL) entry.getKey();
-                    ConcurrentHashMap<CommandListener, IZkDataListener> dataChangeListeners = commandListeners.get(url);
+                for (Map.Entry<URL, ConcurrentHashMap<CommandListener, CuratorCache>> entry : commandListeners.entrySet()) {
+                    URL url = entry.getKey();
+                    ConcurrentHashMap<CommandListener, CuratorCache> dataChangeListeners = commandListeners.get(url);
                     if (dataChangeListeners != null) {
-                        for (Map.Entry e : dataChangeListeners.entrySet()) {
-                            subscribeCommand(url, (CommandListener) e.getKey());
+                        for (Map.Entry<CommandListener, CuratorCache> e : dataChangeListeners.entrySet()) {
+                            subscribeCommand(url, e.getKey());
                         }
                     }
                 }
@@ -398,6 +416,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closab
 
     @Override
     public void close() {
-        this.zkClient.close();
+        curator.close();
     }
 }
