@@ -1,4 +1,4 @@
-package org.jaws.test;
+package org.hongxi.jaws.test;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
@@ -6,9 +6,11 @@ import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.switcher.JawsSwitcherUtils;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Created by shenhongxi on 2021/4/23.
@@ -18,6 +20,7 @@ public class RefererConfigTest extends BaseTestCase {
     private RefererConfig<HelloService> refererConfig = null;
     private ServiceConfig<HelloService> serviceConfig = null;
 
+    @BeforeEach
     @Override
     public void setUp() throws Exception {
         super.setUp();
@@ -36,6 +39,7 @@ public class RefererConfigTest extends BaseTestCase {
         refererConfig.setCheck("false");
     }
 
+    @AfterEach
     @Override
     public void tearDown() throws Exception {
         super.tearDown();

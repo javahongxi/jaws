@@ -1,10 +1,12 @@
-package org.jaws.test;
+package org.hongxi.jaws.test;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ServiceConfig;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by shenhongxi on 2021/4/21.
@@ -13,6 +15,7 @@ public class ServiceConfigTest extends BaseTestCase {
 
     private ServiceConfig<HelloService> serviceConfig = null;
 
+    @BeforeEach
     @Override
     public void setUp() throws Exception {
         super.setUp();
@@ -22,6 +25,7 @@ public class ServiceConfigTest extends BaseTestCase {
         serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10001);
     }
 
+    @AfterEach
     @Override
     public void tearDown() throws Exception {
         super.tearDown();

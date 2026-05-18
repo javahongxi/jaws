@@ -1,12 +1,10 @@
-package org.jaws.test;
+package org.hongxi.jaws.test;
 
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
-import org.junit.After;
-import org.junit.Before;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
@@ -24,7 +22,6 @@ public class BaseTestCase {
 
     protected static String group = "test";
 
-    @Before
     public void setUp() throws Exception {
         InetAddress address = NetUtils.getLocalAddress();
         if (address != null) {
@@ -32,7 +29,6 @@ public class BaseTestCase {
         }
     }
 
-    @After
     public void tearDown() throws Exception {
     }
 

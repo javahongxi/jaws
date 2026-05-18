@@ -1,4 +1,4 @@
-package org.jaws.test;
+package org.hongxi.jaws.test;
 
 import lombok.Data;
 

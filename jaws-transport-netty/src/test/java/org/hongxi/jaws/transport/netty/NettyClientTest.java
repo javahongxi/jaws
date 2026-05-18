@@ -5,16 +5,15 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by shenhongxi on 2020/8/22.
@@ -26,7 +25,7 @@ public class NettyClientTest {
     private DefaultRequest request;
     private URL url;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         Map<String, String> parameters = new HashMap<>();
         parameters.put("requestTimeout", "500");
@@ -55,7 +54,7 @@ public class NettyClientTest {
         nettyServer.open();
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (nettyClient != null) {
             nettyClient.close();
@@ -73,8 +72,8 @@ public class NettyClientTest {
             response = nettyClient.request(request);
             Object result = response.getValue();
 
-            Assert.assertNotNull(result);
-            Assert.assertEquals("method: " + request.getMethodName() + " requestId: " + request.getRequestId(), result);
+            assertNotNull(result);
+            assertEquals("method: " + request.getMethodName() + " requestId: " + request.getRequestId(), result);
         } catch (JawsServiceException e) {
             fail(e.getMessage());
         } catch (Exception e) {

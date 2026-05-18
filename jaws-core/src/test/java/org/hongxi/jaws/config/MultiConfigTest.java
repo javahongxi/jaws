@@ -6,12 +6,14 @@ import org.hongxi.jaws.mock.MockClient;
 import org.hongxi.jaws.protocol.example.Hello;
 import org.hongxi.jaws.protocol.example.IHello;
 import org.hongxi.jaws.rpc.URL;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by shenhongxi on 2021/4/23.
@@ -25,6 +27,7 @@ public class MultiConfigTest extends BaseTestCase {
     int port1 = 18080;
     int port2 = 18081;
 
+    @BeforeEach
     @Override
     public void setUp() throws Exception {
         super.setUp();
@@ -50,6 +53,7 @@ public class MultiConfigTest extends BaseTestCase {
 
     }
 
+    @AfterEach
     @Override
     public void tearDown() throws Exception {
         super.tearDown();
@@ -85,10 +89,7 @@ public class MultiConfigTest extends BaseTestCase {
 
     @Test
     public void testMultiVersion() {
-
-
         try {
-
             serviceConfig1.setVersion("1.0");
             serviceConfig1.setExport(JawsConstants.PROTOCOL_JAWS + ":" + port1);
 
@@ -106,7 +107,6 @@ public class MultiConfigTest extends BaseTestCase {
             refererConfig2.setVersion("2.0");
             IHello hello2 = refererConfig2.getRef();
             validateCall(port2, 2, hello2);
-
         } catch (Exception e) {
             e.printStackTrace();
             assertTrue(false);
@@ -135,7 +135,6 @@ public class MultiConfigTest extends BaseTestCase {
             refererConfig2.setGroup("group1");
             IHello hello2 = refererConfig2.getRef();
             validateCall(port2, 3, hello2);
-
         } catch (Exception e) {
             e.printStackTrace();
             assertTrue(false);

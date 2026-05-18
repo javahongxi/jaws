@@ -8,13 +8,13 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.registry.support.command.CommandListener;
 import org.hongxi.jaws.registry.support.command.ServiceListener;
 import org.hongxi.jaws.rpc.URL;
-import org.junit.After;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by shenhongxi on 2021/4/24.
@@ -26,7 +26,7 @@ public class ZookeeperRegistryTest {
     private static CuratorFramework curator;
     private static String service = "org.hongxi.jaws.DemoService";
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() throws Exception {
 //        Properties properties = new Properties();
 //        InputStream in = EmbeddedZookeeper.class.getResourceAsStream("/zoo.cfg");
@@ -54,7 +54,7 @@ public class ZookeeperRegistryTest {
         registry = new ZookeeperRegistry(zkUrl, curator);
     }
 
-    @After
+    @AfterEach
     public void tearDown() throws Exception {
         if (curator.checkExists().forPath(JawsConstants.ZOOKEEPER_REGISTRY_NAMESPACE) != null) {
             curator.delete().deletingChildrenIfNeeded().forPath(JawsConstants.ZOOKEEPER_REGISTRY_NAMESPACE);

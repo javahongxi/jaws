@@ -4,12 +4,14 @@ import org.hongxi.jaws.BaseTestCase;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.protocol.example.IWorld;
 import org.hongxi.jaws.protocol.example.MockWorld;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by shenhongxi on 2021/4/23.
@@ -19,6 +21,7 @@ public class RefererConfigTest extends BaseTestCase {
     private RefererConfig<IWorld> refererConfig = null;
     private ServiceConfig<IWorld> serviceConfig = null;
 
+    @BeforeEach
     @Override
     public void setUp() throws Exception {
         super.setUp();
@@ -37,6 +40,7 @@ public class RefererConfigTest extends BaseTestCase {
         refererConfig.setCheck("false");
     }
 
+    @AfterEach
     @Override
     public void tearDown() throws Exception {
         super.tearDown();
@@ -117,7 +121,7 @@ public class RefererConfigTest extends BaseTestCase {
     }
 
     @Test
-    public void testMultiRegitstry() {
+    public void testMultiRegistry() {
         List<RegistryConfig> registries =
                 getMultiRegister(JawsConstants.REGISTRY_PROTOCOL_LOCAL, JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
         refererConfig.setRegistries(registries);

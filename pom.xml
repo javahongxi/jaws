@@ -22,6 +22,7 @@
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
+        <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
 
         <!-- refer to spring-boot-dependencies -->
         <commons-lang3.version>3.17.0</commons-lang3.version>
@@ -29,7 +30,7 @@
         <fastjson.version>2.0.61</fastjson.version>
         <guava.version>33.6.0-jre</guava.version>
         <hessian.version>4.0.66</hessian.version>
-        <junit.version>4.13.2</junit.version>
+        <junit.version>5.12.2</junit.version>
         <logback.version>1.5.32</logback.version>
         <netty.version>4.1.132.Final</netty.version>
         <slf4j.version>2.0.17</slf4j.version>
@@ -97,8 +98,8 @@
         </dependency>
 
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
@@ -136,6 +137,11 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
             </plugin>
         </plugins>
     </build>

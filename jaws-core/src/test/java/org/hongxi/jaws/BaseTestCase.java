@@ -8,8 +8,6 @@ import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.protocol.example.IWorld;
 import org.hongxi.jaws.protocol.example.World;
-import org.junit.After;
-import org.junit.Before;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
@@ -27,7 +25,6 @@ public class BaseTestCase {
 
     protected static String group = "test-2021";
 
-    @Before
     public void setUp() throws Exception {
         InetAddress address = NetUtils.getLocalAddress();
         if (address != null) {
@@ -35,7 +32,6 @@ public class BaseTestCase {
         }
     }
 
-    @After
     public void tearDown() throws Exception {}
 
     protected static ServiceConfig<IWorld> mockIWorldServiceConfig() {

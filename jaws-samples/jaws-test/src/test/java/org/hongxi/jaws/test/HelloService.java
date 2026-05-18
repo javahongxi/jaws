@@ -1,4 +1,4 @@
-package org.jaws.test;
+package org.hongxi.jaws.test;
 
 /**
  * Created by shenhongxi on 2021/4/25.
