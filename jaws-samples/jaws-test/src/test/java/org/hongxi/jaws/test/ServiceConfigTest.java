@@ -39,8 +39,8 @@ public class ServiceConfigTest extends BaseTestCase {
         serviceConfig.export();
 
         assertTrue(serviceConfig.getExported().get());
-        assertEquals(serviceConfig.getExporters().size(), 1);
-        assertEquals(serviceConfig.getRegistryUrls().size(), 1);
+        assertEquals(1, serviceConfig.getExporters().size());
+        assertEquals(1, serviceConfig.getRegistryUrls().size());
     }
 
     @Test
@@ -48,6 +48,6 @@ public class ServiceConfigTest extends BaseTestCase {
         testExport();
         serviceConfig.unexport();
         assertFalse(serviceConfig.getExported().get());
-        assertEquals(serviceConfig.getExporters().size(), 0);
+        assertEquals(0, serviceConfig.getExporters().size());
     }
 }

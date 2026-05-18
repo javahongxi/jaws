@@ -24,11 +24,10 @@ public class ZookeeperRegistryTest {
     private static ZookeeperRegistry registry;
     private static URL serviceUrl, clientUrl;
     private static CuratorFramework curator;
-    private static String service = "org.hongxi.jaws.DemoService";
 
     @BeforeAll
     public static void setUp() throws Exception {
-        URL zkUrl = new URL("zookeeper", "127.0.0.1", 2181, "org.hongxi.jaws.registry.RegistryService");
+        String service = "org.hongxi.jaws.DemoService";
         clientUrl = new URL(JawsConstants.PROTOCOL_JAWS, "127.0.0.1", 0, service);
         clientUrl.addParameter("group", "aaa");
 
@@ -42,6 +41,7 @@ public class ZookeeperRegistryTest {
                 .retryPolicy(new ExponentialBackoffRetry(1000, 3))
                 .build();
         curator.start();
+        URL zkUrl = new URL("zookeeper", "127.0.0.1", 2181, "org.hongxi.jaws.registry.RegistryService");
         registry = new ZookeeperRegistry(zkUrl, curator);
     }
 
@@ -127,7 +127,7 @@ public class ZookeeperRegistryTest {
         }
         curator.setData().forPath(commandPath, command.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         result = registry.discoverCommand(clientUrl);
-        assertEquals(result, command);
+        assertEquals(command, result);
     }
 
     @Test

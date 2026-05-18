@@ -73,72 +73,56 @@ public class MultiConfigTest extends BaseTestCase {
 
     @Test
     public void testMultiService() {
-        try {
-            serviceConfig1.export();
-            serviceConfig2.export();
+        serviceConfig1.export();
+        serviceConfig2.export();
 
-            IHello hello = refererConfig1.getRef();
-            assertNotNull(hello);
-            assertEquals(2, MockClient.urlMap.size());
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            assertTrue(false);
-        }
+        IHello hello = refererConfig1.getRef();
+        assertNotNull(hello);
+        assertEquals(2, MockClient.urlMap.size());
     }
 
     @Test
     public void testMultiVersion() {
-        try {
-            serviceConfig1.setVersion("1.0");
-            serviceConfig1.setExport(JawsConstants.PROTOCOL_JAWS + ":" + port1);
+        serviceConfig1.setVersion("1.0");
+        serviceConfig1.setExport(JawsConstants.PROTOCOL_JAWS + ":" + port1);
 
-            serviceConfig1.export();
+        serviceConfig1.export();
 
-            serviceConfig2.setVersion("2.0");
-            serviceConfig2.setExport(JawsConstants.PROTOCOL_JAWS + ":" + port2);
+        serviceConfig2.setVersion("2.0");
+        serviceConfig2.setExport(JawsConstants.PROTOCOL_JAWS + ":" + port2);
 
-            serviceConfig2.export();
+        serviceConfig2.export();
 
-            refererConfig1.setVersion("1.0");
-            IHello hello1 = refererConfig1.getRef();
-            validateCall(port1, 3, hello1);
+        refererConfig1.setVersion("1.0");
+        IHello hello1 = refererConfig1.getRef();
+        validateCall(port1, 3, hello1);
 
-            refererConfig2.setVersion("2.0");
-            IHello hello2 = refererConfig2.getRef();
-            validateCall(port2, 2, hello2);
-        } catch (Exception e) {
-            e.printStackTrace();
-            assertTrue(false);
-        }
+        refererConfig2.setVersion("2.0");
+        IHello hello2 = refererConfig2.getRef();
+        validateCall(port2, 2, hello2);
     }
 
     @Test
     public void testMultiGroup() {
-        try {
-            // 由于需要提供跨group访问rpc的能力，所以不再验证group是否一致。
-            serviceConfig1.setGroup("group1");
-            serviceConfig1.export();
+        // 由于需要提供跨group访问rpc的能力，所以不再验证group是否一致。
+        serviceConfig1.setGroup("group1");
+        serviceConfig1.export();
 
-            refererConfig1.setGroup("group2");
-            IHello hello1 = refererConfig1.getRef();
-            validateCall(port1, 3, hello1);
+        refererConfig1.setGroup("group2");
+        IHello hello1 = refererConfig1.getRef();
+        validateCall(port1, 3, hello1);
 
 
-            serviceConfig1.unexport();
-            refererConfig1.destroy();
-            MockClient.urlMap.clear();
+        serviceConfig1.unexport();
+        refererConfig1.destroy();
+        MockClient.urlMap.clear();
 
-            serviceConfig2.setGroup("group2");
-            serviceConfig2.export();
+        serviceConfig2.setGroup("group2");
+        serviceConfig2.export();
 
-            refererConfig2.setGroup("group1");
-            IHello hello2 = refererConfig2.getRef();
-            validateCall(port2, 3, hello2);
-        } catch (Exception e) {
-            e.printStackTrace();
-            assertTrue(false);
-        }
+        refererConfig2.setGroup("group1");
+        IHello hello2 = refererConfig2.getRef();
+        validateCall(port2, 3, hello2);
     }
 
     private void validateCall(int port, int callTimes, IHello hello) {

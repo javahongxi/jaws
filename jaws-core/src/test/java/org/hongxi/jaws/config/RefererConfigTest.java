@@ -60,7 +60,7 @@ public class RefererConfigTest extends BaseTestCase {
 
         IWorld ref = refererConfig.getRef();
         assertNotNull(ref);
-        assertEquals(refererConfig.getClusterSupports().size(), 1);
+        assertEquals(1, refererConfig.getClusterSupports().size());
 
         int times = 3;
         for (int i = 0; i < times; i++) {
