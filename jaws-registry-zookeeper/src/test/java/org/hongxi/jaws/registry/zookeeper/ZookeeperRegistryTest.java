@@ -22,18 +22,11 @@ import static org.junit.jupiter.api.Assertions.*;
 public class ZookeeperRegistryTest {
     private static ZookeeperRegistry registry;
     private static URL serviceUrl, clientUrl;
-    private static EmbeddedZookeeper zookeeper;
     private static CuratorFramework curator;
     private static String service = "org.hongxi.jaws.DemoService";
 
     @BeforeAll
     public static void setUp() throws Exception {
-//        Properties properties = new Properties();
-//        InputStream in = EmbeddedZookeeper.class.getResourceAsStream("/zoo.cfg");
-//        properties.load(in);
-//        int port = Integer.parseInt(properties.getProperty("clientPort"));
-//        in.close();
-
         URL zkUrl = new URL("zookeeper", "127.0.0.1", 2181, "org.hongxi.jaws.registry.RegistryService");
         clientUrl = new URL(JawsConstants.PROTOCOL_JAWS, "127.0.0.1", 0, service);
         clientUrl.addParameter("group", "aaa");
@@ -41,9 +34,6 @@ public class ZookeeperRegistryTest {
         serviceUrl = new URL(JawsConstants.PROTOCOL_JAWS, "127.0.0.1", 8001, service);
         serviceUrl.addParameter("group", "aaa");
 
-//        zookeeper = new EmbeddedZookeeper();
-//        zookeeper.start();
-        Thread.sleep(1000);
         curator = CuratorFrameworkFactory.builder()
                 .connectString("127.0.0.1:" + 2181)
                 .sessionTimeoutMs(5000)
