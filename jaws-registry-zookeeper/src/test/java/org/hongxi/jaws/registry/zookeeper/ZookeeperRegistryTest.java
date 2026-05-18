@@ -12,6 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -86,9 +87,10 @@ public class ZookeeperRegistryTest {
 
         String commandPath = ZkUtils.toCommandPath(clientUrl);
         if (curator.checkExists().forPath(commandPath) == null) {
-            curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(commandPath);
+            curator.create().creatingParentsIfNeeded()
+                    .withMode(CreateMode.PERSISTENT)
+                    .forPath(commandPath, command.getBytes(StandardCharsets.UTF_8));
         }
-        curator.setData().forPath(commandPath, command.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         Thread.sleep(2000);
 
         curator.delete().forPath(commandPath);
