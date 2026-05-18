@@ -1,5 +1,5 @@
 ## 0.0.3
-升级Java 17，ZkClient改为Curator，测试用例完善
+升级到Java 17，ZkClient改为Curator，测试代码完善
 
 ## 0.0.2
 服务注册与发现，负载均衡，容错
