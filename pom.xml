@@ -25,7 +25,7 @@
         <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
 
         <!-- refer to spring-boot-dependencies -->
-        <commons-lang3.version>3.17.0</commons-lang3.version>
+        <commons-lang3.version>3.18.0</commons-lang3.version>
         <curator.version>5.9.0</curator.version>
         <fastjson2.version>2.0.61</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
