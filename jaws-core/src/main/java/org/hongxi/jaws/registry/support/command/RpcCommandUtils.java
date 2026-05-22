@@ -1,6 +1,6 @@
 package org.hongxi.jaws.registry.support.command;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSON;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import org.slf4j.Logger;
@@ -27,7 +27,7 @@ public class RpcCommandUtils {
      */
     public static RpcCommand stringToCommand(String commandString) {
         try {
-            return JSONObject.parseObject(commandString, RpcCommand.class);
+            return JSON.parseObject(commandString, RpcCommand.class);
         } catch (Exception e) {
             log.error("指令配置错误：不是合法的JSON格式!");
             return null;
@@ -41,7 +41,7 @@ public class RpcCommandUtils {
      * @return
      */
     public static String commandToString(RpcCommand command) {
-        return JSONObject.toJSONString(command);
+        return JSON.toJSONString(command);
     }
 
     private static PatternEvaluator evaluator = new PatternEvaluator();

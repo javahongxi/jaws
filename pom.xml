@@ -27,7 +27,7 @@
         <!-- refer to spring-boot-dependencies -->
         <commons-lang3.version>3.17.0</commons-lang3.version>
         <curator.version>5.9.0</curator.version>
-        <fastjson.version>2.0.61</fastjson.version>
+        <fastjson2.version>2.0.61</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
         <hessian.version>4.0.66</hessian.version>
         <junit.version>5.12.2</junit.version>
@@ -50,9 +50,9 @@
                 <version>${hessian.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.alibaba</groupId>
-                <artifactId>fastjson</artifactId>
-                <version>${fastjson.version}</version>
+                <groupId>com.alibaba.fastjson2</groupId>
+                <artifactId>fastjson2</artifactId>
+                <version>${fastjson2.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.google.guava</groupId>

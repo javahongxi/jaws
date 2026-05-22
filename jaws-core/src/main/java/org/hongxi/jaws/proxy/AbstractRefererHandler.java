@@ -11,13 +11,11 @@ import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
-import org.hongxi.jaws.serialize.DeserializableObject;
 import org.hongxi.jaws.switcher.Switcher;
 import org.hongxi.jaws.switcher.SwitcherService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -95,14 +93,6 @@ public class AbstractRefererHandler<T> {
                     }
                 } else {
                     Object value = response.getValue();
-                    if (value != null && value instanceof DeserializableObject) {
-                        try {
-                            value = ((DeserializableObject) value).deserialize(returnType);
-                        } catch (IOException e) {
-                            log.error("deserialize response value fail! deserialize type:{}", returnType, e);
-                            throw new JawsFrameworkException("deserialize return value fail! deserialize type:" + returnType, e);
-                        }
-                    }
                     return value;
                 }
             } catch (RuntimeException e) {

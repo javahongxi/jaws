@@ -70,6 +70,7 @@ public class SampleConsumer {
         protocolConfig.setName(protocolName);
         protocolConfig.setId(protocolConfig.getName());
         protocolConfig.setEndpointFactory("jaws");
+        protocolConfig.setSerialization("fastjson");
         return protocolConfig;
     }
 

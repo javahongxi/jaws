@@ -9,11 +9,9 @@ import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
-import org.hongxi.jaws.serialize.DeserializableObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
@@ -86,7 +84,6 @@ public class ProviderMessageRouter implements MessageHandler {
         }
         Method method = provider.lookupMethod(request.getMethodName(), request.getParametersDesc());
         fillParamDesc(request, method);
-        processLazyDeserialize(request, method);
         Response response = call(request, provider);
         response.setSerializationNumber(request.getSerializationNumber());
         return response;
@@ -97,19 +94,6 @@ public class ProviderMessageRouter implements MessageHandler {
             return strategy.call(request, provider);
         } catch (Exception e) {
             return JawsFrameworkUtils.buildErrorResponse(request, new JawsBizException("provider call process error", e));
-        }
-    }
-
-    private void processLazyDeserialize(Request request, Method method) {
-        if (method != null && request.getArguments() != null && request.getArguments().length == 1
-                && request.getArguments()[0] instanceof DeserializableObject
-                && request instanceof DefaultRequest) {
-            try {
-                Object[] args = ((DeserializableObject) request.getArguments()[0]).deserializeMulti(method.getParameterTypes());
-                ((DefaultRequest) request).setArguments(args);
-            } catch (IOException e) {
-                throw new JawsFrameworkException("deserialize parameters fail: " + request.toString() + ", error:" + e.getMessage());
-            }
         }
     }
 

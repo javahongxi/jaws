@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Created by shenhongxi on 2020/7/28.
  */
 public class NettyClient extends AbstractSharedPoolClient {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractSharedPoolClient.class);
+    private static final Logger logger = LoggerFactory.getLogger(NettyClient.class);
 
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
     /**

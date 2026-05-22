@@ -3,13 +3,10 @@ package org.hongxi.jaws.rpc;
 import org.hongxi.jaws.common.FutureState;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
-import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.serialize.DeserializableObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.*;
 
 /**
@@ -254,14 +251,6 @@ public class DefaultResponseFuture implements ResponseFuture {
             throw (exception instanceof RuntimeException) ?
                     (RuntimeException) exception :
                     new JawsServiceException(exception.getMessage(), exception);
-        }
-        if (result != null && returnType != null && result instanceof DeserializableObject) {
-            try {
-                result = ((DeserializableObject) result).deserialize(returnType);
-            } catch (IOException e) {
-                logger.error("deserialize response value fail! return type: {}", returnType, e);
-                throw new JawsFrameworkException("deserialize return value fail! deserialize type:" + returnType, e);
-            }
         }
         return result;
     }

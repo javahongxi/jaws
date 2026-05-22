@@ -1,6 +1,7 @@
 package org.hongxi.jaws.common.util;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.exception.*;
 import org.slf4j.Logger;
@@ -77,7 +78,7 @@ public class ExceptionUtils {
     public static JawsAbstractException fromMessage(String msg) {
         if (StringUtils.isNotBlank(msg)) {
             try {
-                JSONObject jsonObject = JSONObject.parseObject(msg);
+                JSONObject jsonObject = JSON.parseObject(msg);
                 int type = jsonObject.getIntValue("errtype");
                 int errcode = jsonObject.getIntValue("errcode");
                 String errmsg = jsonObject.getString("errmsg");
