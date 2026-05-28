@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.util.*;
@@ -58,13 +59,14 @@ public class ExtensionLoader<T> {
             if (clazz == null) {
                 return null;
             }
-            return clazz.newInstance();
+            return clazz.getDeclaredConstructor().newInstance();
         } catch (Exception e) {
             throw new JawsFrameworkException(type.getName() + ": Error get extension " + name, e);
         }
     }
 
-    private T getSingletonInstance(String name) throws IllegalAccessException, InstantiationException {
+    private T getSingletonInstance(String name) throws
+            IllegalAccessException, InstantiationException, NoSuchMethodException, InvocationTargetException {
         T obj = singletonInstances.get(name);
 
         if (obj != null) {
@@ -81,7 +83,7 @@ public class ExtensionLoader<T> {
             if (obj != null) {
                 return obj;
             }
-            obj = clazz.newInstance();
+            obj = clazz.getDeclaredConstructor().newInstance();
             singletonInstances.put(name, obj);
         }
 

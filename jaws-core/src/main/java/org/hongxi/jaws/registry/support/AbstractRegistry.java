@@ -7,7 +7,6 @@ import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.switcher.JawsSwitcherUtils;
-import org.hongxi.jaws.switcher.SwitcherListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,7 +57,7 @@ public abstract class AbstractRegistry implements Registry {
             return;
         }
         log.info("[{}] Url ({}) will register to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
-        doRegister(removeUnnecessaryParmas(url.createCopy()));
+        doRegister(removeUnnecessaryParams(url.createCopy()));
         registeredServiceUrls.add(url);
         // available if heartbeat switcher already open
         if (JawsSwitcherUtils.isOpen(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER)) {
@@ -73,7 +72,7 @@ public abstract class AbstractRegistry implements Registry {
             return;
         }
         log.info("[{}] Url ({}) will unregister to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
-        doUnregister(removeUnnecessaryParmas(url.createCopy()));
+        doUnregister(removeUnnecessaryParams(url.createCopy()));
         registeredServiceUrls.remove(url);
     }
 
@@ -140,7 +139,7 @@ public abstract class AbstractRegistry implements Registry {
     public void available(URL url) {
         log.info("[{}] Url ({}) will set to available to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
         if (url != null) {
-            doAvailable(removeUnnecessaryParmas(url.createCopy()));
+            doAvailable(removeUnnecessaryParams(url.createCopy()));
         } else {
             doAvailable(null);
         }
@@ -150,7 +149,7 @@ public abstract class AbstractRegistry implements Registry {
     public void unavailable(URL url) {
         log.info("[{}] Url ({}) will set to unavailable to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
         if (url != null) {
-            doUnavailable(removeUnnecessaryParmas(url.createCopy()));
+            doUnavailable(removeUnnecessaryParams(url.createCopy()));
         } else {
             doUnavailable(null);
         }
@@ -204,7 +203,7 @@ public abstract class AbstractRegistry implements Registry {
      *
      * @param url
      */
-    private URL removeUnnecessaryParmas(URL url) {
+    private URL removeUnnecessaryParams(URL url) {
         // codec参数不能提交到注册中心，如果client端没有对应的codec会导致client端不能正常请求。
         url.getParameters().remove(URLParamType.codec.getName());
         return url;
