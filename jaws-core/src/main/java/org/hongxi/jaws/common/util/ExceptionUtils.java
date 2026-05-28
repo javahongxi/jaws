@@ -48,23 +48,20 @@ public class ExceptionUtils {
         int code = 500;
         String errmsg = null;
 
-        if (e instanceof JawsFrameworkException) {
-            JawsFrameworkException sfe = (JawsFrameworkException) e;
+        if (e instanceof JawsFrameworkException jfe) {
             type = 0;
-            code = sfe.getErrorCode();
-            errmsg = sfe.getOriginMessage();
-        } else if (e instanceof JawsServiceException) {
-            JawsServiceException mse = (JawsServiceException) e;
+            code = jfe.getErrorCode();
+            errmsg = jfe.getOriginMessage();
+        } else if (e instanceof JawsServiceException jse) {
             type = 1;
-            code = mse.getErrorCode();
-            errmsg = mse.getOriginMessage();
-        } else if (e instanceof JawsBizException) {
-            JawsBizException sbe = (JawsBizException) e;
+            code = jse.getErrorCode();
+            errmsg = jse.getOriginMessage();
+        } else if (e instanceof JawsBizException jbe) {
             type = 2;
-            code = sbe.getErrorCode();
-            errmsg = sbe.getOriginMessage();
-            if (sbe.getCause() != null) {
-                errmsg = errmsg + ", cause:" + sbe.getCause().getMessage();
+            code = jbe.getErrorCode();
+            errmsg = jbe.getOriginMessage();
+            if (jbe.getCause() != null) {
+                errmsg = errmsg + ", cause:" + jbe.getCause().getMessage();
             }
         } else {
             errmsg = e.getMessage();

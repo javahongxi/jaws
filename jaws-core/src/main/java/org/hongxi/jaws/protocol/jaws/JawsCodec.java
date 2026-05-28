@@ -38,10 +38,10 @@ public class JawsCodec extends AbstractCodec {
     @Override
     public byte[] encode(Channel channel, Object message) throws IOException {
         try {
-            if (message instanceof Request) {
-                return encodeRequest(channel, (Request) message);
-            } else if (message instanceof Response) {
-                return encodeResponse(channel, (Response) message);
+            if (message instanceof Request request) {
+                return encodeRequest(channel, request);
+            } else if (message instanceof Response response) {
+                return encodeResponse(channel, response);
             }
         } catch (Exception e) {
             if (ExceptionUtils.isJawsException(e)) {

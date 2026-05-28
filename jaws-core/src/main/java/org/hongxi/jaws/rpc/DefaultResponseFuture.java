@@ -248,8 +248,7 @@ public class DefaultResponseFuture implements ResponseFuture {
 
     private Object getValueOrThrowable() {
         if (exception != null) {
-            throw (exception instanceof RuntimeException) ?
-                    (RuntimeException) exception :
+            throw exception instanceof RuntimeException re ? re :
                     new JawsServiceException(exception.getMessage(), exception);
         }
         return result;

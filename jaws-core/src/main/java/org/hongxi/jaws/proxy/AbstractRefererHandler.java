@@ -78,8 +78,8 @@ public class AbstractRefererHandler<T> {
             try {
                 response = cluster.call(request);
                 if (async) {
-                    if (response instanceof ResponseFuture) {
-                        ((ResponseFuture) response).setReturnType(returnType);
+                    if (response instanceof ResponseFuture rf) {
+                        rf.setReturnType(returnType);
                         return response;
                     } else {
                         ResponseFuture responseFuture = new DefaultResponseFuture(request, 0, cluster.getUrl());
