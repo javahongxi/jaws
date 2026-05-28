@@ -26,10 +26,8 @@ public abstract class FailbackRegistry extends AbstractRegistry {
 
     private Set<URL> failedRegistered = new ConcurrentHashSet<>();
     private Set<URL> failedUnregistered = new ConcurrentHashSet<>();
-    private ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedSubscribed =
-            new ConcurrentHashMap<>();
-    private ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedUnsubscribed =
-            new ConcurrentHashMap<>();
+    private ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedSubscribed = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<>();
 
     private static ScheduledExecutorService retryExecutor = Executors.newScheduledThreadPool(1);
     
@@ -63,7 +61,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             super.register(url);
         } catch (Exception e) {
             if (isCheckingUrls(getUrl(), url)) {
-                throw new JawsFrameworkException(String.format("[%s] false to registery %s to %s", registryClassName, url, getUrl()), e);
+                throw new JawsFrameworkException(String.format("[%s] false to register %s to %s", registryClassName, url, getUrl()), e);
             }
             failedRegistered.add(url);
         }
@@ -78,7 +76,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             super.unregister(url);
         } catch (Exception e) {
             if (isCheckingUrls(getUrl(), url)) {
-                throw new JawsFrameworkException(String.format("[%s] false to unregistery %s to %s", registryClassName, url, getUrl()), e);
+                throw new JawsFrameworkException(String.format("[%s] false to unregister %s to %s", registryClassName, url, getUrl()), e);
             }
             failedUnregistered.add(url);
         }
@@ -92,7 +90,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             super.subscribe(url, listener);
         } catch (Exception e) {
             List<URL> cachedUrls = getCachedUrls(url);
-            if (cachedUrls != null && cachedUrls.size() > 0) {
+            if (cachedUrls != null && !cachedUrls.isEmpty()) {
                 listener.notify(getUrl(), cachedUrls);
             } else if (isCheckingUrls(getUrl(), url)) {
                 log.warn("[{}] false to subscribe {} from {}", registryClassName, url, getUrl(), e);
@@ -118,7 +116,6 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public List<URL> discover(URL url) {
         try {
             return super.discover(url);
@@ -190,19 +187,21 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         if (!failedSubscribed.isEmpty()) {
             Map<URL, Set<NotifyListener>> failed = new HashMap<>(failedSubscribed);
             for (Map.Entry<URL, Set<NotifyListener>> entry : new HashMap<>(failed).entrySet()) {
-                if (entry.getValue() == null || entry.getValue().size() == 0) {
+                if (entry.getValue() == null || entry.getValue().isEmpty()) {
                     failed.remove(entry.getKey());
                 }
             }
-            if (failed.size() > 0) {
+            if (!failed.isEmpty()) {
                 log.info("[{}] Retry subscribe {}", registryClassName, failed);
                 try {
                     for (Map.Entry<URL, Set<NotifyListener>> entry : failed.entrySet()) {
                         URL url = entry.getKey();
                         Set<NotifyListener> listeners = entry.getValue();
-                        for (NotifyListener listener : listeners) {
+                        Iterator<NotifyListener> iterator = listeners.iterator();
+                        while (iterator.hasNext()) {
+                            NotifyListener listener = iterator.next();
                             super.subscribe(url, listener);
-                            listeners.remove(listener);
+                            iterator.remove();
                         }
                     }
                 } catch (Exception e) {
@@ -214,11 +213,11 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         if (!failedUnsubscribed.isEmpty()) {
             Map<URL, Set<NotifyListener>> failed = new HashMap<>(failedUnsubscribed);
             for (Map.Entry<URL, Set<NotifyListener>> entry : new HashMap<>(failed).entrySet()) {
-                if (entry.getValue() == null || entry.getValue().size() == 0) {
+                if (entry.getValue() == null || entry.getValue().isEmpty()) {
                     failed.remove(entry.getKey());
                 }
             }
-            if (failed.size() > 0) {
+            if (!failed.isEmpty()) {
                 log.info("[{}] Retry unsubscribe {}", registryClassName, failed);
                 try {
                     for (Map.Entry<URL, Set<NotifyListener>> entry : failed.entrySet()) {

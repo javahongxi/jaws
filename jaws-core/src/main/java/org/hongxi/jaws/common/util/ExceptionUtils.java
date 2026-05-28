@@ -79,18 +79,11 @@ public class ExceptionUtils {
                 int type = jsonObject.getIntValue("errtype");
                 int errcode = jsonObject.getIntValue("errcode");
                 String errmsg = jsonObject.getString("errmsg");
-                JawsAbstractException e = null;
-                switch (type) {
-                    case 1:
-                        e = new JawsServiceException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
-                        break;
-                    case 2:
-                        e = new JawsBizException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
-                        break;
-                    default:
-                        e = new JawsFrameworkException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
-                }
-                return e;
+                return switch (type) {
+                    case 1 -> new JawsServiceException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
+                    case 2 -> new JawsBizException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
+                    default -> new JawsFrameworkException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
+                };
             } catch (Exception e) {
                 logger.warn("build exception from msg fail. msg:{}", msg);
             }
