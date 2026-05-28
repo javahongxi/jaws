@@ -29,7 +29,7 @@
         <curator.version>5.9.0</curator.version>
         <fastjson2.version>2.0.61</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
-        <hessian.version>4.0.66</hessian.version>
+        <hessian-lite.version>4.0.4</hessian-lite.version>
         <junit.version>5.12.2</junit.version>
         <logback.version>1.5.32</logback.version>
         <netty.version>4.1.132.Final</netty.version>
@@ -45,9 +45,9 @@
                 <version>${commons-lang3.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.caucho</groupId>
-                <artifactId>hessian</artifactId>
-                <version>${hessian.version}</version>
+                <groupId>org.apache.dubbo</groupId>
+                <artifactId>hessian-lite</artifactId>
+                <version>${hessian-lite.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.alibaba.fastjson2</groupId>
