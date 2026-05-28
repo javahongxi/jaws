@@ -74,15 +74,15 @@ public abstract class JawsAbstractException extends RuntimeException {
         if (errorMsg != null && !errorMsg.equals("")) {
             return errorMsg;
         }
-        return jawsErrorMsg.getMessage();
+        return jawsErrorMsg.message();
     }
 
     public int getStatus() {
-        return jawsErrorMsg != null ? jawsErrorMsg.getStatus() : 0;
+        return jawsErrorMsg != null ? jawsErrorMsg.status() : 0;
     }
 
     public int getErrorCode() {
-        return jawsErrorMsg != null ? jawsErrorMsg.getErrorCode() : 0;
+        return jawsErrorMsg != null ? jawsErrorMsg.errorCode() : 0;
     }
 
     public JawsErrorMsg getJawsErrorMsg() {
