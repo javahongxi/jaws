@@ -6,6 +6,7 @@
     <artifactId>jaws-parent</artifactId>
     <version>0.0.4-SNAPSHOT</version>
     <packaging>pom</packaging>
+    <url>https://github.com/javahongxi/jaws</url>
 
     <modules>
         <module>jaws-core</module>
