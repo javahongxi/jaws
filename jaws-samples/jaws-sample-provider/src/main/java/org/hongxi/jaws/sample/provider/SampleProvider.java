@@ -4,6 +4,7 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
+import org.hongxi.jaws.registry.zookeeper.EmbeddedZookeeper;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.provider.service.DemoServiceImpl;
 import org.hongxi.jaws.switcher.JawsSwitcherUtils;
@@ -13,7 +14,13 @@ import org.hongxi.jaws.switcher.JawsSwitcherUtils;
  */
 public class SampleProvider {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
+        try (EmbeddedZookeeper zkServer = new EmbeddedZookeeper(2181)) {
+            export();
+        }
+    }
+
+    private static void export() {
         ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(new DemoServiceImpl());
         serviceConfig.setApplication("sample-provider");

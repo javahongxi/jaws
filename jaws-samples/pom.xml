@@ -16,14 +16,12 @@
         <module>jaws-sample-provider</module>
         <module>jaws-sample-consumer</module>
         <module>jaws-sample-api</module>
-        <module>jaws-test</module>
     </modules>
 
     <dependencies>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.46</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>
@@ -33,7 +31,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
-                <version>${maven-deploy-plugin.version}</version>
                 <configuration>
                     <skip>true</skip>
                 </configuration>

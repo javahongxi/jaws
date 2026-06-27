@@ -5,6 +5,7 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
+import org.hongxi.jaws.registry.zookeeper.EmbeddedZookeeper;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.model.Contacts;
 import org.hongxi.jaws.sample.api.model.Phone;
@@ -19,7 +20,13 @@ import java.util.Map;
  */
 public class SampleConsumer {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
+        try (EmbeddedZookeeper zkServer = new EmbeddedZookeeper(2181)) {
+            referAndInvoke();
+        }
+    }
+
+    private static void referAndInvoke() {
         RefererConfig<DemoService> refererConfig = new RefererConfig<>();
         refererConfig.setInterface(DemoService.class);
         refererConfig.setApplication("sample-consumer");
@@ -65,7 +72,7 @@ public class SampleConsumer {
         System.out.println(size);
     }
 
-    protected static ProtocolConfig createProtocolConfig(String protocolName) {
+    private static ProtocolConfig createProtocolConfig(String protocolName) {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName(protocolName);
         protocolConfig.setId(protocolConfig.getName());
@@ -74,7 +81,7 @@ public class SampleConsumer {
         return protocolConfig;
     }
 
-    protected static RegistryConfig createRegistryConfig(String protocolName) {
+    private static RegistryConfig createRegistryConfig(String protocolName) {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setRegProtocol(protocolName);
         registryConfig.setName("defaultRegistry");

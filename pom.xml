@@ -18,33 +18,23 @@
     <properties>
         <java.version>17</java.version>
 
-        <!-- refer to spring-boot-dependencies -->
-        <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
-        <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
-        <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
-        <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
-
-        <!-- refer to spring-boot-dependencies -->
-        <commons-lang3.version>3.17.0</commons-lang3.version>
         <curator.version>5.9.0</curator.version>
         <fastjson2.version>2.0.61</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
         <hessian-lite.version>4.0.4</hessian-lite.version>
-        <junit.version>5.12.2</junit.version>
-        <logback.version>1.5.32</logback.version>
-        <netty.version>4.1.132.Final</netty.version>
-        <slf4j.version>2.0.17</slf4j.version>
         <zookeeper.version>3.9.3</zookeeper.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-lang3</artifactId>
-                <version>${commons-lang3.version}</version>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>3.5.14</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
+
             <dependency>
                 <groupId>org.apache.dubbo</groupId>
                 <artifactId>hessian-lite</artifactId>
@@ -61,31 +51,24 @@
                 <version>${guava.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-bom</artifactId>
-                <version>${netty.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
                 <groupId>org.apache.zookeeper</groupId>
                 <artifactId>zookeeper</artifactId>
                 <version>${zookeeper.version}</version>
             </dependency>
-        <dependency>
-            <groupId>org.apache.curator</groupId>
-            <artifactId>curator-framework</artifactId>
-            <version>${curator.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.curator</groupId>
-            <artifactId>curator-recipes</artifactId>
-            <version>${curator.version}</version>
-        </dependency>
             <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>slf4j-api</artifactId>
-                <version>${slf4j.version}</version>
+                <groupId>org.apache.curator</groupId>
+                <artifactId>curator-framework</artifactId>
+                <version>${curator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.curator</groupId>
+                <artifactId>curator-recipes</artifactId>
+                <version>${curator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.curator</groupId>
+                <artifactId>curator-test</artifactId>
+                <version>${curator.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -94,14 +77,12 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
             <optional>true</optional>
         </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -111,7 +92,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>${maven-compiler-plugin.version}</version>
                 <configuration>
                     <encoding>UTF-8</encoding>
                     <source>${java.version}</source>
@@ -121,7 +101,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
-                <version>${maven-resources-plugin.version}</version>
                 <configuration>
                     <encoding>UTF-8</encoding>
                 </configuration>
@@ -129,7 +108,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>${maven-source-plugin.version}</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -138,11 +116,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>${maven-surefire-plugin.version}</version>
             </plugin>
         </plugins>
     </build>
