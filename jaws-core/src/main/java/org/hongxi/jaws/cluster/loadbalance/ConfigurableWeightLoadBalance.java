@@ -102,9 +102,6 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
     }
 
 
-    /*****************************************************************************************
-     * ************************************************************************************* *
-     *****************************************************************************************/
     static abstract class RefererListCacheHolder<T> {
         abstract Referer<T> next();
     }
@@ -191,12 +188,16 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
             return referers.get(MathUtils.getNonNegative(ai.getAndIncrement()) % referers.size());
         }
 
-        // 求最大公约数
+        /*
+         * 求最大公约数
+         */
         private int findGcd(int n, int m) {
             return (n == 0 || m == 0) ? n + m : findGcd(m, n % m);
         }
 
-        // 求最大公约数
+        /*
+         * 求最大公约数
+         */
         private int findGcd(int[] arr) {
             int i = 0;
             for (; i < arr.length - 1; i++) {

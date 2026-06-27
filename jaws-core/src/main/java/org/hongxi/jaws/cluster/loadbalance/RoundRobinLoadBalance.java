@@ -47,7 +47,9 @@ public class RoundRobinLoadBalance<T> extends AbstractLoadBalance<T> {
         }
     }
 
-    // get non-negative int
+    /*
+     * get non-negative int
+     */
     private int getNextNonNegative() {
         return MathUtils.getNonNegative(idx.incrementAndGet());
     }

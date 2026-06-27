@@ -365,7 +365,9 @@ public class URL {
         return toSimpleString();
     }
 
-    // 包含协议、host、port、path、group
+    /*
+     * 包含协议、host、port、path、group
+     */
     public String toSimpleString() {
         return getUri() + "?group=" + getGroup();
     }

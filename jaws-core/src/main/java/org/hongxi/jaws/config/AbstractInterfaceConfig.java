@@ -346,7 +346,9 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.transExceptionStack = transExceptionStack;
     }
 
-    // 解析注册中心URL
+    /*
+     * 解析注册中心URL
+     */
     protected void loadRegistryUrls() {
         registryUrls.clear();
         if (registries != null && !registries.isEmpty()) {
