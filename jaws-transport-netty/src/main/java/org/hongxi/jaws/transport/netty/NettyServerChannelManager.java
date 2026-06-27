@@ -31,14 +31,16 @@ public class NettyServerChannelManager extends ChannelInboundHandlerAdapter {
     @Override
     public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
         Channel channel = ctx.channel();
-        if (channels.size() >= maxChannels) {
-            log.warn("connected channel size out of limit: limit={} current={}", maxChannels, channels.size());
-            channel.close();
-        } else {
+        synchronized (this) {
+            if (channels.size() >= maxChannels) {
+                log.warn("connected channel size out of limit: limit={} current={}", maxChannels, channels.size());
+                channel.close();
+                return;
+            }
             String channelKey = getChannelKey((InetSocketAddress) channel.localAddress(), (InetSocketAddress) channel.remoteAddress());
             channels.put(channelKey, channel);
-            ctx.fireChannelRegistered();
         }
+        ctx.fireChannelRegistered();
     }
 
     @Override

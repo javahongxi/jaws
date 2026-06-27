@@ -37,7 +37,7 @@ public class ClusterSupport<T> implements NotifyListener {
 
     private static final ConcurrentHashMap<String, Protocol> protocols = new ConcurrentHashMap<>();
     private static final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
-    private static final Set<ClusterSupport<?>> refreshSet = new HashSet<>();
+    private static final Set<ClusterSupport<?>> refreshSet = ConcurrentHashMap.newKeySet();
 
     static {
         executorService.scheduleAtFixedRate(() -> {
@@ -220,7 +220,7 @@ public class ClusterSupport<T> implements NotifyListener {
                 groupUrlsMap.get(group).add(u);
             }
         }
-        Map<String, GroupUrlsSelector> selectorMap = registryGroupUrlsSelectorMap.computeIfAbsent(registryUrl, k -> new HashMap<>());
+        Map<String, GroupUrlsSelector> selectorMap = registryGroupUrlsSelectorMap.computeIfAbsent(registryUrl, k -> new ConcurrentHashMap<>());
 
         for (Map.Entry<String, List<URL>> entry : groupUrlsMap.entrySet()) {
             GroupUrlsSelector groupUrlsSelector = selectorMap.computeIfAbsent(entry.getKey(), k -> new GroupUrlsSelector());

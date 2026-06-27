@@ -34,7 +34,7 @@ public class NettyClient extends AbstractSharedPoolClient {
     /**
      * 回收过期任务
      */
-    private static ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
+    private static final ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
     /**
      * 异步的request，需要注册callback future
      * 触发remove的操作有： 1) service的返回结果处理。 2) timeout thread cancel

@@ -192,20 +192,20 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             }
             if (!failed.isEmpty()) {
                 log.info("[{}] Retry subscribe {}", registryClassName, failed);
-                try {
-                    for (Map.Entry<URL, Set<NotifyListener>> entry : failed.entrySet()) {
-                        URL url = entry.getKey();
-                        Set<NotifyListener> listeners = entry.getValue();
-                        Iterator<NotifyListener> iterator = listeners.iterator();
-                        while (iterator.hasNext()) {
-                            NotifyListener listener = iterator.next();
+                for (Map.Entry<URL, Set<NotifyListener>> entry : failed.entrySet()) {
+                    URL url = entry.getKey();
+                    Set<NotifyListener> listeners = entry.getValue();
+                    Iterator<NotifyListener> iterator = listeners.iterator();
+                    while (iterator.hasNext()) {
+                        NotifyListener listener = iterator.next();
+                        try {
                             super.subscribe(url, listener);
                             iterator.remove();
+                        } catch (Exception e) {
+                            log.warn("[{}] Failed to retry subscribe {}, retry later",
+                                    registryClassName, url, e);
                         }
                     }
-                } catch (Exception e) {
-                    log.warn("[{}] Failed to retry subscribe, retry later, failedSubscribed.size={}",
-                            registryClassName, failedSubscribed.size(), e);
                 }
             }
         }
@@ -218,18 +218,20 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             }
             if (!failed.isEmpty()) {
                 log.info("[{}] Retry unsubscribe {}", registryClassName, failed);
-                try {
-                    for (Map.Entry<URL, Set<NotifyListener>> entry : failed.entrySet()) {
-                        URL url = entry.getKey();
-                        Set<NotifyListener> listeners = entry.getValue();
-                        for (NotifyListener listener : listeners) {
+                for (Map.Entry<URL, Set<NotifyListener>> entry : failed.entrySet()) {
+                    URL url = entry.getKey();
+                    Set<NotifyListener> listeners = entry.getValue();
+                    Iterator<NotifyListener> iterator = listeners.iterator();
+                    while (iterator.hasNext()) {
+                        NotifyListener listener = iterator.next();
+                        try {
                             super.unsubscribe(url, listener);
-                            listeners.remove(listener);
+                            iterator.remove();
+                        } catch (Exception e) {
+                            log.warn("[{}] Failed to retry unsubscribe {}, retry later",
+                                    registryClassName, url, e);
                         }
                     }
-                } catch (Exception e) {
-                    log.warn("[{}] Failed to retry unsubscribe, retry later, failedUnsubscribed.size={}",
-                            registryClassName, failedUnsubscribed.size(), e);
                 }
             }
         }

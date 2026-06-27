@@ -92,8 +92,8 @@ public abstract class AbstractProtocol implements Protocol {
 
     @Override
     public void destroy() {
-        for (String key : exporterMap.keySet()) {
-            Node node = exporterMap.remove(key);
+        for (Map.Entry<String, Exporter<?>> entry : exporterMap.entrySet()) {
+            Node node = entry.getValue();
 
             if (node != null) {
                 try {
@@ -105,5 +105,6 @@ public abstract class AbstractProtocol implements Protocol {
                 }
             }
         }
+        exporterMap.clear();
     }
 }

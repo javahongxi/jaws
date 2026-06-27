@@ -6,6 +6,7 @@ import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.rpc.URL;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -15,12 +16,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DirectRegistry extends AbstractRegistry {
 
     private ConcurrentHashMap<URL, Object> subscribeUrls = new ConcurrentHashMap<>();
-    private List<URL> directUrls = new ArrayList<>();
+    private final List<URL> directUrls = Collections.synchronizedList(new ArrayList<>());
 
     public DirectRegistry(URL url) {
         super(url);
         String address = url.getParameter("address");
-        if (address.contains(",")) {
+        if (address == null || address.isEmpty()) {
+            registerDirectUrl(url.getHost(), url.getPort());
+        } else if (address.contains(",")) {
             try {
                 String[] directUrlArray = address.split(",");
                 for (String directUrl : directUrlArray) {
@@ -48,9 +51,6 @@ public class DirectRegistry extends AbstractRegistry {
     private void registerDirectUrl(String ip, Integer port) {
         URL url = new URL(JawsConstants.REGISTRY_PROTOCOL_DIRECT, ip, port, "");
         directUrls.add(url);
-    }
-
-    private void parseIpAndPort(String directUrl) {
     }
 
     @Override

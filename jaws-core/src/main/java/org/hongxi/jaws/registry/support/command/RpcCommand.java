@@ -11,6 +11,9 @@ public class RpcCommand {
     private List<ClientCommand> clientCommands;
 
     public void sort() {
+        if (clientCommands == null) {
+            return;
+        }
         Collections.sort(clientCommands, (o1, o2) -> {
             Integer i1 = o1.getIndex();
             Integer i2 = o2.getIndex();

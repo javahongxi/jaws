@@ -31,7 +31,6 @@ public class LocalRegistry extends AbstractRegistry {
 
     private ConcurrentHashMap<String, ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>>> subscribeListeners =
             new ConcurrentHashMap<>();
-    private URL registryUrl;
 
     public LocalRegistry() {
         this(new URL(JawsConstants.REGISTRY_PROTOCOL_LOCAL, NetUtils.LOCALHOST, JawsConstants.DEFAULT_INT_VALUE,
@@ -40,7 +39,6 @@ public class LocalRegistry extends AbstractRegistry {
 
     public LocalRegistry(URL url) {
         super(url);
-        this.registryUrl = url;
     }
 
     @Override
@@ -130,12 +128,7 @@ public class LocalRegistry extends AbstractRegistry {
         }
     }
 
-    @Override
-    public URL getUrl() {
-        return registryUrl;
-    }
-
-    /**
+    /*
      * 防止数据在外部被变更，因此copy一份
      *
      * @return

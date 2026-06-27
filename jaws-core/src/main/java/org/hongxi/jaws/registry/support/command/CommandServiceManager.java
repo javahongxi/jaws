@@ -35,7 +35,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
     // service cache
     private Map<String, List<URL>> groupServiceCache;
     // command cache
-    private String commandStringCache = "";
+    private volatile String commandStringCache = "";
     private volatile RpcCommand commandCache;
 
     public CommandServiceManager(URL refUrl) {

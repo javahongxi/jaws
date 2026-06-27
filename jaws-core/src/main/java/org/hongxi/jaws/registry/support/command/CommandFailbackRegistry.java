@@ -47,6 +47,10 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
         log.info("CommandFailbackRegistry unsubscribe. url: {}", url.toSimpleString());
         URL urlCopy = url.createCopy();
         CommandServiceManager manager = commandManagerMap.get(urlCopy);
+        if (manager == null) {
+            log.warn("CommandFailbackRegistry unsubscribe: no manager found for url: {}", urlCopy.toSimpleString());
+            return;
+        }
 
         manager.removeNotifyListener(listener);
         unsubscribeService(urlCopy, manager);

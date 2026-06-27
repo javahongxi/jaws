@@ -69,8 +69,11 @@ public class ClusterSpi<T> implements Cluster<T> {
     @Override
     public void destroy() {
         available.set(false);
-        for (Referer<T> referer : this.referers) {
-            referer.destroy();
+        List<Referer<T>> referers = this.referers;
+        if (referers != null) {
+            for (Referer<T> referer : referers) {
+                referer.destroy();
+            }
         }
     }
 
