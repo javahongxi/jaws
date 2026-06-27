@@ -26,7 +26,7 @@ public class ReflectUtils {
     private static final String[] PRIMITIVE_NAMES = new String[] {"boolean", "byte", "char", "double", "float", "int", "long", "short",
             "void"};
 
-    private static final Class<?>[] PRIMITIVE_CLASSES = new Class[] {boolean.class, byte.class, char.class, double.class, float.class,
+    private static final Class<?>[] PRIMITIVE_CLASSES = new Class<?>[] {boolean.class, byte.class, char.class, double.class, float.class,
             int.class, long.class, short.class, Void.TYPE};
 
     private static final int PRIMITIVE_CLASS_NAME_MAX_LENGTH = 7;

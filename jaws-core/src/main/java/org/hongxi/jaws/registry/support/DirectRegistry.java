@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class DirectRegistry extends AbstractRegistry {
 
-    private ConcurrentHashMap<URL, Object> subscribeUrls = new ConcurrentHashMap();
+    private ConcurrentHashMap<URL, Object> subscribeUrls = new ConcurrentHashMap<>();
     private List<URL> directUrls = new ArrayList<URL>();
 
     public DirectRegistry(URL url) {
@@ -82,7 +82,7 @@ public class DirectRegistry extends AbstractRegistry {
 
     private List<URL> createSubscribeUrl(URL subscribeUrl) {
         URL url = this.getUrl();
-        List result = new ArrayList(directUrls.size());
+        List<URL> result = new ArrayList<>(directUrls.size());
         for (URL directUrl : directUrls) {
             URL tmp = subscribeUrl.createCopy();
             tmp.setHost(directUrl.getHost());
