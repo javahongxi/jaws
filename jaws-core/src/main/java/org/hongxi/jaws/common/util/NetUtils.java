@@ -150,7 +150,7 @@ public class NetUtils {
         return (name != null && !ANYHOST.equals(name) && !LOCALHOST.equals(name) && IP_PATTERN.matcher(name).matches());
     }
 
-    //return ip to avoid lookup dns
+    // return ip to avoid lookup dns
     public static String getHostName(SocketAddress socketAddress) {
         if (socketAddress == null) {
             return null;

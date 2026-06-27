@@ -16,9 +16,9 @@ public class ShutdownHook extends Thread {
 
     private static final Logger log = LoggerFactory.getLogger(ShutdownHook.class);
 
-    //Smaller the priority is,earlier the resource is to be closed,default Priority is 20
+    // Smaller the priority is,earlier the resource is to be closed,default Priority is 20
     private static final int DEFAULT_PRIORITY = 20;
-    //only global resource should be register to ShutDownHook,don't register connections to it.
+    // only global resource should be register to ShutDownHook,don't register connections to it.
     private static ShutdownHook instance;
     private List<CloseableObject> resourceList = new ArrayList<>();
 

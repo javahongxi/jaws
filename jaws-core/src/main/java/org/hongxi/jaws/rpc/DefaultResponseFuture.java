@@ -27,7 +27,8 @@ public class DefaultResponseFuture implements ResponseFuture {
     protected List<FutureListener> listeners;
     protected URL serverUrl;
     protected Class returnType;
-    private Map<String, String> attachments;// rpc协议版本兼容时可以回传一些额外的信息
+    // rpc协议版本兼容时可以回传一些额外的信息
+    private Map<String, String> attachments;
 
     public DefaultResponseFuture(Request requestObj, int timeout, URL serverUrl) {
         this.request = requestObj;

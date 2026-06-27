@@ -56,7 +56,8 @@ public class JawsProtocol extends AbstractProtocol {
             try {
                 // use server end group
                 request.setAttachment(URLParamType.group.getName(), serviceUrl.getGroup());
-                request.setAttachment(JawsConstants.JAWS_PROXY_PROTOCOL, this.url.getProtocol()); // add proxy protocol for request agent
+                // add proxy protocol for request agent
+                request.setAttachment(JawsConstants.JAWS_PROXY_PROTOCOL, this.url.getProtocol());
                 return client.request(request);
             } catch (TransportException exception) {
                 throw new JawsServiceException("DefaultRpcReferer call Error: url=" + url.getUri(), exception);

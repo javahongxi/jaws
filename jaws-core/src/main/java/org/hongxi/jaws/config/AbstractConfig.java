@@ -173,7 +173,8 @@ public class AbstractConfig implements Serializable {
             }
             buf.append(" />");
             return buf.toString();
-        } catch (Throwable t) { // 防御性容错
+        } catch (Throwable t) {
+            // 防御性容错
             log.warn(t.getMessage(), t);
             return super.toString();
         }

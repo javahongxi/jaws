@@ -310,7 +310,8 @@ public class URL {
     }
 
     private Map<String, Number> getNumbers() {
-        if (numbers == null) { // 允许并发重复创建
+        // 允许并发重复创建
+        if (numbers == null) {
             numbers = new ConcurrentHashMap<>();
         }
         return numbers;

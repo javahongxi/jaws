@@ -87,12 +87,12 @@ public class LocalRegistry extends AbstractRegistry {
 
     @Override
     protected void doAvailable(URL url) {
-        //do nothing
+        // do nothing
     }
 
     @Override
     protected void doUnavailable(URL url) {
-        //do nothing
+        // do nothing
     }
 
     @Override

@@ -149,7 +149,8 @@ public class RefererConfig<T> extends AbstractRefererConfig {
                 }
             }
             regUrls.add(regUrl);
-        } else { // 通过注册中心配置拼装URL，注册中心可能在本地，也可能在远端
+        } else {
+            // 通过注册中心配置拼装URL，注册中心可能在本地，也可能在远端
             if (registryUrls == null || registryUrls.isEmpty()) {
                 throw new IllegalStateException(
                         String.format(

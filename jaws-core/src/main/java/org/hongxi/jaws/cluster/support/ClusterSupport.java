@@ -230,7 +230,7 @@ public class ClusterSupport<T> implements NotifyListener {
             }
             groupUrlsSelector.updateBaseUrls(entry.getValue());
         }
-        //去掉多余的group
+        // 去掉多余的group
         Set<String> removeGroups = new HashSet<>(selectorMap.keySet());
         removeGroups.removeAll(groupUrlsMap.keySet());
         if (!CollectionUtils.isEmpty(removeGroups)) {
@@ -286,7 +286,7 @@ public class ClusterSupport<T> implements NotifyListener {
                 int selectSize = selector.getSelectSize();
 
                 int newSize = selectSize;
-                //将有效referer的数量保持在一个范围内, 如果小于selectNodeCount的2/3或大于selectNodeCount的4/3
+                // 将有效referer的数量保持在一个范围内, 如果小于selectNodeCount的2/3或大于selectNodeCount的4/3
                 // 则试图将可用数量恢复成selectNodeCount个
                 if (available <= 1.0 * selectNodeCount * 2 / 3 && selector.getBaseUrlsSize() > selectSize) {
                     newSize = Math.min(selectSize + (selectNodeCount - available), selector.getBaseUrlsSize());

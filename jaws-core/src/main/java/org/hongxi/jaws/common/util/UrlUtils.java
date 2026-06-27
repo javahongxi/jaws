@@ -21,7 +21,8 @@ public class URLUtils {
         }
         String[] addresses = JawsConstants.REGISTRY_SPLIT_PATTERN.split(address);
         if (addresses == null || addresses.length == 0) {
-            return null; // here won't be empty
+            // here won't be empty
+            return null;
         }
         List<URL> registries = new ArrayList<>();
         for (String addr : addresses) {

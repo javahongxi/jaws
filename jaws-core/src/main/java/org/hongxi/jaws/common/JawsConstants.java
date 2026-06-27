@@ -48,7 +48,8 @@ public class JawsConstants {
 
     public static final int REFRESH_PERIOD = 60;
 
-    public static final String ASYNC_SUFFIX = "Async";// suffix for async call.
+    // suffix for async call.
+    public static final String ASYNC_SUFFIX = "Async";
 
     public static final String DEFAULT_VALUE = "default";
     public static final int DEFAULT_INT_VALUE = 0;
@@ -67,7 +68,8 @@ public class JawsConstants {
     public static final String JAWS_METHOD = "J_m";
     public static final String JAWS_METHOD_DESC = "J_md";
     public static final String JAWS_AUTH = "J_a";
-    public static final String JAWS_SOURCE = "J_s";// 调用方来源标识,等同与application
+    // 调用方来源标识,等同与application
+    public static final String JAWS_SOURCE = "J_s";
     public static final String JAWS_MODULE = "J_mdu";
     public static final String JAWS_PROXY_PROTOCOL = "J_pp";
     public static final String JAWS_INFO_SIGN = "J_is";

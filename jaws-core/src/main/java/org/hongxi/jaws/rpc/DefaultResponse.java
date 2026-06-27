@@ -25,8 +25,10 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
     private long requestId;
     private long processTime;
     private int timeout;
-    private Map<String, String> attachments;// rpc协议版本兼容时可以回传一些额外的信息
-    private int serializationNumber = 0;// default serialization is hessian2
+    // rpc协议版本兼容时可以回传一些额外的信息
+    private Map<String, String> attachments;
+    // default serialization is hessian2
+    private int serializationNumber = 0;
     private List<Pair<Runnable, Executor>> taskList = new ArrayList<>();
     private AtomicBoolean isFinished = new AtomicBoolean();
 

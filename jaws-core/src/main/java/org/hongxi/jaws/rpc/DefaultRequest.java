@@ -20,7 +20,8 @@ public class DefaultRequest implements Request, Serializable {
     private Map<String, String> attachments;
     private int retries = 0;
     private long requestId;
-    private int serializationNumber = 0;// default serialization is hessian2
+    // default serialization is hessian2
+    private int serializationNumber = 0;
 
     @Override
     public String getInterfaceName() {

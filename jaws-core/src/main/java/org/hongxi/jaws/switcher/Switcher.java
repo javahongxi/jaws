@@ -5,7 +5,8 @@ package org.hongxi.jaws.switcher;
  */
 public class Switcher {
     private boolean on = true;
-    private String name; // 开关名
+    // 开关名
+    private String name;
 
     public Switcher(String name, boolean on) {
         this.name = name;

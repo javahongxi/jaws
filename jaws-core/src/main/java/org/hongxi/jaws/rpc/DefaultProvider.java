@@ -79,14 +79,15 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             } else {
                 response.setException(new JawsServiceException("provider has encountered a fatal error!", t));
             }
-            //对于Throwable,也记录日志
+            // 对于Throwable,也记录日志
             log.error("Exception caught when during method invocation. request:{}", request, t);
         }
 
         if (response.getException() != null) {
-            //是否传输业务异常栈
+            // 是否传输业务异常栈
             boolean transExceptionStack = this.url.getBooleanParameter(URLParamType.transExceptionStack.getName(), defaultThrowExceptionStack);
-            if (!transExceptionStack) {//不传输业务异常栈
+            // 不传输业务异常栈
+            if (!transExceptionStack) {
                 ExceptionUtils.setMockStackTrace(response.getException().getCause());
             }
         }

@@ -53,7 +53,8 @@ public class NettyDecoder extends ByteToMessageDecoder {
     private void decodeV1(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         long startTime = System.currentTimeMillis();
         in.resetReaderIndex();
-        in.skipBytes(2);// skip magic num
+        // skip magic num
+        in.skipBytes(2);
         byte messageType = (byte) in.readShort();
         long requestId = in.readLong();
         int dataLength = in.readInt();

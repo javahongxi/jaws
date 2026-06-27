@@ -63,7 +63,8 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
     @Override
     protected boolean doInit() {
         boolean result = server.open();
-        if (result && getUrl().getPort() == 0) { // use random port
+        // use random port
+        if (result && getUrl().getPort() == 0) {
             ProviderMessageRouter requestRouter = this.ipPort2RequestRouter.remove(getUrl().getServerPortStr());
             if (requestRouter == null) {
                 throw new JawsFrameworkException("can not find message router. url:" + getUrl().getIdentity());

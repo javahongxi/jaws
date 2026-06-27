@@ -60,7 +60,8 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
             boolean shareChannel = url.getBooleanParameter(URLParamType.shareChannel.getName(),
                     URLParamType.shareChannel.boolValue());
 
-            if (!shareChannel) { // 独享一个端口
+            // 独享一个端口
+            if (!shareChannel) {
                 log.info(this.getClass().getSimpleName() + " create no_share_channel server: url={}", url);
 
                 // 如果端口已经被使用了，使用该server bind 会有异常
@@ -87,7 +88,8 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
             }
 
             url = url.createCopy();
-            url.setPath(""); // 共享server端口，由于有多个interfaces存在，所以把path设置为空
+            // 共享server端口，由于有多个interfaces存在，所以把path设置为空
+            url.setPath("");
 
             server = innerCreateServer(url, messageHandler);
 

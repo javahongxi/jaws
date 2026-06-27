@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
     public static final int DEFAULT_MIN_THREADS = 20;
     public static final int DEFAULT_MAX_THREADS = 200;
-    public static final int DEFAULT_MAX_IDLE_TIME = 60 * 1000; // 1 min
+    // 1 min
+    public static final int DEFAULT_MAX_IDLE_TIME = 60 * 1000;
 
     protected AtomicInteger submittedTasksCount;
     private int maxSubmittedTasks;

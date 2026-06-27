@@ -108,7 +108,8 @@ public class JawsCodec extends AbstractCodec {
                         URLParamType.serialization.value()));
 
         try {
-            if (isResponse) { // response
+            // response
+            if (isResponse) {
                 return decodeResponse(body, dataType, requestId, serialization);
             } else {
                 return decodeRequest(body, requestId, serialization);
