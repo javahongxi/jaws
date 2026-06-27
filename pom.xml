@@ -91,6 +91,9 @@
                 <configuration>
                     <encoding>UTF-8</encoding>
                     <release>${java.version}</release>
+                    <compilerArgs>
+                        <arg>-Xlint:rawtypes</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
