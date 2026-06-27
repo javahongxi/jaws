@@ -127,8 +127,8 @@ public class NettyChannel implements Channel {
 
             if (result && success) {
                 channel = channelFuture.channel();
-                if (channel.localAddress() != null && channel.localAddress() instanceof InetSocketAddress) {
-                    localAddress = (InetSocketAddress) channel.localAddress();
+                if (channel.localAddress() instanceof InetSocketAddress inetAddr) {
+                    localAddress = inetAddr;
                 }
                 state = ChannelState.ALIVE;
                 return true;

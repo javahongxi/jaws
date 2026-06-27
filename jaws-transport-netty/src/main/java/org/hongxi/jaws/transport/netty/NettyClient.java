@@ -75,8 +75,8 @@ public class NettyClient extends AbstractSharedPoolClient {
         }
         boolean isAsync = false;
         Object async = RpcContext.getContext().getAttribute(JawsConstants.ASYNC_SUFFIX);
-        if (async != null && async instanceof Boolean) {
-            isAsync = (Boolean) async;
+        if (async instanceof Boolean b) {
+            isAsync = b;
         }
         return request(request, isAsync);
     }
@@ -100,8 +100,8 @@ public class NettyClient extends AbstractSharedPoolClient {
             logger.error("request Error: url={} {}, {}", url.getUri(),
                     JawsFrameworkUtils.toString(request), e.getMessage());
 
-            if (e instanceof JawsAbstractException) {
-                throw (JawsAbstractException) e;
+            if (e instanceof JawsAbstractException jae) {
+                throw jae;
             } else {
                 throw new JawsServiceException("NettyClient request Error: url=" +
                         url.getUri() + " " + JawsFrameworkUtils.toString(request), e);
@@ -156,24 +156,21 @@ public class NettyClient extends AbstractSharedPoolClient {
                         ChannelPipeline pipeline = ch.pipeline();
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyClient.this, maxContentLength));
                         pipeline.addLast("encoder", new NettyEncoder());
-                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, new MessageHandler() {
-                            @Override
-                            public Object handle(Channel channel, Object message) {
-                                Response response = (Response) message;
-                                ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
+                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (Channel channel, Object message) -> {
+                            Response response = (Response) message;
+                            ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
 
-                                if (responseFuture == null) {
-                                    logger.warn("has response from server, but responseFuture not exist, requestId={}",
-                                            response.getRequestId());
-                                    return null;
-                                }
-                                if (response.getException() != null) {
-                                    responseFuture.onFailure(response);
-                                } else {
-                                    responseFuture.onSuccess(response);
-                                }
+                            if (responseFuture == null) {
+                                logger.warn("has response from server, but responseFuture not exist, requestId={}",
+                                        response.getRequestId());
                                 return null;
                             }
+                            if (response.getException() != null) {
+                                responseFuture.onFailure(response);
+                            } else {
+                                responseFuture.onSuccess(response);
+                            }
+                            return null;
                         }));
                     }
                 });

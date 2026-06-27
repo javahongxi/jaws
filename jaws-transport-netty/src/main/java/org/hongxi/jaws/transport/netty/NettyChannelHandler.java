@@ -53,29 +53,24 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) {
-        if (msg instanceof NettyMessage) {
+        if (msg instanceof NettyMessage nettyMsg) {
             if (threadPoolExecutor != null) {
                 try {
-                    threadPoolExecutor.execute(new Runnable() {
-                        @Override
-                        public void run() {
-                            processMessage(ctx, ((NettyMessage) msg));
-                        }
-                    });
+                    threadPoolExecutor.execute(() -> processMessage(ctx, nettyMsg));
                 } catch (RejectedExecutionException rejectException) {
-                    if (((NettyMessage) msg).isRequest()) {
-                        rejectMessage(ctx, (NettyMessage) msg);
+                    if (nettyMsg.isRequest()) {
+                        rejectMessage(ctx, nettyMsg);
                     } else {
                         logger.warn("process thread pool is full, run in io thread, " +
                                         "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
                                 threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
                                 threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
-                                threadPoolExecutor.getTaskCount(), ((NettyMessage) msg).getRequestId());
-                        processMessage(ctx, (NettyMessage) msg);
+                                threadPoolExecutor.getTaskCount(), nettyMsg.getRequestId());
+                        processMessage(ctx, nettyMsg);
                     }
                 }
             } else {
-                processMessage(ctx, (NettyMessage) msg);
+                processMessage(ctx, nettyMsg);
             }
         } else {
             logger.error("messageReceived type not support: class={}", msg.getClass());
@@ -102,8 +97,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                     threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
                     threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
                     threadPoolExecutor.getTaskCount(), msg.getRequestId());
-            if (channel instanceof NettyServer) {
-                ((NettyServer) channel).getRejectCounter().incrementAndGet();
+            if (channel instanceof NettyServer nettyServer) {
+                nettyServer.getRejectCounter().incrementAndGet();
             }
         }
     }
@@ -125,10 +120,10 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             return;
         }
 
-        if (result instanceof Request) {
-            processRequest(ctx, (Request) result);
-        } else if (result instanceof Response) {
-            processResponse(result);
+        if (result instanceof Request request) {
+            processRequest(ctx, request);
+        } else if (result instanceof Response response) {
+            processResponse(response);
         }
     }
 
@@ -146,8 +141,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                         new JawsServiceException("process request fail. errmsg:" + e.getMessage()));
             }
             final DefaultResponse response;
-            if (result instanceof DefaultResponse) {
-                response = (DefaultResponse) result;
+            if (result instanceof DefaultResponse defaultResponse) {
+                response = defaultResponse;
             } else {
                 response = new DefaultResponse(result);
             }
@@ -198,9 +193,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private String getRemoteIp(ChannelHandlerContext ctx) {
         String ip = "";
         SocketAddress remote = ctx.channel().remoteAddress();
-        if (remote != null) {
+        if (remote instanceof InetSocketAddress inetAddr) {
             try {
-                ip = ((InetSocketAddress) remote).getAddress().getHostAddress();
+                ip = inetAddr.getAddress().getHostAddress();
             } catch (Exception e) {
                 logger.warn("get remoteIp error! default will use. msg:{}, remote:{}", e.getMessage(), remote);
             }

@@ -167,8 +167,8 @@ public class ClusterSpi<T> implements Cluster<T> {
 
         // 其他异常根据配置决定是否抛，如果抛异常，需要统一为 JawsException
         if (Boolean.parseBoolean(getUrl().getParameter(URLParamType.throwException.getName(), URLParamType.throwException.value()))) {
-            if (cause instanceof JawsAbstractException) {
-                throw (JawsAbstractException) cause;
+            if (cause instanceof JawsAbstractException jae) {
+                throw jae;
             } else {
                 JawsServiceException jawsException =
                         new JawsServiceException(String.format("ClusterSpi Call false for request: %s", request), cause);

@@ -48,14 +48,13 @@ public class CodecUtils {
 
     private static byte[] encodeMessage(Channel channel, Codec codec, Object msg) throws IOException {
         byte[] data;
-        if (msg instanceof Response) {
+        if (msg instanceof Response response) {
             try {
                 data = codec.encode(channel, msg);
             } catch (Exception e) {
                 logger.error("NettyEncoder encode error, identity=" + channel.getUrl().getIdentity(), e);
-                Response oriResponse = (Response) msg;
-                Response response = JawsFrameworkUtils.buildErrorResponse(oriResponse.getRequestId(), e);
-                data = codec.encode(channel, response);
+                Response errorResponse = JawsFrameworkUtils.buildErrorResponse(response.getRequestId(), e);
+                data = codec.encode(channel, errorResponse);
             }
         } else {
             data = codec.encode(channel, msg);
@@ -64,10 +63,10 @@ public class CodecUtils {
     }
 
     private static long getRequestId(Object message) {
-        if (message instanceof Request) {
-            return ((Request) message).getRequestId();
-        } else if (message instanceof Response) {
-            return ((Response) message).getRequestId();
+        if (message instanceof Request req) {
+            return req.getRequestId();
+        } else if (message instanceof Response resp) {
+            return resp.getRequestId();
         } else {
             return 0;
         }

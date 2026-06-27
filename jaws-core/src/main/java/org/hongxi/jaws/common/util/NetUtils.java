@@ -156,8 +156,8 @@ public class NetUtils {
             return null;
         }
 
-        if (socketAddress instanceof InetSocketAddress) {
-            InetAddress addr = ((InetSocketAddress) socketAddress).getAddress();
+        if (socketAddress instanceof InetSocketAddress inetAddr) {
+            InetAddress addr = inetAddr.getAddress();
             if (addr != null) {
                 return addr.getHostAddress();
             }

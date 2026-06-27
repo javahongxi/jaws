@@ -61,8 +61,8 @@ public class ProtocolFilterDecorator implements Protocol {
         Provider<T> lastProvider = provider;
         for (Filter filter : filters) {
             final Filter f = filter;
-            if (f instanceof InitializableFilter) {
-                ((InitializableFilter) f).init(lastProvider);
+            if (f instanceof InitializableFilter initFilter) {
+                initFilter.init(lastProvider);
             }
             final Provider<T> lp = lastProvider;
             lastProvider = new Provider<T>() {
@@ -120,8 +120,8 @@ public class ProtocolFilterDecorator implements Protocol {
         Referer<T> lastRef = referer;
         for (Filter filter : filters) {
             final Filter f = filter;
-            if (f instanceof InitializableFilter) {
-                ((InitializableFilter) f).init(lastRef);
+            if (f instanceof InitializableFilter initFilter) {
+                initFilter.init(lastRef);
             }
             final Referer<T> lf = lastRef;
             lastRef = new Referer<T>() {
