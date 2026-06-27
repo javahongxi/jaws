@@ -19,8 +19,6 @@ import java.util.Map;
  */
 public class SampleConsumer {
 
-    private static final int ZK_PORT = 2181;
-
     public static void main(String[] args) throws Exception {
         RefererConfig<DemoService> refererConfig = new RefererConfig<>();
         refererConfig.setInterface(DemoService.class);
@@ -72,7 +70,7 @@ public class SampleConsumer {
         protocolConfig.setName(protocolName);
         protocolConfig.setId(protocolConfig.getName());
         protocolConfig.setEndpointFactory("jaws");
-        protocolConfig.setSerialization("fastjson");
+        protocolConfig.setSerialization("fastjson2");
         return protocolConfig;
     }
 
@@ -82,7 +80,7 @@ public class SampleConsumer {
         registryConfig.setName("defaultRegistry");
         registryConfig.setId(registryConfig.getName());
         registryConfig.setAddress("127.0.0.1");
-        registryConfig.setPort(ZK_PORT);
+        registryConfig.setPort(2181);
         return registryConfig;
     }
 }

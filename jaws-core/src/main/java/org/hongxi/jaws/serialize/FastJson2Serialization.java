@@ -13,8 +13,8 @@ import java.io.IOException;
  * <p>
  * Created by shenhongxi on 2020/7/28.
  */
-@SpiMeta(name = "fastjson")
-public class FastJsonSerialization implements Serialization {
+@SpiMeta(name = "fastjson2")
+public class FastJson2Serialization implements Serialization {
 
     @Override
     public byte[] serialize(Object data) throws IOException {
@@ -46,6 +46,6 @@ public class FastJsonSerialization implements Serialization {
 
     @Override
     public int getSerializationNumber() {
-        return 2;
+        return 1;
     }
 }

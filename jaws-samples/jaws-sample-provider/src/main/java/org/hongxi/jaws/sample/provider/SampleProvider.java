@@ -13,8 +13,6 @@ import org.hongxi.jaws.switcher.JawsSwitcherUtils;
  */
 public class SampleProvider {
 
-    private static final int ZK_PORT = 2181;
-
     public static void main(String[] args) throws Exception {
         ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(new DemoServiceImpl());
@@ -39,7 +37,7 @@ public class SampleProvider {
         protocolConfig.setName(protocolName);
         protocolConfig.setId(protocolConfig.getName());
         protocolConfig.setEndpointFactory("jaws");
-        protocolConfig.setSerialization("fastjson");
+        protocolConfig.setSerialization("fastjson2");
         return protocolConfig;
     }
 
@@ -49,7 +47,7 @@ public class SampleProvider {
         registryConfig.setName("defaultRegistry");
         registryConfig.setId(registryConfig.getName());
         registryConfig.setAddress("127.0.0.1");
-        registryConfig.setPort(ZK_PORT);
+        registryConfig.setPort(2181);
         return registryConfig;
     }
 }
