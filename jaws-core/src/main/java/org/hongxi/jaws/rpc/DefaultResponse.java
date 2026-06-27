@@ -5,6 +5,7 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.Executor;
@@ -14,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Created by shenhongxi on 2020/7/25.
  */
 public class DefaultResponse implements Response, Callbackable, Serializable {
+    @Serial
     private static final long serialVersionUID = -46598719225168485L;
 
     private static final Logger log = LoggerFactory.getLogger(DefaultResponse.class);
