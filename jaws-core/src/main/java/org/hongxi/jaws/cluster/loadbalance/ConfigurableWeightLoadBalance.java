@@ -23,7 +23,7 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
 
     private static final Logger log = LoggerFactory.getLogger(ConfigurableWeightLoadBalance.class);
 
-    private static final RefererListCacheHolder emptyHolder = new EmptyHolder();
+    private final RefererListCacheHolder<T> emptyHolder = new EmptyHolder<>();
 
     private volatile RefererListCacheHolder<T> holder = emptyHolder;
 

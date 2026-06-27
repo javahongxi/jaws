@@ -41,7 +41,7 @@ public class ClusterSupport<T> implements NotifyListener {
 
     static {
         executorService.scheduleAtFixedRate(() -> {
-            for (ClusterSupport clusterSupport : refreshSet) {
+            for (ClusterSupport<?> clusterSupport : refreshSet) {
                 clusterSupport.refreshReferers();
             }
         }, JawsConstants.REFRESH_PERIOD, JawsConstants.REFRESH_PERIOD, TimeUnit.SECONDS);

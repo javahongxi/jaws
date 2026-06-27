@@ -49,7 +49,7 @@ public abstract class AbstractSharedPoolClient extends AbstractClient {
                 URLParamType.asyncInitConnection.boolValue()));
     }
 
-    protected abstract SharedObjectFactory createChannelFactory();
+    protected abstract SharedObjectFactory<Channel> createChannelFactory();
 
     protected void initConnections(boolean async) {
         if (async) {

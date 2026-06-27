@@ -26,7 +26,7 @@ public class DefaultResponseFuture implements ResponseFuture {
     protected Request request;
     protected List<FutureListener> listeners;
     protected URL serverUrl;
-    protected Class returnType;
+    protected Class<?> returnType;
     // rpc协议版本兼容时可以回传一些额外的信息
     private Map<String, String> attachments;
 

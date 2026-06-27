@@ -2,6 +2,7 @@ package org.hongxi.jaws.transport.netty;
 
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.StandardThreadPoolExecutor;
+import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.SharedObjectFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +15,7 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Created by shenhongxi on 2020/7/30.
  */
-public class NettyChannelFactory implements SharedObjectFactory<NettyChannel> {
+public class NettyChannelFactory implements SharedObjectFactory<Channel> {
     private static final Logger log = LoggerFactory.getLogger(NettyChannelFactory.class);
 
     private static final ExecutorService rebuildExecutorService = new StandardThreadPoolExecutor(
@@ -31,12 +32,13 @@ public class NettyChannelFactory implements SharedObjectFactory<NettyChannel> {
     }
 
     @Override
-    public NettyChannel makeObject() {
+    public Channel makeObject() {
         return new NettyChannel(nettyClient);
     }
 
     @Override
-    public boolean rebuildObject(NettyChannel nettyChannel, boolean async) {
+    public boolean rebuildObject(Channel obj, boolean async) {
+        NettyChannel nettyChannel = (NettyChannel) obj;
         ReentrantLock lock = nettyChannel.getLock();
         if (lock.tryLock()) {
             try {

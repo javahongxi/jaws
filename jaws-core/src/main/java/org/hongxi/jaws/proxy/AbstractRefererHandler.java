@@ -38,7 +38,7 @@ public class AbstractRefererHandler<T> {
         switcherService = ExtensionLoader.getExtensionLoader(SwitcherService.class).getExtension(switchName);
     }
 
-    Object invokeRequest(Request request, Class returnType, boolean async) throws Throwable {
+    Object invokeRequest(Request request, Class<?> returnType, boolean async) throws Throwable {
         RpcContext curContext = RpcContext.getContext();
         curContext.putAttribute(JawsConstants.ASYNC_SUFFIX, async);
 

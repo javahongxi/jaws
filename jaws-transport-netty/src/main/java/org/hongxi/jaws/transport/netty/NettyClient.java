@@ -63,7 +63,7 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     @Override
-    protected SharedObjectFactory createChannelFactory() {
+    protected SharedObjectFactory<Channel> createChannelFactory() {
         return new NettyChannelFactory(this);
     }
 
