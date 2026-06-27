@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class NettyServer extends AbstractServer {
     private static final Logger logger = LoggerFactory.getLogger(NettyServer.class);
 
-    protected NettyServerChannelManage channelManage;
+    protected NettyServerChannelManager channelManager;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
@@ -100,7 +100,7 @@ public class NettyServer extends AbstractServer {
         }
         threadPoolExecutor.prestartAllCoreThreads();
 
-        channelManage = new NettyServerChannelManage(maxServerConnections);
+        channelManager = new NettyServerChannelManager(maxServerConnections);
 
         ServerBootstrap serverBootstrap = new ServerBootstrap();
         serverBootstrap.group(bossGroup, workerGroup)
@@ -109,7 +109,7 @@ public class NettyServer extends AbstractServer {
                     @Override
                     protected void initChannel(SocketChannel socketChannel) throws Exception {
                         ChannelPipeline pipeline = socketChannel.pipeline();
-                        pipeline.addLast("channel_manage", channelManage);
+                        pipeline.addLast("channel_manager", channelManager);
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyServer.this, maxContentLength));
                         pipeline.addLast("encoder", new NettyEncoder());
                         pipeline.addLast("handler", new NettyChannelHandler(NettyServer.this, messageHandler, threadPoolExecutor));
@@ -160,8 +160,8 @@ public class NettyServer extends AbstractServer {
             workerGroup.shutdownGracefully();
             workerGroup = null;
         }
-        if (channelManage != null) {
-            channelManage.close();
+        if (channelManager != null) {
+            channelManager.close();
         }
         if (threadPoolExecutor != null) {
             threadPoolExecutor.shutdownNow();

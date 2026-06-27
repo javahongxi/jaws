@@ -122,7 +122,7 @@ public class ClusterSpi<T> implements Cluster<T> {
         }
 
         if (!delayDestroyReferers.isEmpty()) {
-            RefererSupports.delayDestroy(delayDestroyReferers);
+            RefererSupport.delayDestroy(delayDestroyReferers);
         }
     }
 

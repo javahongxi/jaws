@@ -12,7 +12,7 @@ import java.util.Map;
 /**
  * Created by shenhongxi on 2021/3/5.
  */
-public class UrlUtils {
+public class URLUtils {
 
 
     public static List<URL> parseURLs(String address, Map<String, String> defaults) {

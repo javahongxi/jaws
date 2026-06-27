@@ -5,7 +5,7 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
-import org.hongxi.jaws.common.util.UrlUtils;
+import org.hongxi.jaws.common.util.URLUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -371,7 +371,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                     }
                 }
                 // address内部可能包含多个注册中心地址
-                List<URL> urls = UrlUtils.parseURLs(address, map);
+                List<URL> urls = URLUtils.parseURLs(address, map);
                 if (urls != null && !urls.isEmpty()) {
                     for (URL url : urls) {
                         url.removeParameter(URLParamType.protocol.getName());

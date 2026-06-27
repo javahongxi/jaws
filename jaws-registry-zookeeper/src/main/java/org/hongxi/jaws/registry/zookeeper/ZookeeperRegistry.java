@@ -8,8 +8,8 @@ import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.framework.state.ConnectionState;
 import org.apache.curator.framework.state.ConnectionStateListener;
 import org.apache.zookeeper.CreateMode;
-import org.hongxi.jaws.closable.Closable;
-import org.hongxi.jaws.closable.ShutdownHook;
+import org.hongxi.jaws.closeable.Closeable;
+import org.hongxi.jaws.closeable.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -28,7 +28,7 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Created by shenhongxi on 2021/4/24.
  */
-public class ZookeeperRegistry extends CommandFailbackRegistry implements Closable {
+public class ZookeeperRegistry extends CommandFailbackRegistry implements Closeable {
 
     private static final Logger log = LoggerFactory.getLogger(ZookeeperRegistry.class);
 
