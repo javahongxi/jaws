@@ -10,7 +10,7 @@ import java.util.List;
 
 /**
  * Cluster is a service broker
- * 
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @Spi(scope = Scope.PROTOTYPE)
@@ -21,9 +21,9 @@ public interface Cluster<T> extends Caller<T> {
 
     void setUrl(URL url);
 
-    void setLoadBalance(LoadBalance<T> loadBalance);
-
     LoadBalance<T> getLoadBalance();
+
+    void setLoadBalance(LoadBalance<T> loadBalance);
 
     void setHaStrategy(HaStrategy<T> haStrategy);
 

@@ -17,27 +17,26 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Failback registry
- * 
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 public abstract class FailbackRegistry extends AbstractRegistry {
-    
+
     private static final Logger log = LoggerFactory.getLogger(FailbackRegistry.class);
+    private static ScheduledExecutorService retryExecutor = Executors.newScheduledThreadPool(1);
+
+    static {
+        ShutdownHook.registerShutdownHook(() -> {
+            if (!retryExecutor.isShutdown()) {
+                retryExecutor.shutdown();
+            }
+        });
+    }
 
     private Set<URL> failedRegistered = new ConcurrentHashSet<>();
     private Set<URL> failedUnregistered = new ConcurrentHashSet<>();
     private ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedSubscribed = new ConcurrentHashMap<>();
     private ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<>();
-
-    private static ScheduledExecutorService retryExecutor = Executors.newScheduledThreadPool(1);
-    
-    static{
-        ShutdownHook.registerShutdownHook(() -> {
-            if(!retryExecutor.isShutdown()){
-                retryExecutor.shutdown();
-            }
-        });
-    }
 
     public FailbackRegistry(URL url) {
         super(url);

@@ -18,7 +18,7 @@ public class Switcher {
 
     /**
      * isOn: true，服务可用; isOn: false, 服务不可用
-     * 
+     *
      * @return
      */
     public boolean isOn() {

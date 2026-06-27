@@ -8,7 +8,6 @@ import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
-import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.switcher.Switcher;
@@ -24,9 +23,9 @@ import java.util.Map;
  * Created by shenhongxi on 2021/4/23.
  */
 public class AbstractRefererHandler<T> {
-    
+
     private static final Logger log = LoggerFactory.getLogger(AbstractRefererHandler.class);
-    
+
     protected List<Cluster<T>> clusters;
     protected Class<T> clz;
     protected String interfaceName;

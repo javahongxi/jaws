@@ -9,7 +9,7 @@ import java.util.concurrent.RejectedExecutionException;
  * <pre>
  * 		1) 不过LinkedTransferQueue的缺点是没有队列长度控制，需要在外层协助控制
  * </pre>
- *
+ * <p>
  * Created by shenhongxi on 2020/7/6.
  *
  */

@@ -11,15 +11,14 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Create and cache registry.
- * 
+ * <p>
  * Created by shenhongxi on 2021/4/21.
  */
 
 public abstract class AbstractRegistryFactory implements RegistryFactory {
 
-    private static ConcurrentHashMap<String, Registry> registries = new ConcurrentHashMap<>();
-
     private static final ReentrantLock lock = new ReentrantLock();
+    private static ConcurrentHashMap<String, Registry> registries = new ConcurrentHashMap<>();
 
     protected String getRegistryUri(URL url) {
         return url.getUri();

@@ -6,7 +6,9 @@ package org.hongxi.jaws.config;
 public class BasicRefererInterfaceConfig extends AbstractRefererConfig {
 
     private static final long serialVersionUID = -418351068816874749L;
-    /** 是否默认配置 */
+    /**
+     * 是否默认配置
+     */
     private Boolean isDefault;
 
     public void setDefault(boolean isDefault) {

@@ -11,7 +11,7 @@ import java.util.Map;
 
 /**
  * Config tools
- *
+ * <p>
  * Created by shenhongxi on 2021/3/7.
  */
 
@@ -19,7 +19,7 @@ public class ConfigUtils {
 
     /**
      * export fomart: protocol1:port1,protocol2:port2
-     * 
+     *
      * @param export
      * @return
      */

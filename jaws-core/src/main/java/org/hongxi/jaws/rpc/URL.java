@@ -319,10 +319,11 @@ public class URL {
     /**
      * because async call in client path with Async suffix,we need
      * remove Async suffix in path for subscribe.
+     *
      * @param path
      * @return
      */
-    private String removeAsyncPath(String path){
+    private String removeAsyncPath(String path) {
         return JawsFrameworkUtils.removeAsyncSuffix(path);
     }
 

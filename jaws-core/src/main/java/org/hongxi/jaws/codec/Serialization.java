@@ -17,6 +17,7 @@ public interface Serialization {
 
     /**
      * serialization的唯一编号，用于传输协议中指定序列化方式。每种序列化的编号必须唯一。
+     *
      * @return 由于编码规范限制，序列化方式最大支持32种，因此返回值必须在0-31之间。
      */
     int getSerializationNumber();

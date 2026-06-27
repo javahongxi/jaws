@@ -6,7 +6,7 @@ import org.hongxi.jaws.rpc.URL;
 
 /**
  * Used to register and discover.
- *
+ * <p>
  * Created by shenhongxi on 2021/3/7.
  */
 @Spi(scope = Scope.SINGLETON)

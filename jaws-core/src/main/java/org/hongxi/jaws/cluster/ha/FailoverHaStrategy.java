@@ -18,7 +18,7 @@ import java.util.List;
 
 /**
  * Failover ha strategy.
- *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @SpiMeta(name = "failover")

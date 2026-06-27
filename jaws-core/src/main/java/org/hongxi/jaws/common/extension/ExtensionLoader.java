@@ -23,16 +23,12 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class ExtensionLoader<T> {
     private static final Logger logger = LoggerFactory.getLogger(ExtensionLoader.class);
-
+    private static final String SERVICES_DIRECTORY = "META-INF/services/";
     private static ConcurrentMap<Class<?>, ExtensionLoader<?>> extensionLoaders = new ConcurrentHashMap<>();
-
     private ConcurrentMap<String, Class<T>> extensionClasses;
     private ConcurrentMap<String, T> singletonInstances;
-
     private Class<T> type;
     private volatile boolean init;
-    
-    private static final String SERVICES_DIRECTORY = "META-INF/services/";
     private ClassLoader classLoader;
 
     private ExtensionLoader(Class<T> type) {
@@ -42,6 +38,34 @@ public class ExtensionLoader<T> {
     private ExtensionLoader(Class<T> type, ClassLoader classLoader) {
         this.type = type;
         this.classLoader = classLoader;
+    }
+
+    public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
+        checkInterfaceType(type);
+
+        ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
+        if (loader == null) {
+            loader = initExtensionLoader(type);
+        }
+        return loader;
+    }
+
+    private static <T> void checkInterfaceType(Class<T> clazz) {
+        if (!clazz.isInterface()) {
+            throw new JawsFrameworkException(clazz.getName() + ": Extension type is not interface");
+        }
+        if (!clazz.isAnnotationPresent(Spi.class)) {
+            throw new JawsFrameworkException(clazz.getName() + ": Extension type without @Spi annotation");
+        }
+    }
+
+    private static synchronized <T> ExtensionLoader<T> initExtensionLoader(Class<T> type) {
+        ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
+        if (loader == null) {
+            loader = new ExtensionLoader<>(type);
+            extensionLoaders.put(type, loader);
+        }
+        return loader;
     }
 
     public T getExtension(String name) {
@@ -90,34 +114,6 @@ public class ExtensionLoader<T> {
         return obj;
     }
 
-    public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
-        checkInterfaceType(type);
-
-        ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
-        if (loader == null) {
-            loader = initExtensionLoader(type);
-        }
-        return loader;
-    }
-
-    private static <T> void checkInterfaceType(Class<T> clazz) {
-        if (!clazz.isInterface()) {
-            throw new JawsFrameworkException(clazz.getName() + ": Extension type is not interface");
-        }
-        if (!clazz.isAnnotationPresent(Spi.class)) {
-            throw new JawsFrameworkException(clazz.getName() + ": Extension type without @Spi annotation");
-        }
-    }
-
-    private static synchronized <T> ExtensionLoader<T> initExtensionLoader(Class<T> type) {
-        ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
-        if (loader == null) {
-            loader = new ExtensionLoader<>(type);
-            extensionLoaders.put(type, loader);
-        }
-        return loader;
-    }
-
     public List<T> getExtensions() {
         return getExtensions(null);
     }
@@ -125,7 +121,7 @@ public class ExtensionLoader<T> {
     /**
      * 有些地方需要spi的所有激活的instances，所以需要能返回一个列表的方法
      * 注意：1 SpiMeta 中的active 为true
-     *      2 按照spiMeta中的sequence进行排序
+     * 2 按照spiMeta中的sequence进行排序
      *
      * @return
      */
@@ -165,10 +161,10 @@ public class ExtensionLoader<T> {
 
     private synchronized void loadExtensionClasses() {
         if (init) return;
-        
+
         extensionClasses = loadExtensionClasses(SERVICES_DIRECTORY);
         singletonInstances = new ConcurrentHashMap<>();
-        
+
         init = true;
     }
 

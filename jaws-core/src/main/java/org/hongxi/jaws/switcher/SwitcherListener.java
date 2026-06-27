@@ -5,5 +5,5 @@ package org.hongxi.jaws.switcher;
  */
 public interface SwitcherListener {
 
-    void onValueChanged(String key,Boolean value);
+    void onValueChanged(String key, Boolean value);
 }

@@ -1,11 +1,11 @@
 package org.hongxi.jaws.transport.support;
 
 import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.*;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,14 +38,16 @@ import java.util.concurrent.ConcurrentMap;
  * 			对于service来说，把心跳包当成普通的request处理，因为这种heartbeat才能够探测到整个service处理的关键路径的可用状况
  *
  * </pre>
- *
- *
+ * <p>
+ * <p>
  * Created by shenhongxi on 2020/7/31.
  */
 public abstract class AbstractEndpointFactory implements EndpointFactory {
     private static final Logger logger = LoggerFactory.getLogger(AbstractEndpointFactory.class);
 
-    /** 维持share channel 的service列表 **/
+    /**
+     * 维持share channel 的service列表
+     **/
     protected Map<String, Server> ipPort2ServerShareChannel = new HashMap<>();
     protected ConcurrentMap<Server, Set<String>> server2UrlsShareChannel = new ConcurrentHashMap<>();
 

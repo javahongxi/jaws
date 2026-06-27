@@ -11,10 +11,9 @@ import org.slf4j.LoggerFactory;
  * Created by shenhongxi on 2020/7/26.
  */
 public class ExceptionUtils {
-    private static final Logger logger = LoggerFactory.getLogger(ExceptionUtils.class);
-
     public static final StackTraceElement[] REMOTE_MOCK_STACK = new StackTraceElement[]{
             new StackTraceElement("remoteClass", "remoteMethod", "remoteFile", 1)};
+    private static final Logger logger = LoggerFactory.getLogger(ExceptionUtils.class);
 
     /**
      * 判定是否是业务方的逻辑抛出的异常

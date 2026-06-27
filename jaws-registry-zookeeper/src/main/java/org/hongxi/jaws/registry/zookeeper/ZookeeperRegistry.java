@@ -29,9 +29,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * Created by shenhongxi on 2021/4/24.
  */
 public class ZookeeperRegistry extends CommandFailbackRegistry implements Closable {
-    
+
     private static final Logger log = LoggerFactory.getLogger(ZookeeperRegistry.class);
-    
+
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
     private final CuratorFramework curator;

@@ -39,13 +39,13 @@ public class NettyServer extends AbstractServer {
 
     private AtomicInteger rejectCounter = new AtomicInteger(0);
 
-    public AtomicInteger getRejectCounter() {
-        return rejectCounter;
-    }
-
     public NettyServer(URL url, MessageHandler messageHandler) {
         super(url);
         this.messageHandler = messageHandler;
+    }
+
+    public AtomicInteger getRejectCounter() {
+        return rejectCounter;
     }
 
     @Override

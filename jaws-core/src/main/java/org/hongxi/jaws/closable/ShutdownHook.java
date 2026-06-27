@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * Add a shutdown hook to close some global resources
- *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 public class ShutdownHook extends Thread {

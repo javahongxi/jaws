@@ -11,16 +11,16 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * "低并发优化" 负载均衡
- * 
+ *
  * <pre>
- * 		1） 低并发度优先： referer的某时刻的call数越小优先级越高 
- * 
+ * 		1） 低并发度优先： referer的某时刻的call数越小优先级越高
+ *
  * 		2） 低并发referer获取策略：
  * 				由于Referer List可能很多，比如上百台，如果每次都要从这上百个Referer或者最低并发的几个，性能有些损耗，
  * 				因此 random.nextInt(list.size()) 获取一个起始的index，然后获取最多不超过MAX_REFERER_COUNT的
  * 				状态是isAvailable的referer进行判断activeCount.
  * </pre>
- * 
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @SpiMeta(name = "activeWeight")

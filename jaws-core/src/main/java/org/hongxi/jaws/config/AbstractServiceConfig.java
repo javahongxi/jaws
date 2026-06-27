@@ -12,7 +12,9 @@ public abstract class AbstractServiceConfig extends AbstractInterfaceConfig {
      **/
     protected String export;
 
-    /** 一般不用设置，由服务自己获取，但如果有多个ip，而只想用指定ip，则可以在此处指定 */
+    /**
+     * 一般不用设置，由服务自己获取，但如果有多个ip，而只想用指定ip，则可以在此处指定
+     */
     protected String host;
 
     public String getExport() {

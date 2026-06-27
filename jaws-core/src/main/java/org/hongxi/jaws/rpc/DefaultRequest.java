@@ -93,13 +93,13 @@ public class DefaultRequest implements Request, Serializable {
     }
 
     @Override
-    public void setSerializationNumber(int number) {
-        this.serializationNumber = number;
+    public int getSerializationNumber() {
+        return serializationNumber;
     }
 
     @Override
-    public int getSerializationNumber() {
-        return serializationNumber;
+    public void setSerializationNumber(int number) {
+        this.serializationNumber = number;
     }
 
     @Override

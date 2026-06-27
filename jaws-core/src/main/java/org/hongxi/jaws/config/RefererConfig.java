@@ -25,10 +25,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class RefererConfig<T> extends AbstractRefererConfig {
 
     private static final long serialVersionUID = -2299754608229467887L;
-
+    // 具体到方法的配置
+    protected List<MethodConfig> methods;
     private Class<T> interfaceClass;
-
     private String serviceInterface;
+    // 点对点直连服务提供地址
+    private String directUrl;
+    private AtomicBoolean initialized = new AtomicBoolean(false);
+    private T ref;
+    private BasicRefererInterfaceConfig basicReferer;
+    private List<ClusterSupport<T>> clusterSupports;
 
     public String getServiceInterface() {
         return serviceInterface;
@@ -37,20 +43,6 @@ public class RefererConfig<T> extends AbstractRefererConfig {
     public void setServiceInterface(String serviceInterface) {
         this.serviceInterface = serviceInterface;
     }
-
-    // 具体到方法的配置
-    protected List<MethodConfig> methods;
-
-    // 点对点直连服务提供地址
-    private String directUrl;
-
-    private AtomicBoolean initialized = new AtomicBoolean(false);
-
-    private T ref;
-
-    private BasicRefererInterfaceConfig basicReferer;
-
-    private List<ClusterSupport<T>> clusterSupports;
 
     public List<MethodConfig> getMethods() {
         return methods;
@@ -182,15 +174,15 @@ public class RefererConfig<T> extends AbstractRefererConfig {
         initialized.set(false);
     }
 
+    public Class<?> getInterface() {
+        return interfaceClass;
+    }
+
     public void setInterface(Class<T> interfaceClass) {
         if (interfaceClass != null && !interfaceClass.isInterface()) {
             throw new IllegalStateException("The interface class " + interfaceClass + " is not a interface!");
         }
         this.interfaceClass = interfaceClass;
-    }
-
-    public Class<?> getInterface() {
-        return interfaceClass;
     }
 
     public String getDirectUrl() {

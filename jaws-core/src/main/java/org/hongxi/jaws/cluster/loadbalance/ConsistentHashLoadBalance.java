@@ -12,9 +12,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 
- * Use consistent hash to choose referer
  *
+ * Use consistent hash to choose referer
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @SpiMeta(name = "consistent")

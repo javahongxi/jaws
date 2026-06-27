@@ -4,13 +4,13 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import org.hongxi.jaws.codec.CodecUtils;
 import org.hongxi.jaws.codec.Codec;
+import org.hongxi.jaws.codec.CodecUtils;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -33,7 +33,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 public class NettyChannelHandler extends ChannelDuplexHandler {
     private static final Logger logger = LoggerFactory.getLogger(NettyChannelHandler.class);
-    
+
     private ThreadPoolExecutor threadPoolExecutor;
     private MessageHandler messageHandler;
     private Channel channel;
@@ -68,8 +68,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                     } else {
                         logger.warn("process thread pool is full, run in io thread, " +
                                         "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
-                                threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(), 
-                                threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(), 
+                                threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
+                                threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
                                 threadPoolExecutor.getTaskCount(), ((NettyMessage) msg).getRequestId());
                         processMessage(ctx, (NettyMessage) msg);
                     }
@@ -86,12 +86,12 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     private void rejectMessage(ChannelHandlerContext ctx, NettyMessage msg) {
         if (msg.isRequest()) {
-            sendResponse(ctx, 
+            sendResponse(ctx,
                     JawsFrameworkUtils.buildErrorResponse(
-                            (Request) msg, 
+                            (Request) msg,
                             new JawsServiceException(
-                                    "process thread pool is full, reject by server: " 
-                                            + ctx.channel().localAddress(), 
+                                    "process thread pool is full, reject by server: "
+                                            + ctx.channel().localAddress(),
                                     JawsErrorMsgConstants.SERVICE_REJECT
                             )
                     )
@@ -99,8 +99,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
             logger.error("process thread pool is full, reject, " +
                             "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
-                    threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(), 
-                    threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(), 
+                    threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
+                    threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
                     threadPoolExecutor.getTaskCount(), msg.getRequestId());
             if (channel instanceof NettyServer) {
                 ((NettyServer) channel).getRejectCounter().incrementAndGet();
@@ -114,7 +114,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         try {
             result = codec.decode(channel, remoteIp, msg.getData());
         } catch (Exception e) {
-            logger.error("NettyDecoder decode fail! requestid: {}, size: {}, ip: {}", 
+            logger.error("NettyDecoder decode fail! requestid: {}, size: {}, ip: {}",
                     msg.getRequestId(), msg.getData().length, remoteIp, e);
             Response response = JawsFrameworkUtils.buildErrorResponse(msg.getRequestId(), e);
             if (msg.isRequest()) {

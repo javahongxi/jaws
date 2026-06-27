@@ -68,6 +68,8 @@ public interface Request {
      */
     void setRetries(int retries);
 
+    int getSerializationNumber();
+
     /**
      * set the serialization number.
      * same to the protocol version, this value only used in server end for compatible.
@@ -75,6 +77,4 @@ public interface Request {
      * @param number
      */
     void setSerializationNumber(int number);
-
-    int getSerializationNumber();
 }

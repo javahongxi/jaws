@@ -22,7 +22,7 @@ import java.util.List;
 /**
  *
  * Decorate the protocol, to add more features.
- *
+ * <p>
  * Created by shenhongxi on 2021/3/6.
  */
 
@@ -106,10 +106,10 @@ public class ProtocolFilterDecorator implements Protocol {
                     return lp.isAvailable();
                 }
 
-				@Override
-				public T getImpl() {
-					return provider.getImpl();
-				}
+                @Override
+                public T getImpl() {
+                    return provider.getImpl();
+                }
             };
         }
         return lastProvider;
@@ -181,11 +181,11 @@ public class ProtocolFilterDecorator implements Protocol {
 
     /**
      * <pre>
-	 * 获取方式：
-	 * 1）先获取默认的filter列表；
-	 * 2）根据filter配置获取新的filters，并和默认的filter列表合并；
-	 * 3）再根据一些其他配置判断是否需要增加其他filter，如根据accessLog进行判断，是否需要增加accesslog
-	 * </pre>
+     * 获取方式：
+     * 1）先获取默认的filter列表；
+     * 2）根据filter配置获取新的filters，并和默认的filter列表合并；
+     * 3）再根据一些其他配置判断是否需要增加其他filter，如根据accessLog进行判断，是否需要增加accesslog
+     * </pre>
      *
      * @param url
      * @param key

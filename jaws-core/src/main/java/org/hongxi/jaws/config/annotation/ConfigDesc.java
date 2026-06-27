@@ -4,7 +4,7 @@ import java.lang.annotation.*;
 
 /**
  * 对配置参数的描述，用于通过配置方法进行配置属性自动装载
- *
+ * <p>
  * Created by shenhongxi on 2021/3/5.
  */
 @Documented

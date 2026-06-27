@@ -107,8 +107,8 @@ public class DefaultResponseFuture implements ResponseFuture {
     @Override
     public boolean cancel() {
         Exception e = new JawsServiceException(this.getClass().getName() +
-                        " task cancel: serverPort=" + serverUrl.getServerPortStr() + " "
-                        + JawsFrameworkUtils.toString(request) +
+                " task cancel: serverPort=" + serverUrl.getServerPortStr() + " "
+                + JawsFrameworkUtils.toString(request) +
                 " cost=" + (System.currentTimeMillis() - createTime));
         return cancel(e);
     }
@@ -199,7 +199,7 @@ public class DefaultResponseFuture implements ResponseFuture {
                             " request timeout: serverPort=" + serverUrl.getServerPortStr()
                             + " " + JawsFrameworkUtils.toString(request) +
                             " cost=" + (System.currentTimeMillis() - createTime),
-                            JawsErrorMsgConstants.SERVICE_TIMEOUT);
+                    JawsErrorMsgConstants.SERVICE_TIMEOUT);
 
             lock.notifyAll();
         }
@@ -283,12 +283,12 @@ public class DefaultResponseFuture implements ResponseFuture {
     }
 
     @Override
-    public void setSerializationNumber(int number) {
-
+    public int getSerializationNumber() {
+        return 0;
     }
 
     @Override
-    public int getSerializationNumber() {
-        return 0;
+    public void setSerializationNumber(int number) {
+
     }
 }

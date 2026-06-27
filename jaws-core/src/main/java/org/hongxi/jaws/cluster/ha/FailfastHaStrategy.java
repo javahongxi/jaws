@@ -7,9 +7,9 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 
 /**
- * 
- * Fail fast ha strategy.
  *
+ * Fail fast ha strategy.
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @SpiMeta(name = "failfast")

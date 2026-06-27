@@ -1,7 +1,6 @@
 package org.hongxi.jaws.registry.support.command;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
@@ -22,9 +21,8 @@ import java.util.regex.Pattern;
  */
 public class CommandServiceManager implements CommandListener, ServiceListener {
 
-    private static final Logger log = LoggerFactory.getLogger(CommandServiceManager.class);
-
     public static final String JAWS_COMMAND_SWITCHER = "feature.jawsrpc.command.enable";
+    private static final Logger log = LoggerFactory.getLogger(CommandServiceManager.class);
     private static Pattern IP_PATTERN = Pattern.compile("^!?[0-9.]*\\*?$");
 
     static {

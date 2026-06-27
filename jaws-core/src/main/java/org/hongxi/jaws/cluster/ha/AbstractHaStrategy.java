@@ -4,9 +4,9 @@ import org.hongxi.jaws.cluster.HaStrategy;
 import org.hongxi.jaws.rpc.URL;
 
 /**
- * 
- * Abstract ha strategy.
  *
+ * Abstract ha strategy.
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 

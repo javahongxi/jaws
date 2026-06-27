@@ -55,6 +55,8 @@ public interface Response {
 
     void setAttachment(String key, String value);
 
+    int getSerializationNumber();
+
     /**
      * set the serialization number.
      * same to the protocol version, this value only used in server end for compatible.
@@ -62,6 +64,4 @@ public interface Response {
      * @param number
      */
     void setSerializationNumber(int number);
-
-    int getSerializationNumber();
 }

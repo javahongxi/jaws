@@ -22,9 +22,10 @@ public abstract class AbstractExporter<T> extends AbstractNode implements Export
 
     /**
      * update real listened port
+     *
      * @param port
      */
-    protected void updateRealServerPort(int port){
+    protected void updateRealServerPort(int port) {
         getUrl().setPort(port);
     }
 }

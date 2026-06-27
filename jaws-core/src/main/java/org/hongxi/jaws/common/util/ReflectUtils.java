@@ -23,10 +23,10 @@ public class ReflectUtils {
     private static final ConcurrentMap<String, Class<?>> name2ClassCache = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, String> class2NameCache = new ConcurrentHashMap<>();
 
-    private static final String[] PRIMITIVE_NAMES = new String[] {"boolean", "byte", "char", "double", "float", "int", "long", "short",
+    private static final String[] PRIMITIVE_NAMES = new String[]{"boolean", "byte", "char", "double", "float", "int", "long", "short",
             "void"};
 
-    private static final Class<?>[] PRIMITIVE_CLASSES = new Class<?>[] {boolean.class, byte.class, char.class, double.class, float.class,
+    private static final Class<?>[] PRIMITIVE_CLASSES = new Class<?>[]{boolean.class, byte.class, char.class, double.class, float.class,
             int.class, long.class, short.class, Void.TYPE};
 
     private static final int PRIMITIVE_CLASS_NAME_MAX_LENGTH = 7;
@@ -272,7 +272,8 @@ public class ReflectUtils {
                                     field.setAccessible(true);
                                 }
                                 field.set(value, property);
-                            } catch (Throwable e) {}
+                            } catch (Throwable e) {
+                            }
                         }
                     }
                     cls = cls.getSuperclass();

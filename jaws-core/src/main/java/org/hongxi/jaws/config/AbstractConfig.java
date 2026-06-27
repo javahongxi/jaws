@@ -21,16 +21,8 @@ public class AbstractConfig implements Serializable {
     private static final long serialVersionUID = 6221123514996466731L;
 
     private static final Logger logger = LoggerFactory.getLogger(AbstractConfig.class);
-
+    private static final String[] SUFFIXS = new String[]{"Config", "Bean"};
     protected String id;
-
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
-    }
 
     /**
      * 按顺序进行config 参数append and override，按照configs出现的顺序，后面的会覆盖前面的相同名称的参数
@@ -55,6 +47,26 @@ public class AbstractConfig implements Serializable {
                 mc.appendConfigParams(parameters, JawsConstants.METHOD_CONFIG_PREFIX + mc.getName() + "(" + mc.getArgumentTypes() + ")");
             }
         }
+    }
+
+    private static String getTagName(Class<?> cls) {
+        String tag = cls.getSimpleName();
+        for (String suffix : SUFFIXS) {
+            if (tag.endsWith(suffix)) {
+                tag = tag.substring(0, tag.length() - suffix.length());
+                break;
+            }
+        }
+        tag = tag.toLowerCase();
+        return tag;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
     }
 
     protected void appendConfigParams(Map<String, String> parameters) {
@@ -163,19 +175,5 @@ public class AbstractConfig implements Serializable {
             logger.warn(t.getMessage(), t);
             return super.toString();
         }
-    }
-
-    private static final String[] SUFFIXS = new String[] {"Config", "Bean"};
-
-    private static String getTagName(Class<?> cls) {
-        String tag = cls.getSimpleName();
-        for (String suffix : SUFFIXS) {
-            if (tag.endsWith(suffix)) {
-                tag = tag.substring(0, tag.length() - suffix.length());
-                break;
-            }
-        }
-        tag = tag.toLowerCase();
-        return tag;
     }
 }

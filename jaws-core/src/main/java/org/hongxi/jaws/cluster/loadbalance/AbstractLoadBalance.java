@@ -16,10 +16,8 @@ import java.util.List;
  */
 public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractLoadBalance.class);
-
     public static final int MAX_REFERER_COUNT = 10;
-
+    private static final Logger log = LoggerFactory.getLogger(AbstractLoadBalance.class);
     private List<Referer<T>> referers;
 
     @Override

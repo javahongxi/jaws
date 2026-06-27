@@ -50,7 +50,7 @@ public abstract class AbstractProtocol implements Protocol {
             exporter = createExporter(provider, url);
             exporter.init();
 
-            protocolKey =  JawsFrameworkUtils.getProtocolKey(url);// rebuild protocolKey，maybe port change when using random port
+            protocolKey = JawsFrameworkUtils.getProtocolKey(url);// rebuild protocolKey，maybe port change when using random port
             exporterMap.put(protocolKey, exporter);
 
             log.info("{} export Success: url={}", this.getClass().getSimpleName(), url);

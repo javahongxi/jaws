@@ -10,7 +10,9 @@ public enum URLParamType {
     version("version", JawsConstants.DEFAULT_VERSION),
 
     requestTimeout("requestTimeout", 200),
-    /** request id from http interface **/
+    /**
+     * request id from http interface
+     **/
     requestIdFromClient("requestIdFromClient", 0),
 
     connectTimeout("connectTimeout", 1000),

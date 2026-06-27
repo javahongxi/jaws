@@ -6,7 +6,7 @@ import java.util.Collection;
 
 /**
  * Register service to Restery center.
- *
+ * <p>
  * Created by shenhongxi on 2021/3/5.
  */
 

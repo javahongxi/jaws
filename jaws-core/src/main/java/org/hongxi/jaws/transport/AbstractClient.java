@@ -4,10 +4,10 @@ import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,21 +40,21 @@ public abstract class AbstractClient implements Client {
         return localAddress;
     }
 
+    public void setLocalAddress(InetSocketAddress localAddress) {
+        this.localAddress = localAddress;
+    }
+
     @Override
     public InetSocketAddress getRemoteAddress() {
         return remoteAddress;
     }
 
+    public void setRemoteAddress(InetSocketAddress remoteAddress) {
+        this.remoteAddress = remoteAddress;
+    }
+
     @Override
     public void heartbeat(Request request) {
         throw new JawsFrameworkException("heartbeat not support: " + JawsFrameworkUtils.toString(request));
-    }
-
-    public void setLocalAddress(InetSocketAddress localAddress) {
-        this.localAddress = localAddress;
-    }
-
-    public void setRemoteAddress(InetSocketAddress remoteAddress) {
-        this.remoteAddress = remoteAddress;
     }
 }

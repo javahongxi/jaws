@@ -21,10 +21,12 @@ import java.util.concurrent.ConcurrentMap;
  */
 @SpiMeta(name = "local")
 public class LocalRegistry extends AbstractRegistry {
-    
+
     private static final Logger log = LoggerFactory.getLogger(LocalRegistry.class);
 
-    /** Map<interface/nodeType, List<URL>>, List 中的url用identity/id来区分唯一性 */
+    /**
+     * Map<interface/nodeType, List<URL>>, List 中的url用identity/id来区分唯一性
+     */
     private ConcurrentMap<String, List<URL>> registeredServices = new ConcurrentHashMap<>();
 
     private ConcurrentHashMap<String, ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>>> subscribeListeners =
@@ -135,7 +137,7 @@ public class LocalRegistry extends AbstractRegistry {
 
     /**
      * 防止数据在外部被变更，因此copy一份
-     * 
+     *
      * @return
      */
     public Map<String, List<URL>> getAllUrl() {

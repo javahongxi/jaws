@@ -16,21 +16,21 @@ import java.util.concurrent.TimeUnit;
 public class RefererSupports {
 
     private static final Logger log = LoggerFactory.getLogger(RefererSupports.class);
-
-    private static ScheduledExecutorService scheduledExecutor = Executors.newScheduledThreadPool(10);
-
     // 正常情况下请求超过1s已经是能够忍耐的极限值了，delay 1s进行destroy
     private static final int DELAY_TIME = 1000;
-    static{
+    private static ScheduledExecutorService scheduledExecutor = Executors.newScheduledThreadPool(10);
+
+    static {
         ShutdownHook.registerShutdownHook(new Closable() {
             @Override
             public void close() {
-                if(!scheduledExecutor.isShutdown()){
+                if (!scheduledExecutor.isShutdown()) {
                     scheduledExecutor.shutdown();
                 }
             }
         });
     }
+
     public static <T> void delayDestroy(final List<Referer<T>> referers) {
         if (referers == null || referers.isEmpty()) {
             return;

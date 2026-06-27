@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 权重可配置的负载均衡器
- *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @SpiMeta(name = "configurableWeight")
@@ -161,8 +161,8 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
             // 求出最大公约数，若不为1，对权重做除法
             int weightGcd = findGcd(weightsArr);
             if (weightGcd != 1) {
-                for(Map.Entry<String,Integer> entry: weightsMap.entrySet()) {
-                    weightsMap.put(entry.getKey(),entry.getValue()/weightGcd);
+                for (Map.Entry<String, Integer> entry : weightsMap.entrySet()) {
+                    weightsMap.put(entry.getKey(), entry.getValue() / weightGcd);
                 }
             }
 

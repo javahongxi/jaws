@@ -20,19 +20,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * 对进出的url都进行createCopy保护，避免registry中的对象被修改，避免潜在的并发问题。
  *
  * </pre>
- *
+ * <p>
  * Created by shenhongxi on 2021/4/21.
  */
 
 public abstract class AbstractRegistry implements Registry {
-    
+
     private static final Logger log = LoggerFactory.getLogger(AbstractRegistry.class);
-
+    protected String registryClassName = this.getClass().getSimpleName();
     private ConcurrentHashMap<URL, Map<String, List<URL>>> subscribedCategoryResponses = new ConcurrentHashMap<>();
-
     private URL registryUrl;
     private Set<URL> registeredServiceUrls = new ConcurrentHashSet<>();
-    protected String registryClassName = this.getClass().getSimpleName();
 
     public AbstractRegistry(URL url) {
         this.registryUrl = url.createCopy();

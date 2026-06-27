@@ -10,18 +10,6 @@ import java.util.Map;
 public class ProtocolConfig extends AbstractConfig {
 
     private static final long serialVersionUID = 7605496816982926360L;
-
-    // 服务协议
-    private String name;
-
-    // 序列化方式
-    private String serialization;
-
-    // 协议编码
-    private String codec;
-
-    // IO线程池大小
-    private Integer iothreads;
     // 请求超时
     protected Integer requestTimeout;
     // client最小连接数
@@ -37,15 +25,12 @@ public class ProtocolConfig extends AbstractConfig {
     protected Integer maxContentLength;
     // server支持的最大连接数
     protected Integer maxServerConnection;
-
     // 连接池管理方式，是否lifo
     protected Boolean poolLifo;
     // 是否延迟init
     protected Boolean lazyInit;
-
     // endpoint factory
     protected String endpointFactory;
-
     // 采用哪种cluster 的实现
     protected String cluster;
     // loadbalance 方式
@@ -56,7 +41,6 @@ public class ProtocolConfig extends AbstractConfig {
     protected Integer workerQueueSize;
     // server accept connections count
     protected Integer acceptConnections;
-
     // proxy type, like jdk or javassist
     protected String proxy;
     // filter, 多个filter用","分割，blank string 表示采用默认的filter配置
@@ -65,7 +49,14 @@ public class ProtocolConfig extends AbstractConfig {
     protected Integer retries;
     // if the request is called async, a taskFuture result will be sent back.
     protected Boolean async;
-
+    // 服务协议
+    private String name;
+    // 序列化方式
+    private String serialization;
+    // 协议编码
+    private String codec;
+    // IO线程池大小
+    private Integer iothreads;
     // 是否缺省配置
     private Boolean isDefault;
 

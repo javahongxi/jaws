@@ -4,7 +4,7 @@ import org.hongxi.jaws.config.annotation.ConfigDesc;
 
 /**
  * registry config
- * 
+ * <p>
  * Created by shenhongxi on 2021/3/5.
  */
 
@@ -162,10 +162,10 @@ public class RegistryConfig extends AbstractConfig {
 
     /**
      * <pre>
-	 * vintage 的 excise 方式，static、dynamic、ratio；
-	 * static表示使用静态列表，不剔除unreachable的node；dynamic完全剔除；ratio按比例提出。
-	 * 配置方式，ratio直接使用数字，其他使用数字0-100.
-	 * </pre>
+     * vintage 的 excise 方式，static、dynamic、ratio；
+     * static表示使用静态列表，不剔除unreachable的node；dynamic完全剔除；ratio按比例提出。
+     * 配置方式，ratio直接使用数字，其他使用数字0-100.
+     * </pre>
      */
     public enum Excise {
         excise_static("static"), excise_dynamic("dynamic"), excise_ratio("ratio");

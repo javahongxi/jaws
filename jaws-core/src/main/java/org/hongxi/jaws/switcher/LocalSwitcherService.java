@@ -20,6 +20,14 @@ public class LocalSwitcherService implements SwitcherService {
         return switchers.get(name);
     }
 
+    public static void putSwitcher(Switcher switcher) {
+        if (switcher == null) {
+            throw new JawsFrameworkException("LocalSwitcherService addSwitcher Error: switcher is null");
+        }
+
+        switchers.put(switcher.getName(), switcher);
+    }
+
     @Override
     public Switcher getSwitcher(String name) {
         return switchers.get(name);
@@ -28,14 +36,6 @@ public class LocalSwitcherService implements SwitcherService {
     @Override
     public List<Switcher> getAllSwitchers() {
         return new ArrayList<>(switchers.values());
-    }
-
-    public static void putSwitcher(Switcher switcher) {
-        if (switcher == null) {
-            throw new JawsFrameworkException("LocalSwitcherService addSwitcher Error: switcher is null");
-        }
-
-        switchers.put(switcher.getName(), switcher);
     }
 
     @Override
@@ -74,7 +74,7 @@ public class LocalSwitcherService implements SwitcherService {
     @Override
     public void registerListener(String switcherName, SwitcherListener listener) {
         List<SwitcherListener> listeners = Collections.synchronizedList(new ArrayList<>());
-        List<SwitcherListener> preListeners= listenerMap.putIfAbsent(switcherName, listeners);
+        List<SwitcherListener> preListeners = listenerMap.putIfAbsent(switcherName, listeners);
         if (preListeners == null) {
             listeners.add(listener);
         } else {
@@ -84,12 +84,12 @@ public class LocalSwitcherService implements SwitcherService {
 
     @Override
     public void unRegisterListener(String switcherName, SwitcherListener listener) {
-            List<SwitcherListener> listeners = listenerMap.get(switcherName);
-            if (listener == null) {
-                // keep empty listeners
-                listeners.clear();
-            } else {
-                listeners.remove(listener);
-            }
+        List<SwitcherListener> listeners = listenerMap.get(switcherName);
+        if (listener == null) {
+            // keep empty listeners
+            listeners.clear();
+        } else {
+            listeners.remove(listener);
+        }
     }
 }

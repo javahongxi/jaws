@@ -10,7 +10,7 @@ import java.io.IOException;
 
 /**
  * fastjson2 序列化
- *
+ * <p>
  * Created by shenhongxi on 2020/7/28.
  */
 @SpiMeta(name = "fastjson")

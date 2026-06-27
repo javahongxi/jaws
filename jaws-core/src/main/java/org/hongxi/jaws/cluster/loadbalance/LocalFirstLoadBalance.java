@@ -27,15 +27,14 @@ import java.util.concurrent.ThreadLocalRandom;
  * 			当两者都存在，所有本地服务都应优先于远程服务，本地RPC服务与远程RPC服务内部则根据ActiveWeight进行
  *
  * </pre>
- * 
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @SpiMeta(name = "localFirst")
 public class LocalFirstLoadBalance<T> extends AbstractLoadBalance<T> {
-    
-    private static final Logger log = LoggerFactory.getLogger(LocalFirstLoadBalance.class);
-    
+
     public static final int MAX_REFERER_COUNT = 10;
+    private static final Logger log = LoggerFactory.getLogger(LocalFirstLoadBalance.class);
 
     public static long ipToLong(final String addr) {
         final String[] addressBytes = addr.split("\\.");

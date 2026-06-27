@@ -22,7 +22,8 @@ public abstract class AbstractServer implements Server {
 
     protected volatile ChannelState state = ChannelState.UNINIT;
 
-    public AbstractServer() {}
+    public AbstractServer() {
+    }
 
     public AbstractServer(URL url) {
         this.url = url;
@@ -45,13 +46,13 @@ public abstract class AbstractServer implements Server {
         return localAddress;
     }
 
+    public void setLocalAddress(InetSocketAddress localAddress) {
+        this.localAddress = localAddress;
+    }
+
     @Override
     public InetSocketAddress getRemoteAddress() {
         return remoteAddress;
-    }
-
-    public void setLocalAddress(InetSocketAddress localAddress) {
-        this.localAddress = localAddress;
     }
 
     public void setRemoteAddress(InetSocketAddress remoteAddress) {

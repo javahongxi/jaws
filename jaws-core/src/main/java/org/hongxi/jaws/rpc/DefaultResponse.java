@@ -105,6 +105,10 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
         return attachments != null ? attachments : Collections.emptyMap();
     }
 
+    public void setAttachments(Map<String, String> attachments) {
+        this.attachments = attachments;
+    }
+
     @Override
     public void setAttachment(String key, String value) {
         if (attachments == null) {
@@ -113,18 +117,14 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
         attachments.put(key, value);
     }
 
-    public void setAttachments(Map<String, String> attachments) {
-        this.attachments = attachments;
+    @Override
+    public int getSerializationNumber() {
+        return serializationNumber;
     }
 
     @Override
     public void setSerializationNumber(int number) {
         this.serializationNumber = number;
-    }
-
-    @Override
-    public int getSerializationNumber() {
-        return serializationNumber;
     }
 
     @Override

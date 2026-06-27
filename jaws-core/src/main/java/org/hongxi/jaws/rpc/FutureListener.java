@@ -2,7 +2,7 @@ package org.hongxi.jaws.rpc;
 
 /**
  * 用于监听Future的success和fail事件
- *
+ * <p>
  * Created by shenhongxi on 2020/7/30.
  */
 public interface FutureListener {
@@ -18,14 +18,14 @@ public interface FutureListener {
      * 					......
      * 				future.addListener(this);  // 类似于这种操作，后果你懂的
      * 					......
-     * 			}
+     *            }
      *
      * 		2）耗资源操作或者慢操作：
      * 			operationComplete(Future future) {
      * 					......
      * 				Thread.sleep(500);
      * 					......
-     * 			}
+     *            }
      *
      * </pre>
      *

@@ -45,7 +45,7 @@ public class SimpleConfigHandler implements ConfigHandler {
         return exporter;
     }
 
-    protected <T> Provider<T> getProvider(T proxyImpl, URL url, Class<T> clz){
+    protected <T> Provider<T> getProvider(T proxyImpl, URL url, Class<T> clz) {
         return new DefaultProvider<>(proxyImpl, url, clz);
     }
 

@@ -11,9 +11,9 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * 
- * Handle urls which are from config.
  *
+ * Handle urls which are from config.
+ * <p>
  * Created by shenhongxi on 2021/3/6.
  */
 @Spi(scope = Scope.SINGLETON)

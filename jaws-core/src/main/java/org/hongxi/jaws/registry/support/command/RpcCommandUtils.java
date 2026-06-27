@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 public class RpcCommandUtils {
 
     private static final Logger log = LoggerFactory.getLogger(RpcCommandUtils.class);
+    private static PatternEvaluator evaluator = new PatternEvaluator();
 
     /**
      * 把指令字符串转为指令对象
@@ -43,8 +44,6 @@ public class RpcCommandUtils {
     public static String commandToString(RpcCommand command) {
         return JSON.toJSONString(command);
     }
-
-    private static PatternEvaluator evaluator = new PatternEvaluator();
 
     public static boolean match(String expression, String path) {
         if (expression == null || expression.length() == 0) {
@@ -179,7 +178,7 @@ public class RpcCommandUtils {
 
             // 处理|
             operand = '0';
-            while (!list.isEmpty() && (operand = list.pop()) != '1');
+            while (!list.isEmpty() && (operand = list.pop()) != '1') ;
             return operand;
         }
 

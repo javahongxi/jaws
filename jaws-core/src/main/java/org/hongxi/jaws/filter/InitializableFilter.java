@@ -11,7 +11,7 @@ import org.hongxi.jaws.rpc.Caller;
 public interface InitializableFilter extends Filter {
     /**
      * init with caller eg. referer or provider be careful when using SINGLETON scope
-     * 
+     *
      * @param caller
      */
     void init(Caller<?> caller);

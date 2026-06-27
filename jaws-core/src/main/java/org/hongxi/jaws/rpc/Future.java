@@ -36,8 +36,8 @@ public interface Future {
     /**
      * if task is success, return the result.
      *
-     * @throws Exception when timeout, cancel, onFailure
      * @return
+     * @throws Exception when timeout, cancel, onFailure
      */
     Object getValue();
 

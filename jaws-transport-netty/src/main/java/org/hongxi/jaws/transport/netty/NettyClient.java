@@ -10,13 +10,13 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.*;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

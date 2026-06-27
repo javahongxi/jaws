@@ -27,12 +27,12 @@ import java.util.concurrent.*;
 
 /**
  * Notify cluster the referers have changed.
- *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 
 public class ClusterSupport<T> implements NotifyListener {
-    
+
     private static final Logger log = LoggerFactory.getLogger(ClusterSupport.class);
 
     private static ConcurrentHashMap<String, Protocol> protocols = new ConcurrentHashMap<>();
@@ -69,7 +69,7 @@ public class ClusterSupport<T> implements NotifyListener {
         protocol = getDecorateProtocol(url.getProtocol());
         int maxConnectionCount = this.url.getIntParameter(URLParamType.maxConnectionsPerGroup.getName(), URLParamType.maxConnectionsPerGroup.intValue());
         int maxClientConnection = this.url.getIntParameter(URLParamType.maxClientConnections.getName(), URLParamType.maxClientConnections.intValue());
-        selectNodeCount = (int)Math.ceil(1.0 * maxConnectionCount / maxClientConnection);
+        selectNodeCount = (int) Math.ceil(1.0 * maxConnectionCount / maxClientConnection);
     }
 
     public void init() {
@@ -102,9 +102,9 @@ public class ClusterSupport<T> implements NotifyListener {
             if (CollectionUtils.isEmpty(cluster.getReferers()) && !check) {
                 log.warn("refer {} no services", this.url.getPath() + "/" + this.url.getVersion());
             }
-            log.info("cluster init cost {}, refer size: {}, cluster: {}", 
+            log.info("cluster init cost {}, refer size: {}, cluster: {}",
                     System.currentTimeMillis() - start,
-                    cluster.getReferers() == null ? 0 : cluster.getReferers().size(), 
+                    cluster.getReferers() == null ? 0 : cluster.getReferers().size(),
                     cluster.getUrl().toSimpleString());
             return;
         }
@@ -435,12 +435,12 @@ public class ClusterSupport<T> implements NotifyListener {
         private List<URL> baseUrls;
         private int selectSize;
 
-        GroupUrlsSelector(){
+        GroupUrlsSelector() {
             baseUrls = new ArrayList<>();
             selectSize = selectNodeCount;
         }
 
-        void updateBaseUrls(List<URL> newBaseUrls){
+        void updateBaseUrls(List<URL> newBaseUrls) {
             baseUrls.retainAll(newBaseUrls);
 
             Set<URL> addedUrls = new HashSet<>(newBaseUrls);
@@ -470,7 +470,7 @@ public class ClusterSupport<T> implements NotifyListener {
             this.selectSize = selectSize;
         }
 
-        int getBaseUrlsSize(){
+        int getBaseUrlsSize() {
             return baseUrls.size();
         }
     }

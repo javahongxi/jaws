@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Created by shenhongxi on 2021/4/23.
  */
 public abstract class CommandFailbackRegistry extends FailbackRegistry {
-    
+
     private static final Logger log = LoggerFactory.getLogger(CommandFailbackRegistry.class);
 
     private ConcurrentHashMap<URL, CommandServiceManager> commandManagerMap;

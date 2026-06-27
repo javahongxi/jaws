@@ -41,6 +41,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     private Class<T> interfaceClass;
     private BasicServiceInterfaceConfig basicService;
     private AtomicBoolean exported = new AtomicBoolean(false);
+
     public static ConcurrentHashSet<String> getExistingServices() {
         return existingServices;
     }
