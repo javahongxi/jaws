@@ -19,9 +19,9 @@
         <java.version>17</java.version>
 
         <curator.version>5.9.0</curator.version>
-        <fastjson2.version>2.0.61</fastjson2.version>
+        <fastjson2.version>2.0.62</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
-        <hessian-lite.version>4.0.4</hessian-lite.version>
+        <hessian-lite.version>4.0.5</hessian-lite.version>
         <zookeeper.version>3.9.3</zookeeper.version>
     </properties>
 
