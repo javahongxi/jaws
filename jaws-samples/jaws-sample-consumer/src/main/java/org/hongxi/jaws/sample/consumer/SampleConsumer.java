@@ -5,7 +5,6 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RefererConfig;
 import org.hongxi.jaws.config.RegistryConfig;
-import org.hongxi.jaws.registry.zookeeper.EmbeddedZookeeper;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.model.Contacts;
 import org.hongxi.jaws.sample.api.model.Phone;
@@ -20,13 +19,9 @@ import java.util.Map;
  */
 public class SampleConsumer {
 
-    public static void main(String[] args) throws Exception {
-        try (EmbeddedZookeeper zkServer = new EmbeddedZookeeper(2181)) {
-            referAndInvoke();
-        }
-    }
+    private static final int ZK_PORT = 2181;
 
-    private static void referAndInvoke() {
+    public static void main(String[] args) throws Exception {
         RefererConfig<DemoService> refererConfig = new RefererConfig<>();
         refererConfig.setInterface(DemoService.class);
         refererConfig.setApplication("sample-consumer");
@@ -87,7 +82,7 @@ public class SampleConsumer {
         registryConfig.setName("defaultRegistry");
         registryConfig.setId(registryConfig.getName());
         registryConfig.setAddress("127.0.0.1");
-        registryConfig.setPort(2181);
+        registryConfig.setPort(ZK_PORT);
         return registryConfig;
     }
 }

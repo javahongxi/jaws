@@ -14,13 +14,11 @@ import org.hongxi.jaws.switcher.JawsSwitcherUtils;
  */
 public class SampleProvider {
 
-    public static void main(String[] args) throws Exception {
-        try (EmbeddedZookeeper zkServer = new EmbeddedZookeeper(2181)) {
-            export();
-        }
-    }
+    private static final int ZK_PORT = 2181;
 
-    private static void export() {
+    public static void main(String[] args) throws Exception {
+        new EmbeddedZookeeper(ZK_PORT);
+
         ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(new DemoServiceImpl());
         serviceConfig.setApplication("sample-provider");
@@ -54,7 +52,7 @@ public class SampleProvider {
         registryConfig.setName("defaultRegistry");
         registryConfig.setId(registryConfig.getName());
         registryConfig.setAddress("127.0.0.1");
-        registryConfig.setPort(2181);
+        registryConfig.setPort(ZK_PORT);
         return registryConfig;
     }
 }
