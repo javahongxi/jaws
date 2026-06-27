@@ -144,7 +144,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
         List<RpcCommand.ClientCommand> clientCommandList = rpcCommand.getClientCommandList();
         boolean hit = false;
         for (RpcCommand.ClientCommand command : clientCommandList) {
-            mergedResult = new LinkedList<URL>();
+            mergedResult = new LinkedList<>();
             // 判断当前url是否符合过滤条件
             boolean match = RpcCommandUtils.match(command.getPattern(), path);
             if (match) {
@@ -260,7 +260,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
     }
 
     private List<URL> mergeResult(URL url, Map<String, Integer> weights) {
-        List<URL> finalResult = new ArrayList<URL>();
+        List<URL> finalResult = new ArrayList<>();
 
         if (weights.size() > 1) {
             // 将所有group及权重拼接成一个rule的URL，并作为第一个元素添加到最终结果中

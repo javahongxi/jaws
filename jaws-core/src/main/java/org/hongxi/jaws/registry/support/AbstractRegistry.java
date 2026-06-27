@@ -161,7 +161,7 @@ public abstract class AbstractRegistry implements Registry {
             return null;
         }
 
-        List<URL> urls = new ArrayList<URL>();
+        List<URL> urls = new ArrayList<>();
         for (List<URL> us : rsUrls.values()) {
             for (URL tempUrl : us) {
                 urls.add(tempUrl.createCopy());
@@ -174,19 +174,19 @@ public abstract class AbstractRegistry implements Registry {
         if (listener == null || urls == null) {
             return;
         }
-        Map<String, List<URL>> nodeTypeUrlsInRs = new HashMap<String, List<URL>>();
+        Map<String, List<URL>> nodeTypeUrlsInRs = new HashMap<>();
         for (URL surl : urls) {
             String nodeType = surl.getParameter(URLParamType.nodeType.getName(), URLParamType.nodeType.value());
             List<URL> oneNodeTypeUrls = nodeTypeUrlsInRs.get(nodeType);
             if (oneNodeTypeUrls == null) {
-                nodeTypeUrlsInRs.put(nodeType, new ArrayList<URL>());
+                nodeTypeUrlsInRs.put(nodeType, new ArrayList<>());
                 oneNodeTypeUrls = nodeTypeUrlsInRs.get(nodeType);
             }
             oneNodeTypeUrls.add(surl);
         }
         Map<String, List<URL>> curls = subscribedCategoryResponses.get(refUrl);
         if (curls == null) {
-            subscribedCategoryResponses.putIfAbsent(refUrl, new ConcurrentHashMap<String, List<URL>>());
+            subscribedCategoryResponses.putIfAbsent(refUrl, new ConcurrentHashMap<>());
             curls = subscribedCategoryResponses.get(refUrl);
         }
 

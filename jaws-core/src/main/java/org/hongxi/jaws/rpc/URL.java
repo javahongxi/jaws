@@ -50,7 +50,7 @@ public class URL {
         String host = null;
         int port = 0;
         String path = null;
-        Map<String, String> parameters = new HashMap<String, String>();
+        Map<String, String> parameters = new HashMap<>();
         int i = url.indexOf("?"); // seperator between body and parameters
         if (i >= 0) {
             String[] parts = url.substring(i + 1).split("\\&");
@@ -165,7 +165,7 @@ public class URL {
     }
 
     public URL createCopy() {
-        Map<String, String> params = new HashMap<String, String>();
+        Map<String, String> params = new HashMap<>();
         if (this.parameters != null) {
             params.putAll(this.parameters);
         }
@@ -311,7 +311,7 @@ public class URL {
 
     private Map<String, Number> getNumbers() {
         if (numbers == null) { // 允许并发重复创建
-            numbers = new ConcurrentHashMap<String, Number>();
+            numbers = new ConcurrentHashMap<>();
         }
         return numbers;
     }

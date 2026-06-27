@@ -138,22 +138,22 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
     class MultiGroupHolder<T> extends RefererListCacheHolder<T> {
 
         private int randomKeySize = 0;
-        private List<String> randomKeyList = new ArrayList<String>();
-        private Map<String, AtomicInteger> cursors = new HashMap<String, AtomicInteger>();
-        private Map<String, List<Referer<T>>> groupReferers = new HashMap<String, List<Referer<T>>>();
+        private List<String> randomKeyList = new ArrayList<>();
+        private Map<String, AtomicInteger> cursors = new HashMap<>();
+        private Map<String, List<Referer<T>>> groupReferers = new HashMap<>();
 
         MultiGroupHolder(String weights, List<Referer<T>> list) {
             log.info("ConfigurableWeightLoadBalance build new MultiGroupHolder. weights:{}", weights);
             String[] groupsAndWeights = weights.split(",");
             int[] weightsArr = new int[groupsAndWeights.length];
-            Map<String, Integer> weightsMap = new HashMap<String, Integer>(groupsAndWeights.length);
+            Map<String, Integer> weightsMap = new HashMap<>(groupsAndWeights.length);
             int i = 0;
             for (String groupAndWeight : groupsAndWeights) {
                 String[] gw = groupAndWeight.split(":");
                 if (gw.length == 2) {
                     Integer w = Integer.valueOf(gw[1]);
                     weightsMap.put(gw[0], w);
-                    groupReferers.put(gw[0], new ArrayList<Referer<T>>());
+                    groupReferers.put(gw[0], new ArrayList<>());
                     weightsArr[i++] = w;
                 }
             }

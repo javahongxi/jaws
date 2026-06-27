@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DirectRegistry extends AbstractRegistry {
 
     private ConcurrentHashMap<URL, Object> subscribeUrls = new ConcurrentHashMap<>();
-    private List<URL> directUrls = new ArrayList<URL>();
+    private List<URL> directUrls = new ArrayList<>();
 
     public DirectRegistry(URL url) {
         super(url);

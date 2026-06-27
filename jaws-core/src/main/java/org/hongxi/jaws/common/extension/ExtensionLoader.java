@@ -137,7 +137,7 @@ public class ExtensionLoader<T> {
         }
 
         // 如果只有一个实现，直接返回
-        List<T> exts = new ArrayList<T>(extensionClasses.size());
+        List<T> exts = new ArrayList<>(extensionClasses.size());
 
         // 多个实现，按优先级排序返回
         for (Map.Entry<String, Class<T>> entry : extensionClasses.entrySet()) {

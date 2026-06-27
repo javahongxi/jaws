@@ -157,7 +157,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
 
     private void retry() {
         if (!failedRegistered.isEmpty()) {
-            Set<URL> failed = new HashSet<URL>(failedRegistered);
+            Set<URL> failed = new HashSet<>(failedRegistered);
             log.info("[{}] Retry register {}", registryClassName, failed);
             try {
                 for (URL url : failed) {

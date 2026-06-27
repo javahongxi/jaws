@@ -20,8 +20,8 @@ public class ReflectUtils {
     public static final String EMPTY_PARAM = "void";
     private static final Class<?>[] EMPTY_CLASS_ARRAY = new Class<?>[0];
 
-    private static final ConcurrentMap<String, Class<?>> name2ClassCache = new ConcurrentHashMap<String, Class<?>>();
-    private static final ConcurrentMap<Class<?>, String> class2NameCache = new ConcurrentHashMap<Class<?>, String>();
+    private static final ConcurrentMap<String, Class<?>> name2ClassCache = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, String> class2NameCache = new ConcurrentHashMap<>();
 
     private static final String[] PRIMITIVE_NAMES = new String[] {"boolean", "byte", "char", "double", "float", "int", "long", "short",
             "void"};
@@ -205,7 +205,7 @@ public class ReflectUtils {
      */
     public static List<Method> getPublicMethod(Class<?> clz) {
         Method[] methods = clz.getMethods();
-        List<Method> ret = new ArrayList<Method>();
+        List<Method> ret = new ArrayList<>();
 
         for (Method method : methods) {
 
@@ -247,11 +247,11 @@ public class ReflectUtils {
         } else if (returnType.isArray()) {
             return Array.newInstance(returnType.getComponentType(), 0);
         } else if (returnType.isAssignableFrom(ArrayList.class)) {
-            return new ArrayList<Object>(0);
+            return new ArrayList<>(0);
         } else if (returnType.isAssignableFrom(HashSet.class)) {
-            return new HashSet<Object>(0);
+            return new HashSet<>(0);
         } else if (returnType.isAssignableFrom(HashMap.class)) {
-            return new HashMap<Object, Object>(0);
+            return new HashMap<>(0);
         } else if (String.class.equals(returnType)) {
             return "";
         } else if (!returnType.isInterface()) {

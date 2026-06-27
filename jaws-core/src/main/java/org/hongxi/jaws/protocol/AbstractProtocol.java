@@ -18,7 +18,7 @@ public abstract class AbstractProtocol implements Protocol {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractProtocol.class);
 
-    protected ConcurrentHashMap<String, Exporter<?>> exporterMap = new ConcurrentHashMap<String, Exporter<?>>();
+    protected ConcurrentHashMap<String, Exporter<?>> exporterMap = new ConcurrentHashMap<>();
 
     public Map<String, Exporter<?>> getExporterMap() {
         return Collections.unmodifiableMap(exporterMap);

@@ -23,7 +23,7 @@ public class ConcurrentHashSet<E> extends AbstractSet<E> implements Set<E>, java
     }
 
     public ConcurrentHashSet(int initialCapacity) {
-        map = new ConcurrentHashMap<E, Object>(initialCapacity);
+        map = new ConcurrentHashMap<>(initialCapacity);
     }
 
     /**

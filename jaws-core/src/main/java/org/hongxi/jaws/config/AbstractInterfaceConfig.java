@@ -355,7 +355,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 if (StringUtils.isBlank(address)) {
                     address = NetUtils.LOCALHOST + ":" + JawsConstants.DEFAULT_INT_VALUE;
                 }
-                Map<String, String> map = new HashMap<String, String>();
+                Map<String, String> map = new HashMap<>();
                 config.appendConfigParams(map);
 
                 map.put(URLParamType.application.getName(), getApplication());
@@ -428,7 +428,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
         String localAddress = null;
 
-        Map<String, Integer> regHostPorts = new HashMap<String, Integer>();
+        Map<String, Integer> regHostPorts = new HashMap<>();
         for (URL ru : registryUrls) {
             if (StringUtils.isNotBlank(ru.getHost()) && ru.getPort() > 0) {
                 regHostPorts.put(ru.getHost(), ru.getPort());

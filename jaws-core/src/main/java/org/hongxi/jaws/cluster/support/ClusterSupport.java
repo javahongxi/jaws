@@ -214,7 +214,7 @@ public class ClusterSupport<T> implements NotifyListener {
         for (URL u : urls) {
             String group = u.getGroup();
             if (!groupUrlsMap.containsKey(group)) {
-                groupUrlsMap.put(group, new ArrayList<URL>());
+                groupUrlsMap.put(group, new ArrayList<>());
             }
             if (u.canServe(url)) {
                 groupUrlsMap.get(group).add(u);

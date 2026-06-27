@@ -333,7 +333,7 @@ public class JawsCodec extends AbstractCodec {
             return null;
         }
 
-        Map<String, String> attachments = new HashMap<String, String>();
+        Map<String, String> attachments = new HashMap<>();
 
         for (int i = 0; i < size; i++) {
             attachments.put(input.readUTF(), input.readUTF());

@@ -47,7 +47,7 @@ public class StringTools {
     public static String toQueryString(Map<String, String> ps) {
         StringBuilder buf = new StringBuilder();
         if (ps != null && ps.size() > 0) {
-            for (Map.Entry<String, String> entry : new TreeMap<String, String>(ps).entrySet()) {
+            for (Map.Entry<String, String> entry : new TreeMap<>(ps).entrySet()) {
                 String key = entry.getKey();
                 String value = entry.getValue();
                 if (key != null && key.length() > 0 && value != null && value.length() > 0) {

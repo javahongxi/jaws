@@ -47,13 +47,13 @@ public class LocalRegistry extends AbstractRegistry {
         String subscribeKey = getSubscribeKey(url);
         ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> urlListeners = subscribeListeners.get(subscribeKey);
         if (urlListeners == null) {
-            subscribeListeners.putIfAbsent(subscribeKey, new ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>>());
+            subscribeListeners.putIfAbsent(subscribeKey, new ConcurrentHashMap<>());
             urlListeners = subscribeListeners.get(subscribeKey);
         }
 
         ConcurrentHashSet<NotifyListener> listeners = urlListeners.get(url);
         if (listeners == null) {
-            urlListeners.putIfAbsent(url, new ConcurrentHashSet<NotifyListener>());
+            urlListeners.putIfAbsent(url, new ConcurrentHashSet<>());
             listeners = urlListeners.get(url);
         }
 
@@ -100,7 +100,7 @@ public class LocalRegistry extends AbstractRegistry {
             List<URL> urls = registeredServices.get(registryKey);
 
             if (urls == null) {
-                registeredServices.putIfAbsent(registryKey, new ArrayList<URL>());
+                registeredServices.putIfAbsent(registryKey, new ArrayList<>());
                 urls = registeredServices.get(registryKey);
             }
             add(url, urls);
@@ -139,12 +139,12 @@ public class LocalRegistry extends AbstractRegistry {
      * @return
      */
     public Map<String, List<URL>> getAllUrl() {
-        Map<String, List<URL>> copyMap = new HashMap<String, List<URL>>(registeredServices.size());
+        Map<String, List<URL>> copyMap = new HashMap<>(registeredServices.size());
 
         for (Map.Entry<String, List<URL>> entry : registeredServices.entrySet()) {
             String key = entry.getKey();
 
-            List<URL> copyList = new ArrayList<URL>(entry.getValue().size());
+            List<URL> copyList = new ArrayList<>(entry.getValue().size());
             for (URL url : entry.getValue()) {
                 copyList.add(url.createCopy());
             }
