@@ -56,12 +56,12 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
 
         try {
             int requestCounter = incrCounter(requestKey, requestCounters);
-            int totalCounter = incrTotalCounter();
-            if (isAllowRequest(requestCounter, totalCounter, maxThread)) {
+            int currentTotal = incrTotalCounter();
+            if (isAllowRequest(requestCounter, currentTotal, maxThread)) {
                 return provider.call(request);
             } else {
                 // reject request
-                return reject(request.getInterfaceName() + "." + request.getMethodName(), requestCounter, totalCounter, maxThread, request);
+                return reject(request.getInterfaceName() + "." + request.getMethodName(), requestCounter, currentTotal, maxThread, request);
             }
         } finally {
             decrTotalCounter();
@@ -69,9 +69,9 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
         }
     }
 
-    private Response reject(String method, int requestCounter, int totalCounter, int maxThread, Request request) {
+    private Response reject(String method, int requestCounter, int currentTotal, int maxThread, Request request) {
         String message = "ThreadProtectedRequestRouter reject request: request_method=" + method + " request_counter=" + requestCounter
-                + " total_counter=" + totalCounter + " max_thread=" + maxThread;
+                + " total_counter=" + currentTotal + " max_thread=" + maxThread;
         JawsServiceException exception = new JawsServiceException(message, JawsErrorMsgConstants.SERVICE_REJECT, false);
         DefaultResponse response = JawsFrameworkUtils.buildErrorResponse(request, exception);
         log.error(exception.getMessage());
@@ -106,7 +106,7 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
         return totalCounter.decrementAndGet();
     }
 
-    public boolean isAllowRequest(int requestCounter, int totalCounter, int maxThread) {
+    public boolean isAllowRequest(int requestCounter, int currentTotal, int maxThread) {
 
         // 方法总数为1或该方法第一次请求, 直接return true
         if (methodCounter.get() == 1 || requestCounter == 1) {
@@ -115,12 +115,12 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
 
         // 不简单判断 requsetCount > (maxThread / 2) ，因为假如有2或者3个method对外提供，
         // 但是只有一个接口很大调用量，而其他接口很空闲，那么这个时候允许单个method的极限到 maxThread * 3 / 4
-        if (requestCounter > (maxThread / 2) && totalCounter > (maxThread * 3 / 4)) {
+        if (requestCounter > (maxThread / 2) && currentTotal > (maxThread * 3 / 4)) {
             return false;
         }
 
         // 如果总体线程数超过 maxThread * 3 / 4个，并且对外的method比较多，那么意味着这个时候整体压力比较大，
         // 那么这个时候如果单method超过 maxThread * 1 / 4，那么reject
-        return !(methodCounter.get() >= 4 && totalCounter > (maxThread * 3 / 4) && requestCounter > (maxThread / 4));
+        return !(methodCounter.get() >= 4 && currentTotal > (maxThread * 3 / 4) && requestCounter > (maxThread / 4));
     }
 }

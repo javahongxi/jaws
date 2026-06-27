@@ -80,7 +80,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                 response.setException(new JawsServiceException("provider has encountered a fatal error!", t));
             }
             //对于Throwable,也记录日志
-            logger.error("Exception caught when during method invocation. request:" + request.toString(), t);
+            logger.error("Exception caught when during method invocation. request:{}", request, t);
         }
 
         if (response.getException() != null) {

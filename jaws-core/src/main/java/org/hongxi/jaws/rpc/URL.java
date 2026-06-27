@@ -293,7 +293,7 @@ public class URL {
             return n.intValue();
         }
         String value = getMethodParameter(methodName, paramDesc, name);
-        if (value == null || value.length() == 0) {
+        if (value == null || value.isEmpty()) {
             return defaultValue;
         }
         int i = Integer.parseInt(value);
@@ -303,7 +303,7 @@ public class URL {
 
     public String getMethodParameter(String methodName, String paramDesc, String name) {
         String value = getParameter(JawsConstants.METHOD_CONFIG_PREFIX + methodName + "(" + paramDesc + ")." + name);
-        if (value == null || value.length() == 0) {
+        if (value == null || value.isEmpty()) {
             return getParameter(name);
         }
         return value;
@@ -341,10 +341,9 @@ public class URL {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj == null || !(obj instanceof URL)) {
+        if (obj == null || !(obj instanceof URL ou)) {
             return false;
         }
-        URL ou = (URL) obj;
         if (!Objects.equals(this.protocol, ou.protocol)) {
             return false;
         }

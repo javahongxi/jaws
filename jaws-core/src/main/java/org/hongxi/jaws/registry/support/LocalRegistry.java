@@ -62,7 +62,7 @@ public class LocalRegistry extends AbstractRegistry {
         listeners.add(listener);
 
         List<URL> urls = discover(url);
-        if (urls != null && urls.size() > 0) {
+        if (!CollectionUtils.isEmpty(urls)) {
             listener.notify(getUrl(), urls);
         }
 
@@ -199,7 +199,7 @@ public class LocalRegistry extends AbstractRegistry {
                     try {
                         ln.notify(getUrl(), interestingUrls);
                     } catch (Exception e) {
-                        log.warn(String.format("Exception when notify listerner %s, changedUrl: %s", ln, changedUrl), e);
+                        log.warn("Exception when notify listerner {}, changedUrl: {}", ln, changedUrl, e);
                     }
                 }
             }

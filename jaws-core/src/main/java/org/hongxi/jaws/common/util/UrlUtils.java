@@ -16,7 +16,7 @@ public class URLUtils {
 
 
     public static List<URL> parseURLs(String address, Map<String, String> defaults) {
-        if (address == null || address.length() == 0) {
+        if (address == null || address.isEmpty()) {
             return null;
         }
         String[] addresses = JawsConstants.REGISTRY_SPLIT_PATTERN.split(address);
@@ -47,7 +47,7 @@ public class URLUtils {
     }
 
     private static URL parseURL(String address, Map<String, String> defaults) {
-        if (address == null || address.length() == 0) {
+        if (address == null || address.isEmpty()) {
             return null;
         }
 
@@ -55,7 +55,7 @@ public class URLUtils {
         String url = addresses[0];
 
         String defaultProtocol = defaults == null ? null : defaults.get("protocol");
-        if (defaultProtocol == null || defaultProtocol.length() == 0) {
+        if (defaultProtocol == null || defaultProtocol.isEmpty()) {
             defaultProtocol = URLParamType.protocol.value();
         }
 
@@ -76,7 +76,7 @@ public class URLUtils {
         int port = u.getPort();
         String path = u.getPath();
         Map<String, String> parameters = new HashMap<>(u.getParameters());
-        if ((protocol == null || protocol.length() == 0) && defaultProtocol != null && defaultProtocol.length() > 0) {
+        if ((protocol == null || protocol.isEmpty()) && defaultProtocol != null && !defaultProtocol.isEmpty()) {
             changed = true;
             protocol = defaultProtocol;
         }
@@ -90,19 +90,19 @@ public class URLUtils {
                 port = JawsConstants.DEFAULT_INT_VALUE;
             }
         }
-        if (path == null || path.length() == 0) {
-            if (defaultPath != null && defaultPath.length() > 0) {
+        if (path == null || path.isEmpty()) {
+            if (defaultPath != null && !defaultPath.isEmpty()) {
                 changed = true;
                 path = defaultPath;
             }
         }
-        if (defaultParameters != null && defaultParameters.size() > 0) {
+        if (defaultParameters != null && !defaultParameters.isEmpty()) {
             for (Map.Entry<String, String> entry : defaultParameters.entrySet()) {
                 String key = entry.getKey();
                 String defaultValue = entry.getValue();
-                if (defaultValue != null && defaultValue.length() > 0) {
+                if (defaultValue != null && !defaultValue.isEmpty()) {
                     String value = parameters.get(key);
-                    if (value == null || value.length() == 0) {
+                    if (value == null || value.isEmpty()) {
                         changed = true;
                         parameters.put(key, defaultValue);
                     }

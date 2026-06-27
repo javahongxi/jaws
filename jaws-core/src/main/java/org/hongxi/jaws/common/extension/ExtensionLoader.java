@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentMap;
 public class ExtensionLoader<T> {
     private static final Logger logger = LoggerFactory.getLogger(ExtensionLoader.class);
     private static final String SERVICES_DIRECTORY = "META-INF/services/";
-    private static ConcurrentMap<Class<?>, ExtensionLoader<?>> extensionLoaders = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> extensionLoaders = new ConcurrentHashMap<>();
     private ConcurrentMap<String, Class<T>> extensionClasses;
     private ConcurrentMap<String, T> singletonInstances;
     private Class<T> type;
@@ -128,7 +128,7 @@ public class ExtensionLoader<T> {
     public List<T> getExtensions(String key) {
         checkInit();
 
-        if (extensionClasses.size() == 0) {
+        if (extensionClasses.isEmpty()) {
             return Collections.emptyList();
         }
 

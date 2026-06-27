@@ -133,7 +133,7 @@ public class AbstractRefererHandler<T> {
         private static float defaultFloat;
         private static double defaultDouble;
 
-        private static Map<Class<?>, Object> primitiveValues = new HashMap<>();
+        private static final Map<Class<?>, Object> primitiveValues = new HashMap<>();
 
         static {
             primitiveValues.put(boolean.class, defaultBoolean);

@@ -100,15 +100,15 @@ public class AbstractConfig implements Serializable {
                         }
                         continue;
                     }
-                    if (prefix != null && prefix.length() > 0) {
+                    if (prefix != null && !prefix.isEmpty()) {
                         key = prefix + "." + key;
                     }
                     parameters.put(key, String.valueOf(value).trim());
                 } else if ("getParameters".equals(name) && Modifier.isPublic(method.getModifiers())
                         && method.getParameterTypes().length == 0 && method.getReturnType() == Map.class) {
                     Map<String, String> map = (Map<String, String>) method.invoke(this);
-                    if (map != null && map.size() > 0) {
-                        String pre = prefix != null && prefix.length() > 0 ? prefix + "." : "";
+                    if (map != null && !map.isEmpty()) {
+                        String pre = prefix != null && !prefix.isEmpty() ? prefix + "." : "";
                         for (Map.Entry<String, String> entry : map.entrySet()) {
                             parameters.put(pre + entry.getKey(), entry.getValue());
                         }

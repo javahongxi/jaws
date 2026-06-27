@@ -106,7 +106,7 @@ public abstract class AbstractRegistry implements Registry {
         List<URL> results = new ArrayList<>();
 
         Map<String, List<URL>> categoryUrls = subscribedCategoryResponses.get(url);
-        if (categoryUrls != null && categoryUrls.size() > 0) {
+        if (categoryUrls != null && !categoryUrls.isEmpty()) {
             for (List<URL> urls : categoryUrls.values()) {
                 for (URL tempUrl : urls) {
                     results.add(tempUrl.createCopy());
@@ -155,7 +155,7 @@ public abstract class AbstractRegistry implements Registry {
 
     protected List<URL> getCachedUrls(URL url) {
         Map<String, List<URL>> rsUrls = subscribedCategoryResponses.get(url);
-        if (rsUrls == null || rsUrls.size() == 0) {
+        if (rsUrls == null || rsUrls.isEmpty()) {
             return null;
         }
 

@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentMap;
 @SpiMeta(name = "localSwitcherService")
 public class LocalSwitcherService implements SwitcherService {
 
-    private static ConcurrentMap<String, Switcher> switchers = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Switcher> switchers = new ConcurrentHashMap<>();
 
     private ConcurrentHashMap<String, List<SwitcherListener>> listenerMap = new ConcurrentHashMap<>();
 

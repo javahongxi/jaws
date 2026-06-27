@@ -55,7 +55,7 @@ public class ProtocolFilterDecorator implements Protocol {
 
     private <T> Provider<T> decorateWithFilter(final Provider<T> provider, URL url) {
         List<Filter> filters = getFilters(url, JawsConstants.NODE_TYPE_SERVICE);
-        if (filters.size() == 0) {
+        if (filters.isEmpty()) {
             return provider;
         }
         Provider<T> lastProvider = provider;
@@ -196,7 +196,7 @@ public class ProtocolFilterDecorator implements Protocol {
         // load default filters
         List<Filter> filters = new ArrayList<>();
         List<Filter> defaultFilters = ExtensionLoader.getExtensionLoader(Filter.class).getExtensions(key);
-        if (defaultFilters != null && defaultFilters.size() > 0) {
+        if (defaultFilters != null && !defaultFilters.isEmpty()) {
             filters.addAll(defaultFilters);
         }
 

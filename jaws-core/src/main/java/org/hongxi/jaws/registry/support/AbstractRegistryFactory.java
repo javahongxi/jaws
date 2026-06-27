@@ -18,7 +18,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public abstract class AbstractRegistryFactory implements RegistryFactory {
 
     private static final ReentrantLock lock = new ReentrantLock();
-    private static ConcurrentHashMap<String, Registry> registries = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Registry> registries = new ConcurrentHashMap<>();
 
     protected String getRegistryUri(URL url) {
         return url.getUri();

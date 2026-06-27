@@ -393,7 +393,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         if (methods != null && !methods.isEmpty()) {
             for (MethodConfig methodBean : methods) {
                 String methodName = methodBean.getName();
-                if (methodName == null || methodName.length() == 0) {
+                if (methodName == null || methodName.isEmpty()) {
                     throw new IllegalStateException("<jaws:method> name attribute is required! Please check: <jaws:service interface=\""
                             + interfaceClass.getName() + "\" ... ><jaws:method name=\"\" ... /></<jaws:referer>");
                 }

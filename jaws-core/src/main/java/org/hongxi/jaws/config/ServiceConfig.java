@@ -29,7 +29,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     private static final long serialVersionUID = -3342374271064293224L;
     private static final Logger logger = LoggerFactory.getLogger(ServiceConfig.class);
 
-    private static ConcurrentHashSet<String> existingServices = new ConcurrentHashSet<>();
+    private static final ConcurrentHashSet<String> existingServices = new ConcurrentHashSet<>();
     // 具体到方法的配置
     protected List<MethodConfig> methods;
 
@@ -70,7 +70,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     }
 
     public boolean hasMethods() {
-        return this.methods != null && this.methods.size() > 0;
+        return this.methods != null && !this.methods.isEmpty();
     }
 
     public T getRef() {
@@ -98,7 +98,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
         checkInterfaceAndMethods(interfaceClass, methods);
 
         loadRegistryUrls();
-        if (registryUrls == null || registryUrls.size() == 0) {
+        if (registryUrls == null || registryUrls.isEmpty()) {
             throw new IllegalStateException("Should set registry config for service:" + interfaceClass.getName());
         }
 
@@ -132,7 +132,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     @SuppressWarnings("unchecked")
     private void doExport(ProtocolConfig protocolConfig, int port) {
         String protocolName = protocolConfig.getName();
-        if (protocolName == null || protocolName.length() == 0) {
+        if (protocolName == null || protocolName.isEmpty()) {
             protocolName = URLParamType.protocol.value();
         }
 

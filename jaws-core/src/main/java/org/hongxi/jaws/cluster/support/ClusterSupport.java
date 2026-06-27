@@ -35,9 +35,9 @@ public class ClusterSupport<T> implements NotifyListener {
 
     private static final Logger log = LoggerFactory.getLogger(ClusterSupport.class);
 
-    private static ConcurrentHashMap<String, Protocol> protocols = new ConcurrentHashMap<>();
-    private static ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
-    private static Set<ClusterSupport> refreshSet = new HashSet<>();
+    private static final ConcurrentHashMap<String, Protocol> protocols = new ConcurrentHashMap<>();
+    private static final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
+    private static final Set<ClusterSupport<?>> refreshSet = new HashSet<>();
 
     static {
         executorService.scheduleAtFixedRate(() -> {
@@ -261,7 +261,7 @@ public class ClusterSupport<T> implements NotifyListener {
             URL registryUrl = entry.getKey();
             log.info("ClusterSupport refreshReferers: registry={} service={}", registryUrl.getUri(), url.getIdentity());
             Map<String, GroupUrlsSelector> groupSelectorMap = registryGroupUrlsSelectorMap.get(registryUrl);
-            if (groupSelectorMap == null || groupSelectorMap.size() == 0) {
+            if (groupSelectorMap == null || groupSelectorMap.isEmpty()) {
                 log.warn("ClusterSupport refreshReferers, groupSelectorMap is empty: registry={} service={}", registryUrl.getUri(), url.getIdentity());
                 continue;
             }
@@ -320,7 +320,7 @@ public class ClusterSupport<T> implements NotifyListener {
                 weights = ruleUrl.getParameter(URLParamType.weights.getName(), URLParamType.weights.value());
                 urls.remove(0);
             }
-            log.info("refresh weight. weight=" + weights);
+            log.info("refresh weight. weight={}", weights);
             this.cluster.getLoadBalance().setWeightString(weights);
         }
     }

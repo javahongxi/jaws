@@ -37,14 +37,14 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
         subscribeCommand(urlCopy, manager);
 
         List<URL> urls = doDiscover(urlCopy);
-        if (urls != null && urls.size() > 0) {
+        if (urls != null && !urls.isEmpty()) {
             this.notify(urlCopy, listener, urls);
         }
     }
 
     @Override
     protected void doUnsubscribe(URL url, NotifyListener listener) {
-        log.info("CommandFailbackRegistry unsubscribe. url: " + url.toSimpleString());
+        log.info("CommandFailbackRegistry unsubscribe. url: {}", url.toSimpleString());
         URL urlCopy = url.createCopy();
         CommandServiceManager manager = commandManagerMap.get(urlCopy);
 
@@ -56,7 +56,7 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
 
     @Override
     protected List<URL> doDiscover(URL url) {
-        log.info("CommandFailbackRegistry discover. url: " + url.toSimpleString());
+        log.info("CommandFailbackRegistry discover. url: {}", url.toSimpleString());
         List<URL> finalResult;
 
         URL urlCopy = url.createCopy();
@@ -66,8 +66,8 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
             rpcCommand = RpcCommandUtils.stringToCommand(commandStr);
         }
 
-        log.info("CommandFailbackRegistry discover command. commandStr: " + commandStr + ", rpccommand "
-                + (rpcCommand == null ? "is null." : "is not null."));
+        log.info("CommandFailbackRegistry discover command. commandStr: {}, rpccommand {}", commandStr,
+                (rpcCommand == null ? "is null." : "is not null."));
 
         if (rpcCommand != null) {
             rpcCommand.sort();

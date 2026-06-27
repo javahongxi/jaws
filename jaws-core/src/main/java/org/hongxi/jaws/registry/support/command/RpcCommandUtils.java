@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 public class RpcCommandUtils {
 
     private static final Logger log = LoggerFactory.getLogger(RpcCommandUtils.class);
-    private static PatternEvaluator evaluator = new PatternEvaluator();
+    private static final PatternEvaluator evaluator = new PatternEvaluator();
 
     /**
      * 把指令字符串转为指令对象
@@ -46,7 +46,7 @@ public class RpcCommandUtils {
     }
 
     public static boolean match(String expression, String path) {
-        if (expression == null || expression.length() == 0) {
+        if (expression == null || expression.isEmpty()) {
             return false;
         }
         return evaluator.match(expression, path);

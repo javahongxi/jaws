@@ -26,7 +26,7 @@ public class NetUtils {
     private static volatile InetAddress LOCAL_ADDRESS = null;
 
     public static boolean isInvalidLocalHost(String host) {
-        return host == null || host.length() == 0 || host.equalsIgnoreCase("localhost") || host.equals("0.0.0.0")
+        return host == null || host.isEmpty() || host.equalsIgnoreCase("localhost") || host.equals("0.0.0.0")
                 || (LOCAL_IP_PATTERN.matcher(host).matches());
     }
 
@@ -78,13 +78,13 @@ public class NetUtils {
                 return localAddress;
             }
         } catch (Throwable e) {
-            logger.warn("Failed to retriving local address by hostname:" + e);
+            logger.warn("Failed to retrieve local address by hostname:" + e);
         }
         return null;
     }
 
     private static InetAddress getLocalAddressBySocket(Map<String, Integer> destHostPorts) {
-        if (destHostPorts == null || destHostPorts.size() == 0) {
+        if (CollectionUtils.isEmpty(destHostPorts)) {
             return null;
         }
 
@@ -104,7 +104,7 @@ public class NetUtils {
                     }
                 }
             } catch (Exception e) {
-                logger.warn("Failed to retriving local address by connecting to dest host:port({}:{}) false",
+                logger.warn("Failed to retrieve local address by connecting to dest host:port({}:{}) false",
                         host, port, e);
             }
         }
@@ -126,16 +126,16 @@ public class NetUtils {
                                     return address;
                                 }
                             } catch (Throwable e) {
-                                logger.warn("Failed to retriving ip address", e);
+                                logger.warn("Failed to retrieve ip address", e);
                             }
                         }
                     } catch (Throwable e) {
-                        logger.warn("Failed to retriving ip address", e);
+                        logger.warn("Failed to retrieve ip address", e);
                     }
                 }
             }
         } catch (Throwable e) {
-            logger.warn("Failed to retriving ip address", e);
+            logger.warn("Failed to retrieve ip address", e);
         }
         return null;
     }
