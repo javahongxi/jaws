@@ -21,8 +21,8 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
 
     protected T proxyImpl;
 
-    public DefaultProvider(T proxyImpl, URL url, Class<T> clz) {
-        super(url, clz);
+    public DefaultProvider(T proxyImpl, URL url, Class<T> clazz) {
+        super(url, clazz);
         this.proxyImpl = proxyImpl;
     }
 

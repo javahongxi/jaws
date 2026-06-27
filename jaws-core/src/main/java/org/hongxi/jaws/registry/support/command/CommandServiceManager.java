@@ -86,7 +86,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
             commandCache = RpcCommandUtils.stringToCommand(commandStringCache);
             Map<String, Integer> weights = new HashMap<>();
 
-            if (commandCache != null && commandCache.getClientCommandList() != null && !commandCache.getClientCommandList().isEmpty()) {
+            if (commandCache != null && commandCache.getClientCommands() != null && !commandCache.getClientCommands().isEmpty()) {
                 commandCache.sort();
                 finalResult = discoverServiceWithCommand(refUrl, weights, commandCache);
             } else {
@@ -132,16 +132,16 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
     }
 
     public List<URL> discoverServiceWithCommand(URL serviceUrl, Map<String, Integer> weights, RpcCommand rpcCommand, String localIP) {
-        if (rpcCommand == null || CollectionUtils.isEmpty(rpcCommand.getClientCommandList())) {
+        if (rpcCommand == null || CollectionUtils.isEmpty(rpcCommand.getClientCommands())) {
             return discoverOneGroup(serviceUrl);
         }
 
         List<URL> mergedResult = new LinkedList<>();
         String path = serviceUrl.getPath();
 
-        List<RpcCommand.ClientCommand> clientCommandList = rpcCommand.getClientCommandList();
+        List<RpcCommand.ClientCommand> clientCommands = rpcCommand.getClientCommands();
         boolean hit = false;
-        for (RpcCommand.ClientCommand command : clientCommandList) {
+        for (RpcCommand.ClientCommand command : clientCommands) {
             mergedResult = new LinkedList<>();
             // 判断当前url是否符合过滤条件
             boolean match = RpcCommandUtils.match(command.getPattern(), path);

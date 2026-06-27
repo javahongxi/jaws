@@ -330,13 +330,13 @@ public class URL {
     @Override
     public int hashCode() {
         int factor = 31;
-        int rs = 1;
-        rs = factor * rs + Objects.hashCode(protocol);
-        rs = factor * rs + Objects.hashCode(host);
-        rs = factor * rs + Objects.hashCode(port);
-        rs = factor * rs + Objects.hashCode(path);
-        rs = factor * rs + Objects.hashCode(parameters);
-        return rs;
+        int result = 1;
+        result = factor * result + Objects.hashCode(protocol);
+        result = factor * result + Objects.hashCode(host);
+        result = factor * result + Objects.hashCode(port);
+        result = factor * result + Objects.hashCode(path);
+        result = factor * result + Objects.hashCode(parameters);
+        return result;
     }
 
     @Override

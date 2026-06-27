@@ -28,9 +28,9 @@ public class JawsProtocol extends AbstractProtocol {
     }
 
     @Override
-    protected <T> Referer<T> createReferer(Class<T> clz, URL url, URL serviceUrl) {
+    protected <T> Referer<T> createReferer(Class<T> clazz, URL url, URL serviceUrl) {
         setDefaultCodec(url);
-        return new V2RpcReferer<T>(clz, url, serviceUrl);
+        return new V2RpcReferer<T>(clazz, url, serviceUrl);
     }
 
     private void setDefaultCodec(URL url) {
@@ -47,8 +47,8 @@ public class JawsProtocol extends AbstractProtocol {
      */
     class V2RpcReferer<T> extends DefaultRpcReferer<T> {
 
-        public V2RpcReferer(Class<T> clz, URL url, URL serviceUrl) {
-            super(clz, url, serviceUrl);
+        public V2RpcReferer(Class<T> clazz, URL url, URL serviceUrl) {
+            super(clazz, url, serviceUrl);
         }
 
         @Override

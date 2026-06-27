@@ -131,21 +131,21 @@ public class RefererConfig<T> extends AbstractRefererConfig {
                     new URL(JawsConstants.REGISTRY_PROTOCOL_LOCAL, NetUtils.LOCALHOST, JawsConstants.DEFAULT_INT_VALUE,
                             RegistryService.class.getName());
             if (StringUtils.isNotBlank(directUrl)) {
-                StringBuilder duBuf = new StringBuilder(128);
-                String[] dus = JawsConstants.COMMA_SPLIT_PATTERN.split(directUrl);
-                for (String du : dus) {
-                    if (du.contains(":")) {
-                        String[] hostPort = du.split(":");
-                        URL durl = refUrl.createCopy();
-                        durl.setHost(hostPort[0].trim());
-                        durl.setPort(Integer.parseInt(hostPort[1].trim()));
-                        durl.addParameter(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_SERVICE);
-                        duBuf.append(StringTools.urlEncode(durl.toFullStr())).append(JawsConstants.COMMA_SEPARATOR);
+                StringBuilder urlBuilder = new StringBuilder(128);
+                String[] urlParts = JawsConstants.COMMA_SPLIT_PATTERN.split(directUrl);
+                for (String urlPart : urlParts) {
+                    if (urlPart.contains(":")) {
+                        String[] hostPort = urlPart.split(":");
+                        URL directCopy = refUrl.createCopy();
+                        directCopy.setHost(hostPort[0].trim());
+                        directCopy.setPort(Integer.parseInt(hostPort[1].trim()));
+                        directCopy.addParameter(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_SERVICE);
+                        urlBuilder.append(StringTools.urlEncode(directCopy.toFullStr())).append(JawsConstants.COMMA_SEPARATOR);
                     }
                 }
-                if (duBuf.length() > 0) {
-                    duBuf.deleteCharAt(duBuf.length() - 1);
-                    regUrl.addParameter(URLParamType.directUrl.getName(), duBuf.toString());
+                if (urlBuilder.length() > 0) {
+                    urlBuilder.deleteCharAt(urlBuilder.length() - 1);
+                    regUrl.addParameter(URLParamType.directUrl.getName(), urlBuilder.toString());
                 }
             }
             regUrls.add(regUrl);

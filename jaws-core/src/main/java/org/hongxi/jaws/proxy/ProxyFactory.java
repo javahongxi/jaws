@@ -11,5 +11,5 @@ import java.util.List;
 @Spi
 public interface ProxyFactory {
 
-    <T> T getProxy(Class<T> clz, List<Cluster<T>> clusters);
+    <T> T getProxy(Class<T> clazz, List<Cluster<T>> clusters);
 }

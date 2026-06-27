@@ -28,12 +28,12 @@ public interface Protocol {
      * 引用服务
      *
      * @param <T>
-     * @param clz
+     * @param clazz
      * @param url
      * @param serviceUrl
      * @return
      */
-    <T> Referer<T> refer(Class<T> clz, URL url, URL serviceUrl);
+    <T> Referer<T> refer(Class<T> clazz, URL url, URL serviceUrl);
 
     /**
      * <pre>

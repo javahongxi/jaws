@@ -31,8 +31,8 @@ public class InjvmProtocol extends AbstractProtocol {
     }
 
     @Override
-    protected <T> Referer<T> createReferer(Class<T> clz, URL url, URL serviceUrl) {
-        return new InjvmReferer<T>(clz, url, serviceUrl);
+    protected <T> Referer<T> createReferer(Class<T> clazz, URL url, URL serviceUrl) {
+        return new InjvmReferer<T>(clazz, url, serviceUrl);
     }
 
     /**
@@ -77,8 +77,8 @@ public class InjvmProtocol extends AbstractProtocol {
     class InjvmReferer<T> extends AbstractReferer<T> {
         private Exporter<T> exporter;
 
-        public InjvmReferer(Class<T> clz, URL url, URL serviceUrl) {
-            super(clz, url, serviceUrl);
+        public InjvmReferer(Class<T> clazz, URL url, URL serviceUrl) {
+            super(clazz, url, serviceUrl);
         }
 
         @Override

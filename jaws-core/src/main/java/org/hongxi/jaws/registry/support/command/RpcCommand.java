@@ -8,10 +8,10 @@ import java.util.List;
  */
 public class RpcCommand {
 
-    private List<ClientCommand> clientCommandList;
+    private List<ClientCommand> clientCommands;
 
     public void sort() {
-        Collections.sort(clientCommandList, (o1, o2) -> {
+        Collections.sort(clientCommands, (o1, o2) -> {
             Integer i1 = o1.getIndex();
             Integer i2 = o2.getIndex();
             if (i1 == null) {
@@ -25,12 +25,12 @@ public class RpcCommand {
         });
     }
 
-    public List<ClientCommand> getClientCommandList() {
-        return clientCommandList;
+    public List<ClientCommand> getClientCommands() {
+        return clientCommands;
     }
 
-    public void setClientCommandList(List<ClientCommand> clientCommandList) {
-        this.clientCommandList = clientCommandList;
+    public void setClientCommands(List<ClientCommand> clientCommands) {
+        this.clientCommands = clientCommands;
     }
 
     public static class ClientCommand {

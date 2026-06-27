@@ -61,23 +61,23 @@ public abstract class AbstractProtocol implements Protocol {
 
     }
 
-    public <T> Referer<T> refer(Class<T> clz, URL url) {
-        return refer(clz, url, url);
+    public <T> Referer<T> refer(Class<T> clazz, URL url) {
+        return refer(clazz, url, url);
     }
 
     @Override
-    public <T> Referer<T> refer(Class<T> clz, URL url, URL serviceUrl) {
+    public <T> Referer<T> refer(Class<T> clazz, URL url, URL serviceUrl) {
         if (url == null) {
             throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: url is null",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
 
-        if (clz == null) {
+        if (clazz == null) {
             throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: class is null, url=" + url,
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
         long start = System.currentTimeMillis();
-        Referer<T> referer = createReferer(clz, url, serviceUrl);
+        Referer<T> referer = createReferer(clazz, url, serviceUrl);
         referer.init();
 
         log.info("{} refer Success: url={}, cost:{}", this.getClass().getSimpleName(), url, System.currentTimeMillis() - start);
@@ -87,7 +87,7 @@ public abstract class AbstractProtocol implements Protocol {
 
     protected abstract <T> Exporter<T> createExporter(Provider<T> provider, URL url);
 
-    protected abstract <T> Referer<T> createReferer(Class<T> clz, URL url, URL serviceUrl);
+    protected abstract <T> Referer<T> createReferer(Class<T> clazz, URL url, URL serviceUrl);
 
     @Override
     public void destroy() {

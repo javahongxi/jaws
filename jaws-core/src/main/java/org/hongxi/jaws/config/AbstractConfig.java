@@ -21,7 +21,7 @@ public class AbstractConfig implements Serializable {
     private static final long serialVersionUID = 6221123514996466731L;
 
     private static final Logger log = LoggerFactory.getLogger(AbstractConfig.class);
-    private static final String[] SUFFIXS = new String[]{"Config", "Bean"};
+    private static final String[] SUFFIXES = new String[]{"Config", "Bean"};
     protected String id;
 
     /**
@@ -51,7 +51,7 @@ public class AbstractConfig implements Serializable {
 
     private static String getTagName(Class<?> cls) {
         String tag = cls.getSimpleName();
-        for (String suffix : SUFFIXS) {
+        for (String suffix : SUFFIXES) {
             if (tag.endsWith(suffix)) {
                 tag = tag.substring(0, tag.length() - suffix.length());
                 break;

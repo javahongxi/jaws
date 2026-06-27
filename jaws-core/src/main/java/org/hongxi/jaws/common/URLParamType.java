@@ -31,7 +31,7 @@ public enum URLParamType {
 
     registryRetryPeriod("registryRetryPeriod", 30 * JawsConstants.SECOND_MILLS),
     /* 注册中心不可用节点剔除方式 */
-    excise("excise", RegistryConfig.Excise.excise_dynamic.getName()),
+    excise("excise", RegistryConfig.Excise.DYNAMIC.getName()),
     cluster("cluster", JawsConstants.DEFAULT_VALUE),
     loadbalance("loadbalance", "activeWeight"),
     haStrategy("haStrategy", "failover"),

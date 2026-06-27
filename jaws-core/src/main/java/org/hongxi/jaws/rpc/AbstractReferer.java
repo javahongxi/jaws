@@ -10,25 +10,25 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public abstract class AbstractReferer<T> extends AbstractNode implements Referer<T> {
 
-    protected Class<T> clz;
+    protected Class<T> clazz;
     protected AtomicInteger activeRefererCount = new AtomicInteger(0);
     protected URL serviceUrl;
 
-    public AbstractReferer(Class<T> clz, URL url) {
+    public AbstractReferer(Class<T> clazz, URL url) {
         super(url);
-        this.clz = clz;
+        this.clazz = clazz;
         this.serviceUrl = url;
     }
 
-    public AbstractReferer(Class<T> clz, URL url, URL serviceUrl) {
+    public AbstractReferer(Class<T> clazz, URL url, URL serviceUrl) {
         super(url);
-        this.clz = clz;
+        this.clazz = clazz;
         this.serviceUrl = serviceUrl;
     }
 
     @Override
     public Class<T> getInterface() {
-        return clz;
+        return clazz;
     }
 
     @Override

@@ -359,9 +359,9 @@ public class JawsCodec extends AbstractCodec {
         }
 
         String className = input.readUTF();
-        Class<?> clz = ReflectUtils.forName(className);
+        Class<?> clazz = ReflectUtils.forName(className);
 
-        Object result = deserialize((byte[]) input.readObject(), clz, serialization);
+        Object result = deserialize((byte[]) input.readObject(), clazz, serialization);
 
         if (dataType == JawsConstants.FLAG_RESPONSE) {
             response.setValue(result);

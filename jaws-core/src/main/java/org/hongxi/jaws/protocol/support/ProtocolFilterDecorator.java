@@ -44,8 +44,8 @@ public class ProtocolFilterDecorator implements Protocol {
     }
 
     @Override
-    public <T> Referer<T> refer(Class<T> clz, URL url, URL serviceUrl) {
-        return decorateWithFilter(protocol.refer(clz, url, serviceUrl), url);
+    public <T> Referer<T> refer(Class<T> clazz, URL url, URL serviceUrl) {
+        return decorateWithFilter(protocol.refer(clazz, url, serviceUrl), url);
     }
 
     @Override

@@ -20,8 +20,8 @@ public class DefaultRpcReferer<T> extends AbstractReferer<T> {
     protected Client client;
     protected EndpointFactory endpointFactory;
 
-    public DefaultRpcReferer(Class<T> clz, URL url, URL serviceUrl) {
-        super(clz, url, serviceUrl);
+    public DefaultRpcReferer(Class<T> clazz, URL url, URL serviceUrl) {
+        super(clazz, url, serviceUrl);
 
         endpointFactory =
                 ExtensionLoader.getExtensionLoader(EndpointFactory.class).getExtension(

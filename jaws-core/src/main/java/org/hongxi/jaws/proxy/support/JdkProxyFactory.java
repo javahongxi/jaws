@@ -18,7 +18,7 @@ public class JdkProxyFactory implements ProxyFactory {
 
     @Override
     @SuppressWarnings("unchecked")
-    public <T> T getProxy(Class<T> clz, List<Cluster<T>> clusters) {
-        return (T) Proxy.newProxyInstance(clz.getClassLoader(), new Class<?>[]{clz}, new RefererInvocationHandler<>(clz, clusters));
+    public <T> T getProxy(Class<T> clazz, List<Cluster<T>> clusters) {
+        return (T) Proxy.newProxyInstance(clazz.getClassLoader(), new Class<?>[]{clazz}, new RefererInvocationHandler<>(clazz, clusters));
     }
 }

@@ -13,18 +13,18 @@ import java.util.Map;
  * Created by shenhongxi on 2021/3/7.
  */
 public abstract class AbstractProvider<T> implements Provider<T> {
-    protected Class<T> clz;
+    protected Class<T> clazz;
     protected URL url;
     protected boolean alive = false;
     protected boolean close = false;
 
     protected Map<String, Method> methodMap = new HashMap<>();
 
-    public AbstractProvider(URL url, Class<T> clz) {
+    public AbstractProvider(URL url, Class<T> clazz) {
         this.url = url;
-        this.clz = clz;
+        this.clazz = clazz;
 
-        initMethodMap(clz);
+        initMethodMap(clazz);
     }
 
     @Override
@@ -66,7 +66,7 @@ public abstract class AbstractProvider<T> implements Provider<T> {
 
     @Override
     public Class<T> getInterface() {
-        return clz;
+        return clazz;
     }
 
     @Override
@@ -84,8 +84,8 @@ public abstract class AbstractProvider<T> implements Provider<T> {
         return method;
     }
 
-    private void initMethodMap(Class<T> clz) {
-        Method[] methods = clz.getMethods();
+    private void initMethodMap(Class<T> clazz) {
+        Method[] methods = clazz.getMethods();
 
         List<String> dupList = new ArrayList<>();
         for (Method method : methods) {

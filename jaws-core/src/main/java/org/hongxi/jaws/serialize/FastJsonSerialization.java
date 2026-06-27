@@ -31,10 +31,10 @@ public class FastJsonSerialization implements Serialization {
     }
 
     @Override
-    public <T> T deserialize(byte[] data, Class<T> clz) throws IOException {
+    public <T> T deserialize(byte[] data, Class<T> clazz) throws IOException {
         return JSONB.parseObject(
                 data,
-                clz,
+                clazz,
                 JSONReader.Feature.UseDefaultConstructorAsPossible,
                 JSONReader.Feature.ErrorOnNoneSerializable,
                 JSONReader.Feature.IgnoreAutoTypeNotMatch,

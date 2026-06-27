@@ -30,9 +30,9 @@ public class Hessian2Serialization implements Serialization {
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T> T deserialize(byte[] data, Class<T> clz) throws IOException {
+    public <T> T deserialize(byte[] data, Class<T> clazz) throws IOException {
         Hessian2Input input = new Hessian2Input(new ByteArrayInputStream(data));
-        T result = (T) input.readObject(clz);
+        T result = (T) input.readObject(clazz);
         input.reset();
         return result;
     }

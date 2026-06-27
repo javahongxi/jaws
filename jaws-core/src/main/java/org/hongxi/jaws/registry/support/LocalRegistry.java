@@ -195,11 +195,11 @@ public class LocalRegistry extends AbstractRegistry {
             }
 
             for (ConcurrentHashSet<NotifyListener> listeners : urlListeners.values()) {
-                for (NotifyListener ln : listeners) {
+                for (NotifyListener listener : listeners) {
                     try {
-                        ln.notify(getUrl(), interestingUrls);
+                        listener.notify(getUrl(), interestingUrls);
                     } catch (Exception e) {
-                        log.warn("Exception when notify listerner {}, changedUrl: {}", ln, changedUrl, e);
+                        log.warn("Exception when notify listener {}, changedUrl: {}", listener, changedUrl, e);
                     }
                 }
             }

@@ -168,7 +168,7 @@ public class RegistryConfig extends AbstractConfig {
      * </pre>
      */
     public enum Excise {
-        excise_static("static"), excise_dynamic("dynamic"), excise_ratio("ratio");
+        STATIC("static"), DYNAMIC("dynamic"), RATIO("ratio");
 
         private String name;
 

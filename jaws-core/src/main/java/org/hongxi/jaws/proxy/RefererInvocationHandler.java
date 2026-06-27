@@ -23,11 +23,11 @@ public class RefererInvocationHandler<T> extends AbstractRefererHandler<T> imple
 
     private static final Logger log = LoggerFactory.getLogger(RefererInvocationHandler.class);
 
-    public RefererInvocationHandler(Class<T> clz, List<Cluster<T>> clusters) {
-        this.clz = clz;
+    public RefererInvocationHandler(Class<T> clazz, List<Cluster<T>> clusters) {
+        this.clazz = clazz;
         this.clusters = clusters;
         init();
-        interfaceName = JawsFrameworkUtils.removeAsyncSuffix(clz.getName());
+        interfaceName = JawsFrameworkUtils.removeAsyncSuffix(clazz.getName());
     }
 
     @Override
@@ -58,7 +58,7 @@ public class RefererInvocationHandler<T> extends AbstractRefererHandler<T> imple
         request.setParametersDesc(ReflectUtils.getMethodParamDesc(method));
         request.setInterfaceName(interfaceName);
 
-        return invokeRequest(request, getRealReturnType(async, this.clz, method, methodName), async);
+        return invokeRequest(request, getRealReturnType(async, this.clazz, method, methodName), async);
     }
 
     /**
@@ -70,7 +70,7 @@ public class RefererInvocationHandler<T> extends AbstractRefererHandler<T> imple
     public boolean isLocalMethod(Method method) {
         if (method.getDeclaringClass().equals(Object.class)) {
             try {
-                Method interfaceMethod = clz.getDeclaredMethod(method.getName(), method.getParameterTypes());
+                Method interfaceMethod = clazz.getDeclaredMethod(method.getName(), method.getParameterTypes());
                 return false;
             } catch (Exception e) {
                 return true;

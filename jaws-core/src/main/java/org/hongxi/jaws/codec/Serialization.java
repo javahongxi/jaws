@@ -13,7 +13,7 @@ public interface Serialization {
 
     byte[] serialize(Object obj) throws IOException;
 
-    <T> T deserialize(byte[] bytes, Class<T> clz) throws IOException;
+    <T> T deserialize(byte[] bytes, Class<T> clazz) throws IOException;
 
     /**
      * serialization的唯一编号，用于传输协议中指定序列化方式。每种序列化的编号必须唯一。

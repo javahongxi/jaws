@@ -27,7 +27,7 @@ public class AbstractRefererHandler<T> {
     private static final Logger log = LoggerFactory.getLogger(AbstractRefererHandler.class);
 
     protected List<Cluster<T>> clusters;
-    protected Class<T> clz;
+    protected Class<T> clazz;
     protected String interfaceName;
 
     protected SwitcherService switcherService = null;

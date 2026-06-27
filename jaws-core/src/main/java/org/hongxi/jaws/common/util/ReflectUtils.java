@@ -32,7 +32,7 @@ public class ReflectUtils {
     private static final int PRIMITIVE_CLASS_NAME_MAX_LENGTH = 7;
 
     /**
-     * 获取method方式的接口参数，以逗号分割，拼接clz列表。 如果没有参数，那么void表示
+     * 获取method方式的接口参数，以逗号分割，拼接clazz列表。 如果没有参数，那么void表示
      *
      * @param method
      * @return
@@ -44,10 +44,10 @@ public class ReflectUtils {
 
         StringBuilder builder = new StringBuilder();
 
-        Class<?>[] clzs = method.getParameterTypes();
+        Class<?>[] clazzes = method.getParameterTypes();
 
-        for (Class<?> clz : clzs) {
-            String className = getName(clz);
+        for (Class<?> clazz : clazzes) {
+            String className = getName(clazz);
             builder.append(className).append(PARAM_CLASS_SPLIT);
         }
 
@@ -100,45 +100,45 @@ public class ReflectUtils {
             return null;
         }
 
-        Class<?> clz = name2ClassCache.get(className);
+        Class<?> clazz = name2ClassCache.get(className);
 
-        if (clz != null) {
-            return clz;
+        if (clazz != null) {
+            return clazz;
         }
 
-        clz = forNameWithoutCache(className);
+        clazz = forNameWithoutCache(className);
 
         // 应该没有内存消耗过多的可能，除非有些代码很恶心，创建特别多的类
-        name2ClassCache.putIfAbsent(className, clz);
+        name2ClassCache.putIfAbsent(className, clazz);
 
-        return clz;
+        return clazz;
     }
 
     private static Class<?> forNameWithoutCache(String className) throws ClassNotFoundException {
         if (!className.endsWith("[]")) { // not array
-            Class<?> clz = getPrimitiveClass(className);
+            Class<?> clazz = getPrimitiveClass(className);
 
-            clz = (clz != null) ? clz : Class.forName(className, true, Thread.currentThread().getContextClassLoader());
-            return clz;
+            clazz = (clazz != null) ? clazz : Class.forName(className, true, Thread.currentThread().getContextClassLoader());
+            return clazz;
         }
 
-        int dimensionSiz = 0;
+        int dimensionSize = 0;
 
         while (className.endsWith("[]")) {
-            dimensionSiz++;
+            dimensionSize++;
 
             className = className.substring(0, className.length() - 2);
         }
 
-        int[] dimensions = new int[dimensionSiz];
+        int[] dimensions = new int[dimensionSize];
 
-        Class<?> clz = getPrimitiveClass(className);
+        Class<?> clazz = getPrimitiveClass(className);
 
-        if (clz == null) {
-            clz = Class.forName(className, true, Thread.currentThread().getContextClassLoader());
+        if (clazz == null) {
+            clazz = Class.forName(className, true, Thread.currentThread().getContextClassLoader());
         }
 
-        return Array.newInstance(clz, dimensions).getClass();
+        return Array.newInstance(clazz, dimensions).getClass();
     }
 
     /**
@@ -147,37 +147,37 @@ public class ReflectUtils {
      * @param
      * @return
      */
-    public static String getName(Class<?> clz) {
-        if (clz == null) {
+    public static String getName(Class<?> clazz) {
+        if (clazz == null) {
             return null;
         }
 
-        String className = class2NameCache.get(clz);
+        String className = class2NameCache.get(clazz);
 
         if (className != null) {
             return className;
         }
 
-        className = getNameWithoutCache(clz);
+        className = getNameWithoutCache(clazz);
 
         // 与name2ClassCache同样道理，如果没有恶心的代码，这块内存大小应该可控
-        class2NameCache.putIfAbsent(clz, className);
+        class2NameCache.putIfAbsent(clazz, className);
 
         return className;
     }
 
-    private static String getNameWithoutCache(Class<?> clz) {
-        if (!clz.isArray()) {
-            return clz.getName();
+    private static String getNameWithoutCache(Class<?> clazz) {
+        if (!clazz.isArray()) {
+            return clazz.getName();
         }
 
         StringBuilder sb = new StringBuilder();
-        while (clz.isArray()) {
+        while (clazz.isArray()) {
             sb.append("[]");
-            clz = clz.getComponentType();
+            clazz = clazz.getComponentType();
         }
 
-        return clz.getName() + sb.toString();
+        return clazz.getName() + sb.toString();
     }
 
     public static Class<?> getPrimitiveClass(String name) {
@@ -192,19 +192,19 @@ public class ReflectUtils {
     }
 
     /**
-     * 获取clz public method
+     * 获取clazz public method
      *
      * <pre>
      *      1）不包含构造函数
      *      2）不包含Object.class
-     *      3）包含该clz的父类的所有public方法
+     *      3）包含该clazz的父类的所有public方法
      * </pre>
      *
-     * @param clz
+     * @param clazz
      * @return
      */
-    public static List<Method> getPublicMethod(Class<?> clz) {
-        Method[] methods = clz.getMethods();
+    public static List<Method> getPublicMethod(Class<?> clazz) {
+        Method[] methods = clazz.getMethods();
         List<Method> ret = new ArrayList<>();
 
         for (Method method : methods) {
