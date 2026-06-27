@@ -6,7 +6,7 @@ import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.rpc.Referer;
+import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
@@ -26,17 +26,17 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
 
     private static final Logger log = LoggerFactory.getLogger(FailoverHaStrategy.class);
 
-    protected ThreadLocal<List<Referer<T>>> referersHolder = ThreadLocal.withInitial(ArrayList::new);
+    protected ThreadLocal<List<Reference<T>>> referencesHolder = ThreadLocal.withInitial(ArrayList::new);
 
     @Override
     public Response call(Request request, LoadBalance<T> loadBalance) {
 
-        List<Referer<T>> referers = selectReferers(request, loadBalance);
-        if (referers.isEmpty()) {
-            throw new JawsServiceException(String.format("FailoverHaStrategy No referers for request:%s, loadbalance:%s", request,
+        List<Reference<T>> references = selectReferences(request, loadBalance);
+        if (references.isEmpty()) {
+            throw new JawsServiceException(String.format("FailoverHaStrategy No references for request:%s, loadbalance:%s", request,
                     loadBalance));
         }
-        URL refUrl = referers.get(0).getUrl();
+        URL refUrl = references.get(0).getUrl();
         // 先使用method的配置
         int tryCount =
                 refUrl.getMethodParameter(request.getMethodName(), request.getParametersDesc(), URLParamType.retries.getName(),
@@ -47,7 +47,7 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
         }
 
         for (int i = 0; i <= tryCount; i++) {
-            Referer<T> refer = referers.get(i % referers.size());
+            Reference<T> refer = references.get(i % references.size());
             try {
                 request.setRetries(i);
                 return refer.call(request);
@@ -65,10 +65,10 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
         throw new JawsFrameworkException("FailoverHaStrategy.call should not come here!");
     }
 
-    protected List<Referer<T>> selectReferers(Request request, LoadBalance<T> loadBalance) {
-        List<Referer<T>> referers = referersHolder.get();
-        referers.clear();
-        loadBalance.selectToHolder(request, referers);
-        return referers;
+    protected List<Reference<T>> selectReferences(Request request, LoadBalance<T> loadBalance) {
+        List<Reference<T>> references = referencesHolder.get();
+        references.clear();
+        loadBalance.selectToHolder(request, references);
+        return references;
     }
 }

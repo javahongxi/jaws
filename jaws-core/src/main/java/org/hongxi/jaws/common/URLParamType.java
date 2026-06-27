@@ -43,7 +43,7 @@ public enum URLParamType {
     filter("filter", ""),
 
     /**
-     * multi referer share the same channel
+     * multi reference share the same channel
      */
     shareChannel("shareChannel", false),
     asyncInitConnection("asyncInitConnection", false),

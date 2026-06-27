@@ -19,7 +19,7 @@ public class JawsConstants {
     public static final Pattern COMMA_SPLIT_PATTERN = Pattern.compile("\\s*[,]+\\s*");
 
     public static final String NODE_TYPE_SERVICE = "service";
-    public static final String NODE_TYPE_REFERER = "referer";
+    public static final String NODE_TYPE_REFERENCE = "reference";
 
     public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
     public static final String ZOOKEEPER_REGISTRY_COMMAND = "/command";

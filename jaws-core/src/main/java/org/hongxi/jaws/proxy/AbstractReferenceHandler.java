@@ -22,9 +22,9 @@ import java.util.Map;
 /**
  * Created by shenhongxi on 2021/4/23.
  */
-public class AbstractRefererHandler<T> {
+public class AbstractReferenceHandler<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRefererHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(AbstractReferenceHandler.class);
 
     protected List<Cluster<T>> clusters;
     protected Class<T> clazz;
@@ -55,7 +55,7 @@ public class AbstractRefererHandler<T> {
             request.setAttachment(URLParamType.requestIdFromClient.getName(), curContext.getClientRequestId());
         }
 
-        // 当 referer配置多个protocol的时候，比如A,B,C，
+        // 当 reference配置多个protocol的时候，比如A,B,C，
         // 那么正常情况下只会使用A，如果A被开关降级，那么就会使用B，B也被降级，那么会使用C
         for (Cluster<T> cluster : clusters) {
             String protocolSwitcher = JawsConstants.PROTOCOL_SWITCHER_PREFIX + cluster.getUrl().getProtocol();
@@ -105,15 +105,15 @@ public class AbstractRefererHandler<T> {
                         throw new JawsServiceException(msg);
                     }
                 } else if (!throwException) {
-                    log.warn("RefererInvocationHandler invoke false, so return default value: uri=" + cluster.getUrl().getUri() + " " + JawsFrameworkUtils.toString(request), e);
+                    log.warn("ReferenceInvocationHandler invoke false, so return default value: uri=" + cluster.getUrl().getUri() + " " + JawsFrameworkUtils.toString(request), e);
                     return getDefaultReturnValue(returnType);
                 } else {
-                    log.error("RefererInvocationHandler invoke Error: uri=" + cluster.getUrl().getUri() + " " + JawsFrameworkUtils.toString(request), e);
+                    log.error("ReferenceInvocationHandler invoke Error: uri=" + cluster.getUrl().getUri() + " " + JawsFrameworkUtils.toString(request), e);
                     throw e;
                 }
             }
         }
-        throw new JawsServiceException("Referer call Error: cluster not exist, interface=" + interfaceName + " " + JawsFrameworkUtils.toString(request), JawsErrorMsgConstants.SERVICE_NOT_FOUND, false);
+        throw new JawsServiceException("Reference call Error: cluster not exist, interface=" + interfaceName + " " + JawsFrameworkUtils.toString(request), JawsErrorMsgConstants.SERVICE_NOT_FOUND, false);
     }
 
     private Object getDefaultReturnValue(Class<?> returnType) {

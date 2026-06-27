@@ -44,7 +44,7 @@ public class ProtocolFilterDecorator implements Protocol {
     }
 
     @Override
-    public <T> Referer<T> refer(Class<T> clazz, URL url, URL serviceUrl) {
+    public <T> Reference<T> refer(Class<T> clazz, URL url, URL serviceUrl) {
         return decorateWithFilter(protocol.refer(clazz, url, serviceUrl), url);
     }
 
@@ -115,16 +115,16 @@ public class ProtocolFilterDecorator implements Protocol {
         return lastProvider;
     }
 
-    private <T> Referer<T> decorateWithFilter(Referer<T> referer, URL url) {
-        List<Filter> filters = getFilters(url, JawsConstants.NODE_TYPE_REFERER);
-        Referer<T> lastRef = referer;
+    private <T> Reference<T> decorateWithFilter(Reference<T> reference, URL url) {
+        List<Filter> filters = getFilters(url, JawsConstants.NODE_TYPE_REFERENCE);
+        Reference<T> lastRef = reference;
         for (Filter filter : filters) {
             final Filter f = filter;
             if (f instanceof InitializableFilter initFilter) {
                 initFilter.init(lastRef);
             }
-            final Referer<T> lf = lastRef;
-            lastRef = new Referer<T>() {
+            final Reference<T> lf = lastRef;
+            lastRef = new Reference<T>() {
                 @Override
                 public Response call(Request request) {
                     Activation activation = f.getClass().getAnnotation(Activation.class);
@@ -165,8 +165,8 @@ public class ProtocolFilterDecorator implements Protocol {
                 }
 
                 @Override
-                public int activeRefererCount() {
-                    return lf.activeRefererCount();
+                public int activeReferenceCount() {
+                    return lf.activeReferenceCount();
                 }
 
 

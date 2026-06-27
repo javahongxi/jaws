@@ -3,7 +3,7 @@ package org.hongxi.jaws.cluster;
 import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
 import org.hongxi.jaws.rpc.Caller;
-import org.hongxi.jaws.rpc.Referer;
+import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.URL;
 
 import java.util.List;
@@ -27,7 +27,7 @@ public interface Cluster<T> extends Caller<T> {
 
     void setHaStrategy(HaStrategy<T> haStrategy);
 
-    void onRefresh(List<Referer<T>> referers);
+    void onRefresh(List<Reference<T>> references);
 
-    List<Referer<T>> getReferers();
+    List<Reference<T>> getReferences();
 }

@@ -4,7 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.MathUtils;
-import org.hongxi.jaws.rpc.Referer;
+import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,35 +23,35 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
 
     private static final Logger log = LoggerFactory.getLogger(ConfigurableWeightLoadBalance.class);
 
-    private final RefererListCacheHolder<T> emptyHolder = new EmptyHolder<>();
+    private final ReferenceListCacheHolder<T> emptyHolder = new EmptyHolder<>();
 
-    private volatile RefererListCacheHolder<T> holder = emptyHolder;
+    private volatile ReferenceListCacheHolder<T> holder = emptyHolder;
 
     private String weightString;
 
     @Override
-    public void onRefresh(List<Referer<T>> referers) {
-        super.onRefresh(referers);
+    public void onRefresh(List<Reference<T>> references) {
+        super.onRefresh(references);
 
-        if (CollectionUtils.isEmpty(referers)) {
+        if (CollectionUtils.isEmpty(references)) {
             holder = emptyHolder;
         } else if (StringUtils.isEmpty(weightString)) {
-            holder = new SingleGroupHolder<T>(referers);
+            holder = new SingleGroupHolder<T>(references);
         } else {
-            holder = new MultiGroupHolder<T>(weightString, referers);
+            holder = new MultiGroupHolder<T>(weightString, references);
         }
     }
 
     @Override
-    protected Referer<T> doSelect(Request request) {
+    protected Reference<T> doSelect(Request request) {
         if (holder == emptyHolder) {
             return null;
         }
 
-        RefererListCacheHolder<T> h = this.holder;
-        Referer<T> r = h.next();
+        ReferenceListCacheHolder<T> h = this.holder;
+        Reference<T> r = h.next();
         if (!r.isAvailable()) {
-            int retryTimes = getReferers().size() - 1;
+            int retryTimes = getReferences().size() - 1;
             for (int i = 0; i < retryTimes; i++) {
                 r = h.next();
                 if (r.isAvailable()) {
@@ -62,35 +62,35 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
         if (r.isAvailable()) {
             return r;
         } else {
-            noAvailableReferer();
+            noAvailableReference();
             return null;
         }
     }
 
     @Override
-    protected void doSelectToHolder(Request request, List<Referer<T>> refersHolder) {
+    protected void doSelectToHolder(Request request, List<Reference<T>> refersHolder) {
         if (holder == emptyHolder) {
             return;
         }
 
-        RefererListCacheHolder<T> h = this.holder;
+        ReferenceListCacheHolder<T> h = this.holder;
         int i = 0, j = 0;
-        while (i++ < getReferers().size()) {
-            Referer<T> r = h.next();
+        while (i++ < getReferences().size()) {
+            Reference<T> r = h.next();
             if (r.isAvailable()) {
                 refersHolder.add(r);
-                if (++j == MAX_REFERER_COUNT) {
+                if (++j == MAX_REFERENCE_COUNT) {
                     return;
                 }
             }
         }
         if (refersHolder.isEmpty()) {
-            noAvailableReferer();
+            noAvailableReference();
         }
     }
 
-    private void noAvailableReferer() {
-        log.error("{} 当前没有可用连接, pool.size={}", this.getClass().getSimpleName(), getReferers().size());
+    private void noAvailableReference() {
+        log.error("{} 当前没有可用连接, pool.size={}", this.getClass().getSimpleName(), getReferences().size());
     }
 
     @Override
@@ -99,42 +99,42 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
     }
 
 
-    static abstract class RefererListCacheHolder<T> {
-        abstract Referer<T> next();
+    static abstract class ReferenceListCacheHolder<T> {
+        abstract Reference<T> next();
     }
 
-    static class EmptyHolder<T> extends RefererListCacheHolder<T> {
+    static class EmptyHolder<T> extends ReferenceListCacheHolder<T> {
         @Override
-        Referer<T> next() {
+        Reference<T> next() {
             return null;
         }
     }
 
-    class SingleGroupHolder<T> extends RefererListCacheHolder<T> {
+    class SingleGroupHolder<T> extends ReferenceListCacheHolder<T> {
 
         private int size;
-        private List<Referer<T>> cache;
+        private List<Reference<T>> cache;
 
-        SingleGroupHolder(List<Referer<T>> list) {
+        SingleGroupHolder(List<Reference<T>> list) {
             cache = list;
             size = list.size();
             log.info("ConfigurableWeightLoadBalance build new SingleGroupHolder.");
         }
 
         @Override
-        Referer<T> next() {
+        Reference<T> next() {
             return cache.get(ThreadLocalRandom.current().nextInt(size));
         }
     }
 
-    class MultiGroupHolder<T> extends RefererListCacheHolder<T> {
+    class MultiGroupHolder<T> extends ReferenceListCacheHolder<T> {
 
         private int randomKeySize = 0;
         private List<String> randomKeyList = new ArrayList<>();
         private Map<String, AtomicInteger> cursors = new HashMap<>();
-        private Map<String, List<Referer<T>>> groupReferers = new HashMap<>();
+        private Map<String, List<Reference<T>>> groupReferences = new HashMap<>();
 
-        MultiGroupHolder(String weights, List<Referer<T>> list) {
+        MultiGroupHolder(String weights, List<Reference<T>> list) {
             log.info("ConfigurableWeightLoadBalance build new MultiGroupHolder. weights:{}", weights);
             String[] groupsAndWeights = weights.split(",");
             int[] weightsArr = new int[groupsAndWeights.length];
@@ -145,7 +145,7 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
                 if (gw.length == 2) {
                     Integer w = Integer.valueOf(gw[1]);
                     weightsMap.put(gw[0], w);
-                    groupReferers.put(gw[0], new ArrayList<>());
+                    groupReferences.put(gw[0], new ArrayList<>());
                     weightsArr[i++] = w;
                 }
             }
@@ -170,17 +170,17 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
                 cursors.put(key, new AtomicInteger(0));
             }
 
-            for (Referer<T> referer : list) {
-                groupReferers.get(referer.getServiceUrl().getGroup()).add(referer);
+            for (Reference<T> reference : list) {
+                groupReferences.get(reference.getServiceUrl().getGroup()).add(reference);
             }
         }
 
         @Override
-        Referer<T> next() {
+        Reference<T> next() {
             String group = randomKeyList.get(ThreadLocalRandom.current().nextInt(randomKeySize));
             AtomicInteger ai = cursors.get(group);
-            List<Referer<T>> referers = groupReferers.get(group);
-            return referers.get(MathUtils.getNonNegative(ai.getAndIncrement()) % referers.size());
+            List<Reference<T>> references = groupReferences.get(group);
+            return references.get(MathUtils.getNonNegative(ai.getAndIncrement()) % references.size());
         }
 
         /*

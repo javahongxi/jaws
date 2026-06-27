@@ -13,14 +13,14 @@ import org.slf4j.LoggerFactory;
 /**
  * Created by shenhongxi on 2021/4/21.
  */
-public class DefaultRpcReferer<T> extends AbstractReferer<T> {
+public class DefaultRpcReference<T> extends AbstractReference<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultRpcReferer.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultRpcReference.class);
 
     protected Client client;
     protected EndpointFactory endpointFactory;
 
-    public DefaultRpcReferer(Class<T> clazz, URL url, URL serviceUrl) {
+    public DefaultRpcReference(Class<T> clazz, URL url, URL serviceUrl) {
         super(clazz, url, serviceUrl);
 
         endpointFactory =
@@ -37,14 +37,14 @@ public class DefaultRpcReferer<T> extends AbstractReferer<T> {
             request.setAttachment(URLParamType.group.getName(), serviceUrl.getGroup());
             return client.request(request);
         } catch (TransportException exception) {
-            throw new JawsServiceException("DefaultRpcReferer call Error: url=" + url.getUri(), exception);
+            throw new JawsServiceException("DefaultRpcReference call Error: url=" + url.getUri(), exception);
         }
     }
 
     @Override
     protected void decrActiveCount(Request request, Response response) {
         if (!(response instanceof Future)) {
-            activeRefererCount.decrementAndGet();
+            activeReferenceCount.decrementAndGet();
             return;
         }
 
@@ -53,7 +53,7 @@ public class DefaultRpcReferer<T> extends AbstractReferer<T> {
         future.addListener(new FutureListener() {
             @Override
             public void operationComplete(Future future) throws Exception {
-                activeRefererCount.decrementAndGet();
+                activeReferenceCount.decrementAndGet();
             }
         });
     }
@@ -73,6 +73,6 @@ public class DefaultRpcReferer<T> extends AbstractReferer<T> {
     @Override
     public void destroy() {
         endpointFactory.safeReleaseResource(client, url);
-        log.info("DefaultRpcReferer destroy client: url={}", url);
+        log.info("DefaultRpcReference destroy client: url={}", url);
     }
 }

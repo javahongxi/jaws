@@ -33,12 +33,12 @@ public interface Protocol {
      * @param serviceUrl
      * @return
      */
-    <T> Referer<T> refer(Class<T> clazz, URL url, URL serviceUrl);
+    <T> Reference<T> refer(Class<T> clazz, URL url, URL serviceUrl);
 
     /**
      * <pre>
      * 		1） exporter destroy
-     * 		2） referer destroy
+     * 		2） reference destroy
      * </pre>
      *
      */

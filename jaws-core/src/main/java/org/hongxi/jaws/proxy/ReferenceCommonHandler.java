@@ -11,9 +11,9 @@ import java.util.Map;
 /**
  * Created by shenhongxi on 2021/4/23.
  */
-public class RefererCommonHandler<T> extends AbstractRefererHandler<T> implements CommonHandler {
+public class ReferenceCommonHandler<T> extends AbstractReferenceHandler<T> implements CommonHandler {
 
-    public RefererCommonHandler(String interfaceName, List<Cluster<T>> clusters) {
+    public ReferenceCommonHandler(String interfaceName, List<Cluster<T>> clusters) {
         this.interfaceName = interfaceName;
         this.clusters = clusters;
         init();

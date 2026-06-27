@@ -2,7 +2,7 @@ package org.hongxi.jaws.cluster.ha;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.rpc.Referer;
+import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 
@@ -17,7 +17,7 @@ public class FailfastHaStrategy<T> extends AbstractHaStrategy<T> {
 
     @Override
     public Response call(Request request, LoadBalance<T> loadBalance) {
-        Referer<T> refer = loadBalance.select(request);
+        Reference<T> refer = loadBalance.select(request);
         return refer.call(request);
     }
 }

@@ -21,10 +21,10 @@ import java.util.*;
  * Interface config，
  *
  * 配置约定
- * 	  1 service 和 referer 端相同的参数的含义一定相同；
+ * 	  1 service 和 reference 端相同的参数的含义一定相同；
  *    2 service端参数的覆盖策略：protocol--basicConfig--service，前面的配置会被后面的config参数覆盖；
- *    3 registry 参数不进入service、referer端的参数列表；
- *    4 referer端从注册中心拿到参数后，先用referer端的参数覆盖，然后再使用该service
+ *    3 registry 参数不进入service、reference端的参数列表；
+ *    4 reference端从注册中心拿到参数后，先用reference端的参数覆盖，然后再使用该service
  * </pre>
  * <p>
  * Created by shenhongxi on 2021/3/5.
@@ -397,7 +397,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 String methodName = methodBean.getName();
                 if (methodName == null || methodName.isEmpty()) {
                     throw new IllegalStateException("<jaws:method> name attribute is required! Please check: <jaws:service interface=\""
-                            + interfaceClass.getName() + "\" ... ><jaws:method name=\"\" ... /></<jaws:referer>");
+                            + interfaceClass.getName() + "\" ... ><jaws:method name=\"\" ... /></<jaws:reference>");
                 }
                 Method hasMethod = null;
                 for (Method method : interfaceClass.getMethods()) {

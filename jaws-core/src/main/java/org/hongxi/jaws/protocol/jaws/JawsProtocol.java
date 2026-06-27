@@ -28,9 +28,9 @@ public class JawsProtocol extends AbstractProtocol {
     }
 
     @Override
-    protected <T> Referer<T> createReferer(Class<T> clazz, URL url, URL serviceUrl) {
+    protected <T> Reference<T> createReference(Class<T> clazz, URL url, URL serviceUrl) {
         setDefaultCodec(url);
-        return new V2RpcReferer<T>(clazz, url, serviceUrl);
+        return new V2RpcReference<T>(clazz, url, serviceUrl);
     }
 
     private void setDefaultCodec(URL url) {
@@ -41,13 +41,13 @@ public class JawsProtocol extends AbstractProtocol {
     }
 
     /**
-     * rpc referer
+     * rpc reference
      *
      * @param <T>
      */
-    class V2RpcReferer<T> extends DefaultRpcReferer<T> {
+    class V2RpcReference<T> extends DefaultRpcReference<T> {
 
-        public V2RpcReferer(Class<T> clazz, URL url, URL serviceUrl) {
+        public V2RpcReference(Class<T> clazz, URL url, URL serviceUrl) {
             super(clazz, url, serviceUrl);
         }
 
@@ -60,7 +60,7 @@ public class JawsProtocol extends AbstractProtocol {
                 request.setAttachment(JawsConstants.JAWS_PROXY_PROTOCOL, this.url.getProtocol());
                 return client.request(request);
             } catch (TransportException exception) {
-                throw new JawsServiceException("DefaultRpcReferer call Error: url=" + url.getUri(), exception);
+                throw new JawsServiceException("DefaultRpcReference call Error: url=" + url.getUri(), exception);
             }
         }
 

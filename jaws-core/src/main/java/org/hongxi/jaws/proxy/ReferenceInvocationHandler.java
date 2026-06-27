@@ -7,7 +7,7 @@ import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.common.util.RequestIdGenerator;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
-import org.hongxi.jaws.rpc.Referer;
+import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.ResponseFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,11 +19,11 @@ import java.util.List;
 /**
  * Created by shenhongxi on 2021/4/23.
  */
-public class RefererInvocationHandler<T> extends AbstractRefererHandler<T> implements InvocationHandler {
+public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> implements InvocationHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(RefererInvocationHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(ReferenceInvocationHandler.class);
 
-    public RefererInvocationHandler(Class<T> clazz, List<Cluster<T>> clusters) {
+    public ReferenceInvocationHandler(Class<T> clazz, List<Cluster<T>> clusters) {
         this.clazz = clazz;
         this.clusters = clusters;
         init();
@@ -83,9 +83,9 @@ public class RefererInvocationHandler<T> extends AbstractRefererHandler<T> imple
         StringBuilder sb = new StringBuilder();
         for (Cluster<T> cluster : clusters) {
             sb.append("{protocol:").append(cluster.getUrl().getProtocol());
-            List<Referer<T>> referers = cluster.getReferers();
-            if (referers != null) {
-                for (Referer<T> refer : referers) {
+            List<Reference<T>> references = cluster.getReferences();
+            if (references != null) {
+                for (Reference<T> refer : references) {
                     sb.append("[").append(refer.getUrl().toSimpleString()).append(", available:").append(refer.isAvailable()).append("]");
                 }
             }
@@ -111,7 +111,7 @@ public class RefererInvocationHandler<T> extends AbstractRefererHandler<T> imple
                 Method m = clazz.getMethod(methodName, method.getParameterTypes());
                 return m.getReturnType();
             } catch (Exception e) {
-                log.warn("RefererInvocationHandler get real return type fail.", e);
+                log.warn("ReferenceInvocationHandler get real return type fail.", e);
                 return method.getReturnType();
             }
         } else {

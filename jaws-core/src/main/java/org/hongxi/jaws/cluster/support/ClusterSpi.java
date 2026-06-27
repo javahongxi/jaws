@@ -27,7 +27,7 @@ public class ClusterSpi<T> implements Cluster<T> {
 
     private LoadBalance<T> loadBalance;
 
-    private List<Referer<T>> referers;
+    private List<Reference<T>> references;
 
     private AtomicBoolean available = new AtomicBoolean(false);
 
@@ -35,17 +35,17 @@ public class ClusterSpi<T> implements Cluster<T> {
 
     @Override
     public void init() {
-        onRefresh(referers);
+        onRefresh(references);
         available.set(true);
     }
 
     @Override
     public Class<T> getInterface() {
-        if (referers == null || referers.isEmpty()) {
+        if (references == null || references.isEmpty()) {
             return null;
         }
 
-        return referers.get(0).getInterface();
+        return references.get(0).getInterface();
     }
 
     @Override
@@ -69,10 +69,10 @@ public class ClusterSpi<T> implements Cluster<T> {
     @Override
     public void destroy() {
         available.set(false);
-        List<Referer<T>> referers = this.referers;
-        if (referers != null) {
-            for (Referer<T> referer : referers) {
-                referer.destroy();
+        List<Reference<T>> references = this.references;
+        if (references != null) {
+            for (Reference<T> reference : references) {
+                reference.destroy();
             }
         }
     }
@@ -95,37 +95,37 @@ public class ClusterSpi<T> implements Cluster<T> {
     @Override
     public String toString() {
         return "cluster: {" + "ha=" + haStrategy + ",loadbalance=" + loadBalance +
-                "referers=" + referers + "}";
+                "references=" + references + "}";
 
     }
 
     @Override
-    public synchronized void onRefresh(List<Referer<T>> referers) {
-        if (CollectionUtils.isEmpty(referers)) {
+    public synchronized void onRefresh(List<Reference<T>> references) {
+        if (CollectionUtils.isEmpty(references)) {
             return;
         }
 
-        loadBalance.onRefresh(referers);
-        List<Referer<T>> oldReferers = this.referers;
-        this.referers = referers;
+        loadBalance.onRefresh(references);
+        List<Reference<T>> oldReferences = this.references;
+        this.references = references;
         haStrategy.setUrl(getUrl());
 
-        if (oldReferers == null || oldReferers.isEmpty()) {
+        if (oldReferences == null || oldReferences.isEmpty()) {
             return;
         }
 
-        List<Referer<T>> delayDestroyReferers = new ArrayList<Referer<T>>();
+        List<Reference<T>> delayDestroyReferences = new ArrayList<Reference<T>>();
 
-        for (Referer<T> referer : oldReferers) {
-            if (referers.contains(referer)) {
+        for (Reference<T> reference : oldReferences) {
+            if (references.contains(reference)) {
                 continue;
             }
 
-            delayDestroyReferers.add(referer);
+            delayDestroyReferences.add(reference);
         }
 
-        if (!delayDestroyReferers.isEmpty()) {
-            RefererSupport.delayDestroy(delayDestroyReferers);
+        if (!delayDestroyReferences.isEmpty()) {
+            ReferenceSupport.delayDestroy(delayDestroyReferences);
         }
     }
 
@@ -157,8 +157,8 @@ public class ClusterSpi<T> implements Cluster<T> {
     }
 
     @Override
-    public List<Referer<T>> getReferers() {
-        return referers;
+    public List<Reference<T>> getReferences() {
+        return references;
     }
 
     protected Response callFalse(Request request, Exception cause) {

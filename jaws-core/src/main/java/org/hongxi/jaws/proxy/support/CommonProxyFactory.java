@@ -3,7 +3,7 @@ package org.hongxi.jaws.proxy.support;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.proxy.ProxyFactory;
-import org.hongxi.jaws.proxy.RefererCommonHandler;
+import org.hongxi.jaws.proxy.ReferenceCommonHandler;
 
 import java.util.List;
 
@@ -18,6 +18,6 @@ public class CommonProxyFactory implements ProxyFactory {
     @Override
     @SuppressWarnings("unchecked")
     public <T> T getProxy(Class<T> clazz, List<Cluster<T>> clusters) {
-        return (T) new RefererCommonHandler<>(clusters.get(0).getUrl().getPath(), clusters);
+        return (T) new ReferenceCommonHandler<>(clusters.get(0).getUrl().getPath(), clusters);
     }
 }

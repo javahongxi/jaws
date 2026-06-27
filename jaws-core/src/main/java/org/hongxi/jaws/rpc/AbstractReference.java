@@ -8,19 +8,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Created by shenhongxi on 2021/4/21.
  */
-public abstract class AbstractReferer<T> extends AbstractNode implements Referer<T> {
+public abstract class AbstractReference<T> extends AbstractNode implements Reference<T> {
 
     protected Class<T> clazz;
-    protected AtomicInteger activeRefererCount = new AtomicInteger(0);
+    protected AtomicInteger activeReferenceCount = new AtomicInteger(0);
     protected URL serviceUrl;
 
-    public AbstractReferer(Class<T> clazz, URL url) {
+    public AbstractReference(Class<T> clazz, URL url) {
         super(url);
         this.clazz = clazz;
         this.serviceUrl = url;
     }
 
-    public AbstractReferer(Class<T> clazz, URL url, URL serviceUrl) {
+    public AbstractReference(Class<T> clazz, URL url, URL serviceUrl) {
         super(url);
         this.clazz = clazz;
         this.serviceUrl = serviceUrl;
@@ -50,16 +50,16 @@ public abstract class AbstractReferer<T> extends AbstractNode implements Referer
     }
 
     @Override
-    public int activeRefererCount() {
-        return activeRefererCount.get();
+    public int activeReferenceCount() {
+        return activeReferenceCount.get();
     }
 
     protected void incrActiveCount(Request request) {
-        activeRefererCount.incrementAndGet();
+        activeReferenceCount.incrementAndGet();
     }
 
     protected void decrActiveCount(Request request, Response response) {
-        activeRefererCount.decrementAndGet();
+        activeReferenceCount.decrementAndGet();
     }
 
     protected abstract Response doCall(Request request);

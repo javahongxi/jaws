@@ -17,7 +17,7 @@ import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
 import org.hongxi.jaws.rpc.Protocol;
-import org.hongxi.jaws.rpc.Referer;
+import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +26,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 /**
- * Notify cluster the referers have changed.
+ * Notify cluster the references have changed.
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
@@ -42,7 +42,7 @@ public class ClusterSupport<T> implements NotifyListener {
     static {
         executorService.scheduleAtFixedRate(() -> {
             for (ClusterSupport<?> clusterSupport : refreshSet) {
-                clusterSupport.refreshReferers();
+                clusterSupport.refreshReferences();
             }
         }, JawsConstants.REFRESH_PERIOD, JawsConstants.REFRESH_PERIOD, TimeUnit.SECONDS);
 
@@ -58,7 +58,7 @@ public class ClusterSupport<T> implements NotifyListener {
     private URL url;
     private Class<T> interfaceClass;
     private Protocol protocol;
-    private ConcurrentHashMap<URL, List<Referer<T>>> registryReferers = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<URL, List<Reference<T>>> registryReferences = new ConcurrentHashMap<>();
     private int selectNodeCount;
     private ConcurrentHashMap<URL, Map<String, GroupUrlsSelector>> registryGroupUrlsSelectorMap = new ConcurrentHashMap<>();
 
@@ -96,15 +96,15 @@ public class ClusterSupport<T> implements NotifyListener {
         }
 
         boolean check = Boolean.parseBoolean(url.getParameter(URLParamType.check.getName(), URLParamType.check.value()));
-        if (!CollectionUtils.isEmpty(cluster.getReferers()) || !check) {
+        if (!CollectionUtils.isEmpty(cluster.getReferences()) || !check) {
             cluster.init();
 
-            if (CollectionUtils.isEmpty(cluster.getReferers()) && !check) {
+            if (CollectionUtils.isEmpty(cluster.getReferences()) && !check) {
                 log.warn("refer {} no services", this.url.getPath() + "/" + this.url.getVersion());
             }
             log.info("cluster init cost {}, refer size: {}, cluster: {}",
                     System.currentTimeMillis() - start,
-                    cluster.getReferers() == null ? 0 : cluster.getReferers().size(),
+                    cluster.getReferences() == null ? 0 : cluster.getReferences().size(),
                     cluster.getUrl().toSimpleString());
             return;
         }
@@ -119,7 +119,7 @@ public class ClusterSupport<T> implements NotifyListener {
             try {
                 Registry registry = getRegistry(ru);
                 registry.unsubscribe(subscribeUrl, this);
-                if (!JawsConstants.NODE_TYPE_REFERER.equals(url.getParameter(URLParamType.nodeType.getName()))) {
+                if (!JawsConstants.NODE_TYPE_REFERENCE.equals(url.getParameter(URLParamType.nodeType.getName()))) {
                     registry.unregister(url);
                 }
             } catch (Exception e) {
@@ -148,8 +148,8 @@ public class ClusterSupport<T> implements NotifyListener {
     /**
      * <pre>
      * 1 notify的执行需要串行
-     * 2 notify通知都是全量通知，在设入新的referer后，cluster需要把不再使用的referer进行回收，避免资源泄漏;
-     * 3 如果该registry对应的referer数量为0，而没有其他可用的referers，那就忽略该次通知；
+     * 2 notify通知都是全量通知，在设入新的reference后，cluster需要把不再使用的reference进行回收，避免资源泄漏;
+     * 3 如果该registry对应的reference数量为0，而没有其他可用的references，那就忽略该次通知；
      * 4 此处对protoco进行decorator处理，当前为增加filters
      * </pre>
      */
@@ -165,7 +165,7 @@ public class ClusterSupport<T> implements NotifyListener {
         log.info("ClusterSupport config change notify: registry={} service={} urls={}", registryUrl.getUri(), url.getIdentity(),
                 getIdentities(urls));
 
-        // 通知都是全量通知，在设入新的referer后，cluster内部需要把不再使用的referer进行回收，避免资源泄漏
+        // 通知都是全量通知，在设入新的reference后，cluster内部需要把不再使用的reference进行回收，避免资源泄漏
         // ////////////////////////////////////////////////////////////////////////////////
 
         // 判断urls中是否包含权重信息，并通知 LoadBalance
@@ -178,34 +178,34 @@ public class ClusterSupport<T> implements NotifyListener {
         } else {
             refreshSet.remove(this);
         }
-        doRefreshReferersByUrls(registryUrl, serviceUrls);
+        doRefreshReferencesByUrls(registryUrl, serviceUrls);
     }
 
-    private void doRefreshReferersByUrls(URL registryUrl, List<URL> serviceUrls) {
-        List<Referer<T>> newReferers = new ArrayList<>();
+    private void doRefreshReferencesByUrls(URL registryUrl, List<URL> serviceUrls) {
+        List<Reference<T>> newReferences = new ArrayList<>();
         for (URL u : serviceUrls) {
             if (!u.canServe(url)) {
                 continue;
             }
-            Referer<T> referer = getExistingReferer(u, registryReferers.get(registryUrl));
-            if (referer == null) {
-                // careful u: serverURL, refererURL的配置会被serverURL的配置覆盖
-                URL refererURL = u.createCopy();
-                mergeClientConfigs(refererURL);
-                referer = protocol.refer(interfaceClass, refererURL, u);
+            Reference<T> reference = getExistingReference(u, registryReferences.get(registryUrl));
+            if (reference == null) {
+                // careful u: serverURL, referenceURL的配置会被serverURL的配置覆盖
+                URL referenceURL = u.createCopy();
+                mergeClientConfigs(referenceURL);
+                reference = protocol.refer(interfaceClass, referenceURL, u);
             }
-            if (referer != null) {
-                newReferers.add(referer);
+            if (reference != null) {
+                newReferences.add(reference);
             }
         }
 
-        if (CollectionUtils.isEmpty(newReferers)) {
+        if (CollectionUtils.isEmpty(newReferences)) {
             onRegistryEmpty(registryUrl);
             return;
         }
 
-        // 此处不销毁referers，由cluster进行销毁
-        registryReferers.put(registryUrl, newReferers);
+        // 此处不销毁references，由cluster进行销毁
+        registryReferences.put(registryUrl, newReferences);
         refreshCluster();
     }
 
@@ -256,19 +256,19 @@ public class ClusterSupport<T> implements NotifyListener {
         return result;
     }
 
-    protected void refreshReferers() {
-        for (Map.Entry<URL, List<Referer<T>>> entry : registryReferers.entrySet()) {
+    protected void refreshReferences() {
+        for (Map.Entry<URL, List<Reference<T>>> entry : registryReferences.entrySet()) {
             URL registryUrl = entry.getKey();
-            log.info("ClusterSupport refreshReferers: registry={} service={}", registryUrl.getUri(), url.getIdentity());
+            log.info("ClusterSupport refreshReferences: registry={} service={}", registryUrl.getUri(), url.getIdentity());
             Map<String, GroupUrlsSelector> groupSelectorMap = registryGroupUrlsSelectorMap.get(registryUrl);
             if (groupSelectorMap == null || groupSelectorMap.isEmpty()) {
-                log.warn("ClusterSupport refreshReferers, groupSelectorMap is empty: registry={} service={}", registryUrl.getUri(), url.getIdentity());
+                log.warn("ClusterSupport refreshReferences, groupSelectorMap is empty: registry={} service={}", registryUrl.getUri(), url.getIdentity());
                 continue;
             }
             Map<String, Integer> groupAvailableCounter = new HashMap<>(groupSelectorMap.size());
-            for (Referer<T> referer : entry.getValue()) {
-                String group = referer.getServiceUrl().getGroup();
-                if (referer.isAvailable()) {
+            for (Reference<T> reference : entry.getValue()) {
+                String group = reference.getServiceUrl().getGroup();
+                if (reference.isAvailable()) {
                     groupAvailableCounter.put(group, groupAvailableCounter.getOrDefault(group, 0) + 1);
                 }
             }
@@ -280,13 +280,13 @@ public class ClusterSupport<T> implements NotifyListener {
 
                 GroupUrlsSelector selector = groupSelectorMap.get(group);
                 if (selector == null) {
-                    log.warn("ClusterSupport refreshReferers ,urls selector is null: registry={} service={} group={}", registryUrl.getUri(), url.getIdentity(), group);
+                    log.warn("ClusterSupport refreshReferences ,urls selector is null: registry={} service={} group={}", registryUrl.getUri(), url.getIdentity(), group);
                     continue;
                 }
                 int selectSize = selector.getSelectSize();
 
                 int newSize = selectSize;
-                // 将有效referer的数量保持在一个范围内, 如果小于selectNodeCount的2/3或大于selectNodeCount的4/3
+                // 将有效reference的数量保持在一个范围内, 如果小于selectNodeCount的2/3或大于selectNodeCount的4/3
                 // 则试图将可用数量恢复成selectNodeCount个
                 if (available <= 1.0 * selectNodeCount * 2 / 3 && selector.getBaseUrlsSize() > selectSize) {
                     newSize = Math.min(selectSize + (selectNodeCount - available), selector.getBaseUrlsSize());
@@ -296,12 +296,12 @@ public class ClusterSupport<T> implements NotifyListener {
                 if (newSize != selectSize) {
                     needRefresh = true;
                     selector.setSelectSize(newSize);
-                    log.info("ClusterSupport refreshReferers selectSize changed: registry={} service={} group={} newSize={} oldSize={}", registryUrl.getUri(), url.getIdentity(), group, newSize, selectSize);
+                    log.info("ClusterSupport refreshReferences selectSize changed: registry={} service={} group={} newSize={} oldSize={}", registryUrl.getUri(), url.getIdentity(), group, newSize, selectSize);
                 }
             }
             if (needRefresh) {
                 List<URL> urls = doSelectUrls(registryUrl);
-                doRefreshReferersByUrls(registryUrl, urls);
+                doRefreshReferencesByUrls(registryUrl, urls);
             }
         }
     }
@@ -326,12 +326,12 @@ public class ClusterSupport<T> implements NotifyListener {
     }
 
     private void onRegistryEmpty(URL excludeRegistryUrl) {
-        boolean noMoreOtherRefers = registryReferers.size() == 1 && registryReferers.containsKey(excludeRegistryUrl);
+        boolean noMoreOtherRefers = registryReferences.size() == 1 && registryReferences.containsKey(excludeRegistryUrl);
         if (noMoreOtherRefers) {
-            log.warn(String.format("Ignore notify for no more referers in this cluster, registry: %s, cluster=%s",
+            log.warn(String.format("Ignore notify for no more references in this cluster, registry: %s, cluster=%s",
                     excludeRegistryUrl, getUrl()));
         } else {
-            registryReferers.remove(excludeRegistryUrl);
+            registryReferences.remove(excludeRegistryUrl);
             refreshCluster();
         }
     }
@@ -346,11 +346,11 @@ public class ClusterSupport<T> implements NotifyListener {
         return decorateProtocol;
     }
 
-    private Referer<T> getExistingReferer(URL url, List<Referer<T>> referers) {
-        if (referers == null) {
+    private Reference<T> getExistingReference(URL url, List<Reference<T>> references) {
+        if (references == null) {
             return null;
         }
-        for (Referer<T> r : referers) {
+        for (Reference<T> r : references) {
             if (Objects.equals(url, r.getUrl()) || Objects.equals(url, r.getServiceUrl())) {
                 return r;
             }
@@ -359,25 +359,25 @@ public class ClusterSupport<T> implements NotifyListener {
     }
 
     /**
-     * refererURL的扩展参数中，除了application、module外，其他参数被client覆盖， 如果client没有则使用referer的参数
+     * referenceURL的扩展参数中，除了application、module外，其他参数被client覆盖， 如果client没有则使用reference的参数
      *
-     * @param refererURL
+     * @param referenceURL
      */
-    private void mergeClientConfigs(URL refererURL) {
-        String application = refererURL.getParameter(URLParamType.application.getName(), URLParamType.application.value());
-        String module = refererURL.getParameter(URLParamType.module.getName(), URLParamType.module.value());
-        refererURL.addParameters(this.url.getParameters());
+    private void mergeClientConfigs(URL referenceURL) {
+        String application = referenceURL.getParameter(URLParamType.application.getName(), URLParamType.application.value());
+        String module = referenceURL.getParameter(URLParamType.module.getName(), URLParamType.module.value());
+        referenceURL.addParameters(this.url.getParameters());
 
-        refererURL.addParameter(URLParamType.application.getName(), application);
-        refererURL.addParameter(URLParamType.module.getName(), module);
+        referenceURL.addParameter(URLParamType.application.getName(), application);
+        referenceURL.addParameter(URLParamType.module.getName(), module);
     }
 
     private void refreshCluster() {
-        List<Referer<T>> referers = new ArrayList<>();
-        for (List<Referer<T>> refs : registryReferers.values()) {
-            referers.addAll(refs);
+        List<Reference<T>> references = new ArrayList<>();
+        for (List<Reference<T>> refs : registryReferences.values()) {
+            references.addAll(refs);
         }
-        cluster.onRefresh(referers);
+        cluster.onRefresh(references);
     }
 
     public Cluster<T> getCluster() {

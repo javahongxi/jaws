@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
  * JVM 节点内部的调用
  *
  * <pre>
- * 		1) provider 和 referer 相对应
+ * 		1) provider 和 reference 相对应
  * 		2) provider 需要在被consumer refer 之前需要 export
  * </pre>
  * <p>
@@ -31,8 +31,8 @@ public class InjvmProtocol extends AbstractProtocol {
     }
 
     @Override
-    protected <T> Referer<T> createReferer(Class<T> clazz, URL url, URL serviceUrl) {
-        return new InjvmReferer<T>(clazz, url, serviceUrl);
+    protected <T> Reference<T> createReference(Class<T> clazz, URL url, URL serviceUrl) {
+        return new InjvmReference<T>(clazz, url, serviceUrl);
     }
 
     /**
@@ -74,17 +74,17 @@ public class InjvmProtocol extends AbstractProtocol {
      *
      * @param <T>
      */
-    class InjvmReferer<T> extends AbstractReferer<T> {
+    class InjvmReference<T> extends AbstractReference<T> {
         private Exporter<T> exporter;
 
-        public InjvmReferer(Class<T> clazz, URL url, URL serviceUrl) {
+        public InjvmReference(Class<T> clazz, URL url, URL serviceUrl) {
             super(clazz, url, serviceUrl);
         }
 
         @Override
         protected Response doCall(Request request) {
             if (exporter == null) {
-                throw new JawsServiceException("InjvmReferer call Error: provider not exist, url=" + url.getUri(),
+                throw new JawsServiceException("InjvmReference call Error: provider not exist, url=" + url.getUri(),
                         JawsErrorMsgConstants.SERVICE_NOT_FOUND);
             }
 
@@ -99,7 +99,7 @@ public class InjvmProtocol extends AbstractProtocol {
             exporter = (Exporter<T>) exporterMap.get(protocolKey);
 
             if (exporter == null) {
-                log.error("InjvmReferer init Error: provider not exist, url={}", url);
+                log.error("InjvmReference init Error: provider not exist, url={}", url);
                 return false;
             }
 

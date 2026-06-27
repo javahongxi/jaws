@@ -226,7 +226,7 @@ public class URL {
     }
 
     /**
-     * 返回一个service or referer的identity,如果两个url的identity相同，则表示相同的一个service或者referer
+     * 返回一个service or reference的identity,如果两个url的identity相同，则表示相同的一个service或者reference
      *
      * @return
      */

@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Created by shenhongxi on 2021/4/23.
  */
-public class RefererConfig<T> extends AbstractRefererConfig {
+public class ReferenceConfig<T> extends AbstractReferenceConfig {
 
     private static final long serialVersionUID = -2299754608229467887L;
     // 具体到方法的配置
@@ -33,7 +33,7 @@ public class RefererConfig<T> extends AbstractRefererConfig {
     private String directUrl;
     private AtomicBoolean initialized = new AtomicBoolean(false);
     private T ref;
-    private BasicRefererInterfaceConfig basicReferer;
+    private BasicReferenceInterfaceConfig basicReference;
     private List<ClusterSupport<T>> clusterSupports;
 
     public String getServiceInterface() {
@@ -76,12 +76,12 @@ public class RefererConfig<T> extends AbstractRefererConfig {
         try {
             interfaceClass = (Class<T>) Class.forName(interfaceClass.getName(), true, Thread.currentThread().getContextClassLoader());
         } catch (ClassNotFoundException e) {
-            throw new JawsFrameworkException("RefererConfig initRef Error: Class not found " + interfaceClass.getName(), e,
+            throw new JawsFrameworkException("ReferenceConfig initRef Error: Class not found " + interfaceClass.getName(), e,
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
 
         if (CollectionUtils.isEmpty(protocols)) {
-            throw new JawsFrameworkException(String.format("%s RefererConfig is malformed, for protocol not set correctly!",
+            throw new JawsFrameworkException(String.format("%s ReferenceConfig is malformed, for protocol not set correctly!",
                     interfaceClass.getName()));
         }
 
@@ -97,11 +97,11 @@ public class RefererConfig<T> extends AbstractRefererConfig {
         String localIp = getLocalHostAddress();
         for (ProtocolConfig protocol : protocols) {
             Map<String, String> params = new HashMap<>();
-            params.put(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_REFERER);
+            params.put(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_REFERENCE);
             params.put(URLParamType.version.getName(), URLParamType.version.value());
             params.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
-            collectConfigParams(params, protocol, basicReferer, this);
+            collectConfigParams(params, protocol, basicReference, this);
             collectMethodConfigParams(params, this.getMethods());
 
             String path = StringUtils.isBlank(serviceInterface) ? interfaceClass.getName() : serviceInterface;
@@ -195,12 +195,12 @@ public class RefererConfig<T> extends AbstractRefererConfig {
     }
 
     @ConfigDesc(excluded = true)
-    public BasicRefererInterfaceConfig getBasicReferer() {
-        return basicReferer;
+    public BasicReferenceInterfaceConfig getBasicReference() {
+        return basicReference;
     }
 
-    public void setBasicReferer(BasicRefererInterfaceConfig basicReferer) {
-        this.basicReferer = basicReferer;
+    public void setBasicReference(BasicReferenceInterfaceConfig basicReference) {
+        this.basicReference = basicReference;
     }
 
     public List<ClusterSupport<T>> getClusterSupports() {

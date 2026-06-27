@@ -55,7 +55,7 @@ public class AccessLogFilter implements Filter {
 
     private void logAccess(Caller<?> caller, Request request, long consumeTime, boolean success) {
         if (getSide() == null) {
-            String side = caller instanceof Provider ? JawsConstants.NODE_TYPE_SERVICE : JawsConstants.NODE_TYPE_REFERER;
+            String side = caller instanceof Provider ? JawsConstants.NODE_TYPE_SERVICE : JawsConstants.NODE_TYPE_REFERENCE;
             setSide(side);
         }
 
@@ -67,8 +67,8 @@ public class AccessLogFilter implements Filter {
         append(builder, request.getInterfaceName());
         append(builder, request.getMethodName());
         append(builder, request.getParametersDesc());
-        // 对于client，url中的remote ip, application, module,referer 和 service获取的地方不同
-        if (JawsConstants.NODE_TYPE_REFERER.equals(side)) {
+        // 对于client，url中的remote ip, application, module,reference 和 service获取的地方不同
+        if (JawsConstants.NODE_TYPE_REFERENCE.equals(side)) {
             append(builder, caller.getUrl().getHost());
             append(builder, caller.getUrl().getParameter(URLParamType.application.getName()));
             append(builder, caller.getUrl().getParameter(URLParamType.module.getName()));

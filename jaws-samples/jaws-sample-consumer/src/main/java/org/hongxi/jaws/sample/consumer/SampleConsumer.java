@@ -3,7 +3,7 @@ package org.hongxi.jaws.sample.consumer;
 import com.google.common.collect.Lists;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
-import org.hongxi.jaws.config.RefererConfig;
+import org.hongxi.jaws.config.ReferenceConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.model.Contacts;
@@ -20,18 +20,18 @@ import java.util.Map;
 public class SampleConsumer {
 
     public static void main(String[] args) throws Exception {
-        RefererConfig<DemoService> refererConfig = new RefererConfig<>();
-        refererConfig.setInterface(DemoService.class);
-        refererConfig.setApplication("sample-consumer");
-        refererConfig.setModule("sample");
-        refererConfig.setGroup("test");
-        refererConfig.setRequestTimeout(2000);
-        refererConfig.setVersion("2.0");
-        refererConfig.setCheck("false");
-        refererConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
-        refererConfig.setRegistry(createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
+        ReferenceConfig<DemoService> referenceConfig = new ReferenceConfig<>();
+        referenceConfig.setInterface(DemoService.class);
+        referenceConfig.setApplication("sample-consumer");
+        referenceConfig.setModule("sample");
+        referenceConfig.setGroup("test");
+        referenceConfig.setRequestTimeout(2000);
+        referenceConfig.setVersion("2.0");
+        referenceConfig.setCheck("false");
+        referenceConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
+        referenceConfig.setRegistry(createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
 
-        DemoService demoService = refererConfig.getRef();
+        DemoService demoService = referenceConfig.getRef();
         String r = demoService.hello("lily");
         System.out.println(r);
 

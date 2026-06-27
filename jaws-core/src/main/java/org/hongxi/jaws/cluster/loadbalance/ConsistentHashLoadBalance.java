@@ -3,7 +3,7 @@ package org.hongxi.jaws.cluster.loadbalance;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.MathUtils;
-import org.hongxi.jaws.rpc.Referer;
+import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 
 import java.util.ArrayList;
@@ -13,38 +13,38 @@ import java.util.List;
 
 /**
  *
- * Use consistent hash to choose referer
+ * Use consistent hash to choose reference
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @SpiMeta(name = "consistent")
 public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
 
-    private List<Referer<T>> consistentHashReferers;
+    private List<Reference<T>> consistentHashReferences;
 
     @Override
-    public void onRefresh(List<Referer<T>> referers) {
-        super.onRefresh(referers);
+    public void onRefresh(List<Reference<T>> references) {
+        super.onRefresh(references);
 
-        List<Referer<T>> copyReferers = new ArrayList<Referer<T>>(referers);
-        List<Referer<T>> tempRefers = new ArrayList<Referer<T>>();
+        List<Reference<T>> copyReferences = new ArrayList<Reference<T>>(references);
+        List<Reference<T>> tempRefers = new ArrayList<Reference<T>>();
         for (int i = 0; i < JawsConstants.DEFAULT_CONSISTENT_HASH_BASE_LOOP; i++) {
-            Collections.shuffle(copyReferers);
-            for (Referer<T> ref : copyReferers) {
+            Collections.shuffle(copyReferences);
+            for (Reference<T> ref : copyReferences) {
                 tempRefers.add(ref);
             }
         }
 
-        consistentHashReferers = tempRefers;
+        consistentHashReferences = tempRefers;
     }
 
     @Override
-    protected Referer<T> doSelect(Request request) {
+    protected Reference<T> doSelect(Request request) {
 
         int hash = getHash(request);
-        Referer<T> ref;
-        for (int i = 0; i < getReferers().size(); i++) {
-            ref = consistentHashReferers.get((hash + i) % consistentHashReferers.size());
+        Reference<T> ref;
+        for (int i = 0; i < getReferences().size(); i++) {
+            ref = consistentHashReferences.get((hash + i) % consistentHashReferences.size());
             if (ref.isAvailable()) {
                 return ref;
             }
@@ -53,12 +53,12 @@ public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected void doSelectToHolder(Request request, List<Referer<T>> refersHolder) {
-        List<Referer<T>> referers = getReferers();
+    protected void doSelectToHolder(Request request, List<Reference<T>> refersHolder) {
+        List<Reference<T>> references = getReferences();
 
         int hash = getHash(request);
-        for (int i = 0; i < referers.size(); i++) {
-            Referer<T> ref = consistentHashReferers.get((hash + i) % consistentHashReferers.size());
+        for (int i = 0; i < references.size(); i++) {
+            Reference<T> ref = consistentHashReferences.get((hash + i) % consistentHashReferences.size());
             if (ref.isAvailable()) {
                 refersHolder.add(ref);
             }

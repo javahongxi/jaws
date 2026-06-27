@@ -3,7 +3,7 @@ package org.hongxi.jaws.config;
 /**
  * Created by shenhongxi on 2021/4/23.
  */
-public abstract class AbstractRefererConfig extends AbstractInterfaceConfig {
+public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
 
     private static final long serialVersionUID = -8953815191278008453L;
 
