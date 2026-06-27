@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentMap;
  * Created by shenhongxi on 2020/6/25.
  */
 public class ExtensionLoader<T> {
-    private static final Logger logger = LoggerFactory.getLogger(ExtensionLoader.class);
+    private static final Logger log = LoggerFactory.getLogger(ExtensionLoader.class);
     private static final String SERVICES_DIRECTORY = "META-INF/services/";
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> extensionLoaders = new ConcurrentHashMap<>();
     private ConcurrentMap<String, Class<T>> extensionClasses;
@@ -208,13 +208,13 @@ public class ExtensionLoader<T> {
                 parseLine(type, url, line, ++lineNumber, classNames);
             }
         } catch (Exception e) {
-            logger.error("{}: Error reading spi configuration file", type.getName(), e);
+            log.error("{}: Error reading spi configuration file", type.getName(), e);
         } finally {
             try {
                 if (reader != null) reader.close();
                 if (inputStream != null) inputStream.close();
             } catch (IOException e) {
-                logger.error("{}: Error closing spi configuration file", type.getName(), e);
+                log.error("{}: Error closing spi configuration file", type.getName(), e);
             }
         }
     }
@@ -267,7 +267,7 @@ public class ExtensionLoader<T> {
                     classes.put(spiName, clazz);
                 }
             } catch (Exception e) {
-                logger.error(type.getName() + ": Error load spi class", e);
+                log.error(type.getName() + ": Error load spi class", e);
             }
         }
 

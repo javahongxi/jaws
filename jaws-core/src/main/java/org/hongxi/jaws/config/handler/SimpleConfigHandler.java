@@ -26,7 +26,7 @@ import java.util.List;
 @SpiMeta(name = JawsConstants.DEFAULT_VALUE)
 public class SimpleConfigHandler implements ConfigHandler {
 
-    private static final Logger logger = LoggerFactory.getLogger(SimpleConfigHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(SimpleConfigHandler.class);
 
     @Override
     public <T> Exporter<T> export(Class<T> interfaceClass, T ref, List<URL> registryUrls, URL serviceUrl) {
@@ -56,7 +56,7 @@ public class SimpleConfigHandler implements ConfigHandler {
                 unRegister(registryUrls, exporter.getUrl());
                 exporter.unexport();
             } catch (Exception e) {
-                logger.warn("Exception when unexport exporters: {}", exporters);
+                log.warn("Exception when unexport exporters: {}", exporters);
             }
         }
     }
@@ -96,7 +96,7 @@ public class SimpleConfigHandler implements ConfigHandler {
                 Registry registry = registryFactory.getRegistry(url);
                 registry.unregister(serviceUrl);
             } catch (Exception e) {
-                logger.warn("unregister url false: {}", url, e);
+                log.warn("unregister url false: {}", url, e);
             }
         }
     }

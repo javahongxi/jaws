@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 @ChannelHandler.Sharable
 public class NettyServerChannelManager extends ChannelInboundHandlerAdapter {
-    private static final Logger logger = LoggerFactory.getLogger(NettyServerChannelManager.class);
+    private static final Logger log = LoggerFactory.getLogger(NettyServerChannelManager.class);
 
     private ConcurrentMap<String, Channel> channels = new ConcurrentHashMap<>();
 
@@ -32,7 +32,7 @@ public class NettyServerChannelManager extends ChannelInboundHandlerAdapter {
     public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
         Channel channel = ctx.channel();
         if (channels.size() >= maxChannels) {
-            logger.warn("connected channel size out of limit: limit={} current={}", maxChannels, channels.size());
+            log.warn("connected channel size out of limit: limit={} current={}", maxChannels, channels.size());
             channel.close();
         } else {
             String channelKey = getChannelKey((InetSocketAddress) channel.localAddress(), (InetSocketAddress) channel.remoteAddress());
@@ -75,7 +75,7 @@ public class NettyServerChannelManager extends ChannelInboundHandlerAdapter {
                 try {
                     v.close();
                 } catch (Exception e) {
-                    logger.error("close channel error, {}", k, e);
+                    log.error("close channel error, {}", k, e);
                 }
             }
         });

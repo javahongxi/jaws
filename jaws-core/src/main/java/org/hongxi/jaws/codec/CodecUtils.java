@@ -18,7 +18,7 @@ import java.io.IOException;
  * Created by shenhongxi on 2020/7/25.
  */
 public class CodecUtils {
-    private static final Logger logger = LoggerFactory.getLogger(CodecUtils.class);
+    private static final Logger log = LoggerFactory.getLogger(CodecUtils.class);
 
     public static byte[] encodeObjectToBytes(Channel channel, Codec codec, Object msg) {
         try {
@@ -52,7 +52,7 @@ public class CodecUtils {
             try {
                 data = codec.encode(channel, msg);
             } catch (Exception e) {
-                logger.error("NettyEncoder encode error, identity=" + channel.getUrl().getIdentity(), e);
+                log.error("NettyEncoder encode error, identity=" + channel.getUrl().getIdentity(), e);
                 Response errorResponse = JawsFrameworkUtils.buildErrorResponse(response.getRequestId(), e);
                 data = codec.encode(channel, errorResponse);
             }

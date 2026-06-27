@@ -25,7 +25,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Created by shenhongxi on 2020/7/30.
  */
 public class NettyChannel implements Channel {
-    private static final Logger logger = LoggerFactory.getLogger(NettyChannel.class);
+    private static final Logger log = LoggerFactory.getLogger(NettyChannel.class);
 
     private volatile ChannelState state = ChannelState.UNINIT;
     private NettyClient nettyClient;
@@ -106,7 +106,7 @@ public class NettyChannel implements Channel {
     @Override
     public synchronized boolean open() {
         if (isAvailable()) {
-            logger.warn("the channel already open, local: {} remote: {} url: {}",
+            log.warn("the channel already open, local: {} remote: {} url: {}",
                     localAddress, remoteAddress, nettyClient.getUrl().getUri());
             return true;
         }
@@ -183,7 +183,7 @@ public class NettyChannel implements Channel {
                 channel.close();
             }
         } catch (Exception e) {
-            logger.error("channel close Error: {} local={}",
+            log.error("channel close Error: {} local={}",
                     nettyClient.getUrl().getUri(), localAddress, e);
         }
     }

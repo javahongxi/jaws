@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Created by shenhongxi on 2020/7/28.
  */
 public class NettyClient extends AbstractSharedPoolClient {
-    private static final Logger logger = LoggerFactory.getLogger(NettyClient.class);
+    private static final Logger log = LoggerFactory.getLogger(NettyClient.class);
 
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
     /**
@@ -89,7 +89,7 @@ public class NettyClient extends AbstractSharedPoolClient {
             channel = getChannel();
 
             if (channel == null) {
-                logger.error("borrowObject null: url={} {}", url.getUri(),
+                log.error("borrowObject null: url={} {}", url.getUri(),
                         JawsFrameworkUtils.toString(request));
                 return null;
             }
@@ -97,7 +97,7 @@ public class NettyClient extends AbstractSharedPoolClient {
             // async request
             response = channel.request(request);
         } catch (Exception e) {
-            logger.error("request Error: url={} {}, {}", url.getUri(),
+            log.error("request Error: url={} {}, {}", url.getUri(),
                     JawsFrameworkUtils.toString(request), e.getMessage());
 
             if (e instanceof JawsAbstractException jae) {
@@ -161,7 +161,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                             ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
 
                             if (responseFuture == null) {
-                                logger.warn("has response from server, but responseFuture not exist, requestId={}",
+                                log.warn("has response from server, but responseFuture not exist, requestId={}",
                                         response.getRequestId());
                                 return null;
                             }
@@ -178,7 +178,7 @@ public class NettyClient extends AbstractSharedPoolClient {
         // 初始化连接池
         initPool();
 
-        logger.info("NettyClient finished open: url={}", url);
+        log.info("NettyClient finished open: url={}", url);
 
         // 设置可用状态
         state = ChannelState.ALIVE;
@@ -199,15 +199,15 @@ public class NettyClient extends AbstractSharedPoolClient {
         try {
             cleanup();
             if (state.isUnInitState()) {
-                logger.info("NettyClient close failed: state={}, url={}", state.value(), url.getUri());
+                log.info("NettyClient close failed: state={}, url={}", state.value(), url.getUri());
                 return;
             }
 
             // 设置close状态
             state = ChannelState.CLOSE;
-            logger.info("NettyClient close Success: url={}", url.getUri());
+            log.info("NettyClient close Success: url={}", url.getUri());
         } catch (Exception e) {
-            logger.error("NettyClient close Error: url={}", url.getUri(), e);
+            log.error("NettyClient close Error: url={}", url.getUri(), e);
         }
     }
 
@@ -255,7 +255,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                 count = errorCount.longValue();
 
                 if (count >= fusingThreshold && state.isAliveState()) {
-                    logger.error("NettyClient unavailable Error: url={} {}",
+                    log.error("NettyClient unavailable Error: url={} {}",
                             url.getIdentity(), url.getServerPortStr());
                     state = ChannelState.UNALIVE;
                 }
@@ -288,7 +288,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                 // 过程中有其他并发更新errorCount的，因此这里需要进行一次判断
                 if (count < fusingThreshold) {
                     state = ChannelState.ALIVE;
-                    logger.info("NettyClient recover available: url={} {}",
+                    log.info("NettyClient recover available: url={} {}",
                             url.getIdentity(), url.getServerPortStr());
                 }
             }
@@ -338,7 +338,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                         future.cancel();
                     }
                 } catch (Exception e) {
-                    logger.error("{} clear timeout future Error: uri={} requestId={}",
+                    log.error("{} clear timeout future Error: uri={} requestId={}",
                             name, url.getUri(), entry.getKey(), e);
                 }
             }

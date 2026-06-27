@@ -43,7 +43,7 @@ import java.util.concurrent.ConcurrentMap;
  * Created by shenhongxi on 2020/7/31.
  */
 public abstract class AbstractEndpointFactory implements EndpointFactory {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractEndpointFactory.class);
+    private static final Logger log = LoggerFactory.getLogger(AbstractEndpointFactory.class);
 
     /**
      * 维持share channel 的service列表
@@ -61,13 +61,13 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
                     URLParamType.shareChannel.boolValue());
 
             if (!shareChannel) { // 独享一个端口
-                logger.info(this.getClass().getSimpleName() + " create no_share_channel server: url={}", url);
+                log.info(this.getClass().getSimpleName() + " create no_share_channel server: url={}", url);
 
                 // 如果端口已经被使用了，使用该server bind 会有异常
                 return innerCreateServer(url, messageHandler);
             }
 
-            logger.info(this.getClass().getSimpleName() + " create share_channel server: url={}", url);
+            log.info(this.getClass().getSimpleName() + " create share_channel server: url={}", url);
 
             Server server = ipPort2ServerShareChannel.get(ipPort);
 
@@ -100,7 +100,7 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
 
     @Override
     public Client createClient(URL url) {
-        logger.info(this.getClass().getSimpleName() + " create client: url={}", url);
+        log.info(this.getClass().getSimpleName() + " create client: url={}", url);
         return innerCreateClient(url);
     }
 

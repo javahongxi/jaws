@@ -20,7 +20,7 @@ import java.util.Map;
 public class AbstractConfig implements Serializable {
     private static final long serialVersionUID = 6221123514996466731L;
 
-    private static final Logger logger = LoggerFactory.getLogger(AbstractConfig.class);
+    private static final Logger log = LoggerFactory.getLogger(AbstractConfig.class);
     private static final String[] SUFFIXS = new String[]{"Config", "Bean"};
     protected String id;
 
@@ -166,13 +166,13 @@ public class AbstractConfig implements Serializable {
                         }
                     }
                 } catch (Exception e) {
-                    logger.warn(e.getMessage(), e);
+                    log.warn(e.getMessage(), e);
                 }
             }
             buf.append(" />");
             return buf.toString();
         } catch (Throwable t) { // 防御性容错
-            logger.warn(t.getMessage(), t);
+            log.warn(t.getMessage(), t);
             return super.toString();
         }
     }

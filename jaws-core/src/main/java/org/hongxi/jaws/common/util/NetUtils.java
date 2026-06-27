@@ -19,7 +19,7 @@ public class NetUtils {
 
     public static final String LOCALHOST = "127.0.0.1";
     public static final String ANYHOST = "0.0.0.0";
-    private static final Logger logger = LoggerFactory.getLogger(NetUtils.class);
+    private static final Logger log = LoggerFactory.getLogger(NetUtils.class);
     private static final Pattern LOCAL_IP_PATTERN = Pattern.compile("127(\\.\\d{1,3}){3}$");
     private static final Pattern ADDRESS_PATTERN = Pattern.compile("^\\d{1,3}(\\.\\d{1,3}){3}\\:\\d{1,5}$");
     private static final Pattern IP_PATTERN = Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3,5}$");
@@ -78,7 +78,7 @@ public class NetUtils {
                 return localAddress;
             }
         } catch (Throwable e) {
-            logger.warn("Failed to retrieve local address by hostname:" + e);
+            log.warn("Failed to retrieve local address by hostname:" + e);
         }
         return null;
     }
@@ -104,7 +104,7 @@ public class NetUtils {
                     }
                 }
             } catch (Exception e) {
-                logger.warn("Failed to retrieve local address by connecting to dest host:port({}:{}) false",
+                log.warn("Failed to retrieve local address by connecting to dest host:port({}:{}) false",
                         host, port, e);
             }
         }
@@ -126,16 +126,16 @@ public class NetUtils {
                                     return address;
                                 }
                             } catch (Throwable e) {
-                                logger.warn("Failed to retrieve ip address", e);
+                                log.warn("Failed to retrieve ip address", e);
                             }
                         }
                     } catch (Throwable e) {
-                        logger.warn("Failed to retrieve ip address", e);
+                        log.warn("Failed to retrieve ip address", e);
                     }
                 }
             }
         } catch (Throwable e) {
-            logger.warn("Failed to retrieve ip address", e);
+            log.warn("Failed to retrieve ip address", e);
         }
         return null;
     }

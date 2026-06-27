@@ -17,7 +17,7 @@ import java.net.InetSocketAddress;
  * Created by shenhongxi on 2020/7/28.
  */
 public abstract class AbstractClient implements Client {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractClient.class);
+    private static final Logger log = LoggerFactory.getLogger(AbstractClient.class);
 
     protected InetSocketAddress localAddress;
     protected InetSocketAddress remoteAddress;
@@ -32,7 +32,7 @@ public abstract class AbstractClient implements Client {
         this.codec =
                 ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
                         url.getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
-        logger.info("init netty client. url: " + url.getHost() + "-" + url.getPath() + ", use codec: " + codec.getClass().getSimpleName());
+        log.info("init netty client. url: " + url.getHost() + "-" + url.getPath() + ", use codec: " + codec.getClass().getSimpleName());
     }
 
     @Override

@@ -32,7 +32,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * Created by shenhongxi on 2020/7/7.
  */
 public class NettyChannelHandler extends ChannelDuplexHandler {
-    private static final Logger logger = LoggerFactory.getLogger(NettyChannelHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(NettyChannelHandler.class);
 
     private ThreadPoolExecutor threadPoolExecutor;
     private MessageHandler messageHandler;
@@ -61,7 +61,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                     if (nettyMsg.isRequest()) {
                         rejectMessage(ctx, nettyMsg);
                     } else {
-                        logger.warn("process thread pool is full, run in io thread, " +
+                        log.warn("process thread pool is full, run in io thread, " +
                                         "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
                                 threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
                                 threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
@@ -73,7 +73,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 processMessage(ctx, nettyMsg);
             }
         } else {
-            logger.error("messageReceived type not support: class={}", msg.getClass());
+            log.error("messageReceived type not support: class={}", msg.getClass());
             throw new JawsFrameworkException(
                     "NettyChannelHandler messageReceived type not support: class=" + msg.getClass());
         }
@@ -92,7 +92,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                     )
             );
 
-            logger.error("process thread pool is full, reject, " +
+            log.error("process thread pool is full, reject, " +
                             "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
                     threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
                     threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
@@ -109,7 +109,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         try {
             result = codec.decode(channel, remoteIp, msg.getData());
         } catch (Exception e) {
-            logger.error("NettyDecoder decode fail! requestid: {}, size: {}, ip: {}",
+            log.error("NettyDecoder decode fail! requestid: {}, size: {}, ip: {}",
                     msg.getRequestId(), msg.getData().length, remoteIp, e);
             Response response = JawsFrameworkUtils.buildErrorResponse(msg.getRequestId(), e);
             if (msg.isRequest()) {
@@ -136,7 +136,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             try {
                 result = messageHandler.handle(channel, request);
             } catch (Exception e) {
-                logger.error("processRequest fail! request: {}", JawsFrameworkUtils.toString(request), e);
+                log.error("processRequest fail! request: {}", JawsFrameworkUtils.toString(request), e);
                 result = JawsFrameworkUtils.buildErrorResponse(request,
                         new JawsServiceException("process request fail. errmsg:" + e.getMessage()));
             }
@@ -173,19 +173,19 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        logger.info("channelActive: remote={} local={}", ctx.channel().remoteAddress(), ctx.channel().localAddress());
+        log.info("channelActive: remote={} local={}", ctx.channel().remoteAddress(), ctx.channel().localAddress());
         ctx.fireChannelActive();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        logger.info("channelInactive: remote={} local={}", ctx.channel().remoteAddress(), ctx.channel().localAddress());
+        log.info("channelInactive: remote={} local={}", ctx.channel().remoteAddress(), ctx.channel().localAddress());
         ctx.fireChannelInactive();
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        logger.error("exceptionCaught: remote={} local={} event={}",
+        log.error("exceptionCaught: remote={} local={} event={}",
                 ctx.channel().remoteAddress(), ctx.channel().localAddress(), cause.getMessage(), cause);
         ctx.channel().close();
     }
@@ -197,7 +197,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             try {
                 ip = inetAddr.getAddress().getHostAddress();
             } catch (Exception e) {
-                logger.warn("get remoteIp error! default will use. msg:{}, remote:{}", e.getMessage(), remote);
+                log.warn("get remoteIp error! default will use. msg:{}, remote:{}", e.getMessage(), remote);
             }
         }
         return ip;

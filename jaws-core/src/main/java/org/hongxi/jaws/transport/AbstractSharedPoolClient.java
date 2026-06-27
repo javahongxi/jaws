@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Created by shenhongxi on 2020/7/28.
  */
 public abstract class AbstractSharedPoolClient extends AbstractClient {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractSharedPoolClient.class);
+    private static final Logger log = LoggerFactory.getLogger(AbstractSharedPoolClient.class);
 
     private static final ThreadPoolExecutor EXECUTOR = new StandardThreadPoolExecutor(1, 300, 20000,
             new DefaultThreadFactory("AbstractPoolClient-initPool-", true));
@@ -64,7 +64,7 @@ public abstract class AbstractSharedPoolClient extends AbstractClient {
             try {
                 channel.open();
             } catch (Exception e) {
-                logger.error("init pool create connect Error: url={}", url.getUri(), e);
+                log.error("init pool create connect Error: url={}", url.getUri(), e);
             }
         }
     }
@@ -84,7 +84,7 @@ public abstract class AbstractSharedPoolClient extends AbstractClient {
         }
 
         String errorMsg = this.getClass().getSimpleName() + " getChannel Error: url=" + url.getUri();
-        logger.error(errorMsg);
+        log.error(errorMsg);
         throw new JawsServiceException(errorMsg);
     }
 

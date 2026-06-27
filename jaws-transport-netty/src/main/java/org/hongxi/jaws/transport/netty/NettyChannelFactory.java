@@ -15,7 +15,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Created by shenhongxi on 2020/7/30.
  */
 public class NettyChannelFactory implements SharedObjectFactory<NettyChannel> {
-    private static final Logger logger = LoggerFactory.getLogger(NettyChannelFactory.class);
+    private static final Logger log = LoggerFactory.getLogger(NettyChannelFactory.class);
 
     private static final ExecutorService rebuildExecutorService = new StandardThreadPoolExecutor(
             5, 30, 10L, TimeUnit.SECONDS, 100,
@@ -47,11 +47,11 @@ public class NettyChannelFactory implements SharedObjectFactory<NettyChannel> {
                     } else {
                         nettyChannel.close();
                         nettyChannel.open();
-                        logger.info("rebuild channel success: {}", nettyChannel.getUrl());
+                        log.info("rebuild channel success: {}", nettyChannel.getUrl());
                     }
                 }
             } catch (Exception e) {
-                logger.error("rebuild error: {}, {}", this.toString(), nettyChannel.getUrl(), e);
+                log.error("rebuild error: {}, {}", this.toString(), nettyChannel.getUrl(), e);
             } finally {
                 lock.unlock();
             }
@@ -78,9 +78,9 @@ public class NettyChannelFactory implements SharedObjectFactory<NettyChannel> {
                 channel.getLock().lock();
                 channel.close();
                 channel.open();
-                logger.info("rebuild channel success: {}", channel.getUrl());
+                log.info("rebuild channel success: {}", channel.getUrl());
             } catch (Exception e) {
-                logger.error("rebuild error: {}, {}", this.toString(), channel.getUrl(), e);
+                log.error("rebuild error: {}, {}", this.toString(), channel.getUrl(), e);
             } finally {
                 channel.getLock().unlock();
             }

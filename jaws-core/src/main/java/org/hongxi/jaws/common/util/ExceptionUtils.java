@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
 public class ExceptionUtils {
     public static final StackTraceElement[] REMOTE_MOCK_STACK = new StackTraceElement[]{
             new StackTraceElement("remoteClass", "remoteMethod", "remoteFile", 1)};
-    private static final Logger logger = LoggerFactory.getLogger(ExceptionUtils.class);
+    private static final Logger log = LoggerFactory.getLogger(ExceptionUtils.class);
 
     /**
      * 判定是否是业务方的逻辑抛出的异常
@@ -84,7 +84,7 @@ public class ExceptionUtils {
                     default -> new JawsFrameworkException(errmsg, new JawsErrorMsg(errcode, errcode, errmsg));
                 };
             } catch (Exception e) {
-                logger.warn("build exception from msg fail. msg:{}", msg);
+                log.warn("build exception from msg fail. msg:{}", msg);
             }
         }
         return null;
@@ -100,7 +100,7 @@ public class ExceptionUtils {
             try {
                 e.setStackTrace(REMOTE_MOCK_STACK);
             } catch (Exception e1) {
-                logger.warn("replace remote exception stack fail! {}", e1.getMessage());
+                log.warn("replace remote exception stack fail! {}", e1.getMessage());
             }
         }
     }

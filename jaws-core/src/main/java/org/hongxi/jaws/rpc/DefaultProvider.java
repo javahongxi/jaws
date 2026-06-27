@@ -17,7 +17,7 @@ import java.lang.reflect.Method;
 @SpiMeta(name = "jaws")
 public class DefaultProvider<T> extends AbstractProvider<T> {
 
-    private static final Logger logger = LoggerFactory.getLogger(DefaultProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultProvider.class);
 
     protected T proxyImpl;
 
@@ -67,9 +67,9 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                 }
             }
             if (logException) {
-                logger.error("Exception caught when during method invocation. request: {}", request.toString(), e);
+                log.error("Exception caught when during method invocation. request: {}", request.toString(), e);
             } else {
-                logger.info("Exception caught when during method invocation. request: {}, exception: {}",
+                log.info("Exception caught when during method invocation. request: {}, exception: {}",
                         request.toString(), response.getException().getCause().toString());
             }
         } catch (Throwable t) {
@@ -80,7 +80,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                 response.setException(new JawsServiceException("provider has encountered a fatal error!", t));
             }
             //对于Throwable,也记录日志
-            logger.error("Exception caught when during method invocation. request:{}", request, t);
+            log.error("Exception caught when during method invocation. request:{}", request, t);
         }
 
         if (response.getException() != null) {

@@ -21,7 +21,7 @@ import java.util.List;
  * Created by shenhongxi on 2020/7/6.
  */
 public class NettyDecoder extends ByteToMessageDecoder {
-    private static final Logger logger = LoggerFactory.getLogger(NettyDecoder.class);
+    private static final Logger log = LoggerFactory.getLogger(NettyDecoder.class);
 
     private Codec codec;
     private Channel channel;
@@ -75,7 +75,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
     private void checkMaxContent(int dataLength, ChannelHandlerContext ctx, ByteBuf byteBuf, boolean isRequest, long requestId) throws Exception {
         if (maxContentLength > 0 && dataLength > maxContentLength) {
-            logger.warn("transport data content length over of limit, size: {}  > {}. remote={} local={}",
+            log.warn("transport data content length over of limit, size: {}  > {}. remote={} local={}",
                     dataLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
             // skip all readable Bytes in order to release this no-readable bytebuf in super.channelRead()
             // that avoid this.decode() being invoked again after channel.close()

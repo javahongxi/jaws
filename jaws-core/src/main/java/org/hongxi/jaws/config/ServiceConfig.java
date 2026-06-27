@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ServiceConfig<T> extends AbstractServiceConfig {
 
     private static final long serialVersionUID = -3342374271064293224L;
-    private static final Logger logger = LoggerFactory.getLogger(ServiceConfig.class);
+    private static final Logger log = LoggerFactory.getLogger(ServiceConfig.class);
 
     private static final ConcurrentHashSet<String> existingServices = new ConcurrentHashSet<>();
     // 具体到方法的配置
@@ -91,7 +91,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
 
     public synchronized void export() {
         if (exported.get()) {
-            logger.warn("{} has already been exported, so ignore the export request!", interfaceClass.getName());
+            log.warn("{} has already been exported, so ignore the export request!", interfaceClass.getName());
             return;
         }
 
@@ -155,7 +155,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
         URL serviceUrl = new URL(protocolName, hostAddress, port, interfaceClass.getName(), map);
 
         if (serviceExists(serviceUrl)) {
-            logger.warn("{} configService is malformed, for same service ({}) already exists ",
+            log.warn("{} configService is malformed, for same service ({}) already exists ",
                     interfaceClass.getName(), serviceUrl.getIdentity());
             throw new JawsFrameworkException(String.format("%s configService is malformed, for same service (%s) already exists ",
                     interfaceClass.getName(), serviceUrl.getIdentity()), JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);

@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Created by shenhongxi on 2020/6/27.
  */
 public class NettyServer extends AbstractServer {
-    private static final Logger logger = LoggerFactory.getLogger(NettyServer.class);
+    private static final Logger log = LoggerFactory.getLogger(NettyServer.class);
 
     protected NettyServerChannelManager channelManager;
     private EventLoopGroup bossGroup;
@@ -61,7 +61,7 @@ public class NettyServer extends AbstractServer {
     @Override
     public boolean open() {
         if (isAvailable()) {
-            logger.warn("server channel already open, url={}", url);
+            log.warn("server channel already open, url={}", url);
             return state.isAliveState();
         }
 
@@ -70,7 +70,7 @@ public class NettyServer extends AbstractServer {
             workerGroup = new NioEventLoopGroup();
         }
 
-        logger.info("server channel start open, url={}", url);
+        log.info("server channel start open, url={}", url);
         boolean shareChannel = url.getBooleanParameter(
                 URLParamType.shareChannel.getName(), URLParamType.shareChannel.boolValue());
         int maxContentLength = url.getIntParameter(
@@ -121,7 +121,7 @@ public class NettyServer extends AbstractServer {
         channelFuture.syncUninterruptibly();
         serverChannel = channelFuture.channel();
         state = ChannelState.ALIVE;
-        logger.info("server channel finished open: url={}", url);
+        log.info("server channel finished open: url={}", url);
         return state.isAliveState();
     }
 
@@ -137,14 +137,14 @@ public class NettyServer extends AbstractServer {
         try {
             cleanup();
             if (state.isUnInitState()) {
-                logger.info("Server close failed, state={}, uri={}", state.value(), url.getUri());
+                log.info("Server close failed, state={}, uri={}", state.value(), url.getUri());
                 return;
             }
 
             state = ChannelState.CLOSE;
-            logger.info("Server close success, uri={}", url.getUri());
+            log.info("Server close success, uri={}", url.getUri());
         } catch (Exception e) {
-            logger.error("Server close error, uri={}", url.getUri(), e);
+            log.error("Server close error, uri={}", url.getUri(), e);
         }
     }
 

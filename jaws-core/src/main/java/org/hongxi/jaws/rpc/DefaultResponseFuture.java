@@ -13,7 +13,7 @@ import java.util.*;
  * Created by shenhongxi on 2020/8/23.
  */
 public class DefaultResponseFuture implements ResponseFuture {
-    private static final Logger logger = LoggerFactory.getLogger(DefaultResponseFuture.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultResponseFuture.class);
 
     protected final Object lock = new Object();
     protected volatile FutureState state = FutureState.DOING;
@@ -220,7 +220,7 @@ public class DefaultResponseFuture implements ResponseFuture {
         try {
             listener.operationComplete(this);
         } catch (Throwable t) {
-            logger.error(this.getClass().getName() + " notifyListener Error: " + listener.getClass().getSimpleName(), t);
+            log.error(this.getClass().getName() + " notifyListener Error: " + listener.getClass().getSimpleName(), t);
         }
     }
 

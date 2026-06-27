@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class DefaultResponse implements Response, Callbackable, Serializable {
     private static final long serialVersionUID = -46598719225168485L;
 
-    private static final Logger logger = LoggerFactory.getLogger(DefaultResponse.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultResponse.class);
 
     private Object value;
     private Exception exception;
@@ -148,7 +148,7 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
                 try {
                     executor.execute(runnable);
                 } catch (Exception e) {
-                    logger.error("Callbackable response exec callback task error", e);
+                    log.error("Callbackable response exec callback task error", e);
                 }
             }
         }
