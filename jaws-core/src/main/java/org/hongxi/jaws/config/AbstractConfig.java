@@ -8,6 +8,7 @@ import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -18,6 +19,7 @@ import java.util.Map;
  * Created by shenhongxi on 2021/3/5.
  */
 public class AbstractConfig implements Serializable {
+    @Serial
     private static final long serialVersionUID = 6221123514996466731L;
 
     private static final Logger log = LoggerFactory.getLogger(AbstractConfig.class);

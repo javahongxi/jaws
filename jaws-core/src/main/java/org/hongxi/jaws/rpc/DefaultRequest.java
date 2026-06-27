@@ -1,5 +1,6 @@
 package org.hongxi.jaws.rpc;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
@@ -9,6 +10,7 @@ import java.util.Map;
  * Created by shenhongxi on 2020/7/28.
  */
 public class DefaultRequest implements Request, Serializable {
+    @Serial
     private static final long serialVersionUID = -6525078483477733530L;
 
     private String interfaceName;
