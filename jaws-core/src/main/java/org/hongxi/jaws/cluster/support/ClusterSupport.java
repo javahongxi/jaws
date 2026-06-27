@@ -404,6 +404,7 @@ public class ClusterSupport<T> implements NotifyListener {
         return builder.toString();
     }
 
+    @SuppressWarnings("unchecked")
     private void prepareCluster() {
         String clusterName = url.getParameter(URLParamType.cluster.getName(), URLParamType.cluster.value());
         String loadbalanceName = url.getParameter(URLParamType.loadbalance.getName(), URLParamType.loadbalance.value());

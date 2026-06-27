@@ -40,6 +40,7 @@ public class ExtensionLoader<T> {
         this.classLoader = classLoader;
     }
 
+    @SuppressWarnings("unchecked")
     public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
         checkInterfaceType(type);
 
@@ -59,6 +60,7 @@ public class ExtensionLoader<T> {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private static synchronized <T> ExtensionLoader<T> initExtensionLoader(Class<T> type) {
         ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
         if (loader == null) {
@@ -247,6 +249,7 @@ public class ExtensionLoader<T> {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private ConcurrentMap<String, Class<T>> loadClasses(List<String> classNames) {
         ConcurrentMap<String, Class<T>> classes = new ConcurrentHashMap<>();
         for (String className : classNames) {

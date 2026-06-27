@@ -67,13 +67,14 @@ public class RefererConfig<T> extends AbstractRefererConfig {
         return ref;
     }
 
+    @SuppressWarnings("unchecked")
     public synchronized void initRef() {
         if (initialized.get()) {
             return;
         }
 
         try {
-            interfaceClass = (Class) Class.forName(interfaceClass.getName(), true, Thread.currentThread().getContextClassLoader());
+            interfaceClass = (Class<T>) Class.forName(interfaceClass.getName(), true, Thread.currentThread().getContextClassLoader());
         } catch (ClassNotFoundException e) {
             throw new JawsFrameworkException("RefererConfig initRef Error: Class not found " + interfaceClass.getName(), e,
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);

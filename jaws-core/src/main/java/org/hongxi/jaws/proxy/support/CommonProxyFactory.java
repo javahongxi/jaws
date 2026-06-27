@@ -16,6 +16,7 @@ import java.util.List;
 public class CommonProxyFactory implements ProxyFactory {
 
     @Override
+    @SuppressWarnings("unchecked")
     public <T> T getProxy(Class<T> clazz, List<Cluster<T>> clusters) {
         return (T) new RefererCommonHandler<>(clusters.get(0).getUrl().getPath(), clusters);
     }

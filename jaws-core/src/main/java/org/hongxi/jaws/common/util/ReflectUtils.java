@@ -268,7 +268,7 @@ public class ReflectUtils {
                         Object property = getEmptyObject(field.getType(), emptyInstances, level + 1);
                         if (property != null) {
                             try {
-                                if (!field.isAccessible()) {
+                                if (!field.canAccess(value)) {
                                     field.setAccessible(true);
                                 }
                                 field.set(value, property);

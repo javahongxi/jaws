@@ -1,6 +1,5 @@
 package org.hongxi.jaws.rpc;
 
-import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
@@ -249,7 +248,7 @@ public class URL {
             return false;
         }
 
-        if (!ObjectUtils.equals(protocol, refUrl.protocol)) {
+        if (!Objects.equals(protocol, refUrl.protocol)) {
             return false;
         }
 

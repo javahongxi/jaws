@@ -29,6 +29,7 @@ public class Hessian2Serialization implements Serialization {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public <T> T deserialize(byte[] data, Class<T> clazz) throws IOException {
         Hessian2Input input = new Hessian2Input(new ByteArrayInputStream(data));
         T result = (T) input.readObject(clazz);

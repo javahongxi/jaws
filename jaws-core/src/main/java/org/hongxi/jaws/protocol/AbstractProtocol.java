@@ -25,6 +25,7 @@ public abstract class AbstractProtocol implements Protocol {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public <T> Exporter<T> export(Provider<T> provider, URL url) {
         if (url == null) {
             throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: url is null",
