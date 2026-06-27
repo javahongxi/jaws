@@ -80,7 +80,6 @@ public class AbstractConfig implements Serializable {
      *
      * @param parameters
      */
-    @SuppressWarnings("unchecked")
     protected void appendConfigParams(Map<String, String> parameters, String prefix) {
         Method[] methods = this.getClass().getMethods();
         for (Method method : methods) {

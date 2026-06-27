@@ -17,7 +17,6 @@ import java.util.List;
 public class JdkProxyFactory implements ProxyFactory {
 
     @Override
-    @SuppressWarnings("unchecked")
     public <T> T getProxy(Class<T> clazz, List<Cluster<T>> clusters) {
         return (T) Proxy.newProxyInstance(clazz.getClassLoader(), new Class<?>[]{clazz}, new RefererInvocationHandler<>(clazz, clusters));
     }

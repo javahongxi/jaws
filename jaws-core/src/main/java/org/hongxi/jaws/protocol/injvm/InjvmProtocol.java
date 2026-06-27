@@ -45,7 +45,6 @@ public class InjvmProtocol extends AbstractProtocol {
             super(provider, url);
         }
 
-        @SuppressWarnings("unchecked")
         @Override
         public void unexport() {
             String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
@@ -91,7 +90,6 @@ public class InjvmProtocol extends AbstractProtocol {
             return exporter.getProvider().call(request);
         }
 
-        @SuppressWarnings("unchecked")
         @Override
         protected boolean doInit() {
             String protocolKey = JawsFrameworkUtils.getProtocolKey(url);

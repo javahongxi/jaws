@@ -23,15 +23,12 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
 
     private static final Logger log = LoggerFactory.getLogger(ConfigurableWeightLoadBalance.class);
 
-    @SuppressWarnings("rawtypes")
     private static final RefererListCacheHolder emptyHolder = new EmptyHolder();
 
-    @SuppressWarnings("unchecked")
     private volatile RefererListCacheHolder<T> holder = emptyHolder;
 
     private String weightString;
 
-    @SuppressWarnings("unchecked")
     @Override
     public void onRefresh(List<Referer<T>> referers) {
         super.onRefresh(referers);
@@ -113,7 +110,6 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
         }
     }
 
-    @SuppressWarnings("hiding")
     class SingleGroupHolder<T> extends RefererListCacheHolder<T> {
 
         private int size;
@@ -131,7 +127,6 @@ public class ConfigurableWeightLoadBalance<T> extends ActiveWeightLoadBalance<T>
         }
     }
 
-    @SuppressWarnings("hiding")
     class MultiGroupHolder<T> extends RefererListCacheHolder<T> {
 
         private int randomKeySize = 0;

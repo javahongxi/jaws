@@ -67,7 +67,6 @@ public class RefererConfig<T> extends AbstractRefererConfig {
         return ref;
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     public synchronized void initRef() {
         if (initialized.get()) {
             return;

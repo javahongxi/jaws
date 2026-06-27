@@ -24,7 +24,6 @@ public abstract class AbstractProtocol implements Protocol {
         return Collections.unmodifiableMap(exporterMap);
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public <T> Exporter<T> export(Provider<T> provider, URL url) {
         if (url == null) {

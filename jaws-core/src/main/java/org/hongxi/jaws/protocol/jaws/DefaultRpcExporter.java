@@ -41,7 +41,6 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
         server = endpointFactory.createServer(url, requestRouter);
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public void unexport() {
         String protocolKey = JawsFrameworkUtils.getProtocolKey(url);

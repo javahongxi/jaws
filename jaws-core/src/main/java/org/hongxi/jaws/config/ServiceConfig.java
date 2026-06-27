@@ -129,7 +129,6 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void doExport(ProtocolConfig protocolConfig, int port) {
         String protocolName = protocolConfig.getName();
         if (protocolName == null || protocolName.isEmpty()) {
