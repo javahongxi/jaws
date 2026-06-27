@@ -77,7 +77,7 @@ public class DefaultResponseFuture implements ResponseFuture {
                     for (; ; ) {
                         try {
                             lock.wait(waitTime);
-                        } catch (InterruptedException e) {
+                        } catch (InterruptedException ignore) {
                         }
 
                         if (!isDoing()) {

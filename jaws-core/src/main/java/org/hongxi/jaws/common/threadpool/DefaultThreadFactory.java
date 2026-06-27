@@ -30,8 +30,7 @@ public class DefaultThreadFactory implements ThreadFactory {
     }
 
     public DefaultThreadFactory(String prefix, boolean isDaemon, int priority) {
-        SecurityManager s = System.getSecurityManager();
-        this.threadGroup = (s != null) ? s.getThreadGroup() : Thread.currentThread().getThreadGroup();
+        this.threadGroup = Thread.currentThread().getThreadGroup();
         this.namePrefix = prefix + "-" + poolNumber.getAndIncrement() + "-thread-";
         this.isDaemon = isDaemon;
         this.priority = priority;
