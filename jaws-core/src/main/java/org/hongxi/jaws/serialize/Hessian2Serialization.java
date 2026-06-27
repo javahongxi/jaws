@@ -10,7 +10,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 /**
- * hession2 序列化，要求序列化的对象实现 java.io.Serializable 接口
+ * hessian2 序列化，要求序列化的对象实现 java.io.Serializable 接口
  * <p>
  * Created by shenhongxi on 2020/7/28.
  *

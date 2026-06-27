@@ -73,6 +73,6 @@ public class DefaultRpcReferer<T> extends AbstractReferer<T> {
     @Override
     public void destroy() {
         endpointFactory.safeReleaseResource(client, url);
-        log.info("DefaultRpcReferer destory client: url={}", url);
+        log.info("DefaultRpcReferer destroy client: url={}", url);
     }
 }

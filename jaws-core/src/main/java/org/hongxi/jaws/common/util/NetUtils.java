@@ -104,7 +104,7 @@ public class NetUtils {
                     }
                 }
             } catch (Exception e) {
-                log.warn("Failed to retrieve local address by connecting to dest host:port({}:{}) false",
+                log.warn("Failed to retrieve local address by connecting to dest host:port({}:{}) failed",
                         host, port, e);
             }
         }
