@@ -9,6 +9,7 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
+import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +51,7 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
             Reference<T> refer = references.get(i % references.size());
             try {
                 request.setRetries(i);
+                RpcContext.getContext().setServerUrl(refer.getUrl());
                 return refer.call(request);
             } catch (RuntimeException e) {
                 // 对于业务异常，直接抛出

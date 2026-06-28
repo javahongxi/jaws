@@ -167,4 +167,19 @@ public class NetUtils {
 
         return null;
     }
+
+    /*
+     * Check if a port is available on localhost.
+     */
+    public static boolean isPortAvailable(int port) {
+        if (port < 1 || port > 65535) {
+            return false;
+        }
+        try (ServerSocket ss = new ServerSocket(port)) {
+            ss.setReuseAddress(true);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 }

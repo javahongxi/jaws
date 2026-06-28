@@ -5,6 +5,8 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ReferenceConfig;
 import org.hongxi.jaws.config.RegistryConfig;
+import org.hongxi.jaws.rpc.RpcContext;
+import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.OrderService;
 import org.hongxi.jaws.sample.api.model.Contacts;
@@ -53,6 +55,12 @@ public class SampleConsumer {
         System.out.println("--- DemoService 基本调用 ---");
         String r = demoService.hello("lily");
         System.out.println("hello => " + r);
+
+        /* 打印实际调用的服务端地址 */
+        URL serverUrl = RpcContext.getContext().getServerUrl();
+        if (serverUrl != null) {
+            System.out.println("server => " + serverUrl.getHost() + ":" + serverUrl.getPort());
+        }
 
         User user = new User("lily", 24);
         User newUser = demoService.rename(user, "lucy");
@@ -118,6 +126,12 @@ public class SampleConsumer {
 
         boolean cancelled = orderService.cancelOrder(order2.getId());
         System.out.println("cancelOrder => " + cancelled);
+
+        /* 打印实际调用的服务端地址 */
+        URL serverUrl2 = RpcContext.getContext().getServerUrl();
+        if (serverUrl2 != null) {
+            System.out.println("server => " + serverUrl2.getHost() + ":" + serverUrl2.getPort());
+        }
     }
 
     private static ProtocolConfig createProtocolConfig(String protocolName) {

@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -32,6 +33,13 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     private static final Logger log = LoggerFactory.getLogger(ServiceConfig.class);
 
     private static final ConcurrentHashSet<String> existingServices = new ConcurrentHashSet<>();
+
+    /*
+     * Dynamic port allocation: when port is -1, allocate from DYNAMIC_PORT_START incrementally.
+     * Same application shares the same dynamic port (works with shareChannel=true).
+     */
+    private static final int DYNAMIC_PORT_START = 10000;
+    private static final Map<String, Integer> dynamicPorts = new ConcurrentHashMap<>();
     // 具体到方法的配置
     protected List<MethodConfig> methods;
 
@@ -137,6 +145,16 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
             protocolName = URLParamType.protocol.value();
         }
 
+        /*
+         * Dynamic port: -1 means auto-allocate from 10000 incrementally.
+         * Same application reuses the same port so that shareChannel works.
+         */
+        if (port == -1) {
+            String app = (application != null) ? application : "default";
+            port = resolveDynamicPort(app);
+            log.info("Dynamic port allocated: {} for application={}", port, app);
+        }
+
         String hostAddress = host;
         if (StringUtils.isBlank(hostAddress) && basicService != null) {
             hostAddress = basicService.getHost();
@@ -233,5 +251,28 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
 
     public AtomicBoolean getExported() {
         return exported;
+    }
+
+    /*
+     * Resolve dynamic port for this application.
+     * Each application gets a unique port starting from DYNAMIC_PORT_START (10000).
+     * Multiple services within the same application share the same port (works with shareChannel=true).
+     */
+    private static synchronized int resolveDynamicPort(String app) {
+        Integer existingPort = dynamicPorts.get(app);
+        if (existingPort != null) {
+            return existingPort;
+        }
+        int startPort = DYNAMIC_PORT_START;
+        if (!dynamicPorts.isEmpty()) {
+            int maxPort = dynamicPorts.values().stream().mapToInt(Integer::intValue).max().orElse(DYNAMIC_PORT_START - 1);
+            startPort = maxPort + 1;
+        }
+        int port = startPort;
+        while (!NetUtils.isPortAvailable(port)) {
+            port++;
+        }
+        dynamicPorts.put(app, port);
+        return port;
     }
 }

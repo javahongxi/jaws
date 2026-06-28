@@ -24,6 +24,8 @@ import org.hongxi.jaws.switcher.JawsSwitcherUtils;
  */
 public class SampleProvider {
 
+    private static final int PORT = Integer.parseInt(System.getProperty("port", "10000"));
+
     public static void main(String[] args) throws Exception {
         ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
         RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
@@ -39,7 +41,7 @@ public class SampleProvider {
         demoServiceConfig.setVersion("2.0");
         demoServiceConfig.setProtocol(protocolConfig);
         demoServiceConfig.setRegistry(registryConfig);
-        demoServiceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
+        demoServiceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + PORT);
         demoServiceConfig.export();
         System.out.println("DemoService exported.");
 
@@ -53,7 +55,7 @@ public class SampleProvider {
         orderServiceConfig.setVersion("2.0");
         orderServiceConfig.setProtocol(protocolConfig);
         orderServiceConfig.setRegistry(registryConfig);
-        orderServiceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
+        orderServiceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + PORT);
         orderServiceConfig.export();
         System.out.println("OrderService exported.");
 

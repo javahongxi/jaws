@@ -15,6 +15,8 @@ public class RpcContext {
     private Request request;
     private Response response;
     private String clientRequestId;
+    /* 消费端调用后记录实际服务的地址 */
+    private URL serverUrl;
 
     public static RpcContext getContext() {
         return LOCAL_CONTEXT.get();
@@ -107,5 +109,13 @@ public class RpcContext {
 
     public void setClientRequestId(String clientRequestId) {
         this.clientRequestId = clientRequestId;
+    }
+
+    public URL getServerUrl() {
+        return serverUrl;
+    }
+
+    public void setServerUrl(URL serverUrl) {
+        this.serverUrl = serverUrl;
     }
 }

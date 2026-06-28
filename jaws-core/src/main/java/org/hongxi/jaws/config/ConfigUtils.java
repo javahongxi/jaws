@@ -41,7 +41,7 @@ public class ConfigUtils {
                     pps.put(ppDetail[0], JawsConstants.DEFAULT_INT_VALUE);
                 } else {
                     int port = MathUtils.parseInt(ppDetail[0], 0);
-                    if (port <= 0) {
+                    if (port < -1) {
                         throw new JawsServiceException("Export is malformed :" + export);
                     } else {
                         pps.put(JawsConstants.PROTOCOL_JAWS, port);

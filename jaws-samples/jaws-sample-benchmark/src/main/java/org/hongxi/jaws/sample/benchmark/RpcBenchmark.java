@@ -26,11 +26,11 @@ import java.util.concurrent.atomic.AtomicLong;
  *   threads   - 并发线程数，默认 4
  *   warmup    - 预热秒数，默认 5
  *   duration  - 测量秒数，默认 10
- *   port      - jaws 协议端口，默认 10001
+ *   port      - jaws 协议端口，默认 10010
  *
  * 示例：
  *   java -Dprotocol=injvm -Dthreads=8 -Dwarmup=5 -Dduration=10 ...
- *   java -Dprotocol=jaws -Dthreads=8 -Dport=10001 ...
+ *   java -Dprotocol=jaws -Dthreads=8 -Dport=10010 ...
  * </pre>
  */
 public class RpcBenchmark {
@@ -39,7 +39,7 @@ public class RpcBenchmark {
     private static final int THREADS = Integer.parseInt(System.getProperty("threads", "4"));
     private static final int WARMUP_SECONDS = Integer.parseInt(System.getProperty("warmup", "5"));
     private static final int DURATION_SECONDS = Integer.parseInt(System.getProperty("duration", "10"));
-    private static final int PORT = Integer.parseInt(System.getProperty("port", "10001"));
+    private static final int PORT = Integer.parseInt(System.getProperty("port", "10010"));
 
     private static final String BENCHMARK_RESULT = "benchmark";
 
