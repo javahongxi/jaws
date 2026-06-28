@@ -36,6 +36,7 @@ usage() {
     provider-bg [port] 后台启动 Provider，PID/日志按端口区分（如 .provider-10000.pid）
                        port 为 -1 时自动分配端口，文件后缀为 auto-{序号}
     stop               停止所有后台进程并清理 pid/log 文件
+    run                一次性运行：启动 provider → 运行 consumer → 停止 provider
     consumer           运行 SampleConsumer（需要先启动 provider）
     bench-injvm        性能测试 - injvm 协议
     bench-jaws         性能测试 - jaws+netty 协议
@@ -55,6 +56,7 @@ usage() {
     ./run-sample.sh provider-bg 10001  # 后台启动，端口 10001
     ./run-sample.sh provider-bg -1     # 后台启动，自动分配端口
     ./run-sample.sh stop               # 停止所有后台进程
+    ./run-sample.sh run                # 一键运行 provider + consumer
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
@@ -178,6 +180,54 @@ cmd_stop() {
     fi
 }
 
+cmd_run() {
+    ensure_built
+    local port="${1:-10000}"
+    local cp
+    cp=$(build_classpath "$PROVIDER_MODULE")
+    local pid_file=".provider-run.pid"
+    local log_file="provider-run.log"
+
+    echo "=== 一键运行 (jaws+netty) ==="
+    echo ""
+
+    # 1. 后台启动 provider
+    echo "[1/4] 启动 Provider port=$port ..."
+    java -cp "$cp:$PROVIDER_MODULE/target/classes" \
+        -Dport="$port" \
+        "$PROVIDER_MAIN" > "$log_file" 2>&1 &
+    local pid=$!
+    echo "$pid" > "$pid_file"
+
+    # 2. 等待 provider 注册到 ZK
+    echo "[2/4] 等待 Provider 注册 ..."
+    sleep 5
+
+    # 3. 运行 consumer
+    echo "[3/4] 运行 Consumer ..."
+    echo "--------------------------------------------"
+    local consumer_cp
+    consumer_cp=$(build_classpath "$CONSUMER_MODULE")
+    java -cp "$consumer_cp:$CONSUMER_MODULE/target/classes" \
+        "$CONSUMER_MAIN"
+    local consumer_exit=$?
+    echo "--------------------------------------------"
+
+    # 4. 停止 provider 并清理
+    echo "[4/4] 停止 Provider ..."
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null || true
+    fi
+    rm -f "$pid_file" "$log_file"
+
+    if [ $consumer_exit -ne 0 ]; then
+        echo "Consumer 退出码: $consumer_exit"
+        exit $consumer_exit
+    fi
+    echo "=== 完成 ==="
+}
+
 cmd_consumer() {
     ensure_built
     echo "运行 SampleConsumer..."
@@ -226,6 +276,7 @@ case "${1:-}" in
     provider)    cmd_provider "${2:-}" ;;
     provider-bg) cmd_provider_bg "${2:-}" ;;
     stop)          cmd_stop ;;
+    run)           cmd_run "${2:-}" ;;
     consumer)    cmd_consumer ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;

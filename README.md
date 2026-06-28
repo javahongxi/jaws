@@ -53,17 +53,16 @@ jaws-parent
 # injvm 协议示例（无需 ZK，开箱即用）
 ./run-sample.sh injvm
 
-# 启动服务提供者（需要 ZK 在 127.0.0.1:2181 运行）
-./run-sample.sh provider           # 前台启动，默认端口 10000
-./run-sample.sh provider 10001     # 前台启动，指定端口
+# 一键运行：启动 provider → 运行 consumer → 停止 provider（需要 ZK）
+./run-sample.sh run
+
+# 分步运行
+./run-sample.sh provider           # 前台启动 provider（需要 ZK 在 127.0.0.1:2181 运行）
+./run-sample.sh provider 10001     # 指定端口
 ./run-sample.sh provider-bg        # 后台启动
 ./run-sample.sh provider-bg -1     # 后台启动，自动分配端口
-
-# 启动服务消费者（需要先启动 provider）
-./run-sample.sh consumer
-
-# 停止所有后台 provider 并清理
-./run-sample.sh stop
+./run-sample.sh consumer           # 运行 consumer（需要先启动 provider）
+./run-sample.sh stop               # 停止所有后台 provider 并清理
 ```
 
 ### 性能测试

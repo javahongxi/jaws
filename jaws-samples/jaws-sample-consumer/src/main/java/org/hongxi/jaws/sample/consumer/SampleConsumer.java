@@ -132,6 +132,9 @@ public class SampleConsumer {
         if (serverUrl2 != null) {
             System.out.println("server => " + serverUrl2.getHost() + ":" + serverUrl2.getPort());
         }
+
+        /* 示例调用完毕，强制退出（Netty/Curator 的非守护线程会阻止 JVM 自动退出） */
+        System.exit(0);
     }
 
     private static ProtocolConfig createProtocolConfig(String protocolName) {
