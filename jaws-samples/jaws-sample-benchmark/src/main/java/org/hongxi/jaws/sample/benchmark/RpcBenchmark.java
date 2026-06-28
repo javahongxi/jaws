@@ -28,10 +28,12 @@ import java.util.concurrent.atomic.AtomicLong;
  *   duration  - 测量秒数，默认 10
  *   port      - jaws 协议端口，默认 10010
  *   serialization - 序列化方式，默认 fastjson2（仅 jaws 协议生效）
+ *   sleep       - Provider 端模拟业务耗时（毫秒），默认 0（不模拟）
  *
  * 示例：
  *   java -Dprotocol=injvm -Dthreads=8 -Dwarmup=5 -Dduration=10 ...
  *   java -Dprotocol=jaws -Dthreads=8 -Dport=10010 -Dserialization=hessian2 ...
+ *   java -Dprotocol=jaws -Dthreads=8 -Dsleep=5 ...
  * </pre>
  */
 public class RpcBenchmark {
@@ -42,6 +44,7 @@ public class RpcBenchmark {
     private static final int DURATION_SECONDS = Integer.parseInt(System.getProperty("duration", "10"));
     private static final int PORT = Integer.parseInt(System.getProperty("port", "10010"));
     private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
+    private static final int SLEEP_MS = Integer.parseInt(System.getProperty("sleep", "0"));
 
     private static final String BENCHMARK_RESULT = "benchmark";
 
@@ -53,6 +56,7 @@ public class RpcBenchmark {
         System.out.println("  threads  : " + THREADS);
         System.out.println("  warmup   : " + WARMUP_SECONDS + "s");
         System.out.println("  duration : " + DURATION_SECONDS + "s");
+        System.out.println("  sleep    : " + (SLEEP_MS > 0 ? SLEEP_MS + "ms" : "N/A"));
         if ("jaws".equals(PROTOCOL)) {
             System.out.println("  port     : " + PORT);
             System.out.println("  serialize: " + SERIALIZATION);
@@ -97,7 +101,11 @@ public class RpcBenchmark {
      */
     private static void exportService() {
         ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
-        serviceConfig.setRef(new DemoServiceImpl());
+        DemoService impl = new DemoServiceImpl();
+        if (SLEEP_MS > 0) {
+            impl = new SleepDemoServiceImpl(impl, SLEEP_MS);
+        }
+        serviceConfig.setRef(impl);
         serviceConfig.setApplication("benchmark-provider");
         serviceConfig.setInterface(DemoService.class);
         serviceConfig.setGroup("benchmark");
@@ -258,6 +266,7 @@ public class RpcBenchmark {
         System.out.println("  Protocol     : " + PROTOCOL);
         System.out.println("  Serialization: " + ("jaws".equals(PROTOCOL) ? SERIALIZATION : "N/A"));
         System.out.printf("  Threads      : %,d%n", THREADS);
+        System.out.println("  Sleep        : " + (SLEEP_MS > 0 ? SLEEP_MS + "ms" : "N/A"));
         System.out.printf("  Total calls  : %,d%n", count);
         System.out.printf("  Duration     : %,ds%n", result.durationSeconds);
         System.out.printf("  QPS          : %,.0f%n", qps);

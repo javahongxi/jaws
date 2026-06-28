@@ -79,6 +79,9 @@ THREADS=8 WARMUP=5 DURATION=20 ./run-sample.sh bench-jaws
 
 # 切换序列化方式
 SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
+
+# 模拟业务耗时（Provider 端每次调用 sleep 5ms）
+SLEEP=5 ./run-sample.sh bench-jaws
 ```
 
 **Benchmark 环境变量：**
@@ -90,6 +93,7 @@ SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
 | `DURATION`  | 测量秒数         | 10        | bench-injvm / bench-jaws |
 | `PORT`      | jaws 协议端口    | 10010     | 仅 bench-jaws |
 | `SERIALIZATION` | 序列化方式（fastjson2 / hessian2） | fastjson2 | 仅 bench-jaws |
+| `SLEEP`       | Provider 端模拟业务耗时（毫秒）      | 0         | bench-injvm / bench-jaws |
 
 ## 代码示例
 
