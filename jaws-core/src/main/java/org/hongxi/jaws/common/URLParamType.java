@@ -43,9 +43,9 @@ public enum URLParamType {
     filter("filter", ""),
 
     /**
-     * multi reference share the same channel
+     * multi services share the same channel (port)
      */
-    shareChannel("shareChannel", false),
+    shareChannel("shareChannel", true),
     asyncInitConnection("asyncInitConnection", false),
     fusingThreshold("fusingThreshold", 10),
 
