@@ -10,7 +10,7 @@ import org.hongxi.jaws.transport.support.AbstractEndpointFactory;
 /**
  * Created by shenhongxi on 2020/7/31.
  */
-@SpiMeta(name = "jaws")
+@SpiMeta(name = "netty")
 public class NettyEndpointFactory extends AbstractEndpointFactory {
     @Override
     protected Server innerCreateServer(URL url, MessageHandler messageHandler) {

@@ -91,7 +91,7 @@ public interface DemoService {
 }
 ```
 
-### 导出服务（Provider）
+### 发布服务（Provider）
 
 ```java
 ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();

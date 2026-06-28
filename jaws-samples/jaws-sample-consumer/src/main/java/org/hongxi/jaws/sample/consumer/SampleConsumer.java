@@ -29,7 +29,7 @@ import java.util.Map;
  * 4. group/version 配置
  * </pre>
  *
- * 启动前请先运行 SampleProvider 确保服务已导出
+ * 启动前请先运行 SampleProvider 确保服务已发布
  */
 public class SampleConsumer {
 
@@ -138,7 +138,7 @@ public class SampleConsumer {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName(protocolName);
         protocolConfig.setId(protocolConfig.getName());
-        protocolConfig.setEndpointFactory("jaws");
+        protocolConfig.setEndpointFactory("netty");
         protocolConfig.setSerialization("fastjson2");
         return protocolConfig;
     }

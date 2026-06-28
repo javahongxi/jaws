@@ -25,7 +25,7 @@ import java.util.Map;
  * <pre>
  * 演示场景：
  * 1. injvm 协议 - JVM 内部调用，无需网络传输
- * 2. 多服务导出与引用 - 同时导出 DemoService 和 OrderService
+ * 2. 多服务发布与引用 - 同时发布 DemoService 和 OrderService
  * 3. 各种参数类型 - String、POJO、List、Map、void 返回值
  * 4. 方法级别配置 - MethodConfig 设置单独超时/重试
  * 5. group/version 配置
@@ -36,7 +36,7 @@ public class InjvmRpcDemo {
     public static void main(String[] args) {
         System.out.println("========== Injvm RPC Demo ==========\n");
 
-        /* 1. 导出服务 */
+        /* 1. 发布服务 */
         exportServices();
 
         /* 2. 引用并调用 DemoService - 基本调用 */
@@ -55,12 +55,12 @@ public class InjvmRpcDemo {
     }
 
     /*
-     * 导出 DemoService 和 OrderService（injvm 协议）
+     * 发布 DemoService 和 OrderService（injvm 协议）
      */
     private static void exportServices() {
-        System.out.println("--- 导出服务 ---");
+        System.out.println("--- 发布服务 ---");
 
-        // 导出 DemoService
+        // 发布 DemoService
         ServiceConfig<DemoService> demoServiceConfig = new ServiceConfig<>();
         demoServiceConfig.setRef(new DemoServiceImpl());
         demoServiceConfig.setApplication("injvm-demo-provider");
@@ -73,7 +73,7 @@ public class InjvmRpcDemo {
         demoServiceConfig.export();
         System.out.println("DemoService exported.");
 
-        // 导出 OrderService
+        // 发布 OrderService
         ServiceConfig<OrderService> orderServiceConfig = new ServiceConfig<>();
         orderServiceConfig.setRef(new OrderServiceImpl());
         orderServiceConfig.setApplication("injvm-demo-provider");

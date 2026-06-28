@@ -16,7 +16,7 @@ import org.hongxi.jaws.switcher.JawsSwitcherUtils;
  * <pre>
  * 演示场景：
  * 1. jaws 协议 + ZooKeeper 注册中心
- * 2. 多服务导出 - DemoService + OrderService
+ * 2. 多服务发布 - DemoService + OrderService
  * 3. group/version/shareChannel 配置
  * </pre>
  *
@@ -30,7 +30,7 @@ public class SampleProvider {
         ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
         RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
 
-        /* 导出 DemoService */
+        /* 发布 DemoService */
         ServiceConfig<DemoService> demoServiceConfig = new ServiceConfig<>();
         demoServiceConfig.setRef(new DemoServiceImpl());
         demoServiceConfig.setApplication("sample-provider");
@@ -45,7 +45,7 @@ public class SampleProvider {
         demoServiceConfig.export();
         System.out.println("DemoService exported.");
 
-        /* 导出 OrderService */
+        /* 发布 OrderService */
         ServiceConfig<OrderService> orderServiceConfig = new ServiceConfig<>();
         orderServiceConfig.setRef(new OrderServiceImpl());
         orderServiceConfig.setApplication("sample-provider");
@@ -66,7 +66,7 @@ public class SampleProvider {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName(protocolName);
         protocolConfig.setId(protocolConfig.getName());
-        protocolConfig.setEndpointFactory("jaws");
+        protocolConfig.setEndpointFactory("netty");
         protocolConfig.setSerialization("fastjson2");
         return protocolConfig;
     }

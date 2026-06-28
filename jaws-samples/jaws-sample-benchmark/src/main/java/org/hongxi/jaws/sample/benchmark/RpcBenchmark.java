@@ -56,7 +56,7 @@ public class RpcBenchmark {
         }
         System.out.println("============================================\n");
 
-        // 1. 导出服务
+        // 1. 发布服务
         exportService();
 
         // 2. 创建引用
@@ -87,7 +87,7 @@ public class RpcBenchmark {
     }
 
     /*
-     * 导出 DemoService
+     * 发布 DemoService
      */
     private static void exportService() {
         ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
@@ -129,7 +129,7 @@ public class RpcBenchmark {
         protocol.setName(PROTOCOL);
         protocol.setId(PROTOCOL);
         if ("jaws".equals(PROTOCOL)) {
-            protocol.setEndpointFactory("jaws");
+            protocol.setEndpointFactory("netty");
             protocol.setSerialization("fastjson2");
         }
         return protocol;
