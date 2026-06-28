@@ -165,9 +165,9 @@ public class RpcBenchmark {
     private static BenchmarkResult runPhase(DemoService demoService, int durationSeconds, boolean warmup)
             throws InterruptedException {
         AtomicLong totalCalls = new AtomicLong(0);
-        List<Long>[] perThreadLatencies = new List[THREADS];
+        List<List<Long>> perThreadLatencies = new ArrayList<>(THREADS);
         for (int i = 0; i < THREADS; i++) {
-            perThreadLatencies[i] = new ArrayList<>();
+            perThreadLatencies.add(new ArrayList<>());
         }
 
         CountDownLatch startLatch = new CountDownLatch(1);
@@ -177,7 +177,7 @@ public class RpcBenchmark {
         Thread[] workers = new Thread[THREADS];
         for (int i = 0; i < THREADS; i++) {
             final int threadIndex = i;
-            final List<Long> latencies = perThreadLatencies[i];
+            final List<Long> latencies = perThreadLatencies.get(i);
             workers[i] = new Thread(() -> {
                 try {
                     startLatch.await();
