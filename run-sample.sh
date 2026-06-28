@@ -81,7 +81,7 @@ build_classpath() {
 
 cmd_build() {
     echo "编译项目..."
-    $MVN install -DskipTests -q
+    $MVN clean install -DskipTests -q
     echo "编译完成。"
 }
 

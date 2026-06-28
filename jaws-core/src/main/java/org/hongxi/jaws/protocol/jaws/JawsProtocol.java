@@ -1,14 +1,11 @@
 package org.hongxi.jaws.protocol.jaws;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.protocol.AbstractProtocol;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.ProviderMessageRouter;
-import org.hongxi.jaws.transport.TransportException;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -19,18 +16,18 @@ import java.util.concurrent.ConcurrentHashMap;
 public class JawsProtocol extends AbstractProtocol {
 
     public static final String DEFAULT_CODEC = "jaws";
-    private ConcurrentHashMap<String, ProviderMessageRouter> ipPort2RequestRouter = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ProviderMessageRouter> ipPort2RequestRouter = new ConcurrentHashMap<>();
 
     @Override
     protected <T> Exporter<T> createExporter(Provider<T> provider, URL url) {
         setDefaultCodec(url);
-        return new DefaultRpcExporter<T>(provider, url, this.ipPort2RequestRouter, this.exporterMap);
+        return new DefaultRpcExporter<>(provider, url, this.ipPort2RequestRouter, this.exporterMap);
     }
 
     @Override
     protected <T> Reference<T> createReference(Class<T> clazz, URL url, URL serviceUrl) {
         setDefaultCodec(url);
-        return new V2RpcReference<T>(clazz, url, serviceUrl);
+        return new DefaultRpcReference<>(clazz, url, serviceUrl);
     }
 
     private void setDefaultCodec(URL url) {
@@ -38,31 +35,5 @@ public class JawsProtocol extends AbstractProtocol {
         if (StringUtils.isBlank(codec)) {
             url.getParameters().put(URLParamType.codec.getName(), DEFAULT_CODEC);
         }
-    }
-
-    /**
-     * rpc reference
-     *
-     * @param <T>
-     */
-    class V2RpcReference<T> extends DefaultRpcReference<T> {
-
-        public V2RpcReference(Class<T> clazz, URL url, URL serviceUrl) {
-            super(clazz, url, serviceUrl);
-        }
-
-        @Override
-        protected Response doCall(Request request) {
-            try {
-                // use server end group
-                request.setAttachment(URLParamType.group.getName(), serviceUrl.getGroup());
-                // add proxy protocol for request agent
-                request.setAttachment(JawsConstants.JAWS_PROXY_PROTOCOL, this.url.getProtocol());
-                return client.request(request);
-            } catch (TransportException exception) {
-                throw new JawsServiceException("DefaultRpcReference call Error: url=" + url.getUri(), exception);
-            }
-        }
-
     }
 }

@@ -58,23 +58,7 @@ public class JawsConstants {
     public static final int SECOND_MILLS = 1000;
     public static final int MINUTE_MILLS = 60 * SECOND_MILLS;
 
-    // netty client max concurrent request TODO 2W is suitable?
     public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
-
-    // ------------------ jaws protocol constants -----------------
-    public static final String JAWS_GROUP = "J_g";
-    public static final String JAWS_VERSION = "J_v";
-    public static final String JAWS_PATH = "J_p";
-    public static final String JAWS_METHOD = "J_m";
-    public static final String JAWS_METHOD_DESC = "J_md";
-    public static final String JAWS_AUTH = "J_a";
-    // 调用方来源标识,等同与application
-    public static final String JAWS_SOURCE = "J_s";
-    public static final String JAWS_MODULE = "J_mdu";
-    public static final String JAWS_PROXY_PROTOCOL = "J_pp";
-    public static final String JAWS_INFO_SIGN = "J_is";
-    public static final String JAWS_ERROR = "J_e";
-    public static final String JAWS_PROCESS_TIME = "J_pt";
 
     public static final String CONTENT_LENGTH = "Content-Length";
 

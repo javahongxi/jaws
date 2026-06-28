@@ -56,7 +56,7 @@ public enum URLParamType {
     serialization("serialization", "hessian2"),
 
     codec("codec", "jaws"),
-    endpointFactory("endpointFactory", "jaws"),
+    endpointFactory("endpointFactory", "netty"),
 
     switcherService("switcherService", "localSwitcherService"),
 

@@ -18,7 +18,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 
 ```
 jaws-parent
-├── jaws-core                  # 核心：协议抽象、SPI、序列化、集群、Filter、配置
+├── jaws-core                  # 核心：协议抽象、SPI、序列化、集群、路由、Filter、配置
 ├── jaws-transport-netty       # Netty 传输层实现
 ├── jaws-registry-zookeeper    # ZooKeeper 注册中心实现
 └── jaws-samples
