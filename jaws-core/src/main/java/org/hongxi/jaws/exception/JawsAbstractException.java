@@ -1,11 +1,13 @@
 package org.hongxi.jaws.exception;
 
 import org.hongxi.jaws.rpc.RpcContext;
+import java.io.Serial;
 
 /**
  * Created by shenhongxi on 2020/6/26.
  */
 public abstract class JawsAbstractException extends RuntimeException {
+    @Serial
     private static final long serialVersionUID = -6842400415484759967L;
 
     protected JawsErrorMsg jawsErrorMsg = JawsErrorMsgConstants.FRAMEWORK_DEFAULT_ERROR;

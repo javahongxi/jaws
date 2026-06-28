@@ -1,6 +1,7 @@
 package org.hongxi.jaws.config;
 
 import org.apache.commons.lang3.StringUtils;
+import java.io.Serial;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class ServiceConfig<T> extends AbstractServiceConfig {
 
+    @Serial
     private static final long serialVersionUID = -3342374271064293224L;
     private static final Logger log = LoggerFactory.getLogger(ServiceConfig.class);
 

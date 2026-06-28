@@ -1,6 +1,7 @@
 package org.hongxi.jaws.common.threadpool;
 
 import java.util.concurrent.LinkedTransferQueue;
+import java.io.Serial;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
@@ -14,6 +15,7 @@ import java.util.concurrent.RejectedExecutionException;
  *
  */
 public class ExecutorQueue extends LinkedTransferQueue<Runnable> {
+    @Serial
     private static final long serialVersionUID = -3392627914941820087L;
 
     private StandardThreadPoolExecutor threadPoolExecutor;

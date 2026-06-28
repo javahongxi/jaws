@@ -1,12 +1,14 @@
 package org.hongxi.jaws.transport;
 
 import java.io.IOException;
+import java.io.Serial;
 import java.net.InetSocketAddress;
 
 /**
  * Created by shenhongxi on 2020/6/14.
  */
 public class TransportException extends IOException {
+    @Serial
     private static final long serialVersionUID = -6184671228777275302L;
 
     private InetSocketAddress localAddress;

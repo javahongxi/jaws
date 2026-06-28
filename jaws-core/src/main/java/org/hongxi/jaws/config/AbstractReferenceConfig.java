@@ -1,10 +1,13 @@
 package org.hongxi.jaws.config;
 
+import java.io.Serial;
+
 /**
  * Created by shenhongxi on 2021/4/23.
  */
 public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
 
+    @Serial
     private static final long serialVersionUID = -8953815191278008453L;
 
     // 服务接口的mock类SLA

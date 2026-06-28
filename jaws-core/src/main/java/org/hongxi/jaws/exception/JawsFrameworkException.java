@@ -1,9 +1,12 @@
 package org.hongxi.jaws.exception;
 
+import java.io.Serial;
+
 /**
  * Created by shenhongxi on 2020/6/26.
  */
 public class JawsFrameworkException extends JawsAbstractException {
+    @Serial
     private static final long serialVersionUID = -6860263607854518306L;
 
     public JawsFrameworkException() {

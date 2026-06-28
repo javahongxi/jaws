@@ -1,6 +1,7 @@
 package org.hongxi.jaws.config;
 
 import org.hongxi.jaws.config.annotation.ConfigDesc;
+import java.io.Serial;
 
 import java.util.Map;
 
@@ -9,6 +10,7 @@ import java.util.Map;
  */
 public class ProtocolConfig extends AbstractConfig {
 
+    @Serial
     private static final long serialVersionUID = 7605496816982926360L;
     // 请求超时
     protected Integer requestTimeout;

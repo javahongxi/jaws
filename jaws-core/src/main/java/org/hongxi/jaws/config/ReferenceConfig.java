@@ -1,6 +1,7 @@
 package org.hongxi.jaws.config;
 
 import org.apache.commons.lang3.StringUtils;
+import java.io.Serial;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.support.ClusterSupport;
 import org.hongxi.jaws.common.JawsConstants;
@@ -24,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class ReferenceConfig<T> extends AbstractReferenceConfig {
 
+    @Serial
     private static final long serialVersionUID = -2299754608229467887L;
     // 具体到方法的配置
     protected List<MethodConfig> methods;

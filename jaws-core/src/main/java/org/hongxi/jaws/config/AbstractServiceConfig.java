@@ -1,10 +1,13 @@
 package org.hongxi.jaws.config;
 
+import java.io.Serial;
+
 /**
  * Created by shenhongxi on 2021/3/6.
  */
 public abstract class AbstractServiceConfig extends AbstractInterfaceConfig {
 
+    @Serial
     private static final long serialVersionUID = 6798383581370989643L;
     /**
      * 一个service可以按多个protocol提供服务，不同protocol使用不同port 利用export来设置protocol和port，格式如下：

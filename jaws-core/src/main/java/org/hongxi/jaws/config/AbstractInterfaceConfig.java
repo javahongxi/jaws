@@ -1,6 +1,7 @@
 package org.hongxi.jaws.config;
 
 import org.apache.commons.lang3.StringUtils;
+import java.io.Serial;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.NetUtils;
@@ -32,6 +33,7 @@ import java.util.*;
 
 public class AbstractInterfaceConfig extends AbstractConfig {
 
+    @Serial
     private static final long serialVersionUID = 4841644071068578653L;
     // 暴露、使用的协议，暴露可以使用多种协议，但client只能用一种协议进行访问，原因是便于client的管理
     protected List<ProtocolConfig> protocols;

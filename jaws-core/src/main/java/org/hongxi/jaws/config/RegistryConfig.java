@@ -1,6 +1,7 @@
 package org.hongxi.jaws.config;
 
 import org.hongxi.jaws.config.annotation.ConfigDesc;
+import java.io.Serial;
 
 /**
  * registry config
@@ -10,6 +11,7 @@ import org.hongxi.jaws.config.annotation.ConfigDesc;
 
 public class RegistryConfig extends AbstractConfig {
 
+    @Serial
     private static final long serialVersionUID = 3236055928361714933L;
 
     // 注册配置名称

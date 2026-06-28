@@ -1,12 +1,14 @@
 package org.hongxi.jaws.config;
 
 import org.hongxi.jaws.config.annotation.ConfigDesc;
+import java.io.Serial;
 
 /**
  * Created by shenhongxi on 2021/3/5.
  */
 public class MethodConfig extends AbstractConfig {
 
+    @Serial
     private static final long serialVersionUID = -1996115906176873773L;
 
     // 方法名
