@@ -33,7 +33,7 @@ public enum URLParamType {
     /* 注册中心不可用节点剔除方式 */
     excise("excise", RegistryConfig.Excise.DYNAMIC.getName()),
     cluster("cluster", JawsConstants.DEFAULT_VALUE),
-    loadbalance("loadbalance", "activeWeight"),
+    loadbalance("loadbalance", "leastActive"),
     haStrategy("haStrategy", "failover"),
     protocol("protocol", JawsConstants.PROTOCOL_JAWS),
     path("path", ""),

@@ -17,7 +17,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@SpiMeta(name = "consistent")
+@SpiMeta(name = "consistentHash")
 public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
 
     private List<Reference<T>> consistentHashReferences;

@@ -4,6 +4,7 @@ import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Created by shenhongxi on 2021/4/21.
@@ -13,6 +14,10 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
     protected Class<T> clazz;
     protected AtomicInteger activeReferenceCount = new AtomicInteger(0);
     protected URL serviceUrl;
+
+    /* 成功调用的累计响应时间统计，用于最短响应负载均衡 */
+    private final AtomicLong succeededElapsed = new AtomicLong(0);
+    private final AtomicLong succeededCount = new AtomicLong(0);
 
     public AbstractReference(Class<T> clazz, URL url) {
         super(url);
@@ -40,12 +45,17 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
 
         incrActiveCount(request);
         Response response = null;
+        long startTime = System.nanoTime();
         try {
             response = doCall(request);
-
             return response;
         } finally {
             decrActiveCount(request, response);
+            if (response != null && response.getException() == null) {
+                long elapsed = System.nanoTime() - startTime;
+                succeededElapsed.addAndGet(elapsed);
+                succeededCount.incrementAndGet();
+            }
         }
     }
 
@@ -72,6 +82,20 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
     @Override
     public URL getServiceUrl() {
         return serviceUrl;
+    }
+
+    /*
+     * 获取成功调用的累计响应时间（纳秒）
+     */
+    public long getSucceededElapsed() {
+        return succeededElapsed.get();
+    }
+
+    /*
+     * 获取成功调用次数
+     */
+    public long getSucceededCount() {
+        return succeededCount.get();
     }
 
 }

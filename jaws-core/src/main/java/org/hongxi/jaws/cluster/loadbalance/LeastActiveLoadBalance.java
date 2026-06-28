@@ -10,21 +10,21 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * "低并发优化" 负载均衡
+ * "最少活跃" 负载均衡（Least Active）
  *
  * <pre>
- * 		1） 低并发度优先： reference的某时刻的call数越小优先级越高
+ * 		1） 最少活跃调用数优先：reference 的某时刻的活跃 call 数越小优先级越高
  *
- * 		2） 低并发reference获取策略：
- * 				由于Reference List可能很多，比如上百台，如果每次都要从这上百个Reference或者最低并发的几个，性能有些损耗，
- * 				因此 random.nextInt(list.size()) 获取一个起始的index，然后获取最多不超过MAX_REFERENCE_COUNT的
- * 				状态是isAvailable的reference进行判断activeCount.
+ * 		2） 最少活跃 reference 获取策略：
+ * 			 由于 Reference List 可能很多，比如上百台，如果每次都要从这上百个 Reference 中选取
+ * 			 活跃数最少的，性能有些损耗，因此 random.nextInt(list.size()) 获取一个起始的 index，
+ * 			 然后获取最多不超过 MAX_REFERENCE_COUNT 的可用 reference 进行比较。
  * </pre>
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@SpiMeta(name = "activeWeight")
-public class ActiveWeightLoadBalance<T> extends AbstractLoadBalance<T> {
+@SpiMeta(name = "leastActive")
+public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
 
     @Override
     protected Reference<T> doSelect(Request request) {
@@ -81,14 +81,14 @@ public class ActiveWeightLoadBalance<T> extends AbstractLoadBalance<T> {
             refersHolder.add(temp);
         }
 
-        Collections.sort(refersHolder, new LowActivePriorityComparator<T>());
+        Collections.sort(refersHolder, new LeastActiveComparator<T>());
     }
 
     private int compare(Reference<T> reference1, Reference<T> reference2) {
         return reference1.activeReferenceCount() - reference2.activeReferenceCount();
     }
 
-    static class LowActivePriorityComparator<T> implements Comparator<Reference<T>> {
+    static class LeastActiveComparator<T> implements Comparator<Reference<T>> {
         @Override
         public int compare(Reference<T> reference1, Reference<T> reference2) {
             return reference1.activeReferenceCount() - reference2.activeReferenceCount();

@@ -7,7 +7,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，支持 fastjson2 / hessian2 序列化
 - **injvm 协议** — JVM 内部直调，零网络开销，适合本地开发与测试
 - **服务注册与发现** — ZooKeeper 注册中心，支持心跳续约与失败重连
-- **多种负载均衡** — random、roundrobin、activeWeight（低并发优先）、localFirst（本地优先）、consistentHash、configurableWeight
+- **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
 - **高可用容错** — failover（失败切换）、failfast（快速失败）
 - **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
 - **方法级别配置** — 可为单个方法设置独立的超时、重试策略
