@@ -199,9 +199,27 @@ cmd_run() {
     local pid=$!
     echo "$pid" > "$pid_file"
 
-    # 2. 等待 provider 注册到 ZK
-    echo "[2/4] 等待 Provider 注册 ..."
-    sleep 5
+    # 2. 等待 provider 注册到 ZK（轮询日志，最多等 15 秒）
+    echo -n "[2/4] 等待 Provider 注册 "
+    local max_wait=15
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if grep -q "exported" "$log_file" 2>/dev/null; then
+            # 确保所有服务都发布完成（两个 exported）
+            local count
+            count=$(grep -c "exported" "$log_file")
+            if [ "$count" -ge 2 ]; then
+                echo " 就绪 (${waited}s)"
+                break
+            fi
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        echo -n "."
+    done
+    if [ $waited -ge $max_wait ]; then
+        echo " 超时 (${max_wait}s)，继续运行..."
+    fi
 
     # 3. 运行 consumer
     echo "[3/4] 运行 Consumer ..."
