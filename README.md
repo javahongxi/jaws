@@ -18,7 +18,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 
 ```
 jaws-parent
-├── jaws-core                  # 核心：协议抽象、SPI、集群、路由、Filter、配置
+├── jaws-core                  # 核心：协议抽象、SPI、序列化、集群、Filter、配置
 ├── jaws-transport-netty       # Netty 传输层实现
 ├── jaws-registry-zookeeper    # ZooKeeper 注册中心实现
 └── jaws-samples
@@ -127,15 +127,14 @@ System.out.println("server => " + serverUrl.getHost() + ":" + serverUrl.getPort(
 
 ## 技术栈
 
-| 组件 | 技术 | 版本 |
-|------|------|------|
-| 语言 | Java | 17 |
-| 网络 | Netty | 4.1.x |
-| 注册中心 | ZooKeeper + Curator | 3.9 / 5.9 |
-| 序列化 | fastjson2 / hessian-lite | 2.0.62 / 4.0.5 |
-| 工具 | Guava | 33.6 |
-| 日志 | Logback | via Spring Boot BOM |
+| 组件   | 技术                       | 版本             |
+|------|--------------------------|----------------|
+| 语言   | Java                     | 17             |
+| 网络   | Netty                    | 4.1.132        |
+| 注册中心 | ZooKeeper + Curator      | 3.9 / 5.9      |
+| 序列化  | fastjson2 / hessian-lite | 2.0.62 / 4.0.5 |
+| 工具   | Guava                    | 33.6           |
+| 日志   | slf4j                    | 2.0.17         |
 
-## License
 
 &copy; [hongxi.org](http://hongxi.org)
