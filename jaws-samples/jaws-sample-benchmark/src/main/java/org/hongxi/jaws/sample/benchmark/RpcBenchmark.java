@@ -226,23 +226,19 @@ public class RpcBenchmark {
             allLatencies.addAll(list);
         }
 
-        BenchmarkResult result = new BenchmarkResult();
-        result.totalCalls = allLatencies.size();
-        result.durationSeconds = durationSeconds;
-        result.latencies = allLatencies;
-        return result;
+        return new BenchmarkResult(allLatencies.size(), durationSeconds, allLatencies);
     }
 
     /*
      * 打印统计结果
      */
     private static void printResult(BenchmarkResult result) {
-        if (result == null || result.latencies.isEmpty()) {
+        if (result == null || result.latencies().isEmpty()) {
             System.out.println("No data collected.");
             return;
         }
 
-        long[] sorted = result.latencies.stream().mapToLong(Long::longValue).sorted().toArray();
+        long[] sorted = result.latencies().stream().mapToLong(Long::longValue).sorted().toArray();
         int count = sorted.length;
 
         long sum = 0;
@@ -250,7 +246,7 @@ public class RpcBenchmark {
             sum += v;
         }
 
-        double qps = count / (double) result.durationSeconds;
+        double qps = count / (double) result.durationSeconds();
         double avgUs = (sum / (double) count) / 1000.0;
         double minUs = sorted[0] / 1000.0;
         double maxUs = sorted[count - 1] / 1000.0;
@@ -268,7 +264,7 @@ public class RpcBenchmark {
         System.out.printf("  Threads      : %,d%n", THREADS);
         System.out.println("  Sleep        : " + (SLEEP_MS > 0 ? SLEEP_MS + "ms" : "N/A"));
         System.out.printf("  Total calls  : %,d%n", count);
-        System.out.printf("  Duration     : %,ds%n", result.durationSeconds);
+        System.out.printf("  Duration     : %,ds%n", result.durationSeconds());
         System.out.printf("  QPS          : %,.0f%n", qps);
         System.out.println("--------------------------------------------");
         System.out.printf("  Min          : %,.2f us%n", minUs);
@@ -282,9 +278,5 @@ public class RpcBenchmark {
         System.out.println("--------------------------------------------");
     }
 
-    private static class BenchmarkResult {
-        int totalCalls;
-        int durationSeconds;
-        List<Long> latencies;
-    }
+    private record BenchmarkResult(int totalCalls, int durationSeconds, List<Long> latencies) {}
 }
