@@ -16,6 +16,7 @@
         <module>jaws-sample-provider</module>
         <module>jaws-sample-consumer</module>
         <module>jaws-sample-api</module>
+        <module>jaws-sample-injvm</module>
     </modules>
 
     <build>

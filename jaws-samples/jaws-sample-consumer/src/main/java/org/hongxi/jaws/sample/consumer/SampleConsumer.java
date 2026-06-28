@@ -6,7 +6,9 @@ import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ReferenceConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.sample.api.DemoService;
+import org.hongxi.jaws.sample.api.OrderService;
 import org.hongxi.jaws.sample.api.model.Contacts;
+import org.hongxi.jaws.sample.api.model.Order;
 import org.hongxi.jaws.sample.api.model.Phone;
 import org.hongxi.jaws.sample.api.model.User;
 
@@ -15,35 +17,54 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Created by shenhongxi on 2021/4/25.
+ * 服务消费者示例
+ *
+ * <pre>
+ * 演示场景：
+ * 1. jaws 协议 + ZooKeeper 注册中心
+ * 2. 多服务引用 - DemoService + OrderService
+ * 3. 各种参数类型调用 - String、POJO、List、Map、嵌套对象
+ * 4. group/version 配置
+ * </pre>
+ *
+ * 启动前请先运行 SampleProvider 确保服务已导出
  */
 public class SampleConsumer {
 
     public static void main(String[] args) throws Exception {
-        ReferenceConfig<DemoService> referenceConfig = new ReferenceConfig<>();
-        referenceConfig.setInterface(DemoService.class);
-        referenceConfig.setApplication("sample-consumer");
-        referenceConfig.setModule("sample");
-        referenceConfig.setGroup("test");
-        referenceConfig.setRequestTimeout(2000);
-        referenceConfig.setVersion("2.0");
-        referenceConfig.setCheck("false");
-        referenceConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
-        referenceConfig.setRegistry(createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
+        ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
+        RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
 
-        DemoService demoService = referenceConfig.getRef();
+        /* 引用 DemoService */
+        ReferenceConfig<DemoService> demoRef = new ReferenceConfig<>();
+        demoRef.setInterface(DemoService.class);
+        demoRef.setApplication("sample-consumer");
+        demoRef.setModule("sample");
+        demoRef.setGroup("test");
+        demoRef.setRequestTimeout(2000);
+        demoRef.setVersion("2.0");
+        demoRef.setCheck("false");
+        demoRef.setProtocol(protocolConfig);
+        demoRef.setRegistry(registryConfig);
+
+        DemoService demoService = demoRef.getRef();
+
+        /* 基本调用 */
+        System.out.println("--- DemoService 基本调用 ---");
         String r = demoService.hello("lily");
-        System.out.println(r);
+        System.out.println("hello => " + r);
 
         User user = new User("lily", 24);
         User newUser = demoService.rename(user, "lucy");
-        System.out.println(newUser);
+        System.out.println("rename => " + newUser);
 
+        /* 复杂参数调用 */
+        System.out.println("\n--- DemoService 复杂参数 ---");
         List<User> users = demoService.getUsers();
-        System.out.println(users);
+        System.out.println("getUsers => " + users);
 
         Map<String, User> map = demoService.map(users);
-        System.out.println(map);
+        System.out.println("map => " + map);
 
         Contacts contacts = new Contacts();
         contacts.setId(123L);
@@ -51,6 +72,7 @@ public class SampleConsumer {
         contacts.setAddresses(Lists.newArrayList("Beijing", "Wuhan"));
         contacts.setPhones(Lists.newArrayList(new Phone(10010), new Phone(10086)));
         demoService.save(contacts);
+        System.out.println("save(contacts) => void OK");
 
         Contacts contacts2 = new Contacts();
         contacts2.setId(124L);
@@ -62,7 +84,40 @@ public class SampleConsumer {
         contactsList.add(contacts);
         contactsList.add(contacts2);
         int size = demoService.save(contactsList);
-        System.out.println(size);
+        System.out.println("save(contactsList) => " + size);
+
+        /* 引用 OrderService */
+        System.out.println("\n--- OrderService 调用 ---");
+        ReferenceConfig<OrderService> orderRef = new ReferenceConfig<>();
+        orderRef.setInterface(OrderService.class);
+        orderRef.setApplication("sample-consumer");
+        orderRef.setModule("sample");
+        orderRef.setGroup("test");
+        orderRef.setVersion("2.0");
+        orderRef.setCheck("false");
+        orderRef.setProtocol(protocolConfig);
+        orderRef.setRegistry(registryConfig);
+
+        OrderService orderService = orderRef.getRef();
+
+        User buyer = new User("lily", 24);
+        Order order1 = orderService.createOrder(buyer, List.of("item-A", "item-B"));
+        System.out.println("createOrder => " + order1);
+
+        Order order2 = orderService.createOrder(buyer, List.of("item-C"));
+        System.out.println("createOrder => " + order2);
+
+        Order fetched = orderService.getOrder(order1.getId());
+        System.out.println("getOrder => " + fetched);
+
+        List<Order> buyerOrders = orderService.getOrdersByBuyer(buyer);
+        System.out.println("getOrdersByBuyer => " + buyerOrders);
+
+        int total = orderService.countOrders();
+        System.out.println("countOrders => " + total);
+
+        boolean cancelled = orderService.cancelOrder(order2.getId());
+        System.out.println("cancelOrder => " + cancelled);
     }
 
     private static ProtocolConfig createProtocolConfig(String protocolName) {

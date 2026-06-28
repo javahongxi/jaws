@@ -5,29 +5,57 @@ import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.api.DemoService;
+import org.hongxi.jaws.sample.api.OrderService;
 import org.hongxi.jaws.sample.provider.service.DemoServiceImpl;
+import org.hongxi.jaws.sample.provider.service.OrderServiceImpl;
 import org.hongxi.jaws.switcher.JawsSwitcherUtils;
 
 /**
- * Created by shenhongxi on 2021/4/25.
+ * 服务提供者示例
+ *
+ * <pre>
+ * 演示场景：
+ * 1. jaws 协议 + ZooKeeper 注册中心
+ * 2. 多服务导出 - DemoService + OrderService
+ * 3. group/version/shareChannel 配置
+ * </pre>
+ *
+ * 启动前请确保 ZooKeeper 已在 127.0.0.1:2181 运行
  */
 public class SampleProvider {
 
     public static void main(String[] args) throws Exception {
-        ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
-        serviceConfig.setRef(new DemoServiceImpl());
-        serviceConfig.setApplication("sample-provider");
-        serviceConfig.setModule("sample");
-        serviceConfig.setCheck("true");
-        serviceConfig.setInterface(DemoService.class);
-        serviceConfig.setGroup("test");
-        serviceConfig.setShareChannel(true);
-        serviceConfig.setVersion("2.0");
-        serviceConfig.setProtocol(createProtocolConfig(JawsConstants.PROTOCOL_JAWS));
-        serviceConfig.setRegistry(createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER));
-        serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
+        ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
+        RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
 
-        serviceConfig.export();
+        /* 导出 DemoService */
+        ServiceConfig<DemoService> demoServiceConfig = new ServiceConfig<>();
+        demoServiceConfig.setRef(new DemoServiceImpl());
+        demoServiceConfig.setApplication("sample-provider");
+        demoServiceConfig.setModule("sample");
+        demoServiceConfig.setCheck("true");
+        demoServiceConfig.setInterface(DemoService.class);
+        demoServiceConfig.setGroup("test");
+        demoServiceConfig.setVersion("2.0");
+        demoServiceConfig.setProtocol(protocolConfig);
+        demoServiceConfig.setRegistry(registryConfig);
+        demoServiceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
+        demoServiceConfig.export();
+        System.out.println("DemoService exported.");
+
+        /* 导出 OrderService */
+        ServiceConfig<OrderService> orderServiceConfig = new ServiceConfig<>();
+        orderServiceConfig.setRef(new OrderServiceImpl());
+        orderServiceConfig.setApplication("sample-provider");
+        orderServiceConfig.setModule("sample");
+        orderServiceConfig.setInterface(OrderService.class);
+        orderServiceConfig.setGroup("test");
+        orderServiceConfig.setVersion("2.0");
+        orderServiceConfig.setProtocol(protocolConfig);
+        orderServiceConfig.setRegistry(registryConfig);
+        orderServiceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + 10000);
+        orderServiceConfig.export();
+        System.out.println("OrderService exported.");
 
         JawsSwitcherUtils.setSwitcherValue(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, true);
     }
