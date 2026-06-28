@@ -46,6 +46,7 @@ usage() {
     WARMUP             预热秒数（默认 5）
     DURATION           测量秒数（默认 10）
     PORT               jaws 协议端口（默认 10010，仅 bench-jaws）
+    SERIALIZATION      序列化方式（默认 fastjson2，仅 bench-jaws）
 
   Examples:
     ./run-sample.sh build
@@ -60,6 +61,7 @@ usage() {
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
+    SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
 
 EOF
 }
@@ -275,7 +277,8 @@ cmd_bench_jaws() {
     local warmup="${WARMUP:-5}"
     local duration="${DURATION:-10}"
     local port="${PORT:-10010}"
-    echo "运行 Benchmark [jaws+netty] threads=$threads warmup=${warmup}s duration=${duration}s port=$port"
+    local serialization="${SERIALIZATION:-fastjson2}"
+    echo "运行 Benchmark [jaws+netty] threads=$threads warmup=${warmup}s duration=${duration}s port=$port serialization=$serialization"
     echo "--------------------------------------------"
     $MVN exec:java -pl "$BENCHMARK_MODULE" \
         -Dexec.mainClass="$BENCHMARK_MAIN" \
@@ -284,6 +287,7 @@ cmd_bench_jaws() {
         -Dwarmup="$warmup" \
         -Dduration="$duration" \
         -Dport="$port" \
+        -Dserialization="$serialization" \
         -q
 }
 

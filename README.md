@@ -76,7 +76,20 @@ jaws-parent
 
 # 自定义参数
 THREADS=8 WARMUP=5 DURATION=20 ./run-sample.sh bench-jaws
+
+# 切换序列化方式
+SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
 ```
+
+**Benchmark 环境变量：**
+
+| 变量          | 说明           | 默认值      | 适用范围      |
+|-------------|--------------|-----------|-----------|
+| `THREADS`   | 并发线程数        | 4         | bench-injvm / bench-jaws |
+| `WARMUP`    | 预热秒数         | 5         | bench-injvm / bench-jaws |
+| `DURATION`  | 测量秒数         | 10        | bench-injvm / bench-jaws |
+| `PORT`      | jaws 协议端口    | 10010     | 仅 bench-jaws |
+| `SERIALIZATION` | 序列化方式（fastjson2 / hessian2） | fastjson2 | 仅 bench-jaws |
 
 ## 代码示例
 

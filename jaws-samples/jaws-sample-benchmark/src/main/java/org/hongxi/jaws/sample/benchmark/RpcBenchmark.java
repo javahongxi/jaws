@@ -27,10 +27,11 @@ import java.util.concurrent.atomic.AtomicLong;
  *   warmup    - 预热秒数，默认 5
  *   duration  - 测量秒数，默认 10
  *   port      - jaws 协议端口，默认 10010
+ *   serialization - 序列化方式，默认 fastjson2（仅 jaws 协议生效）
  *
  * 示例：
  *   java -Dprotocol=injvm -Dthreads=8 -Dwarmup=5 -Dduration=10 ...
- *   java -Dprotocol=jaws -Dthreads=8 -Dport=10010 ...
+ *   java -Dprotocol=jaws -Dthreads=8 -Dport=10010 -Dserialization=hessian2 ...
  * </pre>
  */
 public class RpcBenchmark {
@@ -40,6 +41,7 @@ public class RpcBenchmark {
     private static final int WARMUP_SECONDS = Integer.parseInt(System.getProperty("warmup", "5"));
     private static final int DURATION_SECONDS = Integer.parseInt(System.getProperty("duration", "10"));
     private static final int PORT = Integer.parseInt(System.getProperty("port", "10010"));
+    private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
 
     private static final String BENCHMARK_RESULT = "benchmark";
 
@@ -53,6 +55,7 @@ public class RpcBenchmark {
         System.out.println("  duration : " + DURATION_SECONDS + "s");
         if ("jaws".equals(PROTOCOL)) {
             System.out.println("  port     : " + PORT);
+            System.out.println("  serialize: " + SERIALIZATION);
         }
         System.out.println("============================================\n");
 
@@ -84,6 +87,9 @@ public class RpcBenchmark {
         System.out.println("\n============================================");
         System.out.println("  Benchmark Done");
         System.out.println("============================================");
+
+        /* 基准测试完毕，强制退出（Netty/Curator 的非守护线程会阻止 JVM 自动退出） */
+        System.exit(0);
     }
 
     /*
@@ -130,7 +136,7 @@ public class RpcBenchmark {
         protocol.setId(PROTOCOL);
         if ("jaws".equals(PROTOCOL)) {
             protocol.setEndpointFactory("netty");
-            protocol.setSerialization("fastjson2");
+            protocol.setSerialization(SERIALIZATION);
         }
         return protocol;
     }
@@ -249,6 +255,9 @@ public class RpcBenchmark {
         System.out.println("\n--------------------------------------------");
         System.out.println("  Results");
         System.out.println("--------------------------------------------");
+        System.out.println("  Protocol     : " + PROTOCOL);
+        System.out.println("  Serialization: " + ("jaws".equals(PROTOCOL) ? SERIALIZATION : "N/A"));
+        System.out.printf("  Threads      : %,d%n", THREADS);
         System.out.printf("  Total calls  : %,d%n", count);
         System.out.printf("  Duration     : %,ds%n", result.durationSeconds);
         System.out.printf("  QPS          : %,.0f%n", qps);
