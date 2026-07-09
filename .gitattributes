@@ -1,0 +1,2 @@
+# Exclude shell scripts from language statistics
+*.sh linguist-vendored
