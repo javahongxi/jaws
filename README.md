@@ -1,4 +1,4 @@
-# Jaws Framework
+# Jaws Framework 🦈
 
 Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注册与发现、负载均衡、容错等完整的微服务通信能力。
 
