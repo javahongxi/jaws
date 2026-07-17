@@ -12,16 +12,21 @@
         <module>jaws-core</module>
         <module>jaws-transport-netty</module>
         <module>jaws-registry-zookeeper</module>
+        <module>jaws-registry-nacos</module>
+        <module>jaws-spring-boot-starter</module>
         <module>jaws-samples</module>
     </modules>
 
     <properties>
         <java.version>17</java.version>
 
+        <spring-boot.version>3.5.14</spring-boot.version>
+
         <curator.version>5.9.0</curator.version>
         <fastjson2.version>2.0.62</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
         <hessian-lite.version>4.0.5</hessian-lite.version>
+        <nacos.version>3.2.2</nacos.version>
         <zookeeper.version>3.9.3</zookeeper.version>
     </properties>
 
@@ -30,7 +35,7 @@
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
-                <version>3.5.14</version>
+                <version>${spring-boot.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -64,6 +69,11 @@
                 <groupId>org.apache.curator</groupId>
                 <artifactId>curator-recipes</artifactId>
                 <version>${curator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.nacos</groupId>
+                <artifactId>nacos-client</artifactId>
+                <version>${nacos.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
