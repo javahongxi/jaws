@@ -6,7 +6,8 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，支持 fastjson2 / hessian2 序列化
 - **injvm 协议** — JVM 内部直调，零网络开销，适合本地开发与测试
-- **服务注册与发现** — ZooKeeper 注册中心，支持心跳续约与失败重连
+- **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
+- **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 - **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
 - **高可用容错** — failover（失败切换）、failfast（快速失败）
 - **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
@@ -21,11 +22,15 @@ jaws-parent
 ├── jaws-core                  # 核心：协议抽象、SPI、序列化、集群、路由、Filter、配置
 ├── jaws-transport-netty       # Netty 传输层实现
 ├── jaws-registry-zookeeper    # ZooKeeper 注册中心实现
+├── jaws-registry-nacos        # Nacos 注册中心实现
+├── jaws-spring-boot-starter   # Spring Boot 自动配置与注解支持
 └── jaws-samples
     ├── jaws-sample-api        # 服务接口定义（DemoService、OrderService）
     ├── jaws-sample-injvm      # injvm 协议示例（无需 ZK）
     ├── jaws-sample-provider   # 服务提供者（jaws + ZooKeeper）
     ├── jaws-sample-consumer   # 服务消费者
+    ├── jaws-sample-provider-boot  # Spring Boot 服务提供者（jaws + Nacos）
+    ├── jaws-sample-consumer-boot  # Spring Boot 服务消费者
     └── jaws-sample-benchmark  # 性能基准测试
 ```
 
@@ -35,7 +40,8 @@ jaws-parent
 
 - Java 17+
 - Maven 3.8+（或使用内置 `./mvnw`）
-- ZooKeeper 3.9+（仅 jaws 协议示例需要）
+- ZooKeeper 3.9+（ZooKeeper 注册中心模式需要）
+- Nacos 3.x（Nacos 注册中心模式需要）
 
 ### 编译
 
@@ -152,6 +158,69 @@ URL serverUrl = RpcContext.getContext().getServerUrl();
 System.out.println("server => " + serverUrl.getHost() + ":" + serverUrl.getPort());
 ```
 
+### Spring Boot 示例
+
+引入 `jaws-spring-boot-starter` 依赖后，通过注解即可完成服务发布与引用。
+
+**application.yml：**
+
+```yaml
+spring:
+  application:
+    name: sample-provider-boot
+
+jaws:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: jaws
+    serialization: fastjson2
+  service:
+    export: "jaws:10000"
+  registry:
+    address: 127.0.0.1
+    port: 8848
+    protocol: nacos
+```
+
+**发布服务（Provider）：**
+
+```java
+@EnableJaws
+@SpringBootApplication
+public class ProviderApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ProviderApplication.class, args);
+    }
+}
+
+// interfaceClass 可省略，自动从实现类推断
+@JawsService
+public class DemoServiceImpl implements DemoService {
+    @Override
+    public String hello(String name) {
+        return "hello " + name;
+    }
+}
+```
+
+**引用服务（Consumer）：**
+
+```java
+@Component
+public class MyRunner implements CommandLineRunner {
+
+    @JawsReference
+    private DemoService demoService;
+
+    @Override
+    public void run(String... args) {
+        String result = demoService.hello("jaws");
+        System.out.println("result: " + result);
+    }
+}
+```
+
 ## 技术栈
 
 | 组件   | 技术                       | 版本             |
@@ -159,7 +228,9 @@ System.out.println("server => " + serverUrl.getHost() + ":" + serverUrl.getPort(
 | 语言   | Java                     | 17             |
 | 网络   | Netty                    | 4.1.132        |
 | 注册中心 | ZooKeeper + Curator      | 3.9 / 5.9      |
+| 注册中心 | Nacos                    | 3.2.2          |
 | 序列化  | fastjson2 / hessian-lite | 2.0.62 / 4.0.5 |
+| 框架集成 | Spring Boot              | 3.5            |
 | 工具   | Guava                    | 33.6           |
 | 日志   | slf4j                    | 2.0.17         |
 
