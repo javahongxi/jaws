@@ -2,6 +2,7 @@ package org.hongxi.jaws.spring.boot;
 
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RegistryConfig;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -90,8 +91,7 @@ public class JawsAutoConfiguration {
     }
 
     @Bean
-    public ReferenceAnnotationBeanPostProcessor referenceAnnotationBeanPostProcessor(ProtocolConfig protocolConfig,
-                                                                               RegistryConfig registryConfig) {
-        return new ReferenceAnnotationBeanPostProcessor(properties, protocolConfig, registryConfig);
+    public static ReferenceAnnotationBeanPostProcessor referenceAnnotationBeanPostProcessor(BeanFactory beanFactory) {
+        return new ReferenceAnnotationBeanPostProcessor(beanFactory);
     }
 }

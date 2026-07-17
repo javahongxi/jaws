@@ -8,6 +8,7 @@ import org.hongxi.jaws.spring.boot.annotation.JawsReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 
@@ -24,17 +25,11 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceAnnotationBeanPostProcessor.class);
 
-    private final JawsProperties properties;
-    private final ProtocolConfig protocolConfig;
-    private final RegistryConfig registryConfig;
+    private final BeanFactory beanFactory;
     private final List<ReferenceConfig<?>> referenceConfigs = new ArrayList<>();
 
-    public ReferenceAnnotationBeanPostProcessor(JawsProperties properties,
-                                                ProtocolConfig protocolConfig,
-                                                RegistryConfig registryConfig) {
-        this.properties = properties;
-        this.protocolConfig = protocolConfig;
-        this.registryConfig = registryConfig;
+    public ReferenceAnnotationBeanPostProcessor(BeanFactory beanFactory) {
+        this.beanFactory = beanFactory;
     }
 
     @Override
@@ -59,6 +54,10 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
 
     @SuppressWarnings("unchecked")
     private Object createReference(JawsReference jawsRef, Class<?> fieldType) {
+        JawsProperties properties = beanFactory.getBean(JawsProperties.class);
+        ProtocolConfig protocolConfig = beanFactory.getBean(ProtocolConfig.class);
+        RegistryConfig registryConfig = beanFactory.getBean(RegistryConfig.class);
+
         Class<?> interfaceClass = (jawsRef.interfaceClass() != void.class)
                 ? jawsRef.interfaceClass() : fieldType;
         String application = StringUtils.isNotBlank(jawsRef.application())
