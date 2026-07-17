@@ -97,15 +97,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
             }
         }
 
-        try {
-            // 防止旧节点未正常注销
-            removeInstance(url, NODE_TYPE_CLIENT);
-            registerInstance(url, NODE_TYPE_CLIENT);
-        } catch (Exception e) {
-            log.warn("[NacosRegistry] subscribe service: register client instance error, serviceName={}, msg={}",
-                    NacosPathUtils.toServiceName(url), e.getMessage());
-        }
-
         String serviceName = NacosPathUtils.toServiceName(url);
         String group = NacosPathUtils.toGroup(url);
         log.info("[NacosRegistry] subscribe service: serviceName={}, group={}, info={}",
@@ -407,6 +398,11 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         if (instances != null) {
             for (Instance instance : instances) {
                 Map<String, String> metadata = instance.getMetadata();
+                String nodeType = metadata != null ? metadata.get(METADATA_KEY_NODE_TYPE) : null;
+                /* skip client instances - they are consumers, not providers */
+                if (NODE_TYPE_CLIENT.equals(nodeType)) {
+                    continue;
+                }
                 String fullUrl = metadata != null ? metadata.get(METADATA_KEY_FULL_URL) : null;
                 URL parsedUrl = null;
                 if (StringUtils.isNotBlank(fullUrl)) {
