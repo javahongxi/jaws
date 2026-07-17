@@ -83,15 +83,16 @@ public class ServiceAnnotationPostProcessor
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
         /* find all @JawsService beans (from package scan or existing bean definitions) and register ServiceBeans */
-        Map<String, JawsService> serviceBeanMap = findServiceBeans(beanFactory);
+        Map<String, Class<?>> serviceBeanMap = findServiceBeans(beanFactory);
         if (serviceBeanMap.isEmpty()) {
             return;
         }
         BeanDefinitionRegistry registry = (BeanDefinitionRegistry) beanFactory;
-        for (Map.Entry<String, JawsService> entry : serviceBeanMap.entrySet()) {
+        for (Map.Entry<String, Class<?>> entry : serviceBeanMap.entrySet()) {
             String refBeanName = entry.getKey();
-            JawsService jawsService = entry.getValue();
-            registerServiceBean(registry, refBeanName, jawsService);
+            Class<?> beanClass = entry.getValue();
+            JawsService jawsService = beanClass.getAnnotation(JawsService.class);
+            registerServiceBean(registry, refBeanName, jawsService, beanClass);
         }
     }
 
@@ -128,9 +129,11 @@ public class ServiceAnnotationPostProcessor
 
     /**
      * Finds all bean definitions whose class is annotated with {@link JawsService}.
+     *
+     * @return a map of bean name to resolved bean class
      */
-    private Map<String, JawsService> findServiceBeans(ConfigurableListableBeanFactory beanFactory) {
-        Map<String, JawsService> result = new LinkedHashMap<>();
+    private Map<String, Class<?>> findServiceBeans(ConfigurableListableBeanFactory beanFactory) {
+        Map<String, Class<?>> result = new LinkedHashMap<>();
         for (String beanName : beanFactory.getBeanDefinitionNames()) {
             BeanDefinition beanDefinition = beanFactory.getBeanDefinition(beanName);
             String beanClassName = beanDefinition.getBeanClassName();
@@ -139,9 +142,8 @@ public class ServiceAnnotationPostProcessor
             }
             try {
                 Class<?> beanClass = Class.forName(beanClassName, false, classLoader);
-                JawsService jawsService = beanClass.getAnnotation(JawsService.class);
-                if (jawsService != null) {
-                    result.put(beanName, jawsService);
+                if (beanClass.getAnnotation(JawsService.class) != null) {
+                    result.put(beanName, beanClass);
                 }
             } catch (ClassNotFoundException | NoClassDefFoundError e) {
                 /* skip unresolvable classes */
@@ -153,11 +155,22 @@ public class ServiceAnnotationPostProcessor
     /**
      * Builds and registers a {@link ServiceBean} {@link BeanDefinition} for the given
      * {@code @JawsService} annotated bean.
+     *
+     * @param registry    the bean definition registry
+     * @param refBeanName the Spring bean name of the implementation
+     * @param jawsService the {@code @JawsService} annotation instance
+     * @param beanClass   the implementation class (may be {@code null} if unresolvable)
      */
     private void registerServiceBean(BeanDefinitionRegistry registry,
                                          String refBeanName,
-                                         JawsService jawsService) {
-        Class<?> interfaceClass = jawsService.interfaceClass();
+                                         JawsService jawsService,
+                                         Class<?> beanClass) {
+        Class<?> interfaceClass = resolveInterfaceClass(jawsService, beanClass);
+        if (interfaceClass == null) {
+            throw new IllegalStateException(
+                    "Cannot resolve interface class for @JawsService bean '" + refBeanName
+                            + "'. Please specify interfaceClass explicitly.");
+        }
         String serviceBeanName = generateServiceBeanName(interfaceClass, refBeanName);
 
         BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(ServiceBean.class);
@@ -211,6 +224,37 @@ public class ServiceAnnotationPostProcessor
 
         log.info("[ServiceAnnotationPostProcessor] registered ServiceBean: name={}, interface={}, ref={}",
                 serviceBeanName, interfaceClass.getName(), refBeanName);
+    }
+
+    /**
+     * Resolves the service interface class from the annotation or the bean class.
+     * <p>
+     * If {@code interfaceClass} is explicitly specified in the annotation, it is used directly.
+     * Otherwise, the first non-marker interface implemented by the bean class is returned.
+     *
+     * @param jawsService the annotation instance
+     * @param beanClass   the implementation class (may be {@code null})
+     * @return the resolved interface class, or {@code null} if unresolvable
+     */
+    private Class<?> resolveInterfaceClass(JawsService jawsService, Class<?> beanClass) {
+        Class<?> interfaceClass = jawsService.interfaceClass();
+        if (interfaceClass != void.class) {
+            return interfaceClass;
+        }
+        if (beanClass == null) {
+            return null;
+        }
+        Class<?>[] interfaces = beanClass.getInterfaces();
+        for (Class<?> iface : interfaces) {
+            /* skip common marker interfaces */
+            if (iface == java.io.Serializable.class || iface == java.io.Closeable.class
+                    || iface == AutoCloseable.class || iface == Cloneable.class
+                    || iface == Comparable.class) {
+                continue;
+            }
+            return iface;
+        }
+        return null;
     }
 
     /**
