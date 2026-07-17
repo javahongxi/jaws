@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: sample-provider-boot
+
+jaws:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: jaws
+    port: 10000
+  registry:
+    address: 127.0.0.1
+    port: 2181
+    protocol: zookeeper

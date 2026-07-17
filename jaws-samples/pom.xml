@@ -18,6 +18,8 @@
         <module>jaws-sample-api</module>
         <module>jaws-sample-injvm</module>
         <module>jaws-sample-benchmark</module>
+        <module>jaws-sample-provider-boot</module>
+        <module>jaws-sample-consumer-boot</module>
     </modules>
 
     <build>
