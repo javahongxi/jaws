@@ -61,7 +61,7 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
         Class<?> interfaceClass = (jawsRef.interfaceClass() != void.class)
                 ? jawsRef.interfaceClass() : fieldType;
         String application = StringUtils.isNotBlank(jawsRef.application())
-                ? jawsRef.application() : properties.getApplication();
+                ? jawsRef.application() : properties.getApplication().getName();
 
         ReferenceConfig<Object> refConfig = new ReferenceConfig<>();
         refConfig.setInterface((Class<Object>) interfaceClass);

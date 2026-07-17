@@ -187,9 +187,9 @@ public class ServiceAnnotationPostProcessor
                 ? jawsService.export() : environment.getProperty("jaws.service.export", "jaws:-1");
         builder.addPropertyValue("export", export);
 
-        /* application */
+        /* application name */
         String application = StringUtils.isNotBlank(jawsService.application())
-                ? jawsService.application() : environment.getProperty("jaws.application");
+                ? jawsService.application() : environment.getProperty("jaws.application.name");
         if (StringUtils.isNotBlank(application)) {
             builder.addPropertyValue("application", application);
         }

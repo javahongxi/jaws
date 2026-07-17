@@ -8,7 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Example YAML configuration:
  * <pre>
  * jaws:
- *   application: my-app
+ *   application:
+ *     name: my-app
  *   group: default
  *   version: "1.0"
  *   protocol:
@@ -33,9 +34,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class JawsProperties {
 
     /**
-     * Application name.
+     * Application configuration.
      */
-    private String application;
+    private Application application = new Application();
 
     /**
      * Default service group.
@@ -67,11 +68,11 @@ public class JawsProperties {
      */
     private Reference reference = new Reference();
 
-    public String getApplication() {
+    public Application getApplication() {
         return application;
     }
 
-    public void setApplication(String application) {
+    public void setApplication(Application application) {
         this.application = application;
     }
 
@@ -121,6 +122,25 @@ public class JawsProperties {
 
     public void setReference(Reference reference) {
         this.reference = reference;
+    }
+
+    /**
+     * Application configuration properties.
+     */
+    public static class Application {
+
+        /**
+         * Application name.
+         */
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
     }
 
     /**
