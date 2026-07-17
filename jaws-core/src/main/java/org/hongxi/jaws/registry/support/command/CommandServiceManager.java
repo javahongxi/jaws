@@ -315,11 +315,11 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
     }
 
     private void weightConfigError() {
-        throw new JawsFrameworkException("权重比只能是[0,100]间的整数");
+        throw new JawsFrameworkException("Weight ratio must be an integer in [0,100]");
     }
 
     private void routeRuleConfigError() {
-        log.warn("路由规则配置不合法");
+        log.warn("Invalid route rule configuration");
     }
 
 }

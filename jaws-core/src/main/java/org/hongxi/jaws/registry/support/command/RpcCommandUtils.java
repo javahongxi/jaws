@@ -30,7 +30,7 @@ public class RpcCommandUtils {
         try {
             return JSON.parseObject(commandString, RpcCommand.class);
         } catch (Exception e) {
-            log.error("指令配置错误：不是合法的JSON格式!");
+            log.error("Command config error: invalid JSON format!");
             return null;
         }
     }
@@ -117,7 +117,7 @@ public class RpcCommandUtils {
                 }
             }
             if (outer.size() != 1) {
-                throw new IllegalArgumentException("语法错误, 可能圆括号没有闭合");
+                throw new IllegalArgumentException("Syntax error: parentheses may not be closed");
             }
             char result = evalWithinParentheses(outer.peekLast());
             return result == '1';
@@ -183,16 +183,16 @@ public class RpcCommandUtils {
         }
 
         void syntaxError() {
-            throw new IllegalArgumentException("语法错误, 仅支持括号(),非!,与&,或|这几个运算符, 优先级依次递减.");
+            throw new IllegalArgumentException("Syntax error: only parentheses (), NOT !, AND &, OR | are supported, with decreasing precedence");
         }
 
         void syntaxError(String s) {
-            throw new IllegalArgumentException("语法错误: " + s);
+            throw new IllegalArgumentException("Syntax error: " + s);
         }
 
         void support(char c) {
             if (!all.contains(c)) {
-                syntaxError("不支持字符 " + c);
+                syntaxError("Unsupported character: " + c);
             }
         }
 
