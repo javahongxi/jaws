@@ -2,7 +2,6 @@ package org.hongxi.jaws.extensions;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.trace.Span;
@@ -35,7 +34,7 @@ import org.hongxi.jaws.rpc.Response;
  * Propagates context via request attachments for cross-service trace correlation.
  */
 @SpiMeta(name = "tracing")
-@Activation(sequence = 5)
+@Activation(key = "service", sequence = 5)
 public class TracingFilter implements Filter {
 
     private static final String INSTRUMENTATION_NAME = "jaws-rpc";
@@ -182,4 +181,5 @@ public class TracingFilter implements Filter {
                     request.setAttachment(TRACE_CONTEXT_PREFIX + key, value);
                 }
             };
+
 }

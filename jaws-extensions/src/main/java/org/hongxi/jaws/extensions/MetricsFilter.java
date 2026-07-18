@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
  * Tags: application, service, method, side (provider/consumer)
  */
 @SpiMeta(name = "metrics")
-@Activation(sequence = 10)
+@Activation(key = "service", sequence = 10)
 public class MetricsFilter implements Filter {
 
     private static final String METRIC_PREFIX = "jaws.rpc.";
