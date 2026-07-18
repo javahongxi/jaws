@@ -16,6 +16,10 @@ jaws:
     protocol: nacos
 
 management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
   otlp:
     metrics:
       export:
