@@ -10,6 +10,7 @@ jaws:
     name: ${spring.application.name}
   protocol:
     name: jaws
+    serialization: fastjson2
   service:
     export: "jaws:10000"
   registry:

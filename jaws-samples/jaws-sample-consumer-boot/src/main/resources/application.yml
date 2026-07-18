@@ -7,6 +7,7 @@ jaws:
     name: ${spring.application.name}
   protocol:
     name: jaws
+    serialization: fastjson2
   registry:
     address: 127.0.0.1
     port: 8848
