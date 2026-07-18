@@ -4,6 +4,8 @@ import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.model.Contacts;
 import org.hongxi.jaws.sample.api.model.User;
 import org.hongxi.jaws.spring.boot.annotation.JawsService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,9 +17,11 @@ import java.util.Map;
  */
 @JawsService
 public class DemoServiceImpl implements DemoService {
+    private static final Logger log = LoggerFactory.getLogger(DemoServiceImpl.class);
 
     @Override
     public String hello(String name) {
+        log.info("Hello {}", name);
         return "Hello, " + name;
     }
 

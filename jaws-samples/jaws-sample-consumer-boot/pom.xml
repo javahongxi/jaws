@@ -13,6 +13,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.hongxi</groupId>
             <artifactId>jaws-spring-boot-starter</artifactId>
             <version>${project.version}</version>
@@ -25,6 +29,12 @@
         <dependency>
             <groupId>org.hongxi</groupId>
             <artifactId>jaws-sample-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-observability-spring-boot-starter</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

@@ -17,3 +17,12 @@ jaws:
     address: 127.0.0.1
     port: 8848
     protocol: nacos
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    sampling:
+      probability: 1.0

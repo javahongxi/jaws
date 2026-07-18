@@ -11,6 +11,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
 - **高可用容错** — failover（失败切换）、failfast（快速失败）
 - **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
+- **可观测性** — 内置 Micrometer 指标采集和 OpenTelemetry 链路追踪，通过 Filter SPI 自动生效
 - **方法级别配置** — 可为单个方法设置独立的超时、重试策略
 - **RpcContext** — 消费端可获取实际调用的服务端地址，提供端可获取调用方 IP
 - **动态端口** — 端口设为 -1 时自动从 10000 递增分配，避免冲突
@@ -23,7 +24,10 @@ jaws-parent
 ├── jaws-transport-netty       # Netty 传输层实现
 ├── jaws-registry-zookeeper    # ZooKeeper 注册中心实现
 ├── jaws-registry-nacos        # Nacos 注册中心实现
-├── jaws-spring-boot-starter   # Spring Boot 自动配置与注解支持
+├── jaws-extensions            # 扩展：Micrometer 指标 + OpenTelemetry 链路追踪 Filter
+├── jaws-spring-boot
+│   ├── jaws-spring-boot-starter                # Spring Boot 自动配置与注解支持
+│   └── jaws-observability-spring-boot-starter  # 可观测性 Spring Boot 自动装配
 └── jaws-samples
     ├── jaws-sample-api        # 服务接口定义（DemoService、OrderService）
     ├── jaws-sample-injvm      # injvm 协议示例（无需 ZK）

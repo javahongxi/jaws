@@ -27,6 +27,12 @@
             <artifactId>jaws-sample-api</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-observability-spring-boot-starter</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
