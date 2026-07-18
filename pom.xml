@@ -30,7 +30,7 @@
         <nacos.version>3.2.2</nacos.version>
         <zookeeper.version>3.9.3</zookeeper.version>
         <micrometer.version>1.14.6</micrometer.version>
-        <opentelemetry.version>1.48.0</opentelemetry.version>
+        <opentelemetry.version>1.62.0</opentelemetry.version>
     </properties>
 
     <dependencyManagement>
