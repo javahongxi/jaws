@@ -1,7 +1,7 @@
 package org.hongxi.jaws.observability.spring.boot;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.opentelemetry.api.OpenTelemetry;
+import io.micrometer.tracing.Tracer;
 import org.hongxi.jaws.extensions.MetricsFilter;
 import org.hongxi.jaws.extensions.TracingFilter;
 import org.springframework.beans.factory.ObjectProvider;
@@ -12,13 +12,14 @@ import org.springframework.context.annotation.Configuration;
 import jakarta.annotation.PostConstruct;
 
 /**
- * Auto-configuration for Jaws observability filters.
+ * Auto-Configuration for Jaws observability filters.
  * <p>
- * Automatically wires Micrometer MeterRegistry and OpenTelemetry instances
+ * Automatically wires Micrometer MeterRegistry and Tracer instances
  * into the respective filters when the corresponding libraries are on the classpath.
  * <p>
- * Usage: simply add jaws-observability + micrometer/opentelemetry dependencies,
- * and the filters will be automatically configured via SPI.
+ * Cross-service trace context propagation uses W3C traceparent format:
+ * the consumer injects traceparent into request attachments, and the provider
+ * extracts it to create a child span under the same trace.
  */
 @AutoConfiguration
 public class JawsObservabilityAutoConfiguration {
@@ -43,21 +44,18 @@ public class JawsObservabilityAutoConfiguration {
     }
 
     @Configuration
-    @ConditionalOnClass(OpenTelemetry.class)
+    @ConditionalOnClass(Tracer.class)
     static class TracingConfiguration {
 
-        private final ObjectProvider<OpenTelemetry> openTelemetry;
+        private final Tracer tracer;
 
-        TracingConfiguration(ObjectProvider<OpenTelemetry> openTelemetry) {
-            this.openTelemetry = openTelemetry;
+        TracingConfiguration(Tracer tracer) {
+            this.tracer = tracer;
         }
 
         @PostConstruct
         public void init() {
-            OpenTelemetry otel = openTelemetry.getIfAvailable();
-            if (otel != null) {
-                TracingFilter.setOpenTelemetry(otel);
-            }
+            TracingFilter.setTracer(tracer);
         }
     }
 }
