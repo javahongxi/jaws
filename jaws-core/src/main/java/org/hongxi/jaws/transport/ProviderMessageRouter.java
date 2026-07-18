@@ -3,6 +3,7 @@ package org.hongxi.jaws.transport;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
+import org.hongxi.jaws.common.util.GenericUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsBizException;
@@ -82,9 +83,65 @@ public class ProviderMessageRouter implements MessageHandler {
             DefaultResponse response = JawsFrameworkUtils.buildErrorResponse(request, exception);
             return response;
         }
+
+        // Handle generic invocation
+        boolean isGeneric = "true".equals(request.getAttachments().get("$generic"));
+        if (isGeneric) {
+            return handleGenericInvocation(request, provider);
+        }
+
         Method method = provider.lookupMethod(request.getMethodName(), request.getParametersDesc());
         fillParamDesc(request, method);
         Response response = call(request, provider);
+        response.setSerializationNumber(request.getSerializationNumber());
+        return response;
+    }
+
+    /**
+     * Handle generic invocation: convert Map arguments to actual POJO types,
+     * invoke the real method, and convert the result back to Map/simple types.
+     */
+    private Response handleGenericInvocation(Request request, Provider<?> provider) {
+        String methodName = request.getMethodName();
+        String parametersDesc = request.getParametersDesc();
+        Object[] originalArgs = request.getArguments();
+
+        Method method = provider.lookupMethod(methodName, parametersDesc);
+        if (method == null) {
+            JawsServiceException exception = new JawsServiceException(
+                    "Generic invocation: method not found: " + request.getInterfaceName() + "." + methodName
+                            + "(" + parametersDesc + ")");
+            DefaultResponse response = JawsFrameworkUtils.buildErrorResponse(request, exception);
+            response.setSerializationNumber(request.getSerializationNumber());
+            return response;
+        }
+
+        // Convert arguments from Map to actual POJO types
+        Class<?>[] paramTypes = method.getParameterTypes();
+        Object[] convertedArgs = new Object[paramTypes.length];
+        if (originalArgs != null) {
+            for (int i = 0; i < paramTypes.length && i < originalArgs.length; i++) {
+                convertedArgs[i] = GenericUtils.convertArgument(originalArgs[i], paramTypes[i]);
+            }
+        }
+
+        // Update the request with converted arguments and real parameter description
+        if (request instanceof DefaultRequest dr) {
+            dr.setArguments(convertedArgs);
+            dr.setParametersDesc(org.hongxi.jaws.common.util.ReflectUtils.getMethodParamDesc(method));
+        }
+
+        fillParamDesc(request, method);
+        Response response = call(request, provider);
+
+        // Convert the result for generic response
+        if (response.getException() == null && response.getValue() != null) {
+            Object convertedResult = GenericUtils.convertResult(response.getValue());
+            if (response instanceof DefaultResponse dr) {
+                dr.setValue(convertedResult);
+            }
+        }
+
         response.setSerializationNumber(request.getSerializationNumber());
         return response;
     }

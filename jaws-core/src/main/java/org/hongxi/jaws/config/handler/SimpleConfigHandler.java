@@ -51,14 +51,56 @@ public class SimpleConfigHandler implements ConfigHandler {
 
     @Override
     public <T> void unexport(List<Exporter<T>> exporters, Collection<URL> registryUrls) {
+        if (exporters == null || exporters.isEmpty()) {
+            return;
+        }
+
+        // Determine graceful shutdown timeout from the first exporter's URL config
+        long gracefulTimeout = exporters.get(0).getUrl().getIntParameter(
+                URLParamType.gracefulShutdownTimeout.getName(),
+                URLParamType.gracefulShutdownTimeout.intValue());
+
+        // Phase 1: Stop accepting new requests
+        log.info("[GracefulShutdown] Phase 1: Stop accepting new requests, exporters={}", exporters.size());
+        for (Exporter<T> exporter : exporters) {
+            try {
+                exporter.stopAccept();
+            } catch (Exception e) {
+                log.warn("[GracefulShutdown] Failed to stopAccept for exporter: {}", exporter.getUrl(), e);
+            }
+        }
+
+        // Phase 2: Wait for in-flight requests to complete
+        log.info("[GracefulShutdown] Phase 2: Waiting for in-flight requests to complete, timeout={}ms", gracefulTimeout);
+        for (Exporter<T> exporter : exporters) {
+            try {
+                exporter.awaitInactiveRequests(gracefulTimeout);
+            } catch (Exception e) {
+                log.warn("[GracefulShutdown] Failed to awaitInactiveRequests for exporter: {}", exporter.getUrl(), e);
+            }
+        }
+
+        // Phase 3: Unregister from registry
+        log.info("[GracefulShutdown] Phase 3: Unregister from registry");
         for (Exporter<T> exporter : exporters) {
             try {
                 unRegister(registryUrls, exporter.getUrl());
-                exporter.unexport();
             } catch (Exception e) {
-                log.warn("Exception when unexport exporters: {}", exporters);
+                log.warn("[GracefulShutdown] Failed to unregister: {}", exporter.getUrl(), e);
             }
         }
+
+        // Phase 4: Close connections and release resources
+        log.info("[GracefulShutdown] Phase 4: Close connections and release resources");
+        for (Exporter<T> exporter : exporters) {
+            try {
+                exporter.unexport();
+            } catch (Exception e) {
+                log.warn("[GracefulShutdown] Failed to unexport: {}", exporter.getUrl(), e);
+            }
+        }
+
+        log.info("[GracefulShutdown] Graceful shutdown completed");
     }
 
     @Override

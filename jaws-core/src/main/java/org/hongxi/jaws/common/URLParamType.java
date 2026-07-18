@@ -97,7 +97,11 @@ public enum URLParamType {
     // 消息处理分发策略
     providerProtectedStrategy("providerProtectedStrategy", "jaws"),
 
-    workerQueueSize("workerQueueSize", 0);
+    workerQueueSize("workerQueueSize", 0),
+
+    /** Graceful shutdown timeout in milliseconds. During this period, the server stops accepting
+     *  new requests and waits for in-flight requests to complete before closing connections. */
+    gracefulShutdownTimeout("gracefulShutdownTimeout", 10000);
 
     private String name;
     private String value;

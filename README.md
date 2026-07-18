@@ -11,6 +11,8 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
 - **高可用容错** — failover（失败切换）、failfast（快速失败）
 - **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
+- **优雅停机** — 四阶段停机（停止接收 → 等待在途请求 → 注销注册中心 → 关闭连接），零损伤发布
+- **泛化调用** — 无需依赖接口 JAR 包即可发起 RPC 调用，适用于网关、测试平台等场景
 - **可观测性** — 内置 Micrometer 指标采集和 OpenTelemetry 链路追踪，通过 Filter SPI 自动生效
 - **方法级别配置** — 可为单个方法设置独立的超时、重试策略
 - **RpcContext** — 消费端可获取实际调用的服务端地址，提供端可获取调用方 IP
@@ -247,6 +249,76 @@ public class MyRunner implements CommandLineRunner {
         System.out.println("result: " + result);
     }
 }
+```
+
+### 泛化调用
+
+无需依赖 Provider 的接口 JAR 包，通过 `GenericService.$invoke()` 即可发起 RPC 调用。
+
+```java
+ReferenceConfig<GenericService> ref = new ReferenceConfig<>();
+ref.setInterface(GenericService.class);
+ref.setServiceInterface("org.hongxi.jaws.sample.api.DemoService"); // 真实接口名
+ref.setGeneric(true);
+ref.setProtocol(protocolConfig);
+ref.setRegistry(registryConfig);
+
+GenericService service = ref.getRef();
+
+// 基础类型参数
+Object r1 = service.$invoke("hello",
+        new String[]{"java.lang.String"}, new Object[]{"world"});
+
+// POJO 参数用 Map 表示
+Map<String, Object> user = new HashMap<>();
+user.put("name", "lily");
+user.put("age", 24);
+Object r2 = service.$invoke("rename",
+        new String[]{"org.hongxi.jaws.sample.api.model.User", "java.lang.String"},
+        new Object[]{user, "lucy"});
+```
+
+Spring Boot 注解方式：
+
+```java
+@JawsReference(generic = true, serviceInterface = "org.hongxi.jaws.sample.api.DemoService")
+private GenericService demoService;
+```
+
+### 优雅停机
+
+Jaws 支持四阶段优雅停机，确保服务下线时不中断在途请求：
+
+```
+Phase 1: stopAccept()              关闭 ServerChannel，不再接收新连接
+Phase 2: awaitInactiveRequests()   等待在途请求处理完成（默认超时 10s）
+Phase 3: unregister()              从注册中心注销服务
+Phase 4: unexport() → destroy()    关闭连接、释放 EventLoopGroup 和线程池
+```
+
+通过 `gracefulShutdownTimeout` URL 参数可配置 Phase 2 最大等待时间（默认 10000ms）。
+
+**验证步骤：**
+
+```bash
+# 1. 启动 ZooKeeper（如未运行）
+# 2. 启动 Provider
+./run-sample.sh provider
+
+# 3. 另开终端，运行 Consumer
+./run-sample.sh consumer
+
+# 4. 在 Provider 运行期间发送 SIGTERM（不要用 kill -9）
+jps | grep SampleProvider   # 找到 PID
+kill -TERM <PID>
+
+# 5. 观察 Provider 日志，应依次输出：
+# [GracefulShutdown] Phase 1: Stop accepting new requests
+# [GracefulShutdown] Phase 2: Waiting for in-flight requests to complete
+# All in-flight requests completed before shutdown
+# [GracefulShutdown] Phase 3: Unregister from registry
+# [GracefulShutdown] Phase 4: Close connections and release resources
+# [GracefulShutdown] Graceful shutdown completed
 ```
 
 ### 可观测性

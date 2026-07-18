@@ -81,6 +81,16 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
         }
         stopped = true;
 
+        log.info("[JawsBootstrap] starting graceful shutdown...");
+
+        // Stop heartbeat first to prevent registry from thinking service is still alive
+        try {
+            JawsSwitcherUtils.setSwitcherValue(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, false);
+        } catch (Exception e) {
+            log.debug("[JawsBootstrap] failed to close heartbeat switcher", e);
+        }
+
+        // Trigger graceful shutdown via ServiceBean.destroy() -> unexport() -> 4-phase shutdown
         Map<String, ServiceBean> serviceBeans =
                 event.getApplicationContext().getBeansOfType(ServiceBean.class);
         for (ServiceBean serviceBean : serviceBeans.values()) {
@@ -92,14 +102,7 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
             }
         }
 
-        /* close heartbeat switcher */
-        try {
-            JawsSwitcherUtils.setSwitcherValue(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, false);
-        } catch (Exception e) {
-            log.debug("[JawsBootstrap] failed to close heartbeat switcher", e);
-        }
-
-        log.info("[JawsBootstrap] shutdown complete");
+        log.info("[JawsBootstrap] graceful shutdown complete, services={}", serviceBeans.size());
     }
 
     @Override

@@ -130,6 +130,10 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private void processRequest(final ChannelHandlerContext ctx, final Request request) {
         request.setAttachment(URLParamType.host.getName(), NetUtils.getHostName(ctx.channel().remoteAddress()));
         final long processStartTime = System.currentTimeMillis();
+        // Track active request for graceful shutdown
+        if (channel instanceof NettyServer nettyServer) {
+            nettyServer.getActiveRequests().incrementAndGet();
+        }
         try {
             RpcContext.init(request);
             Object result;
@@ -154,6 +158,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 channelFuture.addListener((ChannelFutureListener) future -> response.onFinish());
             }
         } finally {
+            if (channel instanceof NettyServer nettyServer) {
+                nettyServer.getActiveRequests().decrementAndGet();
+            }
             RpcContext.destroy();
         }
     }

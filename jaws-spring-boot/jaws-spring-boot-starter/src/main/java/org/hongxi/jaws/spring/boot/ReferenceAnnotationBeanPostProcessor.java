@@ -109,6 +109,16 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
             refConfig.setDirectUrl(jawsRef.directUrl());
         }
 
+        /* generic invocation */
+        if (jawsRef.generic()) {
+            refConfig.setGeneric(true);
+            if (StringUtils.isNotBlank(jawsRef.serviceInterface())) {
+                refConfig.setServiceInterface(jawsRef.serviceInterface());
+            } else if (jawsRef.interfaceClass() != void.class) {
+                refConfig.setServiceInterface(jawsRef.interfaceClass().getName());
+            }
+        }
+
         Object proxy = refConfig.getRef();
         referenceConfigs.add(refConfig);
 

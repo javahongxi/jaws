@@ -56,6 +56,18 @@ public @interface JawsReference {
     String directUrl() default "";
 
     /**
+     * Whether to use generic invocation (no interface JAR dependency).
+     * When true, the field type should be {@link org.hongxi.jaws.rpc.GenericService}.
+     */
+    boolean generic() default false;
+
+    /**
+     * The real service interface name for generic invocation.
+     * Required when {@link #generic()} is true.
+     */
+    String serviceInterface() default "";
+
+    /**
      * Application name. If empty, uses the global application name.
      */
     String application() default "";

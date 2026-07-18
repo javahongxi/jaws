@@ -2,6 +2,7 @@ package org.hongxi.jaws.config;
 
 import org.apache.commons.lang3.StringUtils;
 import java.io.Serial;
+import org.hongxi.jaws.closeable.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -214,6 +215,8 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
         for (Exporter<T> ep : exporters) {
             existingServices.add(ep.getProvider().getUrl().getIdentity());
         }
+        // Register JVM shutdown hook to trigger graceful shutdown
+        ShutdownHook.registerShutdownHook(this::unexport);
     }
 
     private void afterUnexport() {

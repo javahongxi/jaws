@@ -15,6 +15,7 @@ import org.hongxi.jaws.config.handler.ConfigHandler;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.registry.RegistryService;
+import org.hongxi.jaws.rpc.GenericService;
 import org.hongxi.jaws.rpc.URL;
 
 import java.util.*;
@@ -31,6 +32,8 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
     protected List<MethodConfig> methods;
     private Class<T> interfaceClass;
     private String serviceInterface;
+    // Whether to use generic invocation (no interface JAR dependency on consumer side)
+    private boolean generic;
     // 点对点直连服务提供地址
     private String directUrl;
     private AtomicBoolean initialized = new AtomicBoolean(false);
@@ -75,6 +78,16 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             return;
         }
 
+        // For generic invocation, override interfaceClass to GenericService
+        if (generic) {
+            if (StringUtils.isBlank(serviceInterface)) {
+                throw new JawsFrameworkException(
+                        "Generic invocation requires serviceInterface to be set to the real interface name",
+                        JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            }
+            interfaceClass = (Class<T>) GenericService.class;
+        }
+
         try {
             interfaceClass = (Class<T>) Class.forName(interfaceClass.getName(), true, Thread.currentThread().getContextClassLoader());
         } catch (ClassNotFoundException e) {
@@ -114,8 +127,12 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             clusters.add(clusterSupport.getCluster());
 
             if (proxy == null) {
-                String defaultValue = StringUtils.isBlank(serviceInterface) ? URLParamType.proxy.value() : JawsConstants.PROXY_COMMON;
-                proxy = refUrl.getParameter(URLParamType.proxy.getName(), defaultValue);
+                if (generic) {
+                    proxy = "generic";
+                } else {
+                    String defaultValue = StringUtils.isBlank(serviceInterface) ? URLParamType.proxy.value() : JawsConstants.PROXY_COMMON;
+                    proxy = refUrl.getParameter(URLParamType.proxy.getName(), defaultValue);
+                }
             }
         }
 
@@ -211,6 +228,14 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
 
     public AtomicBoolean getInitialized() {
         return initialized;
+    }
+
+    public boolean isGeneric() {
+        return generic;
+    }
+
+    public void setGeneric(boolean generic) {
+        this.generic = generic;
     }
 
 }

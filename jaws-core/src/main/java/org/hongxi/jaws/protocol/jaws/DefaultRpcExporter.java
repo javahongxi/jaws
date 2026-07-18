@@ -86,6 +86,16 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
         log.info("DefaultRpcExporter destroy Success: url={}", url);
     }
 
+    @Override
+    public void stopAccept() {
+        server.stopAccept();
+    }
+
+    @Override
+    public void awaitInactiveRequests(long timeout) {
+        server.awaitInactiveRequests(timeout);
+    }
+
     protected ProviderMessageRouter initRequestRouter(URL url) {
         String ipPort = url.getServerPortStr();
         ProviderMessageRouter requestRouter = ipPort2RequestRouter.get(ipPort);

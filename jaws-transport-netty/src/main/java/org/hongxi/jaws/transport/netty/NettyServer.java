@@ -38,6 +38,8 @@ public class NettyServer extends AbstractServer {
     private ThreadPoolExecutor threadPoolExecutor;
 
     private AtomicInteger rejectCounter = new AtomicInteger(0);
+    private final AtomicInteger activeRequests = new AtomicInteger(0);
+    private volatile boolean accepting = true;
 
     public NettyServer(URL url, MessageHandler messageHandler) {
         super(url);
@@ -176,6 +178,51 @@ public class NettyServer extends AbstractServer {
     @Override
     public boolean isAvailable() {
         return state.isAliveState();
+    }
+
+    @Override
+    public void stopAccept() {
+        if (serverChannel != null && serverChannel.isOpen()) {
+            serverChannel.close();
+            accepting = false;
+            log.info("Server stopAccept: no longer accepting new connections, uri={}", url.getUri());
+        }
+    }
+
+    @Override
+    public int getActiveRequestCount() {
+        return activeRequests.get();
+    }
+
+    public AtomicInteger getActiveRequests() {
+        return activeRequests;
+    }
+
+    public boolean isAccepting() {
+        return accepting;
+    }
+
+    /**
+     * Wait for in-flight requests to complete within the given timeout.
+     */
+    @Override
+    public void awaitInactiveRequests(long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (activeRequests.get() > 0 && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        int remaining = activeRequests.get();
+        if (remaining > 0) {
+            log.warn("Graceful shutdown timeout reached, {} requests still in-flight, uri={}",
+                    remaining, url.getUri());
+        } else {
+            log.info("All in-flight requests completed before shutdown, uri={}", url.getUri());
+        }
     }
 
     @Override
