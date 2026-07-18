@@ -160,7 +160,31 @@ System.out.println("server => " + serverUrl.getHost() + ":" + serverUrl.getPort(
 
 ### Spring Boot 示例
 
-引入 `jaws-spring-boot-starter` 依赖后，通过注解即可完成服务发布与引用。
+引入 `jaws-spring-boot-starter` 和注册中心依赖后，通过注解即可完成服务发布与引用。
+
+**Maven 依赖：**
+
+```xml
+<dependency>
+    <groupId>org.hongxi</groupId>
+    <artifactId>jaws-spring-boot-starter</artifactId>
+    <version>${jaws.version}</version>
+</dependency>
+<!-- 注册中心：二选一 -->
+<dependency>
+    <groupId>org.hongxi</groupId>
+    <artifactId>jaws-registry-nacos</artifactId>
+    <version>${jaws.version}</version>
+</dependency>
+<!-- 或使用 ZooKeeper -->
+<!--
+<dependency>
+    <groupId>org.hongxi</groupId>
+    <artifactId>jaws-registry-zookeeper</artifactId>
+    <version>${jaws.version}</version>
+</dependency>
+-->
+```
 
 **application.yml：**
 
