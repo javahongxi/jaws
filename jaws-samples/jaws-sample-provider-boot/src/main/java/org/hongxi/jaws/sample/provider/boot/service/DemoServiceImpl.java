@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Created by shenhongxi on 2021/4/25.
@@ -55,5 +56,13 @@ public class DemoServiceImpl implements DemoService {
     public int save(List<Contacts> contactsList) {
         System.out.println(contactsList);
         return contactsList.size();
+    }
+
+    @Override
+    public CompletableFuture<String> helloAsync(String name) {
+        return CompletableFuture.supplyAsync(() -> {
+            log.info("helloAsync processing: {}", name);
+            return "Hello async, " + name;
+        });
     }
 }

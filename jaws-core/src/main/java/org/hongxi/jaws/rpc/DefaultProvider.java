@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Created by shenhongxi on 2021/3/7.
@@ -49,6 +50,40 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
         boolean defaultThrowExceptionStack = URLParamType.transExceptionStack.boolValue();
         try {
             Object value = method.invoke(proxyImpl, request.getArguments());
+            // Provider端异步支持：如果方法返回 CompletableFuture，等待结果
+            if (value instanceof CompletableFuture<?> cf) {
+                try {
+                    long timeout = this.url.getMethodParameter(
+                            request.getMethodName(), request.getParametersDesc(),
+                            URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
+                    if (timeout > 0) {
+                        value = cf.get(timeout, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    } else {
+                        value = cf.get();
+                    }
+                } catch (java.util.concurrent.ExecutionException ee) {
+                    Throwable cause = ee.getCause() != null ? ee.getCause() : ee;
+                    if (cause instanceof Exception ex) {
+                        response.setException(new JawsBizException("provider async call process error", ex));
+                    } else {
+                        response.setException(new JawsServiceException("provider async call fatal error: " + cause));
+                    }
+                    response.setAttachments(request.getAttachments());
+                    return response;
+                } catch (java.util.concurrent.TimeoutException te) {
+                    response.setException(new JawsServiceException(
+                            "provider async call timeout: " + request.getInterfaceName() + "." + request.getMethodName(),
+                            JawsErrorMsgConstants.SERVICE_TIMEOUT));
+                    response.setAttachments(request.getAttachments());
+                    return response;
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    response.setException(new JawsServiceException("provider async call interrupted",
+                            JawsErrorMsgConstants.SERVICE_TIMEOUT));
+                    response.setAttachments(request.getAttachments());
+                    return response;
+                }
+            }
             response.setValue(value);
         } catch (Exception e) {
             if (e.getCause() != null) {

@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Created by shenhongxi on 2020/8/23.
@@ -177,6 +178,24 @@ public class DefaultResponseFuture implements ResponseFuture {
     @Override
     public void setReturnType(Class<?> clazz) {
         this.returnType = clazz;
+    }
+
+    /**
+     * Convert this ResponseFuture to a CompletableFuture.
+     * The returned CompletableFuture will complete when this future completes (success or failure).
+     */
+    @SuppressWarnings("unchecked")
+    public <T> CompletableFuture<T> toCompletableFuture() {
+        CompletableFuture<T> cf = new CompletableFuture<>();
+        this.addListener(future -> {
+            if (future.isSuccess()) {
+                cf.complete((T) result);
+            } else {
+                Exception ex = future.getException();
+                cf.completeExceptionally(ex != null ? ex : new JawsServiceException("response future failed"));
+            }
+        });
+        return cf;
     }
 
     public Object getRequestObj() {

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * DemoService 实现 - 用于 injvm 协议演示
@@ -49,5 +50,10 @@ public class DemoServiceImpl implements DemoService {
     public int save(List<Contacts> contactsList) {
         System.out.println("[injvm] save contactsList: " + contactsList);
         return contactsList.size();
+    }
+
+    @Override
+    public CompletableFuture<String> helloAsync(String name) {
+        return CompletableFuture.supplyAsync(() -> "Hello async, " + name);
     }
 }

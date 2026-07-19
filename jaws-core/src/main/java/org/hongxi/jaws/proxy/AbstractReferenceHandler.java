@@ -15,9 +15,13 @@ import org.hongxi.jaws.switcher.SwitcherService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Created by shenhongxi on 2021/4/23.
@@ -39,6 +43,88 @@ public class AbstractReferenceHandler<T> {
     }
 
     Object invokeRequest(Request request, Class<?> returnType, boolean async) throws Throwable {
+        RpcContext curContext = RpcContext.getContext();
+        curContext.putAttribute(JawsConstants.ASYNC_SUFFIX, async);
+
+        return doInvoke(request, returnType, async, false);
+    }
+
+    /**
+     * Invoke with CompletableFuture return type.
+     * The returned CompletableFuture completes when the RPC response arrives.
+     */
+    CompletableFuture<Object> invokeCompletableFutureRequest(Request request, Class<?> returnType, Method method) {
+        RpcContext curContext = RpcContext.getContext();
+        curContext.putAttribute(JawsConstants.ASYNC_SUFFIX, true);
+
+        // set rpc context attachments to request
+        Map<String, String> attachments = curContext.getRpcAttachments();
+        if (!attachments.isEmpty()) {
+            for (Map.Entry<String, String> entry : attachments.entrySet()) {
+                request.setAttachment(entry.getKey(), entry.getValue());
+            }
+        }
+
+        if (StringUtils.isNotBlank(curContext.getClientRequestId())) {
+            request.setAttachment(URLParamType.requestIdFromClient.getName(), curContext.getClientRequestId());
+        }
+
+        CompletableFuture<Object> resultFuture = new CompletableFuture<>();
+
+        for (Cluster<T> cluster : clusters) {
+            String protocolSwitcher = JawsConstants.PROTOCOL_SWITCHER_PREFIX + cluster.getUrl().getProtocol();
+            Switcher switcher = switcherService.getSwitcher(protocolSwitcher);
+            if (switcher != null && !switcher.isOn()) {
+                continue;
+            }
+
+            request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
+            request.setAttachment(URLParamType.clientGroup.getName(), cluster.getUrl().getGroup());
+            request.setAttachment(URLParamType.application.getName(), cluster.getUrl().getApplication());
+            request.setAttachment(URLParamType.module.getName(), cluster.getUrl().getModule());
+
+            try {
+                Response response = cluster.call(request);
+                if (response instanceof ResponseFuture rf) {
+                    rf.setReturnType(returnType);
+                    if (rf instanceof DefaultResponseFuture drf) {
+                        drf.toCompletableFuture().thenAccept(resultFuture::complete)
+                                .exceptionally(ex -> {
+                                    resultFuture.completeExceptionally(ex);
+                                    return null;
+                                });
+                    } else {
+                        // Fallback: add listener to bridge
+                        rf.addListener(future -> {
+                            if (future.isSuccess()) {
+                                resultFuture.complete(future.getValue());
+                            } else {
+                                resultFuture.completeExceptionally(future.getException());
+                            }
+                        });
+                    }
+                } else {
+                    // Synchronous response (e.g., injvm or cached)
+                    if (response.getException() != null) {
+                        resultFuture.completeExceptionally(response.getException());
+                    } else {
+                        resultFuture.complete(response.getValue());
+                    }
+                }
+                return resultFuture;
+            } catch (RuntimeException e) {
+                resultFuture.completeExceptionally(e);
+                return resultFuture;
+            }
+        }
+
+        resultFuture.completeExceptionally(new JawsServiceException(
+                "Reference call Error: cluster not exist, interface=" + interfaceName + " " + JawsFrameworkUtils.toString(request),
+                JawsErrorMsgConstants.SERVICE_NOT_FOUND, false));
+        return resultFuture;
+    }
+
+    private Object doInvoke(Request request, Class<?> returnType, boolean async, boolean completableFutureReturn) throws Throwable {
         RpcContext curContext = RpcContext.getContext();
         curContext.putAttribute(JawsConstants.ASYNC_SUFFIX, async);
 

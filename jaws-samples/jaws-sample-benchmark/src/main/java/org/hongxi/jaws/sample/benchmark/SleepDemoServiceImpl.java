@@ -6,6 +6,7 @@ import org.hongxi.jaws.sample.api.model.User;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 模拟业务耗时的 DemoService 装饰器
@@ -60,5 +61,10 @@ public class SleepDemoServiceImpl implements DemoService {
     @Override
     public int save(List<Contacts> contactsList) {
         return delegate.save(contactsList);
+    }
+
+    @Override
+    public CompletableFuture<String> helloAsync(String name) {
+        return delegate.helloAsync(name);
     }
 }

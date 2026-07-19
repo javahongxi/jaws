@@ -14,7 +14,10 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Created by shenhongxi on 2021/4/23.
@@ -50,15 +53,23 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         request.setArguments(args);
         String methodName = method.getName();
         boolean async = false;
+        boolean completableFutureReturn = false;
         if (methodName.endsWith(JawsConstants.ASYNC_SUFFIX) && method.getReturnType().equals(ResponseFuture.class)) {
             methodName = JawsFrameworkUtils.removeAsyncSuffix(methodName);
             async = true;
+        } else if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
+            async = true;
+            completableFutureReturn = true;
         }
         request.setMethodName(methodName);
         request.setParametersDesc(ReflectUtils.getMethodParamDesc(method));
         request.setInterfaceName(interfaceName);
 
-        return invokeRequest(request, getRealReturnType(async, this.clazz, method, methodName), async);
+        Class<?> returnType = getRealReturnType(async, this.clazz, method, methodName);
+        if (completableFutureReturn) {
+            return invokeCompletableFutureRequest(request, returnType, method);
+        }
+        return invokeRequest(request, returnType, async);
     }
 
     /**

@@ -18,6 +18,7 @@ import org.hongxi.jaws.sample.injvm.service.OrderServiceImpl;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Injvm 协议 RPC 演示
@@ -50,6 +51,9 @@ public class InjvmRpcDemo {
 
         /* 5. 带方法级别配置的引用 */
         demoMethodConfig();
+
+        /* 6. CompletableFuture 异步调用 */
+        demoAsyncCall();
 
         System.out.println("\n========== Injvm RPC Demo Done ==========");
     }
@@ -214,6 +218,36 @@ public class InjvmRpcDemo {
 
         List<User> users = demoService.getUsers();
         System.out.println("getUsers with MethodConfig => " + users);
+        System.out.println();
+    }
+
+    /*
+     * CompletableFuture 异步调用演示
+     */
+    private static void demoAsyncCall() {
+        System.out.println("--- CompletableFuture 异步调用 ---");
+
+        ReferenceConfig<DemoService> ref = createReference(DemoService.class);
+        DemoService demoService = ref.getRef();
+
+        // 基本异步调用 - 返回 CompletableFuture
+        CompletableFuture<String> future = demoService.helloAsync("jaws");
+        future.thenAccept(result -> System.out.println("helloAsync callback => " + result));
+
+        // 阻塞获取结果
+        try {
+            String syncResult = future.get();
+            System.out.println("helloAsync get() => " + syncResult);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // 多个异步调用组合
+        CompletableFuture<String> f1 = demoService.helloAsync("world");
+        CompletableFuture<String> f2 = demoService.helloAsync("jaws");
+        CompletableFuture.allOf(f1, f2).thenRun(() -> {
+            System.out.println("both async calls completed: " + f1.join() + ", " + f2.join());
+        });
         System.out.println();
     }
 
