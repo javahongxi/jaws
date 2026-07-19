@@ -115,9 +115,7 @@ jaws:
   service:
     export: "jaws:10000"
   registry:
-    address: 127.0.0.1
-    port: 8848
-    protocol: nacos
+    address: nacos://127.0.0.1:8848
 ```
 
 **发布服务（Provider）：**
