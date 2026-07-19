@@ -170,17 +170,15 @@ public class MyRunner implements CommandLineRunner {
 
 ## 技术栈
 
-| 组件   | 技术                       | 版本             |
-|------|--------------------------|----------------|
-| 语言   | Java                     | 17             |
-| 网络   | Netty                    | 4.1.132        |
-| 注册中心 | ZooKeeper + Curator      | 3.9 / 5.9      |
-| 注册中心 | Nacos                    | 3.2.2          |
-| 序列化  | fastjson2 / hessian-lite | 2.0.62 / 4.0.5 |
-| 框架集成 | Spring Boot              | 3.5            |
-| 可观测性 | Micrometer + OpenTelemetry | 1.14 / 1.48  |
-| 工具   | Guava                    | 33.6           |
-| 日志   | slf4j                    | 2.0.17         |
+| 组件   | 技术                         | 版本             |
+|------|----------------------------|----------------|
+| 语言   | Java                       | 17             |
+| 网络   | Netty                      | 4.1.132        |
+| 注册中心 | ZooKeeper + Curator        | 3.9 / 5.9      |
+| 注册中心 | Nacos                      | 3.2.2          |
+| 序列化  | fastjson2 / hessian-lite   | 2.0.62 / 4.0.5 |
+| 框架集成 | Spring Boot                | 3.5            |
+| 可观测性 | Micrometer + OpenTelemetry | -              |
 
 
 &copy; [hongxi.org](http://hongxi.org)
