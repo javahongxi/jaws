@@ -5,6 +5,7 @@ import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.HaStrategy;
 import org.hongxi.jaws.cluster.LoadBalance;
+import org.hongxi.jaws.cluster.Router;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -61,6 +62,7 @@ public class ClusterSupport<T> implements NotifyListener {
     private ConcurrentHashMap<URL, List<Reference<T>>> registryReferences = new ConcurrentHashMap<>();
     private int selectNodeCount;
     private ConcurrentHashMap<URL, Map<String, GroupUrlsSelector>> registryGroupUrlsSelectorMap = new ConcurrentHashMap<>();
+    private List<Router> routers;
 
     public ClusterSupport(Class<T> interfaceClass, List<URL> registryUrls, URL refUrl) {
         this.registryUrls = registryUrls;
@@ -75,6 +77,7 @@ public class ClusterSupport<T> implements NotifyListener {
     public void init() {
         long start = System.currentTimeMillis();
         prepareCluster();
+        this.routers = ExtensionLoader.getExtensionLoader(Router.class).getExtensions();
 
         URL subUrl = toSubscribeUrl(url);
         for (URL ru : registryUrls) {
@@ -171,10 +174,16 @@ public class ClusterSupport<T> implements NotifyListener {
         // 判断urls中是否包含权重信息，并通知 LoadBalance
         processWeights(urls);
 
-        List<URL> serviceUrls = urls;
+        // apply routers to filter urls
+        List<URL> routedUrls = urls;
+        for (Router router : routers) {
+            routedUrls = router.route(routedUrls, url);
+        }
+
+        List<URL> serviceUrls = routedUrls;
         if (selectNodeCount > 0) {
             refreshSet.add(this);
-            serviceUrls = selectUrls(registryUrl, urls);
+            serviceUrls = selectUrls(registryUrl, routedUrls);
         } else {
             refreshSet.remove(this);
         }
