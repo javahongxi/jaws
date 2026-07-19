@@ -130,43 +130,9 @@ public interface DemoService {
 }
 ```
 
-### 发布服务（Provider）
+### Spring Boot 用法
 
-```java
-ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
-serviceConfig.setRef(new DemoServiceImpl());
-serviceConfig.setApplication("my-provider");
-serviceConfig.setInterface(DemoService.class);
-serviceConfig.setGroup("test");
-serviceConfig.setVersion("1.0");
-serviceConfig.setProtocol(protocolConfig);
-serviceConfig.setRegistry(registryConfig);
-serviceConfig.setExport("jaws:10000");
-serviceConfig.export();
-```
-
-### 引用服务（Consumer）
-
-```java
-ReferenceConfig<DemoService> ref = new ReferenceConfig<>();
-ref.setInterface(DemoService.class);
-ref.setApplication("my-consumer");
-ref.setGroup("test");
-ref.setVersion("1.0");
-ref.setProtocol(protocolConfig);
-ref.setRegistry(registryConfig);
-
-DemoService demoService = ref.getRef();
-String result = demoService.hello("jaws");
-
-// 获取实际调用的服务端地址
-URL serverUrl = RpcContext.getContext().getServerUrl();
-System.out.println("server => " + serverUrl.getHost() + ":" + serverUrl.getPort());
-```
-
-### Spring Boot 示例
-
-引入 `jaws-spring-boot-starter` 和注册中心依赖后，通过注解即可完成服务发布与引用。
+引入 `jaws-spring-boot-starter` 和注册中心依赖后，通过注解即可完成服务发布与引用。更多用法请参考 `jaws-samples` 各示例模块。
 
 **Maven 依赖：**
 
@@ -224,7 +190,6 @@ public class ProviderApplication {
     }
 }
 
-// interfaceClass 可省略，自动从实现类推断
 @JawsService
 public class DemoServiceImpl implements DemoService {
     @Override
@@ -253,37 +218,7 @@ public class MyRunner implements CommandLineRunner {
 
 ### 泛化调用
 
-无需依赖 Provider 的接口 JAR 包，通过 `GenericService.$invoke()` 即可发起 RPC 调用。
-
-```java
-ReferenceConfig<GenericService> ref = new ReferenceConfig<>();
-ref.setInterface(GenericService.class);
-ref.setServiceInterface("org.hongxi.jaws.sample.api.DemoService"); // 真实接口名
-ref.setGeneric(true);
-ref.setProtocol(protocolConfig);
-ref.setRegistry(registryConfig);
-
-GenericService service = ref.getRef();
-
-// 基础类型参数
-Object r1 = service.$invoke("hello",
-        new String[]{"java.lang.String"}, new Object[]{"world"});
-
-// POJO 参数用 Map 表示
-Map<String, Object> user = new HashMap<>();
-user.put("name", "lily");
-user.put("age", 24);
-Object r2 = service.$invoke("rename",
-        new String[]{"org.hongxi.jaws.sample.api.model.User", "java.lang.String"},
-        new Object[]{user, "lucy"});
-```
-
-Spring Boot 注解方式：
-
-```java
-@JawsReference(generic = true, serviceInterface = "org.hongxi.jaws.sample.api.DemoService")
-private GenericService demoService;
-```
+无需依赖 Provider 的接口 JAR 包，通过 `GenericService.$invoke()` 即可发起 RPC 调用。Spring Boot 注解方式使用 `@JawsReference(generic = true, serviceInterface = "...")` 即可，完整示例请参考 `jaws-sample-consumer` 中的 `GenericSampleConsumer`。
 
 ### 优雅停机
 
