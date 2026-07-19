@@ -22,28 +22,6 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **配置热更新** — 运行时动态调整负载均衡、容错策略、超时、重试等参数，无需重启服务
 - **流量调度 / Command** — 跨分组流量调度，支持按权重合并多 group 服务、IP 路由规则，灰度发布利器
 
-## 模块
-
-```
-jaws-parent
-├── jaws-core                  # 核心：协议抽象、SPI、序列化、集群、路由、Filter、配置
-├── jaws-transport-netty       # Netty 传输层实现
-├── jaws-registry-zookeeper    # ZooKeeper 注册中心实现
-├── jaws-registry-nacos        # Nacos 注册中心实现
-├── jaws-extensions            # 扩展：Micrometer 指标 + OpenTelemetry 链路追踪 Filter
-├── jaws-spring-boot
-│   ├── jaws-spring-boot-starter                # Spring Boot 自动配置与注解支持
-│   └── jaws-observability-spring-boot-starter  # 可观测性 Spring Boot 自动装配
-└── jaws-samples
-    ├── jaws-sample-api        # 服务接口定义（DemoService、OrderService）
-    ├── jaws-sample-injvm      # injvm 协议示例（无需 ZK）
-    ├── jaws-sample-provider   # 服务提供者（jaws + ZooKeeper）
-    ├── jaws-sample-consumer   # 服务消费者
-    ├── jaws-sample-provider-boot  # Spring Boot 服务提供者（jaws + Nacos）
-    ├── jaws-sample-consumer-boot  # Spring Boot 服务消费者
-    └── jaws-sample-benchmark  # 性能基准测试
-```
-
 ## 快速开始
 
 ### 环境要求
@@ -80,47 +58,6 @@ jaws-parent
 ./run-sample.sh consumer           # 运行 consumer（需要先启动 provider）
 ./run-sample.sh stop               # 停止所有后台 provider 并清理
 ```
-
-### 性能测试
-
-```bash
-# injvm 协议基准（框架纯开销）
-./run-sample.sh bench-injvm
-
-# jaws + Netty 网络传输基准
-./run-sample.sh bench-jaws
-
-# 自定义参数
-THREADS=8 WARMUP=5 DURATION=20 ./run-sample.sh bench-jaws
-
-# 切换序列化方式
-SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
-
-# 模拟业务耗时（Provider 端每次调用 sleep 5ms）
-SLEEP=5 ./run-sample.sh bench-jaws
-```
-
-**Benchmark 环境变量：**
-
-| 变量          | 说明           | 默认值      | 适用范围      |
-|-------------|--------------|-----------|-----------|
-| `THREADS`   | 并发线程数        | 4         | bench-injvm / bench-jaws |
-| `WARMUP`    | 预热秒数         | 5         | bench-injvm / bench-jaws |
-| `DURATION`  | 测量秒数         | 10        | bench-injvm / bench-jaws |
-| `PORT`      | jaws 协议端口    | 10010     | 仅 bench-jaws |
-| `SERIALIZATION` | 序列化方式（fastjson2 / hessian2） | fastjson2 | 仅 bench-jaws |
-| `SLEEP`       | Provider 端模拟业务耗时（毫秒）      | 0         | bench-injvm / bench-jaws |
-
-**参数选择建议：**
-
-| 场景 | 线程数 | 测量秒数 | 说明 |
-|------|--------|---------|------|
-| 快速验证 | 4 | 10 | 默认值，确认功能正常 |
-| 常规压测 | 8~16 | 10 | 观察中等并发下的表现 |
-| 极限吞吐 | 32~64 | 20 | 探索 QPS 天花板 |
-| 模拟业务（有 sleep） | 8~16 | 20~30 | 单次调用慢，需更多时间积累样本 |
-
-> QPS = 总调用次数 / 测量秒数。并发线程数决定“同时有多少请求在飞”，线程越多 QPS 越高，直到达到系统瓶颈。
 
 ## 代码示例
 
@@ -231,6 +168,7 @@ public class MyRunner implements CommandLineRunner {
 | [配置热更新](doc/config-hot-reload.md) | 运行时动态调整负载均衡、容错、超时等参数 |
 | [流量调度](doc/command-routing.md) | 跨分组流量合并与 IP 路由规则 |
 | [可观测性](doc/observability.md) | Micrometer 指标 + OpenTelemetry 链路追踪 |
+| [性能测试](doc/benchmark.md) | Benchmark 环境变量与参数选择建议 |
 
 ## 技术栈
 
