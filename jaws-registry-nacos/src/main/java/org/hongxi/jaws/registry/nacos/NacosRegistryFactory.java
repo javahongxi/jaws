@@ -1,6 +1,8 @@
 package org.hongxi.jaws.registry.nacos;
 
 import com.alibaba.nacos.api.PropertyKeyConst;
+import com.alibaba.nacos.api.config.ConfigFactory;
+import com.alibaba.nacos.api.config.ConfigService;
 import com.alibaba.nacos.api.naming.NamingFactory;
 import com.alibaba.nacos.api.naming.NamingService;
 import org.hongxi.jaws.common.URLParamType;
@@ -30,7 +32,8 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
             int connectTimeout = registryUrl.getIntParameter(URLParamType.connectTimeout.getName(),
                     URLParamType.connectTimeout.intValue());
             NamingService namingService = createNamingService(address, connectTimeout);
-            return new NacosRegistry(registryUrl, namingService);
+            ConfigService configService = createConfigService(address, connectTimeout);
+            return new NacosRegistry(registryUrl, namingService, configService);
         } catch (Exception e) {
             log.error("[NacosRegistry] fail to connect nacos", e);
             throw new RuntimeException(e);
@@ -42,5 +45,12 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
         properties.setProperty(PropertyKeyConst.SERVER_ADDR, serverAddr);
         properties.setProperty(PropertyKeyConst.CONFIG_LONG_POLL_TIMEOUT, String.valueOf(connectTimeout));
         return NamingFactory.createNamingService(properties);
+    }
+
+    protected ConfigService createConfigService(String serverAddr, int connectTimeout) throws Exception {
+        Properties properties = new Properties();
+        properties.setProperty(PropertyKeyConst.SERVER_ADDR, serverAddr);
+        properties.setProperty(PropertyKeyConst.CONFIG_LONG_POLL_TIMEOUT, String.valueOf(connectTimeout));
+        return ConfigFactory.createConfigService(properties);
     }
 }

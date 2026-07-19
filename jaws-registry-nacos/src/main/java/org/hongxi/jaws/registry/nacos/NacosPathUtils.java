@@ -42,10 +42,18 @@ public class NacosPathUtils {
     }
 
     /**
-     * Build the Nacos service name for dynamic configuration storage.
+     * Build the Nacos Config dataId for dynamic configuration storage.
+     * dataId = interface fully qualified name (e.g. org.hongxi.jaws.sample.api.DemoService)
      */
-    public static String toConfigServiceName(URL url) {
-        return JawsConstants.NACOS_REGISTRY_NAMESPACE + JawsConstants.PATH_SEPARATOR + url.getPath() + JawsConstants.ZOOKEEPER_REGISTRY_CONFIG;
+    public static String toConfigDataId(URL url) {
+        return url.getPath();
+    }
+
+    /**
+     * Nacos Config group for dynamic configuration.
+     */
+    public static String toConfigGroup() {
+        return "JAWS";
     }
 
     /**

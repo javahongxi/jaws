@@ -1,5 +1,7 @@
 package org.hongxi.jaws.registry.nacos;
 
+import com.alibaba.nacos.api.config.ConfigService;
+import com.alibaba.nacos.api.config.listener.Listener;
 import com.alibaba.nacos.api.naming.NamingService;
 import com.alibaba.nacos.api.naming.listener.EventListener;
 import com.alibaba.nacos.api.naming.listener.NamingEvent;
@@ -19,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -47,20 +50,19 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     private static final String COMMAND_INSTANCE_ID = "command";
     private static final String METADATA_KEY_COMMAND = "command";
 
-    private static final String CONFIG_INSTANCE_ID = "config";
-    private static final String METADATA_KEY_CONFIG = "config";
-
     private final NamingService namingService;
+    private final ConfigService configService;
     private final Set<URL> availableServices = new ConcurrentHashSet<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, EventListener>> serviceListeners = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, EventListener>> commandListeners = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<URL, ConcurrentHashMap<ConfigListener, EventListener>> configListeners = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<URL, ConcurrentHashMap<ConfigListener, Listener>> configListeners = new ConcurrentHashMap<>();
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
 
-    public NacosRegistry(URL url, NamingService namingService) {
+    public NacosRegistry(URL url, NamingService namingService, ConfigService configService) {
         super(url);
         this.namingService = namingService;
+        this.configService = configService;
         ShutdownHook.registerShutdownHook(this);
     }
 
@@ -502,69 +504,73 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         }
     }
 
-    // ---- dynamic config ----
+    // ---- dynamic config (Nacos ConfigService) ----
 
     @Override
     protected void doSubscribeConfig(URL url, ConfigListener listener) {
-        ConcurrentHashMap<ConfigListener, EventListener> listeners = configListeners.get(url);
+        ConcurrentHashMap<ConfigListener, Listener> listeners = configListeners.get(url);
         if (listeners == null) {
             configListeners.putIfAbsent(url, new ConcurrentHashMap<>());
             listeners = configListeners.get(url);
         }
-        EventListener eventListener = listeners.get(listener);
-        if (eventListener == null) {
-            String serviceName = NacosPathUtils.toConfigServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            eventListener = event -> {
-                if (event instanceof NamingEvent namingEvent) {
-                    List<Instance> instances = namingEvent.getInstances();
-                    String config = extractConfig(instances);
-                    listener.notifyConfig(url, config);
-                    log.info("[NacosRegistry] config change: serviceName={}, group={}, config={}",
-                            serviceName, group, config);
+        Listener existing = listeners.get(listener);
+        if (existing == null) {
+            String dataId = NacosPathUtils.toConfigDataId(url);
+            String group = NacosPathUtils.toConfigGroup();
+            Listener nacosListener = new Listener() {
+                @Override
+                public Executor getExecutor() {
+                    return null;
+                }
+
+                @Override
+                public void receiveConfigInfo(String configInfo) {
+                    listener.notifyConfig(url, configInfo);
+                    log.info("[NacosRegistry] config change: dataId={}, group={}, config={}",
+                            dataId, group, configInfo);
                 }
             };
-            listeners.putIfAbsent(listener, eventListener);
-            eventListener = listeners.get(listener);
+            listeners.putIfAbsent(listener, nacosListener);
+            existing = listeners.get(listener);
             try {
-                namingService.subscribe(serviceName, group, eventListener);
+                configService.addListener(dataId, group, existing);
             } catch (Exception e) {
                 throw new JawsFrameworkException(
                         String.format("Failed to subscribe config %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
             }
         }
-        log.info("[NacosRegistry] subscribe config: serviceName={}, group={}",
-                NacosPathUtils.toConfigServiceName(url), NacosPathUtils.toGroup(url));
+        log.info("[NacosRegistry] subscribe config: dataId={}, group={}",
+                NacosPathUtils.toConfigDataId(url), NacosPathUtils.toConfigGroup());
     }
 
     @Override
     protected void doUnsubscribeConfig(URL url, ConfigListener listener) {
         try {
-            Map<ConfigListener, EventListener> listeners = configListeners.get(url);
+            Map<ConfigListener, Listener> listeners = configListeners.get(url);
             if (listeners != null) {
-                EventListener eventListener = listeners.remove(listener);
-                if (eventListener != null) {
-                    String serviceName = NacosPathUtils.toConfigServiceName(url);
-                    String group = NacosPathUtils.toGroup(url);
-                    namingService.unsubscribe(serviceName, group, eventListener);
+                Listener nacosListener = listeners.remove(listener);
+                if (nacosListener != null) {
+                    String dataId = NacosPathUtils.toConfigDataId(url);
+                    String group = NacosPathUtils.toConfigGroup();
+                    configService.removeListener(dataId, group, nacosListener);
                 }
             }
         } catch (Exception e) {
-            log.warn("[NacosRegistry] unsubscribe config failed: serviceName={}, msg={}",
-                    NacosPathUtils.toConfigServiceName(url), e.getMessage());
+            log.warn("[NacosRegistry] unsubscribe config failed: dataId={}, msg={}",
+                    NacosPathUtils.toConfigDataId(url), e.getMessage());
         }
     }
 
     @Override
     protected String doDiscoverConfig(URL url) {
         try {
-            String serviceName = NacosPathUtils.toConfigServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            List<Instance> instances = namingService.getAllInstances(serviceName, group);
-            return extractConfig(instances);
+            String dataId = NacosPathUtils.toConfigDataId(url);
+            String group = NacosPathUtils.toConfigGroup();
+            String content = configService.getConfig(dataId, group, 5000);
+            return content != null ? content : "";
         } catch (Exception e) {
-            log.warn("[NacosRegistry] discover config failed: serviceName={}, msg={}",
-                    NacosPathUtils.toConfigServiceName(url), e.getMessage());
+            log.warn("[NacosRegistry] discover config failed: dataId={}, msg={}",
+                    NacosPathUtils.toConfigDataId(url), e.getMessage());
             return "";
         }
     }
@@ -572,32 +578,12 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     @Override
     protected void doPublishConfig(URL url, String configString) {
         try {
-            String serviceName = NacosPathUtils.toConfigServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            Instance instance = new Instance();
-            instance.setIp(url.getHost());
-            instance.setPort(url.getPort());
-            instance.setHealthy(true);
-            instance.setEphemeral(false);
-            Map<String, String> metadata = new HashMap<>();
-            metadata.put(METADATA_KEY_CONFIG, configString != null ? configString : "");
-            instance.setMetadata(metadata);
-            namingService.registerInstance(serviceName, group, instance);
+            String dataId = NacosPathUtils.toConfigDataId(url);
+            String group = NacosPathUtils.toConfigGroup();
+            configService.publishConfig(dataId, group, configString != null ? configString : "");
         } catch (Exception e) {
             throw new JawsFrameworkException(
                     String.format("Failed to publish config %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         }
-    }
-
-    private String extractConfig(List<Instance> instances) {
-        if (instances != null) {
-            for (Instance instance : instances) {
-                Map<String, String> metadata = instance.getMetadata();
-                if (metadata != null && metadata.containsKey(METADATA_KEY_CONFIG)) {
-                    return metadata.get(METADATA_KEY_CONFIG);
-                }
-            }
-        }
-        return "";
     }
 }
