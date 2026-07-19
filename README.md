@@ -19,6 +19,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **动态端口** — 端口设为 -1 时自动从 10000 递增分配，避免冲突
 - **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
 - **服务鉴权 / Token** — 基于 Token 的服务认证，防止未授权调用，通过 Filter 自动生效
+- **配置热更新** — 运行时动态调整负载均衡、容错策略、超时、重试等参数，无需重启服务
 
 ## 模块
 
@@ -289,6 +290,35 @@ jaws:
 - Consumer 端 LoadBalance 根据运行时长线性加权（0 → 满权重）
 - 支持 Random / RoundRobin / LeastActive / ShortestResponse
 - 默认预热时长 10 分钟，可通过 `warmup` URL 参数自定义（毫秒）
+
+### 配置热更新
+
+Consumer 端订阅注册中心的配置节点，运行时动态调整参数，无需重启服务。支持动态切换的参数：
+
+| 参数 | 说明 | 示例值 |
+|------|------|--------|
+| `loadbalance` | 负载均衡策略 | `random`、`roundRobin`、`leastActive` |
+| `haStrategy` | 容错策略 | `failover`、`failfast`、`failback` |
+| `requestTimeout` | 调用超时（ms） | `5000` |
+| `retries` | 重试次数 | `2` |
+
+**Nacos 模式：** 在 Nacos 控制台 → 配置管理 → 配置列表 中新建配置：
+
+- **Data ID**：接口全限定名，如 `org.hongxi.jaws.sample.api.DemoService`
+- **Group**：`JAWS`
+- **配置格式**：JSON
+- **配置内容**：
+
+```json
+{
+  "loadbalance": "random",
+  "haStrategy": "failfast",
+  "requestTimeout": 5000,
+  "retries": 2
+}
+```
+
+**ZooKeeper 模式：** 在 `/jaws/{group}/config` 节点写入同样的 JSON 内容，Consumer 通过 CuratorCache 自动感知变更。
 
 ### 可观测性
 
