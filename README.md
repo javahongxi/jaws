@@ -9,7 +9,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
 - **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 - **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
-- **高可用容错** — failover（失败切换）、failfast（快速失败）
+- **高可用容错** — failover（失败切换）、failfast（快速失败）、failback（异步重试）
 - **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
 - **优雅停机** — 四阶段停机（停止接收 → 等待在途请求 → 注销注册中心 → 关闭连接），零损伤发布
 - **泛化调用** — 无需依赖接口 JAR 包即可发起 RPC 调用，适用于网关、测试平台等场景
@@ -17,6 +17,8 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **方法级别配置** — 可为单个方法设置独立的超时、重试策略
 - **RpcContext** — 消费端可获取实际调用的服务端地址，提供端可获取调用方 IP
 - **动态端口** — 端口设为 -1 时自动从 10000 递增分配，避免冲突
+- **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
+- **服务鉴权 / Token** — 基于 Token 的服务认证，防止未授权调用，通过 Filter 自动生效
 
 ## 模块
 
@@ -255,6 +257,38 @@ kill -TERM <PID>
 # [GracefulShutdown] Phase 4: Close connections and release resources
 # [GracefulShutdown] Graceful shutdown completed
 ```
+
+### 服务鉴权 / Token
+
+Provider 配置 token 后，Consumer 自动从注册中心获取并携带，无需额外代码：
+
+```java
+// Provider 端：注解方式
+@JawsService(token = "my-secret-token")
+public class DemoServiceImpl implements DemoService { }
+
+// Provider 端：编程式
+serviceConfig.setToken("my-secret-token");
+```
+
+也可通过 YAML 全局配置：
+
+```yaml
+jaws:
+  service:
+    token: my-secret-token
+```
+
+未配置 token 时自动跳过校验，完全向后兼容。
+
+### 连接预热 / Warm-up
+
+新启动的 Provider 逐步增加权重，避免 JIT 未充分编译、缓存未热时被打爆：
+
+- Provider 注册时自动写入启动时间戳
+- Consumer 端 LoadBalance 根据运行时长线性加权（0 → 满权重）
+- 支持 Random / RoundRobin / LeastActive / ShortestResponse
+- 默认预热时长 10 分钟，可通过 `warmup` URL 参数自定义（毫秒）
 
 ### 可观测性
 
