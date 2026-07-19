@@ -17,9 +17,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     serialization: fastjson2
  *     endpoint-factory: netty
  *   registry:
- *     address: 127.0.0.1
- *     port: 2181
- *     protocol: zookeeper
+ *     address: nacos://127.0.0.1:8848
+ *     username: nacos
+ *     password: nacos
  *   service:
  *     export: "jaws:-1"
  *     share-channel: true
@@ -220,19 +220,25 @@ public class JawsProperties {
     public static class Registry {
 
         /**
-         * Registry address (e.g., 127.0.0.1).
+         * Registry address, supports protocol prefix and multiple addresses.
+         * Format: protocol://ip1:port1,ip2:port2 (e.g., nacos://127.0.0.1:8848)
          */
-        private String address = "127.0.0.1";
+        private String address = "nacos://127.0.0.1:8848";
 
         /**
-         * Registry port (e.g., 2181 for ZooKeeper, 8848 for Nacos).
+         * Registry username (for Nacos authentication).
          */
-        private Integer port = 2181;
+        private String username;
 
         /**
-         * Registry protocol (e.g., zookeeper, nacos, local).
+         * Registry password (for Nacos authentication).
          */
-        private String protocol = "zookeeper";
+        private String password;
+
+        /**
+         * Request timeout in milliseconds.
+         */
+        private Integer requestTimeout;
 
         /**
          * Connect timeout in milliseconds.
@@ -240,7 +246,7 @@ public class JawsProperties {
         private Integer connectTimeout;
 
         /**
-         * Session timeout in milliseconds (for ZooKeeper).
+         * Session timeout in milliseconds.
          */
         private Integer registrySessionTimeout;
 
@@ -257,20 +263,28 @@ public class JawsProperties {
             this.address = address;
         }
 
-        public Integer getPort() {
-            return port;
+        public String getUsername() {
+            return username;
         }
 
-        public void setPort(Integer port) {
-            this.port = port;
+        public void setUsername(String username) {
+            this.username = username;
         }
 
-        public String getProtocol() {
-            return protocol;
+        public String getPassword() {
+            return password;
         }
 
-        public void setProtocol(String protocol) {
-            this.protocol = protocol;
+        public void setPassword(String password) {
+            this.password = password;
+        }
+
+        public Integer getRequestTimeout() {
+            return requestTimeout;
+        }
+
+        public void setRequestTimeout(Integer requestTimeout) {
+            this.requestTimeout = requestTimeout;
         }
 
         public Integer getConnectTimeout() {

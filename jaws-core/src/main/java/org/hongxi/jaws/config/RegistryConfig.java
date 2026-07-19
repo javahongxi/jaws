@@ -1,6 +1,5 @@
 package org.hongxi.jaws.config;
 
-import org.hongxi.jaws.config.annotation.ConfigDesc;
 import java.io.Serial;
 
 /**
@@ -18,13 +17,19 @@ public class RegistryConfig extends AbstractConfig {
     private String name;
 
     // 注册协议
-    private String regProtocol;
+    private String protocol;
 
-    // 注册中心地址，支持多个ip+port，格式：ip1:port1,ip2:port2,ip3，如果没有port，则使用默认的port
+    // 注册中心地址，支持多个ip+port，格式：(protocol://)ip1:port1,ip2:port2,ip3，如果没有port，则使用默认的port
     private String address;
 
     // 注册中心缺省端口
     private Integer port;
+
+    // 注册中心用户名（如Nacos鉴权）
+    private String username;
+
+    // 注册中心密码（如Nacos鉴权）
+    private String password;
 
     // 注册中心请求超时时间(毫秒)
     private Integer requestTimeout;
@@ -52,13 +57,12 @@ public class RegistryConfig extends AbstractConfig {
     // vintage的配置移除策略，@see #RegistryConfig#Excise
     private String excise;
 
-    @ConfigDesc(key = "protocol")
-    public String getRegProtocol() {
-        return regProtocol;
+    public String getProtocol() {
+        return protocol;
     }
 
-    public void setRegProtocol(String regProtocol) {
-        this.regProtocol = regProtocol;
+    public void setProtocol(String protocol) {
+        this.protocol = protocol;
     }
 
     public String getAddress() {
@@ -77,17 +81,28 @@ public class RegistryConfig extends AbstractConfig {
         this.port = port;
     }
 
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
     public String getCheck() {
         return check;
     }
 
     public void setCheck(String check) {
         this.check = check;
-    }
-
-    @Deprecated
-    public void setCheck(Boolean check) {
-        this.check = String.valueOf(check);
     }
 
     public Boolean getRegister() {

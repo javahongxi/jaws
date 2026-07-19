@@ -7,7 +7,6 @@ import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.rpc.GenericService;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -82,7 +81,7 @@ public class GenericSampleConsumer {
 
     private static RegistryConfig createRegistryConfig() {
         RegistryConfig registryConfig = new RegistryConfig();
-        registryConfig.setRegProtocol(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
+        registryConfig.setProtocol(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
         registryConfig.setName("defaultRegistry");
         registryConfig.setId(registryConfig.getName());
         registryConfig.setAddress("127.0.0.1");

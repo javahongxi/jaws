@@ -73,7 +73,7 @@ public class SampleProvider {
 
     private static RegistryConfig createRegistryConfig(String protocolName) {
         RegistryConfig registryConfig = new RegistryConfig();
-        registryConfig.setRegProtocol(protocolName);
+        registryConfig.setProtocol(protocolName);
         registryConfig.setName("defaultRegistry");
         registryConfig.setId(registryConfig.getName());
         registryConfig.setAddress("127.0.0.1");

@@ -151,7 +151,7 @@ public class RpcBenchmark {
 
     private static RegistryConfig createRegistryConfig() {
         RegistryConfig registry = new RegistryConfig();
-        registry.setRegProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
+        registry.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
         registry.setName("localRegistry");
         registry.setId("localRegistry");
         registry.setAddress("127.0.0.1");

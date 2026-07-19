@@ -68,10 +68,15 @@ public class JawsAutoConfiguration {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setName("defaultRegistry");
         registryConfig.setId(registryConfig.getName());
-        registryConfig.setRegProtocol(registryProps.getProtocol());
         registryConfig.setAddress(registryProps.getAddress());
-        if (registryProps.getPort() != null) {
-            registryConfig.setPort(registryProps.getPort());
+        if (registryProps.getUsername() != null) {
+            registryConfig.setUsername(registryProps.getUsername());
+        }
+        if (registryProps.getPassword() != null) {
+            registryConfig.setPassword(registryProps.getPassword());
+        }
+        if (registryProps.getRequestTimeout() != null) {
+            registryConfig.setRequestTimeout(registryProps.getRequestTimeout());
         }
         if (registryProps.getConnectTimeout() != null) {
             registryConfig.setConnectTimeout(registryProps.getConnectTimeout());
