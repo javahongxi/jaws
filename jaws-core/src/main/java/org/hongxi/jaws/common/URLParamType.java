@@ -110,7 +110,11 @@ public enum URLParamType {
 
     /** Provider startup timestamp in milliseconds. Set automatically during registration,
      *  used by consumer-side load balance to calculate warm-up weight. */
-    timestamp("timestamp", 0L);
+    timestamp("timestamp", 0L),
+
+    /** Service auth token. Provider registers it to registry; consumer reads it and
+     *  attaches to request. Provider validates the token on each invocation. */
+    token("token", "");
 
     private String name;
     private String value;

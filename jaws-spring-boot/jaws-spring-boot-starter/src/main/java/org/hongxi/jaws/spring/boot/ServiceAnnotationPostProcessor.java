@@ -214,6 +214,13 @@ public class ServiceAnnotationPostProcessor
             builder.addPropertyValue("shareChannel", true);
         }
 
+        /* token: annotation > global */
+        String token = StringUtils.isNotBlank(jawsService.token())
+                ? jawsService.token() : environment.getProperty("jaws.service.token");
+        if (StringUtils.isNotBlank(token)) {
+            builder.addPropertyValue("token", token);
+        }
+
         /* reference to ProtocolConfig and RegistryConfig beans */
         builder.addPropertyReference("protocol", "protocolConfig");
         builder.addPropertyReference("registry", "registryConfig");

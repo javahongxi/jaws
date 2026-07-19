@@ -1,1 +1,2 @@
 org.hongxi.jaws.filter.AccessLogFilter
+org.hongxi.jaws.filter.TokenAuthFilter

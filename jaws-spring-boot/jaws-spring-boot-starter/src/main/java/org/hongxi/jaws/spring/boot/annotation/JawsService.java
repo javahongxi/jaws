@@ -63,4 +63,9 @@ public @interface JawsService {
      * Application name. If empty, uses the global application name.
      */
     String application() default "";
+
+    /**
+     * Service token, default value is empty string
+     */
+    String token() default "";
 }

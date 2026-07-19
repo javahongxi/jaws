@@ -44,6 +44,9 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     // 具体到方法的配置
     protected List<MethodConfig> methods;
 
+    // service auth token, empty means no auth
+    private String token;
+
     // 接口实现类引用
     private T ref;
 
@@ -52,6 +55,14 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     private Class<T> interfaceClass;
     private BasicServiceInterfaceConfig basicService;
     private AtomicBoolean exported = new AtomicBoolean(false);
+
+    public String getToken() {
+        return token;
+    }
+
+    public void setToken(String token) {
+        this.token = token;
+    }
 
     public static ConcurrentHashSet<String> getExistingServices() {
         return existingServices;
