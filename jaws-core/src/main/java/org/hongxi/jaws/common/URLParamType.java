@@ -97,6 +97,9 @@ public enum URLParamType {
 
     workerQueueSize("workerQueueSize", 0),
 
+    /** interval in milliseconds between failback retry attempts */
+    failbackPeriod("failbackPeriod", 5000),
+
     /** Graceful shutdown timeout in milliseconds. During this period, the server stops accepting
      *  new requests and waits for in-flight requests to complete before closing connections. */
     gracefulShutdownTimeout("gracefulShutdownTimeout", 10000);

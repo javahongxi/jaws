@@ -1,2 +1,3 @@
 org.hongxi.jaws.cluster.ha.FailoverHaStrategy
 org.hongxi.jaws.cluster.ha.FailfastHaStrategy
+org.hongxi.jaws.cluster.ha.FailbackHaStrategy
