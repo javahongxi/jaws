@@ -23,6 +23,7 @@ public class JawsConstants {
 
     public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
     public static final String ZOOKEEPER_REGISTRY_COMMAND = "/command";
+    public static final String ZOOKEEPER_REGISTRY_CONFIG = "/config";
 
     public static final String REGISTRY_HEARTBEAT_TOGGLE = "feature.configserver.heartbeat";
 

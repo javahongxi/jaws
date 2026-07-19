@@ -23,4 +23,6 @@ public interface LoadBalance<T> {
 
     void setWeightString(String weightString);
 
+    String getWeightString();
+
 }

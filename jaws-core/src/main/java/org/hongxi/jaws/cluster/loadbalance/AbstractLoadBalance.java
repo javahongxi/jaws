@@ -21,6 +21,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
     public static final int MAX_REFERENCE_COUNT = 10;
     private static final Logger log = LoggerFactory.getLogger(AbstractLoadBalance.class);
     private List<Reference<T>> references;
+    private volatile String weightString;
 
     @Override
     public void onRefresh(List<Reference<T>> references) {
@@ -76,7 +77,13 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
     @Override
     public void setWeightString(String weightString) {
-        log.info("ignore weightString: {}", weightString);
+        this.weightString = weightString;
+        log.info("weightString updated: {}", weightString);
+    }
+
+    @Override
+    public String getWeightString() {
+        return weightString;
     }
 
     protected abstract Reference<T> doSelect(Request request);

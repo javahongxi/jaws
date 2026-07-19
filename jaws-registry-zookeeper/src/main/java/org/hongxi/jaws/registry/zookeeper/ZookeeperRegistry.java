@@ -13,6 +13,7 @@ import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.registry.ConfigListener;
 import org.hongxi.jaws.registry.support.command.CommandFailbackRegistry;
 import org.hongxi.jaws.registry.support.command.CommandListener;
 import org.hongxi.jaws.registry.support.command.ServiceListener;
@@ -38,6 +39,7 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
     private Set<URL> availableServices = new ConcurrentHashSet<>();
     private ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, CuratorCache>> serviceListeners = new ConcurrentHashMap<>();
     private ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, CuratorCache>> commandListeners = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<URL, ConcurrentHashMap<ConfigListener, CuratorCache>> configListeners = new ConcurrentHashMap<>();
 
     public ZookeeperRegistry(URL url, CuratorFramework client) {
         super(url);
@@ -442,5 +444,81 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
     @Override
     public void close() {
         curator.close();
+    }
+
+    // ---- dynamic config ----
+
+    @Override
+    protected void doSubscribeConfig(URL url, ConfigListener listener) {
+        ConcurrentHashMap<ConfigListener, CuratorCache> listeners = configListeners.get(url);
+        if (listeners == null) {
+            configListeners.putIfAbsent(url, new ConcurrentHashMap<>());
+            listeners = configListeners.get(url);
+        }
+        CuratorCache curatorCache = listeners.get(listener);
+        if (curatorCache == null) {
+            String configPath = ZkUtils.toConfigPath(url);
+            curatorCache = CuratorCache.build(curator, configPath);
+            curatorCache.listenable().addListener(new CuratorCacheListener() {
+                @Override
+                public void event(Type type, ChildData oldData, ChildData data) {
+                    if (type == Type.NODE_CHANGED || type == Type.NODE_CREATED) {
+                        String config = data == null || data.getData() == null ? null
+                                : new String(data.getData(), StandardCharsets.UTF_8);
+                        listener.notifyConfig(url, config);
+                        log.info("[ZookeeperRegistry] config data change: path={}, config={}", configPath, config);
+                    } else if (type == Type.NODE_DELETED) {
+                        listener.notifyConfig(url, null);
+                        log.info("[ZookeeperRegistry] config deleted: path={}", configPath);
+                    }
+                }
+            });
+            listeners.putIfAbsent(listener, curatorCache);
+            curatorCache = listeners.get(listener);
+            curatorCache.start();
+        }
+        log.info("[ZookeeperRegistry] subscribe config: path={}", ZkUtils.toConfigPath(url));
+    }
+
+    @Override
+    protected void doUnsubscribeConfig(URL url, ConfigListener listener) {
+        Map<ConfigListener, CuratorCache> listeners = configListeners.get(url);
+        if (listeners != null) {
+            CuratorCache curatorCache = listeners.remove(listener);
+            if (curatorCache != null) {
+                curatorCache.close();
+            }
+        }
+    }
+
+    @Override
+    protected String doDiscoverConfig(URL url) {
+        try {
+            String configPath = ZkUtils.toConfigPath(url);
+            if (curator.checkExists().forPath(configPath) != null) {
+                byte[] data = curator.getData().forPath(configPath);
+                if (data != null) {
+                    return new String(data, StandardCharsets.UTF_8);
+                }
+            }
+            return "";
+        } catch (Exception e) {
+            log.warn("[ZookeeperRegistry] discover config failed: path={}, msg={}", ZkUtils.toConfigPath(url), e.getMessage());
+            return "";
+        }
+    }
+
+    @Override
+    protected void doPublishConfig(URL url, String configString) {
+        try {
+            String configPath = ZkUtils.toConfigPath(url);
+            if (curator.checkExists().forPath(configPath) == null) {
+                curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(configPath);
+            }
+            curator.setData().forPath(configPath, configString.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new JawsFrameworkException(
+                    String.format("Failed to publish config %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        }
     }
 }

@@ -42,6 +42,13 @@ public class NacosPathUtils {
     }
 
     /**
+     * Build the Nacos service name for dynamic configuration storage.
+     */
+    public static String toConfigServiceName(URL url) {
+        return JawsConstants.NACOS_REGISTRY_NAMESPACE + JawsConstants.PATH_SEPARATOR + url.getPath() + JawsConstants.ZOOKEEPER_REGISTRY_CONFIG;
+    }
+
+    /**
      * Build the instance identifier (host:port) from Jaws URL.
      */
     public static String toInstanceId(URL url) {

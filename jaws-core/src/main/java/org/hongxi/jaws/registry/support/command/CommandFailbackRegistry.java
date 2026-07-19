@@ -1,6 +1,7 @@
 package org.hongxi.jaws.registry.support.command;
 
 import org.apache.commons.lang3.StringUtils;
+import org.hongxi.jaws.registry.ConfigListener;
 import org.hongxi.jaws.registry.FailbackRegistry;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.rpc.URL;
@@ -133,5 +134,44 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
     protected abstract List<URL> discoverService(URL url);
 
     protected abstract String discoverCommand(URL url);
+
+    // ---- dynamic config ----
+
+    /**
+     * Subscribe to dynamic configuration changes for a service.
+     */
+    public void subscribeConfig(URL url, ConfigListener listener) {
+        log.info("CommandFailbackRegistry subscribeConfig: url={}", url.toSimpleString());
+        doSubscribeConfig(url.createCopy(), listener);
+        // deliver initial config
+        String initialConfig = doDiscoverConfig(url.createCopy());
+        if (initialConfig != null && !initialConfig.isEmpty()) {
+            listener.notifyConfig(url, initialConfig);
+        }
+    }
+
+    /**
+     * Unsubscribe from dynamic configuration changes.
+     */
+    public void unsubscribeConfig(URL url, ConfigListener listener) {
+        log.info("CommandFailbackRegistry unsubscribeConfig: url={}", url.toSimpleString());
+        doUnsubscribeConfig(url.createCopy(), listener);
+    }
+
+    /**
+     * Publish dynamic configuration for a service (called by provider side).
+     */
+    public void publishConfig(URL url, String configString) {
+        log.info("CommandFailbackRegistry publishConfig: url={}, config={}", url.toSimpleString(), configString);
+        doPublishConfig(url.createCopy(), configString);
+    }
+
+    protected abstract void doSubscribeConfig(URL url, ConfigListener listener);
+
+    protected abstract void doUnsubscribeConfig(URL url, ConfigListener listener);
+
+    protected abstract String doDiscoverConfig(URL url);
+
+    protected abstract void doPublishConfig(URL url, String configString);
 
 }

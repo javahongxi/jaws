@@ -9,6 +9,7 @@ import org.hongxi.jaws.lifecycle.Closeable;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.registry.ConfigListener;
 import org.hongxi.jaws.registry.support.command.CommandFailbackRegistry;
 import org.hongxi.jaws.registry.support.command.CommandListener;
 import org.hongxi.jaws.registry.support.command.ServiceListener;
@@ -46,10 +47,14 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     private static final String COMMAND_INSTANCE_ID = "command";
     private static final String METADATA_KEY_COMMAND = "command";
 
+    private static final String CONFIG_INSTANCE_ID = "config";
+    private static final String METADATA_KEY_CONFIG = "config";
+
     private final NamingService namingService;
     private final Set<URL> availableServices = new ConcurrentHashSet<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, EventListener>> serviceListeners = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, EventListener>> commandListeners = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<URL, ConcurrentHashMap<ConfigListener, EventListener>> configListeners = new ConcurrentHashMap<>();
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
 
@@ -495,5 +500,104 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         } catch (Exception e) {
             log.warn("[NacosRegistry] failed to shutdown namingService", e);
         }
+    }
+
+    // ---- dynamic config ----
+
+    @Override
+    protected void doSubscribeConfig(URL url, ConfigListener listener) {
+        ConcurrentHashMap<ConfigListener, EventListener> listeners = configListeners.get(url);
+        if (listeners == null) {
+            configListeners.putIfAbsent(url, new ConcurrentHashMap<>());
+            listeners = configListeners.get(url);
+        }
+        EventListener eventListener = listeners.get(listener);
+        if (eventListener == null) {
+            String serviceName = NacosPathUtils.toConfigServiceName(url);
+            String group = NacosPathUtils.toGroup(url);
+            eventListener = event -> {
+                if (event instanceof NamingEvent namingEvent) {
+                    List<Instance> instances = namingEvent.getInstances();
+                    String config = extractConfig(instances);
+                    listener.notifyConfig(url, config);
+                    log.info("[NacosRegistry] config change: serviceName={}, group={}, config={}",
+                            serviceName, group, config);
+                }
+            };
+            listeners.putIfAbsent(listener, eventListener);
+            eventListener = listeners.get(listener);
+            try {
+                namingService.subscribe(serviceName, group, eventListener);
+            } catch (Exception e) {
+                throw new JawsFrameworkException(
+                        String.format("Failed to subscribe config %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+            }
+        }
+        log.info("[NacosRegistry] subscribe config: serviceName={}, group={}",
+                NacosPathUtils.toConfigServiceName(url), NacosPathUtils.toGroup(url));
+    }
+
+    @Override
+    protected void doUnsubscribeConfig(URL url, ConfigListener listener) {
+        try {
+            Map<ConfigListener, EventListener> listeners = configListeners.get(url);
+            if (listeners != null) {
+                EventListener eventListener = listeners.remove(listener);
+                if (eventListener != null) {
+                    String serviceName = NacosPathUtils.toConfigServiceName(url);
+                    String group = NacosPathUtils.toGroup(url);
+                    namingService.unsubscribe(serviceName, group, eventListener);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[NacosRegistry] unsubscribe config failed: serviceName={}, msg={}",
+                    NacosPathUtils.toConfigServiceName(url), e.getMessage());
+        }
+    }
+
+    @Override
+    protected String doDiscoverConfig(URL url) {
+        try {
+            String serviceName = NacosPathUtils.toConfigServiceName(url);
+            String group = NacosPathUtils.toGroup(url);
+            List<Instance> instances = namingService.getAllInstances(serviceName, group);
+            return extractConfig(instances);
+        } catch (Exception e) {
+            log.warn("[NacosRegistry] discover config failed: serviceName={}, msg={}",
+                    NacosPathUtils.toConfigServiceName(url), e.getMessage());
+            return "";
+        }
+    }
+
+    @Override
+    protected void doPublishConfig(URL url, String configString) {
+        try {
+            String serviceName = NacosPathUtils.toConfigServiceName(url);
+            String group = NacosPathUtils.toGroup(url);
+            Instance instance = new Instance();
+            instance.setIp(url.getHost());
+            instance.setPort(url.getPort());
+            instance.setHealthy(true);
+            instance.setEphemeral(false);
+            Map<String, String> metadata = new HashMap<>();
+            metadata.put(METADATA_KEY_CONFIG, configString != null ? configString : "");
+            instance.setMetadata(metadata);
+            namingService.registerInstance(serviceName, group, instance);
+        } catch (Exception e) {
+            throw new JawsFrameworkException(
+                    String.format("Failed to publish config %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        }
+    }
+
+    private String extractConfig(List<Instance> instances) {
+        if (instances != null) {
+            for (Instance instance : instances) {
+                Map<String, String> metadata = instance.getMetadata();
+                if (metadata != null && metadata.containsKey(METADATA_KEY_CONFIG)) {
+                    return metadata.get(METADATA_KEY_CONFIG);
+                }
+            }
+        }
+        return "";
     }
 }

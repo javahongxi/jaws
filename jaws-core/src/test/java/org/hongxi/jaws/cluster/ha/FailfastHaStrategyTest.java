@@ -110,6 +110,7 @@ class FailfastHaStrategyTest {
             refersHolder.add(selectedRef);
         }
         @Override public void setWeightString(String weightString) {}
+        @Override public String getWeightString() { return null; }
     }
 
     /* ==================== 测试用例 ==================== */
