@@ -35,10 +35,10 @@ public class NacosPathUtils {
 
     /**
      * Build the Nacos service name for command storage.
-     * Commands are stored as a special Nacos service with a single instance.
+     * Command is at group level (not per-interface), aligned with ZK's /jaws/{group}/command.
      */
     public static String toCommandServiceName(URL url) {
-        return JawsConstants.NACOS_REGISTRY_NAMESPACE + JawsConstants.PATH_SEPARATOR + url.getPath() + JawsConstants.ZOOKEEPER_REGISTRY_COMMAND;
+        return JawsConstants.NACOS_REGISTRY_NAMESPACE + JawsConstants.ZOOKEEPER_REGISTRY_COMMAND;
     }
 
     /**

@@ -21,7 +21,7 @@ public class ZkUtils {
     }
 
     public static String toConfigPath(URL url) {
-        return toGroupPath(url) + JawsConstants.ZOOKEEPER_REGISTRY_CONFIG;
+        return toServicePath(url) + JawsConstants.ZOOKEEPER_REGISTRY_CONFIG;
     }
 
     public static String toNodeTypePath(URL url, ZkNodeType nodeType) {
