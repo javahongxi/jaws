@@ -124,6 +124,14 @@ public class URL {
         return Integer.parseInt(value);
     }
 
+    public long getLongParameter(String name, long defaultValue) {
+        String value = getParameter(name);
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        return Long.parseLong(value);
+    }
+
     public void addParameters(Map<String, String> params) {
         parameters.putAll(params);
     }

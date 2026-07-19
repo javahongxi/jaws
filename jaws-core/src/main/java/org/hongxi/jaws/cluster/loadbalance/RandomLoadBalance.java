@@ -19,15 +19,37 @@ public class RandomLoadBalance<T> extends AbstractLoadBalance<T> {
     @Override
     protected Reference<T> doSelect(Request request) {
         List<Reference<T>> references = getReferences();
+        int size = references.size();
 
-        int idx = (int) (ThreadLocalRandom.current().nextDouble() * references.size());
-        for (int i = 0; i < references.size(); i++) {
-            Reference<T> ref = references.get((i + idx) % references.size());
+        // collect available references and their warm-up weights
+        int totalWeight = 0;
+        int[] weights = new int[size];
+        int availableCount = 0;
+        for (int i = 0; i < size; i++) {
+            Reference<T> ref = references.get(i);
             if (ref.isAvailable()) {
-                return ref;
+                weights[i] = getWarmupWeight(ref, 100);
+                totalWeight += weights[i];
+                availableCount++;
             }
         }
-        return null;
+        if (availableCount == 0) {
+            return null;
+        }
+
+        // weighted random selection
+        int offset = ThreadLocalRandom.current().nextInt(Math.max(totalWeight, 1));
+        for (int i = 0; i < size; i++) {
+            if (!references.get(i).isAvailable()) {
+                continue;
+            }
+            offset -= weights[i];
+            if (offset < 0) {
+                return references.get(i);
+            }
+        }
+        // fallback (should not reach here)
+        return references.get(ThreadLocalRandom.current().nextInt(size));
     }
 
     @Override

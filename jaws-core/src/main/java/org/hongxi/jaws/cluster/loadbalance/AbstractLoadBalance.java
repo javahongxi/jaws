@@ -1,10 +1,12 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
 import org.hongxi.jaws.cluster.LoadBalance;
+import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
+import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,4 +82,41 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
     protected abstract Reference<T> doSelect(Request request);
 
     protected abstract void doSelectToHolder(Request request, List<Reference<T>> refersHolder);
+
+    /**
+     * Calculate warm-up weight for a reference based on its startup timestamp.
+     * <p>
+     * A newly started provider gets weight 0, which linearly increases to
+     * {@code defaultWeight} over the configured warm-up period.
+     * If the provider has been running longer than the warm-up period, full weight is returned.
+     *
+     * @param ref          the reference to calculate weight for
+     * @param defaultWeight the full weight value (returned when warm-up is complete)
+     * @return effective weight in range [0, defaultWeight]
+     */
+    protected int getWarmupWeight(Reference<T> ref, int defaultWeight) {
+        URL serviceUrl = ref.getServiceUrl();
+        if (serviceUrl == null) {
+            return defaultWeight;
+        }
+        int warmup = serviceUrl.getIntParameter(
+                URLParamType.warmup.getName(), URLParamType.warmup.intValue());
+        if (warmup <= 0) {
+            return defaultWeight;
+        }
+        long timestamp = serviceUrl.getLongParameter(
+                URLParamType.timestamp.getName(), 0L);
+        if (timestamp <= 0) {
+            return defaultWeight;
+        }
+        long runningTime = System.currentTimeMillis() - timestamp;
+        if (runningTime >= warmup) {
+            return defaultWeight;
+        }
+        if (runningTime <= 0) {
+            return 1;
+        }
+        int weight = (int) ((double) runningTime / warmup * defaultWeight);
+        return Math.max(1, weight);
+    }
 }

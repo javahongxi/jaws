@@ -22,12 +22,36 @@ public class RoundRobinLoadBalance<T> extends AbstractLoadBalance<T> {
     @Override
     protected Reference<T> doSelect(Request request) {
         List<Reference<T>> references = getReferences();
+        int size = references.size();
 
-        int index = getNextNonNegative();
-        for (int i = 0; i < references.size(); i++) {
-            Reference<T> ref = references.get((i + index) % references.size());
-            if (ref.isAvailable()) {
-                return ref;
+        // calculate total warm-up weight
+        int totalWeight = 0;
+        int[] weights = new int[size];
+        for (int i = 0; i < size; i++) {
+            if (references.get(i).isAvailable()) {
+                weights[i] = getWarmupWeight(references.get(i), 100);
+                totalWeight += weights[i];
+            }
+        }
+        if (totalWeight <= 0) {
+            return null;
+        }
+
+        // weighted round-robin: advance by a weighted offset
+        int index = getNextNonNegative() % totalWeight;
+        for (int i = 0; i < size; i++) {
+            if (weights[i] <= 0) {
+                continue;
+            }
+            index -= weights[i];
+            if (index < 0) {
+                return references.get(i);
+            }
+        }
+        // fallback
+        for (int i = 0; i < size; i++) {
+            if (references.get(i).isAvailable()) {
+                return references.get(i);
             }
         }
         return null;

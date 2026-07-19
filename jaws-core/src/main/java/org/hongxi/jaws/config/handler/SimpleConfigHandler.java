@@ -117,6 +117,8 @@ public class SimpleConfigHandler implements ConfigHandler {
     }
 
     private void register(List<URL> registryUrls, URL serviceUrl) {
+        // record startup timestamp for consumer-side warm-up calculation
+        serviceUrl.addParameter(URLParamType.timestamp.getName(), String.valueOf(System.currentTimeMillis()));
         for (URL url : registryUrls) {
             // 根据check参数的设置，register失败可能会抛异常，上层应该知晓
             RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());

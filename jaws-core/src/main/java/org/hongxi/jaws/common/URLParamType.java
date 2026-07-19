@@ -102,7 +102,15 @@ public enum URLParamType {
 
     /** Graceful shutdown timeout in milliseconds. During this period, the server stops accepting
      *  new requests and waits for in-flight requests to complete before closing connections. */
-    gracefulShutdownTimeout("gracefulShutdownTimeout", 10000);
+    gracefulShutdownTimeout("gracefulShutdownTimeout", 10000),
+
+    /** Warm-up duration in milliseconds. A newly started provider gradually increases its
+     *  weight from 0 to full over this period to avoid cold-start overload. Default 10 minutes. */
+    warmup("warmup", 10 * 60 * 1000),
+
+    /** Provider startup timestamp in milliseconds. Set automatically during registration,
+     *  used by consumer-side load balance to calculate warm-up weight. */
+    timestamp("timestamp", 0L);
 
     private String name;
     private String value;

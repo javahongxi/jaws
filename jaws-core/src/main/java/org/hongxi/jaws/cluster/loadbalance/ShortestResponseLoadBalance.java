@@ -60,7 +60,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
 
             SlideWindowData data = slideWindowMap.computeIfAbsent(ref, SlideWindowData::new);
             long estimateResponse = data.getEstimateResponse(ref);
-            int weight = 1;
+            int weight = getWarmupWeight(ref, 100);
             weights[i] = weight;
 
             if (estimateResponse < shortestResponse) {

@@ -36,6 +36,7 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
         int currentAvailableCursor = 0;
 
         Reference<T> reference = null;
+        int referenceWeight = 0;
 
         while (currentAvailableCursor < MAX_REFERENCE_COUNT && currentCursor < referenceSize) {
             Reference<T> temp = references.get((startIndex + currentCursor) % referenceSize);
@@ -47,11 +48,17 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
 
             currentAvailableCursor++;
 
+            int tempWeight = getWarmupWeight(temp, 100);
+
             if (reference == null) {
                 reference = temp;
+                referenceWeight = tempWeight;
             } else {
-                if (compare(reference, temp) > 0) {
+                // compare by effective active count: activeCount / weight
+                // higher weight = more capacity = lower effective load
+                if (compare(reference, referenceWeight, temp, tempWeight) > 0) {
                     reference = temp;
+                    referenceWeight = tempWeight;
                 }
             }
         }
@@ -82,6 +89,15 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
         }
 
         Collections.sort(refersHolder, new LeastActiveComparator<T>());
+    }
+
+    private int compare(Reference<T> ref1, int weight1, Reference<T> ref2, int weight2) {
+        // effective load = activeCount * (maxWeight / weight)
+        // lower effective load is better
+        int maxWeight = Math.max(weight1, weight2);
+        int effective1 = ref1.activeReferenceCount() * maxWeight / Math.max(weight1, 1);
+        int effective2 = ref2.activeReferenceCount() * maxWeight / Math.max(weight2, 1);
+        return effective1 - effective2;
     }
 
     private int compare(Reference<T> reference1, Reference<T> reference2) {
