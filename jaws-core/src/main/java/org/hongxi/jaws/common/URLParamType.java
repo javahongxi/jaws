@@ -10,9 +10,7 @@ public enum URLParamType {
     version("version", JawsConstants.DEFAULT_VERSION),
 
     requestTimeout("requestTimeout", 200),
-    /**
-     * request id from http interface
-     **/
+    /** request id from http interface */
     requestIdFromClient("requestIdFromClient", 0),
 
     connectTimeout("connectTimeout", 1000),
@@ -30,7 +28,7 @@ public enum URLParamType {
     maxConnectionsPerGroup("maxConnectionsPerGroup", 0),
 
     registryRetryPeriod("registryRetryPeriod", 30 * JawsConstants.SECOND_MILLS),
-    /* 注册中心不可用节点剔除方式 */
+    /** how to excise unavailable nodes from registry */
     excise("excise", RegistryConfig.Excise.DYNAMIC.getName()),
     cluster("cluster", JawsConstants.DEFAULT_VALUE),
     loadbalance("loadbalance", "leastActive"),
@@ -42,9 +40,7 @@ public enum URLParamType {
     proxy("proxy", JawsConstants.PROXY_JDK),
     filter("filter", ""),
 
-    /**
-     * multi services share the same channel (port)
-     */
+    /** multi services share the same channel (port) */
     shareChannel("shareChannel", true),
     asyncInitConnection("asyncInitConnection", false),
     fusingThreshold("fusingThreshold", 10),
@@ -69,8 +65,10 @@ public enum URLParamType {
     refreshTimestamp("refreshTimestamp", 0),
     nodeType("nodeType", JawsConstants.NODE_TYPE_SERVICE),
 
-    gzip("gzip", false), // 是否开启gzip压缩
-    minGzipSize("minGzipSize", 1000), // 进行gz压缩的最小数据大小。超过此阈值才进行gz压缩
+    /** whether to enable gzip compression */
+    gzip("gzip", false),
+    /** minimum data size for gz compression, compress only when exceeding this threshold */
+    minGzipSize("minGzipSize", 1000),
 
     application("application", JawsConstants.FRAMEWORK_NAME),
     module("module", JawsConstants.FRAMEWORK_NAME),
@@ -91,10 +89,10 @@ public enum URLParamType {
     throwException("throwException", "true"),
     transExceptionStack("transExceptionStack", true),
 
-    // 切换group时，各个group的权重比。默认无权重
+    /** weight ratio for each group when switching groups, no weight by default */
     weights("weights", ""),
 
-    // 消息处理分发策略
+    /** message processing dispatch strategy */
     providerProtectedStrategy("providerProtectedStrategy", "jaws"),
 
     workerQueueSize("workerQueueSize", 0),
