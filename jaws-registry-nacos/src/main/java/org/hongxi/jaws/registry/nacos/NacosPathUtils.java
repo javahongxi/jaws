@@ -19,6 +19,12 @@ import org.hongxi.jaws.rpc.URL;
 public class NacosPathUtils {
 
     /**
+     * Nacos Config group prefix for JAWS framework.
+     * Follows Nacos group naming best practice: uppercase with framework prefix.
+     */
+    private static final String NACOS_CONFIG_GROUP_PREFIX = "JAWS_";
+
+    /**
      * Build the Nacos service name from Jaws URL.
      * Format: "jaws/{path}"
      */
@@ -36,7 +42,7 @@ public class NacosPathUtils {
     /**
      * Build the Nacos Config dataId for command storage.
      * Command is at group level (not per-interface), aligned with ZK's /jaws/{group}/command.
-     * Uses hyphen instead of slash since Nacos Config dataId does not support '/'.
+     * Uses dot instead of slash since Nacos Config dataId does not support '/'.
      */
     public static String toCommandDataId(URL url) {
         return "jaws.command";
@@ -44,9 +50,10 @@ public class NacosPathUtils {
 
     /**
      * Build the Nacos Config group for command storage.
+     * Format: "JAWS_" + uppercase service group (e.g. JAWS_DEFAULT_RPC).
      */
     public static String toCommandGroup(URL url) {
-        return url.getGroup();
+        return toNacosConfigGroup(url.getGroup());
     }
 
     /**
@@ -59,10 +66,10 @@ public class NacosPathUtils {
 
     /**
      * Build the Nacos Config group for dynamic configuration.
-     * Uses the Jaws service group to align with ZooKeeper's /jaws/{group}/config path dimension.
+     * Format: "JAWS_" + uppercase service group (e.g. JAWS_DEFAULT_RPC).
      */
     public static String toConfigGroup(URL url) {
-        return url.getGroup();
+        return toNacosConfigGroup(url.getGroup());
     }
 
     /**
@@ -70,5 +77,13 @@ public class NacosPathUtils {
      */
     public static String toInstanceId(URL url) {
         return url.getServerPortStr();
+    }
+
+    /**
+     * Convert Jaws service group to Nacos Config group name.
+     * Follows Nacos group naming best practice: uppercase with framework prefix.
+     */
+    private static String toNacosConfigGroup(String group) {
+        return NACOS_CONFIG_GROUP_PREFIX + group.toUpperCase();
     }
 }
