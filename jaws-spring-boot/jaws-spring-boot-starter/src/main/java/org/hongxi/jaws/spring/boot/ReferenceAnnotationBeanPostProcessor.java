@@ -1,10 +1,12 @@
 package org.hongxi.jaws.spring.boot;
 
 import org.apache.commons.lang3.StringUtils;
+import org.hongxi.jaws.config.MethodConfig;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ReferenceConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.spring.boot.annotation.JawsReference;
+import org.hongxi.jaws.spring.boot.annotation.Method;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
@@ -117,6 +119,23 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
             } else if (jawsRef.interfaceClass() != void.class) {
                 refConfig.setServiceInterface(jawsRef.interfaceClass().getName());
             }
+        }
+
+        /* method-level config */
+        if (jawsRef.methods().length > 0) {
+            List<MethodConfig> methodConfigs = new ArrayList<>();
+            for (Method methodAnno : jawsRef.methods()) {
+                MethodConfig mc = new MethodConfig();
+                mc.setName(methodAnno.name());
+                if (methodAnno.timeout() > 0) {
+                    mc.setRequestTimeout(methodAnno.timeout());
+                }
+                if (methodAnno.retries() >= 0) {
+                    mc.setRetries(methodAnno.retries());
+                }
+                methodConfigs.add(mc);
+            }
+            refConfig.setMethods(methodConfigs);
         }
 
         Object proxy = refConfig.getRef();

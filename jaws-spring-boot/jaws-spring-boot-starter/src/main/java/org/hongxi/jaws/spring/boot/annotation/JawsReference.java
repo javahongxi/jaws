@@ -71,4 +71,9 @@ public @interface JawsReference {
      * Application name. If empty, uses the global application name.
      */
     String application() default "";
+
+    /**
+     * Per-method configuration (timeout, retries, etc.).
+     */
+    Method[] methods() default {};
 }
