@@ -50,10 +50,11 @@ public class NacosPathUtils {
     }
 
     /**
-     * Nacos Config group for dynamic configuration.
+     * Build the Nacos Config group for dynamic configuration.
+     * Uses the Jaws service group to align with ZooKeeper's /jaws/{group}/config path dimension.
      */
-    public static String toConfigGroup() {
-        return "JAWS";
+    public static String toConfigGroup(URL url) {
+        return url.getGroup();
     }
 
     /**

@@ -516,7 +516,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         Listener existing = listeners.get(listener);
         if (existing == null) {
             String dataId = NacosPathUtils.toConfigDataId(url);
-            String group = NacosPathUtils.toConfigGroup();
+            String group = NacosPathUtils.toConfigGroup(url);
             Listener nacosListener = new Listener() {
                 @Override
                 public Executor getExecutor() {
@@ -540,7 +540,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
             }
         }
         log.info("[NacosRegistry] subscribe config: dataId={}, group={}",
-                NacosPathUtils.toConfigDataId(url), NacosPathUtils.toConfigGroup());
+                NacosPathUtils.toConfigDataId(url), NacosPathUtils.toConfigGroup(url));
     }
 
     @Override
@@ -551,7 +551,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
                 Listener nacosListener = listeners.remove(listener);
                 if (nacosListener != null) {
                     String dataId = NacosPathUtils.toConfigDataId(url);
-                    String group = NacosPathUtils.toConfigGroup();
+                    String group = NacosPathUtils.toConfigGroup(url);
                     configService.removeListener(dataId, group, nacosListener);
                 }
             }
@@ -565,7 +565,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     protected String doDiscoverConfig(URL url) {
         try {
             String dataId = NacosPathUtils.toConfigDataId(url);
-            String group = NacosPathUtils.toConfigGroup();
+            String group = NacosPathUtils.toConfigGroup(url);
             String content = configService.getConfig(dataId, group, 5000);
             return content != null ? content : "";
         } catch (Exception e) {
@@ -579,7 +579,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     protected void doPublishConfig(URL url, String configString) {
         try {
             String dataId = NacosPathUtils.toConfigDataId(url);
-            String group = NacosPathUtils.toConfigGroup();
+            String group = NacosPathUtils.toConfigGroup(url);
             configService.publishConfig(dataId, group, configString != null ? configString : "");
         } catch (Exception e) {
             throw new JawsFrameworkException(
