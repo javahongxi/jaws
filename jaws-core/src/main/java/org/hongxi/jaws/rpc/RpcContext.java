@@ -118,4 +118,16 @@ public class RpcContext {
     public void setServerUrl(URL serverUrl) {
         this.serverUrl = serverUrl;
     }
+
+    /**
+     * 获取调用方 IP（仅 Provider 端可用）
+     *
+     * @return 调用方 IP 地址，如果不可用则返回 null
+     */
+    public String getCallerIp() {
+        if (request != null) {
+            return request.getAttachments().get(URLParamType.host.getName());
+        }
+        return null;
+    }
 }

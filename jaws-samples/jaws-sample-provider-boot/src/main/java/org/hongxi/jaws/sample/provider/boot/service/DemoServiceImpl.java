@@ -1,5 +1,6 @@
 package org.hongxi.jaws.sample.provider.boot.service;
 
+import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.model.Contacts;
 import org.hongxi.jaws.sample.api.model.User;
@@ -22,7 +23,8 @@ public class DemoServiceImpl implements DemoService {
 
     @Override
     public String hello(String name) {
-        log.info("Hello {}", name);
+        log.info("Hello {}, request from consumer: {}",
+                name, RpcContext.getContext().getCallerIp());
         return "Hello, " + name;
     }
 
