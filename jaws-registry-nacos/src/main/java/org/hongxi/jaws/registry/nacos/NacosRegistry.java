@@ -32,7 +32,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *   <li>Service registration: register Nacos instances with metadata containing full URL</li>
  *   <li>Service discovery: query all instances and convert back to URLs</li>
  *   <li>Service subscription: use Nacos subscribe to watch instance changes</li>
- *   <li>Command: stored as a special Nacos service with command data in instance metadata</li>
+ *   <li>Command: stored via Nacos ConfigService as dataId=jaws-command</li>
  * </ul>
  * <p>
  * Created by shenhongxi on 2026/7/17.
@@ -47,14 +47,11 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     private static final String NODE_TYPE_UNAVAILABLE = "unavailable";
     private static final String NODE_TYPE_CLIENT = "client";
 
-    private static final String COMMAND_INSTANCE_ID = "command";
-    private static final String METADATA_KEY_COMMAND = "command";
-
     private final NamingService namingService;
     private final ConfigService configService;
     private final Set<URL> availableServices = new ConcurrentHashSet<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, EventListener>> serviceListeners = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, EventListener>> commandListeners = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, Listener>> commandListeners = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<ConfigListener, Listener>> configListeners = new ConcurrentHashMap<>();
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
@@ -70,7 +67,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         return serviceListeners;
     }
 
-    public ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, EventListener>> getCommandListeners() {
+    public ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, Listener>> getCommandListeners() {
         return commandListeners;
     }
 
@@ -125,38 +122,40 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
 
     /* Internal method without locking, called by reconnect to avoid lock reentrancy */
     private void subscribeCommandInternal(URL url, CommandListener commandListener) {
-        ConcurrentHashMap<CommandListener, EventListener> listeners = commandListeners.get(url);
+        ConcurrentHashMap<CommandListener, Listener> listeners = commandListeners.get(url);
         if (listeners == null) {
             commandListeners.putIfAbsent(url, new ConcurrentHashMap<>());
             listeners = commandListeners.get(url);
         }
-        EventListener eventListener = listeners.get(commandListener);
-        if (eventListener == null) {
-            String serviceName = NacosPathUtils.toCommandServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            eventListener = event -> {
-                if (event instanceof NamingEvent namingEvent) {
-                    List<Instance> instances = namingEvent.getInstances();
-                    String command = extractCommand(instances);
-                    commandListener.notifyCommand(url, command);
-                    log.info("[NacosRegistry] command change: serviceName={}, group={}, command={}",
-                            serviceName, group, command);
+        Listener existing = listeners.get(commandListener);
+        if (existing == null) {
+            String dataId = NacosPathUtils.toCommandDataId(url);
+            String group = NacosPathUtils.toCommandGroup(url);
+            Listener nacosListener = new Listener() {
+                @Override
+                public Executor getExecutor() {
+                    return null;
+                }
+
+                @Override
+                public void receiveConfigInfo(String configInfo) {
+                    commandListener.notifyCommand(url, configInfo);
+                    log.info("[NacosRegistry] command change: dataId={}, group={}, command={}",
+                            dataId, group, configInfo);
                 }
             };
-            listeners.putIfAbsent(commandListener, eventListener);
-            eventListener = listeners.get(commandListener);
+            listeners.putIfAbsent(commandListener, nacosListener);
+            existing = listeners.get(commandListener);
             try {
-                namingService.subscribe(serviceName, group, eventListener);
+                configService.addListener(dataId, group, existing);
             } catch (Exception e) {
                 throw new JawsFrameworkException(
                         String.format("Failed to subscribe command %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
             }
         }
 
-        String serviceName = NacosPathUtils.toCommandServiceName(url);
-        String group = NacosPathUtils.toGroup(url);
-        log.info("[NacosRegistry] subscribe command: serviceName={}, group={}, info={}",
-                serviceName, group, url.toFullStr());
+        log.info("[NacosRegistry] subscribe command: dataId={}, group={}",
+                NacosPathUtils.toCommandDataId(url), NacosPathUtils.toCommandGroup(url));
     }
 
     @Override
@@ -198,19 +197,18 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     protected void unsubscribeCommand(URL url, CommandListener commandListener) {
         try {
             clientLock.lock();
-            Map<CommandListener, EventListener> listeners = commandListeners.get(url);
+            Map<CommandListener, Listener> listeners = commandListeners.get(url);
             if (listeners != null) {
-                EventListener eventListener = listeners.get(commandListener);
-                if (eventListener != null) {
-                    String serviceName = NacosPathUtils.toCommandServiceName(url);
-                    String group = NacosPathUtils.toGroup(url);
-                    namingService.unsubscribe(serviceName, group, eventListener);
-                    listeners.remove(commandListener);
+                Listener nacosListener = listeners.remove(commandListener);
+                if (nacosListener != null) {
+                    String dataId = NacosPathUtils.toCommandDataId(url);
+                    String group = NacosPathUtils.toCommandGroup(url);
+                    configService.removeListener(dataId, group, nacosListener);
                 }
             }
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(
-                    String.format("Failed to unsubscribe command %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        } catch (Exception e) {
+            log.warn("[NacosRegistry] unsubscribe command failed: dataId={}, msg={}",
+                    NacosPathUtils.toCommandDataId(url), e.getMessage());
         } finally {
             clientLock.unlock();
         }
@@ -232,13 +230,14 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     @Override
     protected String discoverCommand(URL url) {
         try {
-            String serviceName = NacosPathUtils.toCommandServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            List<Instance> instances = namingService.getAllInstances(serviceName, group);
-            return extractCommand(instances);
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(
-                    String.format("Failed to discover command %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()));
+            String dataId = NacosPathUtils.toCommandDataId(url);
+            String group = NacosPathUtils.toCommandGroup(url);
+            String content = configService.getConfig(dataId, group, 5000);
+            return content != null ? content : "";
+        } catch (Exception e) {
+            log.warn("[NacosRegistry] discover command failed: dataId={}, msg={}",
+                    NacosPathUtils.toCommandDataId(url), e.getMessage());
+            return "";
         }
     }
 
@@ -368,38 +367,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         }
     }
 
-    private void registerCommandInstance(URL url, String command) {
-        try {
-            String serviceName = NacosPathUtils.toCommandServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            Instance instance = new Instance();
-            instance.setIp(url.getHost());
-            instance.setPort(url.getPort());
-            instance.setHealthy(true);
-            instance.setEphemeral(true);
-            Map<String, String> metadata = new HashMap<>();
-            metadata.put(METADATA_KEY_COMMAND, command != null ? command : "");
-            instance.setMetadata(metadata);
-            namingService.registerInstance(serviceName, group, instance);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void removeCommandInstance(URL url) {
-        try {
-            String serviceName = NacosPathUtils.toCommandServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            Instance instance = new Instance();
-            instance.setIp(url.getHost());
-            instance.setPort(url.getPort());
-            namingService.deregisterInstance(serviceName, group, instance);
-        } catch (Exception e) {
-            log.debug("[NacosRegistry] deregister command instance failed, serviceName={}, msg={}",
-                    NacosPathUtils.toCommandServiceName(url), e.getMessage());
-        }
-    }
-
     private List<URL> instancesToUrls(URL refUrl, List<Instance> instances) {
         List<URL> urls = new ArrayList<>();
         if (instances != null) {
@@ -428,18 +395,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
             }
         }
         return urls;
-    }
-
-    private String extractCommand(List<Instance> instances) {
-        if (instances != null) {
-            for (Instance instance : instances) {
-                Map<String, String> metadata = instance.getMetadata();
-                if (metadata != null && metadata.containsKey(METADATA_KEY_COMMAND)) {
-                    return metadata.get(METADATA_KEY_COMMAND);
-                }
-            }
-        }
-        return "";
     }
 
     private void reconnectService() {
@@ -479,11 +434,11 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
                         }
                     }
                 }
-                for (Map.Entry<URL, ConcurrentHashMap<CommandListener, EventListener>> entry : commandListeners.entrySet()) {
+                for (Map.Entry<URL, ConcurrentHashMap<CommandListener, Listener>> entry : commandListeners.entrySet()) {
                     URL url = entry.getKey();
-                    ConcurrentHashMap<CommandListener, EventListener> listeners = commandListeners.get(url);
+                    ConcurrentHashMap<CommandListener, Listener> listeners = commandListeners.get(url);
                     if (listeners != null) {
-                        for (Map.Entry<CommandListener, EventListener> e : listeners.entrySet()) {
+                        for (Map.Entry<CommandListener, Listener> e : listeners.entrySet()) {
                             subscribeCommandInternal(url, e.getKey());
                         }
                     }

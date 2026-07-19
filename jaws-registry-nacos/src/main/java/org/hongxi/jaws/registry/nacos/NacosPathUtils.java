@@ -34,11 +34,19 @@ public class NacosPathUtils {
     }
 
     /**
-     * Build the Nacos service name for command storage.
+     * Build the Nacos Config dataId for command storage.
      * Command is at group level (not per-interface), aligned with ZK's /jaws/{group}/command.
+     * Uses hyphen instead of slash since Nacos Config dataId does not support '/'.
      */
-    public static String toCommandServiceName(URL url) {
-        return JawsConstants.NACOS_REGISTRY_NAMESPACE + JawsConstants.ZOOKEEPER_REGISTRY_COMMAND;
+    public static String toCommandDataId(URL url) {
+        return "jaws.command";
+    }
+
+    /**
+     * Build the Nacos Config group for command storage.
+     */
+    public static String toCommandGroup(URL url) {
+        return url.getGroup();
     }
 
     /**
