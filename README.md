@@ -220,161 +220,17 @@ public class MyRunner implements CommandLineRunner {
 }
 ```
 
-### 泛化调用
+## 深入了解更多
 
-无需依赖 Provider 的接口 JAR 包，通过 `GenericService.$invoke()` 即可发起 RPC 调用。Spring Boot 注解方式使用 `@JawsReference(generic = true, serviceInterface = "...")` 即可，完整示例请参考 `jaws-sample-consumer` 中的 `GenericSampleConsumer`。
-
-### 优雅停机
-
-Jaws 支持四阶段优雅停机，确保服务下线时不中断在途请求：
-
-```
-Phase 1: stopAccept()              关闭 ServerChannel，不再接收新连接
-Phase 2: awaitInactiveRequests()   等待在途请求处理完成（默认超时 10s）
-Phase 3: unregister()              从注册中心注销服务
-Phase 4: unexport() → destroy()    关闭连接、释放 EventLoopGroup 和线程池
-```
-
-通过 `gracefulShutdownTimeout` URL 参数可配置 Phase 2 最大等待时间（默认 10000ms）。
-
-**验证步骤：**
-
-```bash
-# 1. 启动 ZooKeeper（如未运行）
-# 2. 启动 Provider
-./run-sample.sh provider
-
-# 3. 另开终端，运行 Consumer
-./run-sample.sh consumer
-
-# 4. 在 Provider 运行期间发送 SIGTERM（不要用 kill -9）
-jps | grep SampleProvider   # 找到 PID
-kill -TERM <PID>
-
-# 5. 观察 Provider 日志，应依次输出：
-# [GracefulShutdown] Phase 1: Stop accepting new requests
-# [GracefulShutdown] Phase 2: Waiting for in-flight requests to complete
-# All in-flight requests completed before shutdown
-# [GracefulShutdown] Phase 3: Unregister from registry
-# [GracefulShutdown] Phase 4: Close connections and release resources
-# [GracefulShutdown] Graceful shutdown completed
-```
-
-### 服务鉴权 / Token
-
-Provider 配置 token 后，Consumer 自动从注册中心获取并携带，无需额外代码：
-
-```java
-// Provider 端：注解方式
-@JawsService(token = "my-secret-token")
-public class DemoServiceImpl implements DemoService { }
-
-// Provider 端：编程式
-serviceConfig.setToken("my-secret-token");
-```
-
-也可通过 YAML 全局配置：
-
-```yaml
-jaws:
-  service:
-    token: my-secret-token
-```
-
-未配置 token 时自动跳过校验，完全向后兼容。
-
-### 连接预热 / Warm-up
-
-新启动的 Provider 逐步增加权重，避免 JIT 未充分编译、缓存未热时被打爆：
-
-- Provider 注册时自动写入启动时间戳
-- Consumer 端 LoadBalance 根据运行时长线性加权（0 → 满权重）
-- 支持 Random / RoundRobin / LeastActive / ShortestResponse
-- 默认预热时长 10 分钟，可通过 `warmup` URL 参数自定义（毫秒）
-
-### 配置热更新
-
-Consumer 端订阅注册中心的配置节点，运行时动态调整参数，无需重启服务。支持动态切换的参数：
-
-| 参数 | 说明 | 示例值 |
-|------|------|--------|
-| `loadbalance` | 负载均衡策略 | `random`、`roundRobin`、`leastActive` |
-| `haStrategy` | 容错策略 | `failover`、`failfast`、`failback` |
-| `requestTimeout` | 调用超时（ms） | `5000` |
-| `retries` | 重试次数 | `2` |
-
-**Nacos 模式：** 在 Nacos 控制台 → 配置管理 → 配置列表 中新建配置：
-
-- **Data ID**：接口全限定名，如 `org.hongxi.jaws.sample.api.DemoService`
-- **Group**：`JAWS_` + 服务分组大写（即 `jaws.registry.group` 配置值，默认 `JAWS_DEFAULT_RPC`）
-- **配置格式**：JSON
-- **配置内容**：
-
-```json
-{
-  "loadbalance": "random",
-  "haStrategy": "failfast",
-  "requestTimeout": 5000,
-  "retries": 2
-}
-```
-
-**ZooKeeper 模式：** 在 `/jaws/{group}/{接口全限定名}/config` 节点写入 JSON 内容，Consumer 通过 CuratorCache 自动感知变更。
-
-### 流量调度 / Command
-
-Command 是分组级的跨组流量调度能力，支持将多个 group 的服务按权重合并，以及基于 IP 的路由规则。与配置热更新（接口级）不同，Command 的数据在整个 group 内共享，按接口名 pattern 匹配生效。
-
-**Nacos 模式：** 在 Nacos 控制台 → 配置管理 → 配置列表中：
-
-- **Data ID**：`jaws.command`
-- **Group**：`JAWS_` + 服务分组大写（默认 `JAWS_DEFAULT_RPC`）
-- **配置格式**：JSON
-- **配置内容**：command JSON（格式见下方示例）
-
-**ZooKeeper 模式：** 在 `/jaws/{group}/command` 节点写入 JSON 内容。
-
-**配置内容示例：**
-
-```json
-{
-  "clientCommands": [
-    {
-      "pattern": "org.hongxi.jaws.sample.api.*",
-      "mergeGroups": ["default_rpc:80", "gray_rpc:20"],
-      "routeRules": ["192.168.1.* to 10.0.0.*"]
-    }
-  ]
-}
-```
-
-| 字段 | 说明 |
+| 主题 | 说明 |
 |------|------|
-| `pattern` | 接口名匹配模式，支持通配符 `*` |
-| `mergeGroups` | 要合并的分组及权重，格式 `group:weight`（weight 为 0-100 整数） |
-| `routeRules` | IP 路由规则，格式 `fromIP to toIP`，支持 `*` 通配和 `!` 取反 |
-
-Consumer 订阅 command 后，根据自身引用的接口名匹配 pattern，命中后按 mergeGroups 订阅多个 group 的服务列表并按权重路由，同时可按 routeRules 过滤目标 IP。
-
-### 可观测性
-
-引入 `jaws-observability-spring-boot-starter` 即可获得 Micrometer 指标采集和 OpenTelemetry 链路追踪能力，无需额外代码。
-
-**Maven 依赖：**
-
-```xml
-<dependency>
-    <groupId>org.hongxi</groupId>
-    <artifactId>jaws-observability-spring-boot-starter</artifactId>
-    <version>${jaws.version}</version>
-</dependency>
-```
-
-**功能说明：**
-
-- **链路追踪** — 基于 Micrometer Tracing + OpenTelemetry，通过 `Propagator` 自动在 consumer/provider 间传播 trace context（W3C TraceContext 格式），确保全链路 traceId 一致
-- **指标采集** — 自动统计 RPC 调用次数、成功率、耗时分布、活跃请求数等指标，通过 `side` tag 区分 consumer/provider 视角
-- **日志关联** — traceId/spanId 由 OTel 日志桥接层自动注入 MDC，日志格式 `{traceId}-{spanId}`
+| [泛化调用](doc/generic-invocation.md) | 无需接口 JAR 包即可发起 RPC 调用 |
+| [优雅停机](doc/graceful-shutdown.md) | 四阶段零损伤发布 |
+| [服务鉴权](doc/token-auth.md) | 基于 Token 的服务认证 |
+| [连接预热](doc/warm-up.md) | Provider 冷启动权重渐增 |
+| [配置热更新](doc/config-hot-reload.md) | 运行时动态调整负载均衡、容错、超时等参数 |
+| [流量调度](doc/command-routing.md) | 跨分组流量合并与 IP 路由规则 |
+| [可观测性](doc/observability.md) | Micrometer 指标 + OpenTelemetry 链路追踪 |
 
 ## 技术栈
 
