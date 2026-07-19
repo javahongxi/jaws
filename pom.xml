@@ -29,8 +29,6 @@
         <hessian-lite.version>4.0.5</hessian-lite.version>
         <nacos.version>3.2.2</nacos.version>
         <zookeeper.version>3.9.3</zookeeper.version>
-        <micrometer.version>1.14.6</micrometer.version>
-        <opentelemetry.version>1.48.0</opentelemetry.version>
     </properties>
 
     <dependencyManagement>
@@ -77,16 +75,6 @@
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.micrometer</groupId>
-                <artifactId>micrometer-core</artifactId>
-                <version>${micrometer.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.opentelemetry</groupId>
-                <artifactId>opentelemetry-api</artifactId>
-                <version>${opentelemetry.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
