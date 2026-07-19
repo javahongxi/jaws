@@ -1,7 +1,7 @@
 package org.hongxi.jaws.cluster.support;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.closeable.ShutdownHook;
+import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.HaStrategy;
 import org.hongxi.jaws.cluster.LoadBalance;

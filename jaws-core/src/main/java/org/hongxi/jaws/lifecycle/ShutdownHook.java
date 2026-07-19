@@ -1,4 +1,4 @@
-package org.hongxi.jaws.closeable;
+package org.hongxi.jaws.lifecycle;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

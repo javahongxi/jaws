@@ -1,4 +1,4 @@
-package org.hongxi.jaws.closeable;
+package org.hongxi.jaws.lifecycle;
 
 /**
  * Created by shenhongxi on 2021/4/23.

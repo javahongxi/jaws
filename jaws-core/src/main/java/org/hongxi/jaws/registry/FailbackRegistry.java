@@ -1,6 +1,6 @@
 package org.hongxi.jaws.registry;
 
-import org.hongxi.jaws.closeable.ShutdownHook;
+import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;

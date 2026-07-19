@@ -1,4 +1,4 @@
-package org.hongxi.jaws.serialize;
+package org.hongxi.jaws.serialization;
 
 import java.io.Serial;
 import java.io.Serializable;

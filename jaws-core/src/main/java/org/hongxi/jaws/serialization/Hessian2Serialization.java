@@ -1,4 +1,4 @@
-package org.hongxi.jaws.serialize;
+package org.hongxi.jaws.serialization;
 
 import com.alibaba.com.caucho.hessian.io.Hessian2Input;
 import com.alibaba.com.caucho.hessian.io.Hessian2Output;

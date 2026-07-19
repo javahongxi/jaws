@@ -1,2 +1,2 @@
-org.hongxi.jaws.serialize.Hessian2Serialization
-org.hongxi.jaws.serialize.FastJson2Serialization
+org.hongxi.jaws.serialization.Hessian2Serialization
+org.hongxi.jaws.serialization.FastJson2Serialization

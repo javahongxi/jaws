@@ -2,7 +2,7 @@ package org.hongxi.jaws.config;
 
 import org.apache.commons.lang3.StringUtils;
 import java.io.Serial;
-import org.hongxi.jaws.closeable.ShutdownHook;
+import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;

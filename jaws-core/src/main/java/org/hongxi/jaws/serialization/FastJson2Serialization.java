@@ -1,4 +1,4 @@
-package org.hongxi.jaws.serialize;
+package org.hongxi.jaws.serialization;
 
 import com.alibaba.fastjson2.JSONB;
 import com.alibaba.fastjson2.JSONReader;
