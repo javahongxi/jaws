@@ -1,7 +1,7 @@
 package org.hongxi.jaws.spring.boot;
 
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.switcher.JawsSwitcherUtils;
+import org.hongxi.jaws.toggle.JawsToggleUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationListener;
@@ -67,9 +67,9 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
 
         /* start heartbeat after all services are exported */
         try {
-            JawsSwitcherUtils.setSwitcherValue(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, true);
+            JawsToggleUtils.setToggleValue(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE, true);
         } catch (Exception e) {
-            log.warn("[JawsBootstrap] failed to start heartbeat switcher", e);
+            log.warn("[JawsBootstrap] failed to start heartbeat toggle", e);
         }
 
         log.info("[JawsBootstrap] all services exported, count={}", serviceBeans.size());
@@ -85,9 +85,9 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
 
         // Stop heartbeat first to prevent registry from thinking service is still alive
         try {
-            JawsSwitcherUtils.setSwitcherValue(JawsConstants.REGISTRY_HEARTBEAT_SWITCHER, false);
+            JawsToggleUtils.setToggleValue(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE, false);
         } catch (Exception e) {
-            log.debug("[JawsBootstrap] failed to close heartbeat switcher", e);
+            log.debug("[JawsBootstrap] failed to close heartbeat toggle", e);
         }
 
         // Trigger graceful shutdown via ServiceBean.destroy() -> unexport() -> 4-phase shutdown

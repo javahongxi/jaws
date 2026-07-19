@@ -1,9 +1,9 @@
-package org.hongxi.jaws.switcher;
+package org.hongxi.jaws.toggle;
 
 /**
  * Created by shenhongxi on 2021/4/25.
  */
-public interface SwitcherListener {
+public interface ToggleListener {
 
     void onValueChanged(String key, Boolean value);
 }

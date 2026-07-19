@@ -10,8 +10,8 @@ import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
-import org.hongxi.jaws.switcher.Switcher;
-import org.hongxi.jaws.switcher.SwitcherService;
+import org.hongxi.jaws.toggle.Toggle;
+import org.hongxi.jaws.toggle.ToggleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,12 +34,12 @@ public class AbstractReferenceHandler<T> {
     protected Class<T> clazz;
     protected String interfaceName;
 
-    protected SwitcherService switcherService = null;
+    protected ToggleService toggleService = null;
 
     void init() {
         // clusters 不应该为空
-        String switchName = this.clusters.get(0).getUrl().getParameter(URLParamType.switcherService.getName(), URLParamType.switcherService.value());
-        switcherService = ExtensionLoader.getExtensionLoader(SwitcherService.class).getExtension(switchName);
+        String toggleName = this.clusters.get(0).getUrl().getParameter(URLParamType.toggleService.getName(), URLParamType.toggleService.value());
+        toggleService = ExtensionLoader.getExtensionLoader(ToggleService.class).getExtension(toggleName);
     }
 
     Object invokeRequest(Request request, Class<?> returnType, boolean async) throws Throwable {
@@ -72,9 +72,9 @@ public class AbstractReferenceHandler<T> {
         CompletableFuture<Object> resultFuture = new CompletableFuture<>();
 
         for (Cluster<T> cluster : clusters) {
-            String protocolSwitcher = JawsConstants.PROTOCOL_SWITCHER_PREFIX + cluster.getUrl().getProtocol();
-            Switcher switcher = switcherService.getSwitcher(protocolSwitcher);
-            if (switcher != null && !switcher.isOn()) {
+            String protocolToggle = JawsConstants.PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
+            Toggle toggle = toggleService.getToggle(protocolToggle);
+            if (toggle != null && !toggle.isOn()) {
                 continue;
             }
 
@@ -144,11 +144,11 @@ public class AbstractReferenceHandler<T> {
         // 当 reference配置多个protocol的时候，比如A,B,C，
         // 那么正常情况下只会使用A，如果A被开关降级，那么就会使用B，B也被降级，那么会使用C
         for (Cluster<T> cluster : clusters) {
-            String protocolSwitcher = JawsConstants.PROTOCOL_SWITCHER_PREFIX + cluster.getUrl().getProtocol();
+            String protocolToggle = JawsConstants.PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
 
-            Switcher switcher = switcherService.getSwitcher(protocolSwitcher);
+            Toggle toggle = toggleService.getToggle(protocolToggle);
 
-            if (switcher != null && !switcher.isOn()) {
+            if (toggle != null && !toggle.isOn()) {
                 continue;
             }
 

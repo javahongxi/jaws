@@ -58,7 +58,7 @@ public enum URLParamType {
     codec("codec", "jaws"),
     endpointFactory("endpointFactory", "netty"),
 
-    switcherService("switcherService", "localSwitcherService"),
+    toggleService("toggleService", "localToggleService"),
 
     /************************** SPI end ******************************/
 

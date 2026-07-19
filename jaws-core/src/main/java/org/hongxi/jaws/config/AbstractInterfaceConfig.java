@@ -106,7 +106,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     protected String backupRequestDelayRatio;
 
-    protected String backupRequestSwitcherName;
+    protected String backupRequestToggleName;
 
     protected String backupRequestMaxRetryRatio;
 
@@ -324,12 +324,12 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.backupRequestDelayRatio = backupRequestDelayRatio;
     }
 
-    public String getBackupRequestSwitcherName() {
-        return backupRequestSwitcherName;
+    public String getBackupRequestToggleName() {
+        return backupRequestToggleName;
     }
 
-    public void setBackupRequestSwitcherName(String backupRequestSwitcherName) {
-        this.backupRequestSwitcherName = backupRequestSwitcherName;
+    public void setBackupRequestToggleName(String backupRequestToggleName) {
+        this.backupRequestToggleName = backupRequestToggleName;
     }
 
     public String getBackupRequestMaxRetryRatio() {

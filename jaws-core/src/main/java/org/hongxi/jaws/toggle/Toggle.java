@@ -1,14 +1,16 @@
-package org.hongxi.jaws.switcher;
+package org.hongxi.jaws.toggle;
 
 /**
+ * A binary on/off toggle for runtime feature control.
+ *
  * Created by shenhongxi on 2021/4/25.
  */
-public class Switcher {
+public class Toggle {
     private boolean on = true;
-    // 开关名
+    // toggle name
     private String name;
 
-    public Switcher(String name, boolean on) {
+    public Toggle(String name, boolean on) {
         this.name = name;
         this.on = on;
     }
@@ -18,7 +20,7 @@ public class Switcher {
     }
 
     /**
-     * isOn: true，服务可用; isOn: false, 服务不可用
+     * isOn: true, feature enabled; isOn: false, feature disabled
      *
      * @return
      */
@@ -27,16 +29,16 @@ public class Switcher {
     }
 
     /**
-     * turn on switcher
+     * turn on toggle
      */
-    public void onSwitcher() {
+    public void onToggle() {
         this.on = true;
     }
 
     /**
-     * turn off switcher
+     * turn off toggle
      */
-    public void offSwitcher() {
+    public void offToggle() {
         this.on = false;
     }
 }
