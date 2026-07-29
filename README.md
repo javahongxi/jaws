@@ -1,13 +1,11 @@
 # Jaws Framework 🦈
 
-Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注册与发现、负载均衡、容错等完整的微服务通信能力。
+Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注册与发现、负载均衡、高可用容错等完整的微服务通信能力。
 
 ## 特性
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，支持 fastjson2 / hessian2 序列化
-- **injvm 协议** — JVM 内部直调，零网络开销，适合本地开发与测试
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
-- **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 - **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
 - **高可用容错** — failover（失败切换）、failfast（快速失败）、failback（异步重试）
 - **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
@@ -21,6 +19,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **服务鉴权 / Token** — 基于 Token 的服务认证，防止未授权调用，通过 Filter 自动生效
 - **配置热更新** — 运行时动态调整负载均衡、容错策略、超时、重试等参数，无需重启服务
 - **流量调度 / Command** — 跨分组流量调度，支持按权重合并多 group 服务、IP 路由规则，灰度发布利器
+- **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 
 ## 快速开始
 
