@@ -30,8 +30,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * <p>
  * Created by shenhongxi on 2026/7/17.
  */
-@ConfigurationProperties(prefix = "jaws")
+@ConfigurationProperties(JawsProperties.CONFIG_PREFIX)
 public class JawsProperties {
+
+    public static final String CONFIG_PREFIX = "jaws";
 
     /**
      * Application configuration.
