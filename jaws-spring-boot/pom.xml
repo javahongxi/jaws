@@ -15,6 +15,7 @@
 
     <modules>
         <module>jaws-spring-boot-starter</module>
+        <module>jaws-mcp-spring-boot-starter</module>
         <module>jaws-observability-spring-boot-starter</module>
     </modules>
 

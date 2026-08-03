@@ -13,6 +13,7 @@
         <module>jaws-transport-netty</module>
         <module>jaws-registry-zookeeper</module>
         <module>jaws-registry-nacos</module>
+        <module>jaws-mcp</module>
         <module>jaws-spring-boot</module>
         <module>jaws-extensions</module>
         <module>jaws-samples</module>
@@ -27,6 +28,7 @@
         <fastjson2.version>2.0.63</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
         <hessian-lite.version>4.0.5</hessian-lite.version>
+        <mcp-bom.version>2.0.0</mcp-bom.version>
         <nacos.version>3.2.2</nacos.version>
         <zookeeper.version>3.9.3</zookeeper.version>
     </properties>
@@ -39,6 +41,13 @@
                 <version>${spring-boot.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-bom</artifactId>
+                <type>pom</type>
+                <scope>import</scope>
+                <version>${mcp-bom.version}</version>
             </dependency>
 
             <dependency>
