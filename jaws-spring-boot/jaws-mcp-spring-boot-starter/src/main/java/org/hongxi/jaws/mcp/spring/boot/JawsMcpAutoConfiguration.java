@@ -6,8 +6,8 @@ import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.http.HttpServlet;
+import org.hongxi.jaws.bridge.ServiceMethodSpec;
 import org.hongxi.jaws.mcp.JawsMcpServer;
-import org.hongxi.jaws.mcp.JawsMcpToolSpec;
 import org.hongxi.jaws.rpc.Exporter;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.spring.boot.JawsAutoConfiguration;
@@ -140,9 +140,9 @@ public class JawsMcpAutoConfiguration {
                 }
 
                 Provider<?> provider = exporters.get(0).getProvider();
-                List<JawsMcpToolSpec> toolSpecs = JawsMcpServer.createToolSpecs(interfaceClass, provider);
+                List<ServiceMethodSpec> methodSpecs = JawsMcpServer.createMethodSpecs(interfaceClass, provider);
                 List<McpServerFeatures.SyncToolSpecification> syncSpecs =
-                        JawsMcpServer.buildSyncToolSpecifications(toolSpecs);
+                        JawsMcpServer.buildSyncToolSpecifications(methodSpecs);
 
                 for (McpServerFeatures.SyncToolSpecification spec : syncSpecs) {
                     mcpSyncServer.addTool(spec);

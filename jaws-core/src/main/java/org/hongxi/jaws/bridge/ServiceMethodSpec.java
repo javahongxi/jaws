@@ -1,4 +1,4 @@
-package org.hongxi.jaws.mcp;
+package org.hongxi.jaws.bridge;
 
 import org.hongxi.jaws.rpc.Provider;
 
@@ -6,18 +6,19 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 
 /**
- * Holds metadata for a single MCP Tool mapped from a Jaws service method.
+ * Holds metadata for a single service method, shared across protocol bridges
+ * (MCP, REST, etc.).
  * <p>
  * Each instance represents one public method of a Jaws service interface,
- * containing all information needed to route an MCP tool call back to the
+ * containing all information needed to route an external call back to the
  * Jaws {@link Provider}.
  *
  * @author shenhongxi
  */
-public class JawsMcpToolSpec {
+public class ServiceMethodSpec {
 
-    /** The MCP tool name, e.g. "DemoService_getUser" */
-    private final String toolName;
+    /** The external tool/action name, e.g. "DemoService_getUser" */
+    private final String actionName;
 
     /** The Jaws service interface name (fully qualified) */
     private final String interfaceName;
@@ -34,13 +35,13 @@ public class JawsMcpToolSpec {
     /** The Jaws Provider that can execute this method */
     private final Provider<?> provider;
 
-    /** Method parameters for JSON Schema generation */
+    /** Method parameters for schema generation */
     private final Parameter[] parameters;
 
-    public JawsMcpToolSpec(String toolName, String interfaceName, String methodName,
-                           String[] parameterTypes, Method method,
-                           Provider<?> provider, Parameter[] parameters) {
-        this.toolName = toolName;
+    public ServiceMethodSpec(String actionName, String interfaceName, String methodName,
+                             String[] parameterTypes, Method method,
+                             Provider<?> provider, Parameter[] parameters) {
+        this.actionName = actionName;
         this.interfaceName = interfaceName;
         this.methodName = methodName;
         this.parameterTypes = parameterTypes;
@@ -49,8 +50,8 @@ public class JawsMcpToolSpec {
         this.parameters = parameters;
     }
 
-    public String getToolName() {
-        return toolName;
+    public String getActionName() {
+        return actionName;
     }
 
     public String getInterfaceName() {

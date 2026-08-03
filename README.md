@@ -21,6 +21,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **流量调度 / Command** — 跨分组流量调度，支持按权重合并多 group 服务、IP 路由规则，灰度发布利器
 - **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 - **MCP 桥接** — 将 Jaws RPC 服务自动暴露为 MCP Tools，AI Agent 可直接调用后端服务
+- **REST 桥接** — 将 Jaws RPC 服务通过 REST API 对外暴露，传统 HTTP 客户端可直接调用，与 MCP 共享核心组件
 
 ## 快速开始
 
@@ -167,6 +168,7 @@ public class MyRunner implements CommandLineRunner {
 | [流量调度](doc/command-routing.md)     | 跨分组流量合并与 IP 路由规则             |
 | [可观测性](doc/observability.md)       | Micrometer 指标 + OpenTelemetry 链路追踪 |
 | [MCP 桥接](doc/mcp-bridge.md)          | 将 RPC 服务自动暴露为 MCP Tools          |
+| [REST 桥接](doc/rest-bridge.md)        | 将 RPC 服务通过 REST API 对外暴露        |
 | [性能测试](doc/benchmark.md)           | Benchmark 环境变量与参数选择建议         |
 
 ## 技术栈

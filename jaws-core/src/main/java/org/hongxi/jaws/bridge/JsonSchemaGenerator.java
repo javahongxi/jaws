@@ -1,4 +1,4 @@
-package org.hongxi.jaws.mcp;
+package org.hongxi.jaws.bridge;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -9,13 +9,14 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.*;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Generates JSON Schema (draft 2020-12) from Java types for MCP Tool input schemas.
+ * Generates JSON Schema (draft 2020-12) from Java types for service method input schemas.
  * <p>
  * Supports primitives, wrappers, String, Date/Time types, BigDecimal/BigInteger,
  * collections, arrays, maps, enums, and complex POJOs (with recursive field expansion).
+ * <p>
+ * Shared across protocol bridges (MCP, REST, etc.).
  *
  * @author shenhongxi
  */
@@ -73,7 +74,7 @@ public class JsonSchemaGenerator {
      * The resulting schema has type=object with properties for each parameter.
      *
      * @param parameters the method parameters
-     * @return JSON Schema map suitable for MCP Tool inputSchema
+     * @return JSON Schema map
      */
     public static Map<String, Object> generateMethodSchema(Parameter[] parameters) {
         return generateMethodSchema(parameters, 0);

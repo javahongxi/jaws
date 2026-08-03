@@ -5,13 +5,14 @@ import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
+import org.hongxi.jaws.bridge.JsonSchemaGenerator;
+import org.hongxi.jaws.bridge.ServiceMethodSpec;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.lang.reflect.Parameter;
 import java.util.*;
 
 /**
@@ -37,14 +38,14 @@ public class JawsMcpServer {
 
     private final McpSyncServer syncServer;
     private final HttpServletStreamableServerTransportProvider transportProvider;
-    private final List<JawsMcpToolSpec> toolSpecs;
+    private final List<ServiceMethodSpec> methodSpecs;
 
     private JawsMcpServer(McpSyncServer syncServer,
                           HttpServletStreamableServerTransportProvider transportProvider,
-                          List<JawsMcpToolSpec> toolSpecs) {
+                          List<ServiceMethodSpec> methodSpecs) {
         this.syncServer = syncServer;
         this.transportProvider = transportProvider;
-        this.toolSpecs = toolSpecs;
+        this.methodSpecs = methodSpecs;
     }
 
     public McpSyncServer getSyncServer() {
@@ -55,8 +56,8 @@ public class JawsMcpServer {
         return transportProvider;
     }
 
-    public List<JawsMcpToolSpec> getToolSpecs() {
-        return Collections.unmodifiableList(toolSpecs);
+    public List<ServiceMethodSpec> getMethodSpecs() {
+        return Collections.unmodifiableList(methodSpecs);
     }
 
     public void stop() {
@@ -66,12 +67,12 @@ public class JawsMcpServer {
     }
 
     /**
-     * Create tool specifications from a service interface and its Provider.
-     * Each public method becomes one MCP Tool.
+     * Create service method specifications from a service interface and its Provider.
+     * Each public method becomes one specification that can be used by MCP, REST, or other bridges.
      */
-    public static List<JawsMcpToolSpec> createToolSpecs(Class<?> interfaceClass,
-                                                         org.hongxi.jaws.rpc.Provider<?> provider) {
-        List<JawsMcpToolSpec> specs = new ArrayList<>();
+    public static List<ServiceMethodSpec> createMethodSpecs(Class<?> interfaceClass,
+                                                             org.hongxi.jaws.rpc.Provider<?> provider) {
+        List<ServiceMethodSpec> specs = new ArrayList<>();
         String simpleInterfaceName = interfaceClass.getSimpleName();
 
         // Track method names to handle overloading
@@ -85,7 +86,7 @@ public class JawsMcpServer {
             methodNameCount.merge(method.getName(), 1, Integer::sum);
         }
 
-        // Reset counts for tool name generation
+        // Reset counts for action name generation
         Map<String, Integer> methodNameIndex = new HashMap<>();
 
         for (Method method : methods) {
@@ -97,14 +98,14 @@ public class JawsMcpServer {
             int index = methodNameIndex.merge(methodName, 0, Integer::sum) + 1;
             methodNameIndex.put(methodName, index);
 
-            // Build tool name
-            String toolName;
+            // Build action name
+            String actionName;
             int totalCount = methodNameCount.getOrDefault(methodName, 1);
             if (totalCount > 1) {
                 // Overloaded method: append index
-                toolName = simpleInterfaceName + "_" + methodName + "_" + index;
+                actionName = simpleInterfaceName + "_" + methodName + "_" + index;
             } else {
-                toolName = simpleInterfaceName + "_" + methodName;
+                actionName = simpleInterfaceName + "_" + methodName;
             }
 
             // Build parameter types
@@ -117,8 +118,8 @@ public class JawsMcpServer {
             // Build description
             String description = buildMethodDescription(interfaceClass, method, paramTypeNames);
 
-            specs.add(new JawsMcpToolSpec(
-                    toolName,
+            specs.add(new ServiceMethodSpec(
+                    actionName,
                     interfaceClass.getName(),
                     methodName,
                     paramTypeNames,
@@ -127,10 +128,20 @@ public class JawsMcpServer {
                     method.getParameters()
             ));
 
-            log.info("[JawsMcp] Registered tool: {} - {}", toolName, description);
+            log.info("[JawsMcp] Registered method: {} - {}", actionName, description);
         }
 
         return specs;
+    }
+
+    /**
+     * @deprecated Use {@link #createMethodSpecs(Class, org.hongxi.jaws.rpc.Provider)} instead.
+     *             This method is kept for backward compatibility and returns ServiceMethodSpec list.
+     */
+    @Deprecated
+    public static List<ServiceMethodSpec> createToolSpecs(Class<?> interfaceClass,
+                                                           org.hongxi.jaws.rpc.Provider<?> provider) {
+        return createMethodSpecs(interfaceClass, provider);
     }
 
     private static String buildMethodDescription(Class<?> interfaceClass, Method method, String[] paramTypeNames) {
@@ -157,18 +168,18 @@ public class JawsMcpServer {
     }
 
     /**
-     * Build MCP Tool specifications into SyncToolSpecification for the MCP server builder.
+     * Build MCP Tool specifications from ServiceMethodSpec list.
      */
     public static List<McpServerFeatures.SyncToolSpecification> buildSyncToolSpecifications(
-            List<JawsMcpToolSpec> toolSpecs) {
+            List<ServiceMethodSpec> methodSpecs) {
         List<McpServerFeatures.SyncToolSpecification> specifications = new ArrayList<>();
 
-        for (JawsMcpToolSpec spec : toolSpecs) {
-            // Generate JSON Schema for the tool's input
+        for (ServiceMethodSpec spec : methodSpecs) {
+            // Generate JSON Schema for the method's input
             Map<String, Object> inputSchema = JsonSchemaGenerator.generateMethodSchema(spec.getParameters());
 
             // Build MCP Tool
-            McpSchema.Tool tool = McpSchema.Tool.builder(spec.getToolName(), inputSchema)
+            McpSchema.Tool tool = McpSchema.Tool.builder(spec.getActionName(), inputSchema)
                     .description(buildMethodDescription(
                             getInterfaceClass(spec.getInterfaceName()),
                             spec.getMethod(),
@@ -203,7 +214,7 @@ public class JawsMcpServer {
         private String serverName = "jaws-mcp-server";
         private String serverVersion = "1.0.0";
         private String mcpEndpoint = "/mcp";
-        private final List<JawsMcpToolSpec> toolSpecs = new ArrayList<>();
+        private final List<ServiceMethodSpec> methodSpecs = new ArrayList<>();
 
         public Builder serverInfo(String name, String version) {
             this.serverName = name;
@@ -216,13 +227,21 @@ public class JawsMcpServer {
             return this;
         }
 
-        public Builder addToolSpecs(List<JawsMcpToolSpec> specs) {
-            this.toolSpecs.addAll(specs);
+        public Builder addMethodSpecs(List<ServiceMethodSpec> specs) {
+            this.methodSpecs.addAll(specs);
             return this;
         }
 
+        /**
+         * @deprecated Use {@link #addMethodSpecs(List)} instead.
+         */
+        @Deprecated
+        public Builder addToolSpecs(List<ServiceMethodSpec> specs) {
+            return addMethodSpecs(specs);
+        }
+
         public Builder addService(Class<?> interfaceClass, org.hongxi.jaws.rpc.Provider<?> provider) {
-            this.toolSpecs.addAll(createToolSpecs(interfaceClass, provider));
+            this.methodSpecs.addAll(createMethodSpecs(interfaceClass, provider));
             return this;
         }
 
@@ -235,7 +254,7 @@ public class JawsMcpServer {
 
             // Build MCP tool specifications
             List<McpServerFeatures.SyncToolSpecification> toolSpecifications =
-                    buildSyncToolSpecifications(toolSpecs);
+                    buildSyncToolSpecifications(methodSpecs);
 
             // Build MCP Sync Server
             McpSyncServer syncServer = McpServer.sync(transportProvider)
@@ -244,9 +263,9 @@ public class JawsMcpServer {
                     .build();
 
             log.info("[JawsMcp] MCP Server built: name={}, tools={}, endpoint={}",
-                    serverName, toolSpecs.size(), mcpEndpoint);
+                    serverName, methodSpecs.size(), mcpEndpoint);
 
-            return new JawsMcpServer(syncServer, transportProvider, toolSpecs);
+            return new JawsMcpServer(syncServer, transportProvider, methodSpecs);
         }
     }
 }
