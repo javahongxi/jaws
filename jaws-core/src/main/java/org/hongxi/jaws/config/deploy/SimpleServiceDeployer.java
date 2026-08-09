@@ -1,4 +1,4 @@
-package org.hongxi.jaws.config.handler;
+package org.hongxi.jaws.config.deploy;
 
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.support.ClusterSupport;
@@ -24,9 +24,9 @@ import java.util.List;
  * Created by shenhongxi on 2021/3/6.
  */
 @SpiMeta(name = JawsConstants.DEFAULT_VALUE)
-public class SimpleConfigHandler implements ConfigHandler {
+public class SimpleServiceDeployer implements ServiceDeployer {
 
-    private static final Logger log = LoggerFactory.getLogger(SimpleConfigHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(SimpleServiceDeployer.class);
 
     @Override
     public <T> Exporter<T> export(Class<T> interfaceClass, T ref, List<URL> registryUrls, URL serviceUrl) {

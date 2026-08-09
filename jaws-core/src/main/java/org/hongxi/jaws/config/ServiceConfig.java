@@ -9,7 +9,7 @@ import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.config.annotation.ConfigDesc;
-import org.hongxi.jaws.config.handler.ConfigHandler;
+import org.hongxi.jaws.config.deploy.ServiceDeployer;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -136,9 +136,9 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
             return;
         }
         try {
-            ConfigHandler configHandler =
-                    ExtensionLoader.getExtensionLoader(ConfigHandler.class).getExtension(JawsConstants.DEFAULT_VALUE);
-            configHandler.unexport(exporters, registryUrls);
+            ServiceDeployer serviceDeployer =
+                    ExtensionLoader.getExtensionLoader(ServiceDeployer.class).getExtension(JawsConstants.DEFAULT_VALUE);
+            serviceDeployer.unexport(exporters, registryUrls);
         } finally {
             afterUnexport();
         }
@@ -204,9 +204,9 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
             }
         }
 
-        ConfigHandler configHandler = ExtensionLoader.getExtensionLoader(ConfigHandler.class).getExtension(JawsConstants.DEFAULT_VALUE);
+        ServiceDeployer serviceDeployer = ExtensionLoader.getExtensionLoader(ServiceDeployer.class).getExtension(JawsConstants.DEFAULT_VALUE);
 
-        exporters.add(configHandler.export(interfaceClass, ref, registryUrls, serviceUrl));
+        exporters.add(serviceDeployer.export(interfaceClass, ref, registryUrls, serviceUrl));
     }
 
     private void afterExport() {

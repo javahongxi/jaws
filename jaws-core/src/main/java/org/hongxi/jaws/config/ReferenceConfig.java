@@ -11,7 +11,7 @@ import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.common.util.StringTools;
 import org.hongxi.jaws.config.annotation.ConfigDesc;
-import org.hongxi.jaws.config.handler.ConfigHandler;
+import org.hongxi.jaws.config.deploy.ServiceDeployer;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.registry.RegistryService;
@@ -106,7 +106,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
         List<Cluster<T>> clusters = new ArrayList<>(protocols.size());
         String proxy = null;
 
-        ConfigHandler configHandler = ExtensionLoader.getExtensionLoader(ConfigHandler.class).getExtension(JawsConstants.DEFAULT_VALUE);
+        ServiceDeployer serviceDeployer = ExtensionLoader.getExtensionLoader(ServiceDeployer.class).getExtension(JawsConstants.DEFAULT_VALUE);
 
         loadRegistryUrls();
         String localIp = getLocalHostAddress();
@@ -121,7 +121,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
 
             String path = StringUtils.isBlank(serviceInterface) ? interfaceClass.getName() : serviceInterface;
             URL refUrl = new URL(protocol.getName(), localIp, JawsConstants.DEFAULT_INT_VALUE, path, params);
-            ClusterSupport<T> clusterSupport = createClusterSupport(refUrl, configHandler);
+            ClusterSupport<T> clusterSupport = createClusterSupport(refUrl, serviceDeployer);
 
             clusterSupports.add(clusterSupport);
             clusters.add(clusterSupport.getCluster());
@@ -136,12 +136,12 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             }
         }
 
-        ref = configHandler.refer(interfaceClass, clusters, proxy);
+        ref = serviceDeployer.refer(interfaceClass, clusters, proxy);
 
         initialized.set(true);
     }
 
-    private ClusterSupport<T> createClusterSupport(URL refUrl, ConfigHandler configHandler) {
+    private ClusterSupport<T> createClusterSupport(URL refUrl, ServiceDeployer serviceDeployer) {
         List<URL> regUrls = new ArrayList<>();
 
         // 如果用户指定directUrls 或者 injvm协议访问，则使用local registry
@@ -181,7 +181,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             }
         }
 
-        return configHandler.buildClusterSupport(interfaceClass, regUrls, refUrl);
+        return serviceDeployer.buildClusterSupport(interfaceClass, regUrls, refUrl);
     }
 
     public synchronized void destroy() {

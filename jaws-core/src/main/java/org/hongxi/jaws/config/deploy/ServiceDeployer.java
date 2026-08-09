@@ -1,4 +1,4 @@
-package org.hongxi.jaws.config.handler;
+package org.hongxi.jaws.config.deploy;
 
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.support.ClusterSupport;
@@ -11,13 +11,13 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- *
- * Handle urls which are from config.
+ * Service deployer that handles export/unexport for provider side
+ * and cluster building/refer for consumer side.
  * <p>
  * Created by shenhongxi on 2021/3/6.
  */
 @Spi(scope = Scope.SINGLETON)
-public interface ConfigHandler {
+public interface ServiceDeployer {
 
     <T> Exporter<T> export(Class<T> interfaceClass, T ref, List<URL> registryUrls, URL serviceUrl);
 
