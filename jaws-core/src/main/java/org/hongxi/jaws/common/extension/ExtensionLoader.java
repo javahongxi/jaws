@@ -40,10 +40,10 @@ public class ExtensionLoader<T> {
         this.classLoader = classLoader;
     }
 
-    @SuppressWarnings("unchecked")
     public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
         checkInterfaceType(type);
 
+        // noinspection unchecked
         ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
         if (loader == null) {
             loader = initExtensionLoader(type);
@@ -60,8 +60,8 @@ public class ExtensionLoader<T> {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static synchronized <T> ExtensionLoader<T> initExtensionLoader(Class<T> type) {
+        // noinspection unchecked
         ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoaders.get(type);
         if (loader == null) {
             loader = new ExtensionLoader<>(type);
@@ -237,27 +237,21 @@ public class ExtensionLoader<T> {
             throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
         }
 
-//        for (int i = Character.charCount(cp); i < line.length(); i += Character.charCount(cp)) {
-//            cp = line.codePointAt(i);
-//            if (!Character.isJavaIdentifierStart(cp) && cp != '.') {
-//                throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
-//            }
-//        }
-
         if (!classNames.contains(line)) {
             classNames.add(line);
         }
     }
 
-    @SuppressWarnings("unchecked")
     private ConcurrentMap<String, Class<T>> loadClasses(List<String> classNames) {
         ConcurrentMap<String, Class<T>> classes = new ConcurrentHashMap<>();
         for (String className : classNames) {
             try {
                 Class<T> clazz;
                 if (classLoader == null) {
+                    // noinspection unchecked
                     clazz = (Class<T>) Class.forName(className);
                 } else {
+                    // noinspection unchecked
                     clazz = (Class<T>) Class.forName(className, true, classLoader);
                 }
 

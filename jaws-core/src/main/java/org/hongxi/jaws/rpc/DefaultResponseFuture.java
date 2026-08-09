@@ -184,11 +184,11 @@ public class DefaultResponseFuture implements ResponseFuture {
      * Convert this ResponseFuture to a CompletableFuture.
      * The returned CompletableFuture will complete when this future completes (success or failure).
      */
-    @SuppressWarnings("unchecked")
     public <T> CompletableFuture<T> toCompletableFuture() {
         CompletableFuture<T> cf = new CompletableFuture<>();
         this.addListener(future -> {
             if (future.isSuccess()) {
+                // noinspection unchecked
                 cf.complete((T) result);
             } else {
                 Exception ex = future.getException();

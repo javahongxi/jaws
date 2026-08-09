@@ -46,10 +46,10 @@ public class InjvmProtocol extends AbstractProtocol {
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public void unexport() {
             String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
 
+            // noinspection unchecked
             Exporter<T> exporter = (Exporter<T>) exporterMap.remove(protocolKey);
 
             if (exporter != null) {
@@ -92,10 +92,10 @@ public class InjvmProtocol extends AbstractProtocol {
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         protected boolean doInit() {
             String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
 
+            // noinspection unchecked
             exporter = (Exporter<T>) exporterMap.get(protocolKey);
 
             if (exporter == null) {

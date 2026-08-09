@@ -83,12 +83,11 @@ public class ServiceBean extends ServiceConfig<Object>
      * Does NOT call export here. Export is deferred to {@link JawsBootstrap} on
      * {@code ContextRefreshedEvent} after all singleton beans are fully initialized.
      */
-    @SuppressWarnings("unchecked")
     @Override
     public void afterPropertiesSet() {
         /* resolve the service implementation bean from context */
         Object ref = applicationContext.getBean(refBeanName);
-        setRef((Object) ref);
+        setRef(ref);
 
         pending = true;
         log.info("[ServiceBean] registered service bean: name={}, interface={}, ref={}",

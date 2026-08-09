@@ -42,11 +42,11 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public void unexport() {
         String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
         String ipPort = url.getServerPortStr();
 
+        // noinspection unchecked
         Exporter<T> exporter = (Exporter<T>) exporterMap.remove(protocolKey);
         if (exporter != null) {
             exporter.destroy();

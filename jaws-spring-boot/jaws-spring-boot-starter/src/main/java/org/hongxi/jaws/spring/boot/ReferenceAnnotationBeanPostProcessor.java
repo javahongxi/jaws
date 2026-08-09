@@ -54,7 +54,6 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
         return bean;
     }
 
-    @SuppressWarnings("unchecked")
     private Object createReference(JawsReference jawsRef, Class<?> fieldType) {
         JawsProperties properties = beanFactory.getBean(JawsProperties.class);
         ProtocolConfig protocolConfig = beanFactory.getBean(ProtocolConfig.class);
@@ -66,6 +65,7 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
                 ? jawsRef.application() : properties.getApplication().getName();
 
         ReferenceConfig<Object> refConfig = new ReferenceConfig<>();
+        // noinspection unchecked
         refConfig.setInterface((Class<Object>) interfaceClass);
         refConfig.setApplication(application);
         refConfig.setProtocol(protocolConfig);

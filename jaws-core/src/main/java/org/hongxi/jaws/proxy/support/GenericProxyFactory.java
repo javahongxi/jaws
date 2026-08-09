@@ -21,7 +21,6 @@ import java.util.List;
 @SpiMeta(name = "generic")
 public class GenericProxyFactory implements ProxyFactory {
 
-    @SuppressWarnings("unchecked")
     @Override
     public <T> T getProxy(Class<T> clazz, List<Cluster<T>> clusters) {
         // Resolve the real interface name from the cluster URL's serviceInterface parameter.
@@ -32,6 +31,7 @@ public class GenericProxyFactory implements ProxyFactory {
         }
         GenericReferenceInvocationHandler<T> handler =
                 new GenericReferenceInvocationHandler<>(realInterfaceName, clusters);
+        // noinspection unchecked
         return (T) Proxy.newProxyInstance(
                 GenericService.class.getClassLoader(),
                 new Class<?>[]{GenericService.class},

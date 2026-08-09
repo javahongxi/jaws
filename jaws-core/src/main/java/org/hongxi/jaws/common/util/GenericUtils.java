@@ -145,7 +145,6 @@ public class GenericUtils {
     /**
      * Convert a Map to a POJO using reflection.
      */
-    @SuppressWarnings("unchecked")
     public static <T> T convertMapToPojo(Map<String, Object> map, Class<T> clazz) {
         try {
             T instance;
@@ -157,6 +156,7 @@ public class GenericUtils {
             } catch (NoSuchMethodException e) {
                 // If no no-arg constructor, try to use Unsafe or return map as-is
                 log.warn("Cannot create instance of {} via no-arg constructor, returning map as-is", clazz.getName());
+                // noinspection unchecked
                 return (T) map;
             }
 

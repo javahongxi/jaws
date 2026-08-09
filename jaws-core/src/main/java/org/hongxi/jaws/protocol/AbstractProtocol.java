@@ -18,14 +18,13 @@ public abstract class AbstractProtocol implements Protocol {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractProtocol.class);
 
-    protected ConcurrentHashMap<String, Exporter<?>> exporterMap = new ConcurrentHashMap<>();
+    protected final ConcurrentHashMap<String, Exporter<?>> exporterMap = new ConcurrentHashMap<>();
 
     public Map<String, Exporter<?>> getExporterMap() {
         return Collections.unmodifiableMap(exporterMap);
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public <T> Exporter<T> export(Provider<T> provider, URL url) {
         if (url == null) {
             throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: url is null",
@@ -40,6 +39,7 @@ public abstract class AbstractProtocol implements Protocol {
         String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
 
         synchronized (exporterMap) {
+            // noinspection unchecked
             Exporter<T> exporter = (Exporter<T>) exporterMap.get(protocolKey);
 
             if (exporter != null) {
