@@ -35,8 +35,6 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     private static final ConcurrentHashSet<String> existingServices = new ConcurrentHashSet<>();
 
     private static int dynamicPort = -1;
-    // 具体到方法的配置
-    protected List<MethodConfig> methods;
 
     // service auth token, empty means no auth
     private String token;
@@ -45,9 +43,9 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     private T ref;
 
     // service 对应的exporters，用于管理service服务的生命周期
-    private List<Exporter<T>> exporters = new CopyOnWriteArrayList<>();
+    private final List<Exporter<T>> exporters = new CopyOnWriteArrayList<>();
     private Class<T> interfaceClass;
-    private AtomicBoolean exported = new AtomicBoolean(false);
+    private final AtomicBoolean exported = new AtomicBoolean(false);
 
     public String getToken() {
         return token;
@@ -70,22 +68,6 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
             throw new IllegalStateException("The interface class " + interfaceClass + " is not a interface!");
         }
         this.interfaceClass = interfaceClass;
-    }
-
-    public List<MethodConfig> getMethods() {
-        return methods;
-    }
-
-    public void setMethods(MethodConfig methods) {
-        this.methods = Collections.singletonList(methods);
-    }
-
-    public void setMethods(List<MethodConfig> methods) {
-        this.methods = methods;
-    }
-
-    public boolean hasMethods() {
-        return this.methods != null && !this.methods.isEmpty();
     }
 
     public T getRef() {

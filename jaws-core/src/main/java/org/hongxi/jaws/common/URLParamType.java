@@ -65,16 +65,10 @@ public enum URLParamType {
     refreshTimestamp("refreshTimestamp", 0),
     nodeType("nodeType", JawsConstants.NODE_TYPE_SERVICE),
 
-    /** whether to enable gzip compression */
-    gzip("gzip", false),
-    /** minimum data size for gz compression, compress only when exceeding this threshold */
-    minGzipSize("minGzipSize", 1000),
-
     application("application", JawsConstants.FRAMEWORK_NAME),
     module("module", JawsConstants.FRAMEWORK_NAME),
 
     retries("retries", 0),
-    mock("mock", "false"),
     mean("mean", "2"),
     p90("p90", "4"),
     p99("p99", "10"),
@@ -84,7 +78,6 @@ public enum URLParamType {
     registrySessionTimeout("registrySessionTimeout", 1 * JawsConstants.MINUTE_MILLS),
     directUrl("directUrl", ""),
 
-    register("register", true),
     subscribe("subscribe", true),
     throwException("throwException", "true"),
     transExceptionStack("transExceptionStack", true),

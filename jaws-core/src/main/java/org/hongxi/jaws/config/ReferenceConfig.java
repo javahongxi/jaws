@@ -10,7 +10,6 @@ import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.common.util.StringTools;
-import org.hongxi.jaws.config.annotation.ConfigDesc;
 import org.hongxi.jaws.config.deploy.ServiceDeployer;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -28,17 +27,14 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
 
     @Serial
     private static final long serialVersionUID = -2299754608229467887L;
-    // 具体到方法的配置
-    protected List<MethodConfig> methods;
     private Class<T> interfaceClass;
     private String serviceInterface;
     // Whether to use generic invocation (no interface JAR dependency on consumer side)
     private boolean generic;
     // 点对点直连服务提供地址
     private String directUrl;
-    private AtomicBoolean initialized = new AtomicBoolean(false);
+    private final AtomicBoolean initialized = new AtomicBoolean(false);
     private T ref;
-    private BasicReferenceInterfaceConfig basicReference;
     private List<ClusterSupport<T>> clusterSupports;
 
     public String getServiceInterface() {
@@ -47,22 +43,6 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
 
     public void setServiceInterface(String serviceInterface) {
         this.serviceInterface = serviceInterface;
-    }
-
-    public List<MethodConfig> getMethods() {
-        return methods;
-    }
-
-    public void setMethods(List<MethodConfig> methods) {
-        this.methods = methods;
-    }
-
-    public void setMethods(MethodConfig methods) {
-        this.methods = Collections.singletonList(methods);
-    }
-
-    public boolean hasMethods() {
-        return this.methods != null && !this.methods.isEmpty();
     }
 
     public T getRef() {
@@ -88,13 +68,6 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             interfaceClass = (Class<T>) GenericService.class;
         }
 
-        try {
-            interfaceClass = (Class<T>) Class.forName(interfaceClass.getName(), true, Thread.currentThread().getContextClassLoader());
-        } catch (ClassNotFoundException e) {
-            throw new JawsFrameworkException("ReferenceConfig initRef Error: Class not found " + interfaceClass.getName(), e,
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
-        }
-
         if (CollectionUtils.isEmpty(protocols)) {
             throw new JawsFrameworkException(String.format("%s ReferenceConfig is malformed, for protocol not set correctly!",
                     interfaceClass.getName()));
@@ -116,7 +89,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             params.put(URLParamType.version.getName(), URLParamType.version.value());
             params.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
-            collectConfigParams(params, protocol, basicReference, this);
+            collectConfigParams(params, protocol, this);
             collectMethodConfigParams(params, this.getMethods());
 
             String path = StringUtils.isBlank(serviceInterface) ? interfaceClass.getName() : serviceInterface;
@@ -173,7 +146,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             if (registryUrls == null || registryUrls.isEmpty()) {
                 throw new IllegalStateException(
                         String.format(
-                                "No registry to reference %s on the consumer %s , please config <jaws:registry address=\"...\" /> in your spring config.",
+                                "No registry to reference %s on the consumer %s, please configure registry address first.",
                                 interfaceClass, NetUtils.LOCALHOST));
             }
             for (URL url : registryUrls) {
@@ -211,15 +184,6 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
 
     public void setDirectUrl(String directUrl) {
         this.directUrl = directUrl;
-    }
-
-    @ConfigDesc(excluded = true)
-    public BasicReferenceInterfaceConfig getBasicReference() {
-        return basicReference;
-    }
-
-    public void setBasicReference(BasicReferenceInterfaceConfig basicReference) {
-        this.basicReference = basicReference;
     }
 
     public List<ClusterSupport<T>> getClusterSupports() {

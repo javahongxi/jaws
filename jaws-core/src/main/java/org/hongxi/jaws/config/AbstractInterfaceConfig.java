@@ -35,6 +35,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     @Serial
     private static final long serialVersionUID = 4841644071068578653L;
+
     // 暴露、使用的协议，暴露可以使用多种协议，但client只能用一种协议进行访问，原因是便于client的管理
     protected List<ProtocolConfig> protocols;
 
@@ -62,26 +63,14 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 过滤器
     protected String filter;
 
-    // 最大并发调用
-    protected Integer actives;
-
-    // 是否异步
-    protected Boolean async;
-
-    // 服务接口的失败mock实现类名
-    protected String mock;
-
     // 是否共享 channel
     protected Boolean shareChannel;
 
-    // if throw exception when call failure，the default value is ture
+    // if throw exception when call failure，the default value is true
     protected Boolean throwException;
 
     // 请求超时时间
     protected Integer requestTimeout;
-
-    // 是否注册
-    protected Boolean register;
 
     // 是否记录访问日志，true记录，false不记录
     protected String accessLog;
@@ -92,28 +81,13 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 重试次数
     protected Integer retries;
 
-    // 是否开启gzip压缩
-    protected Boolean usegz;
-
-    // 进行gzip压缩的最小阈值，usegz开启，且大于此值时才进行gzip压缩。单位Byte
-    protected Integer mingzSize;
-
     protected String codec;
-
-    protected String localServiceAddress;
-
-    protected Integer backupRequestDelayTime;
-
-    protected String backupRequestDelayRatio;
-
-    protected String backupRequestToggleName;
-
-    protected String backupRequestMaxRetryRatio;
 
     // 是否需要传输rpc server 端业务异常栈。默认true
     protected Boolean transExceptionStack;
 
-    protected Integer slowThreshold;
+    // 具体到方法的配置
+    protected List<MethodConfig> methods;
 
     public Integer getRetries() {
         return retries;
@@ -191,37 +165,8 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.registries = Collections.singletonList(registry);
     }
 
-    public Integer getActives() {
-        return actives;
-    }
-
-    public void setActives(Integer actives) {
-        this.actives = actives;
-    }
-
-    public Boolean getAsync() {
-        return async;
-    }
-
-    public void setAsync(Boolean async) {
-        this.async = async;
-    }
-
-    public String getMock() {
-        return mock;
-    }
-
-    public void setMock(String mock) {
-        this.mock = mock;
-    }
-
     public String getCheck() {
         return check;
-    }
-
-    @Deprecated
-    public void setCheck(Boolean check) {
-        this.check = String.valueOf(check);
     }
 
     public void setCheck(String check) {
@@ -268,38 +213,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         return this.protocols != null && !this.protocols.isEmpty();
     }
 
-    public Boolean getRegister() {
-        return register;
-    }
-
-    public void setRegister(Boolean register) {
-        this.register = register;
-    }
-
-    public String getLocalServiceAddress() {
-        return localServiceAddress;
-    }
-
-    public void setLocalServiceAddress(String localServiceAddress) {
-        this.localServiceAddress = localServiceAddress;
-    }
-
-    public Boolean getUsegz() {
-        return usegz;
-    }
-
-    public void setUsegz(Boolean usegz) {
-        this.usegz = usegz;
-    }
-
-    public Integer getMingzSize() {
-        return mingzSize;
-    }
-
-    public void setMingzSize(Integer mingzSize) {
-        this.mingzSize = mingzSize;
-    }
-
     public String getCodec() {
         return codec;
     }
@@ -308,44 +221,20 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.codec = codec;
     }
 
-    public Integer getBackupRequestDelayTime() {
-        return backupRequestDelayTime;
-    }
-
-    public void setBackupRequestDelayTime(Integer backupRequestDelayTime) {
-        this.backupRequestDelayTime = backupRequestDelayTime;
-    }
-
-    public String getBackupRequestDelayRatio() {
-        return backupRequestDelayRatio;
-    }
-
-    public void setBackupRequestDelayRatio(String backupRequestDelayRatio) {
-        this.backupRequestDelayRatio = backupRequestDelayRatio;
-    }
-
-    public String getBackupRequestToggleName() {
-        return backupRequestToggleName;
-    }
-
-    public void setBackupRequestToggleName(String backupRequestToggleName) {
-        this.backupRequestToggleName = backupRequestToggleName;
-    }
-
-    public String getBackupRequestMaxRetryRatio() {
-        return backupRequestMaxRetryRatio;
-    }
-
-    public void setBackupRequestMaxRetryRatio(String backupRequestMaxRetryRatio) {
-        this.backupRequestMaxRetryRatio = backupRequestMaxRetryRatio;
-    }
-
     public Boolean getTransExceptionStack() {
         return transExceptionStack;
     }
 
     public void setTransExceptionStack(Boolean transExceptionStack) {
         this.transExceptionStack = transExceptionStack;
+    }
+
+    public List<MethodConfig> getMethods() {
+        return methods;
+    }
+
+    public void setMethods(List<MethodConfig> methods) {
+        this.methods = methods;
     }
 
     /*
@@ -393,38 +282,39 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         if (!interfaceClass.isInterface()) {
             throw new IllegalStateException("The interface class " + interfaceClass + " is not a interface!");
         }
+        if (methods == null || methods.isEmpty()) {
+            return;
+        }
         // 检查方法是否在接口中存在
-        if (methods != null && !methods.isEmpty()) {
-            for (MethodConfig methodBean : methods) {
-                String methodName = methodBean.getName();
-                if (methodName == null || methodName.isEmpty()) {
-                    throw new IllegalStateException("<jaws:method> name attribute is required! Please check: <jaws:service interface=\""
-                            + interfaceClass.getName() + "\" ... ><jaws:method name=\"\" ... /></<jaws:reference>");
-                }
-                Method hasMethod = null;
-                for (Method method : interfaceClass.getMethods()) {
-                    if (method.getName().equals(methodName)) {
-                        if (methodBean.getArgumentTypes() != null
-                                && ReflectUtils.getMethodParamDesc(method).equals(methodBean.getArgumentTypes())) {
-                            hasMethod = method;
-                            break;
-                        }
-                        if (methodBean.getArgumentTypes() != null) {
-                            continue;
-                        }
-                        if (hasMethod != null) {
-                            throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " has more than one method "
-                                    + methodName + " , must set argumentTypes attribute.", JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
-                        }
-                        hasMethod = method;
-                    }
-                }
-                if (hasMethod == null) {
-                    throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " not found method " + methodName,
-                            JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
-                }
-                methodBean.setArgumentTypes(ReflectUtils.getMethodParamDesc(hasMethod));
+        for (MethodConfig methodBean : methods) {
+            String methodName = methodBean.getName();
+            if (methodName == null || methodName.isEmpty()) {
+                throw new IllegalStateException("MethodConfig name is required! Please check the method config for interface \""
+                        + interfaceClass.getName() + "\".");
             }
+            Method hasMethod = null;
+            for (Method method : interfaceClass.getMethods()) {
+                if (method.getName().equals(methodName)) {
+                    if (methodBean.getArgumentTypes() != null
+                            && ReflectUtils.getMethodParamDesc(method).equals(methodBean.getArgumentTypes())) {
+                        hasMethod = method;
+                        break;
+                    }
+                    if (methodBean.getArgumentTypes() != null) {
+                        continue;
+                    }
+                    if (hasMethod != null) {
+                        throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " has more than one method "
+                                + methodName + " , must set argumentTypes attribute.", JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                    }
+                    hasMethod = method;
+                }
+            }
+            if (hasMethod == null) {
+                throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " not found method " + methodName,
+                        JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            }
+            methodBean.setArgumentTypes(ReflectUtils.getMethodParamDesc(hasMethod));
         }
     }
 
@@ -449,17 +339,5 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         }
         throw new JawsServiceException("Please config local server hostname with intranet IP first!",
                 JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
-    }
-
-    public Integer getSlowThreshold() {
-        return slowThreshold;
-    }
-
-    public void setSlowThreshold(int slowThreshold) {
-        this.slowThreshold = slowThreshold;
-    }
-
-    public List<URL> getRegistryUrls() {
-        return registryUrls;
     }
 }

@@ -147,8 +147,8 @@ public class AbstractConfig implements Serializable {
     public String toString() {
         try {
             StringBuilder buf = new StringBuilder();
-            buf.append("<jaws:");
-            buf.append(getTagName(getClass()));
+            String tagName = getTagName(getClass());
+            buf.append(tagName);
             Method[] methods = getClass().getMethods();
             for (Method method : methods) {
                 try {
@@ -162,16 +162,14 @@ public class AbstractConfig implements Serializable {
                         if (value != null) {
                             buf.append(" ");
                             buf.append(key);
-                            buf.append("=\"");
+                            buf.append("=");
                             buf.append(value);
-                            buf.append("\"");
                         }
                     }
                 } catch (Exception e) {
                     log.warn(e.getMessage(), e);
                 }
             }
-            buf.append(" />");
             return buf.toString();
         } catch (Throwable t) {
             // 防御性容错
