@@ -27,15 +27,38 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
 
     @Serial
     private static final long serialVersionUID = -2299754608229467887L;
+
+    /**
+     * The interface class of the reference service.
+     */
     private Class<T> interfaceClass;
-    private String serviceInterface;
-    // Whether to use generic invocation (no interface JAR dependency on consumer side)
-    private boolean generic;
-    // 点对点直连服务提供地址
-    private String directUrl;
-    private final AtomicBoolean initialized = new AtomicBoolean(false);
+
+    /**
+     * The interface proxy reference
+     */
     private T ref;
+
+    /**
+     * The flag whether the ReferenceConfig has been initialized
+     */
+    private final AtomicBoolean initialized = new AtomicBoolean(false);
+
     private List<ClusterSupport<T>> clusterSupports;
+
+    /**
+     * The URL for peer-to-peer invocation.
+     */
+    private String directUrl;
+
+    /**
+     * Whether to use generic invocation (no interface JAR dependency on consumer side)
+     */
+    private boolean generic;
+
+    /**
+     * The real interface name to invoke when using generic invocation
+     */
+    private String serviceInterface;
 
     protected Boolean asyncInitConnection;
 

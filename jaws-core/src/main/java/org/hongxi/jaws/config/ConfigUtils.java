@@ -53,16 +53,4 @@ public class ConfigUtils {
         }
         return pps;
     }
-
-    public static String extractProtocols(String export) {
-        Map<String, Integer> protocols = parseExport(export);
-        StringBuilder sb = new StringBuilder(16);
-        for (String p : protocols.keySet()) {
-            sb.append(p).append(JawsConstants.COMMA_SEPARATOR);
-        }
-        if (sb.length() > 0) {
-            sb.deleteCharAt(sb.length() - 1);
-        }
-        return sb.toString();
-    }
 }

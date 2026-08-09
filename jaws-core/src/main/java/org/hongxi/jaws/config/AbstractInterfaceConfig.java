@@ -31,7 +31,6 @@ import java.util.stream.Collectors;
  * <p>
  * Created by shenhongxi on 2021/3/5.
  */
-
 public class AbstractInterfaceConfig extends AbstractConfig {
 
     @Serial

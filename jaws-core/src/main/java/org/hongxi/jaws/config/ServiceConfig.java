@@ -2,6 +2,8 @@ package org.hongxi.jaws.config;
 
 import org.apache.commons.lang3.StringUtils;
 import java.io.Serial;
+
+import org.hongxi.jaws.common.util.MathUtils;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
@@ -30,14 +32,17 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
     @Serial
     private static final long serialVersionUID = -3342374271064293224L;
+
     private static final Logger log = LoggerFactory.getLogger(ServiceConfig.class);
 
-    private static final ConcurrentHashSet<String> existingServices = new ConcurrentHashSet<>();
+    private static final ConcurrentHashSet<String> EXPORTED_SERVICES = new ConcurrentHashSet<>();
 
     private static int dynamicPort = -1;
 
-    // service auth token, empty means no auth
-    private String token;
+    private Class<T> interfaceClass;
+
+    // 接口实现类引用
+    private T ref;
 
     /**
      * 一个service可以按多个protocol提供服务，不同protocol使用不同port 利用export来设置protocol和port，格式如下：
@@ -45,57 +50,18 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
      **/
     protected String export;
 
+    private final AtomicBoolean exported = new AtomicBoolean(false);
+
+    // service 对应的exporters，用于管理service服务的生命周期
+    private final List<Exporter<T>> exporters = new CopyOnWriteArrayList<>();
+
     /**
      * 一般不用设置，由服务自己获取，但如果有多个ip，而只想用指定ip，则可以在此处指定
      */
     protected String host;
 
-    // 接口实现类引用
-    private T ref;
-
-    // service 对应的exporters，用于管理service服务的生命周期
-    private final List<Exporter<T>> exporters = new CopyOnWriteArrayList<>();
-    private Class<T> interfaceClass;
-    private final AtomicBoolean exported = new AtomicBoolean(false);
-
-    public String getToken() {
-        return token;
-    }
-
-    public void setToken(String token) {
-        this.token = token;
-    }
-
-    public static ConcurrentHashSet<String> getExistingServices() {
-        return existingServices;
-    }
-
-    public Class<?> getInterface() {
-        return interfaceClass;
-    }
-
-    public void setInterface(Class<T> interfaceClass) {
-        if (interfaceClass != null && !interfaceClass.isInterface()) {
-            throw new IllegalStateException("The interface class " + interfaceClass + " is not a interface!");
-        }
-        this.interfaceClass = interfaceClass;
-    }
-
-    public T getRef() {
-        return ref;
-    }
-
-    public void setRef(T ref) {
-        this.ref = ref;
-    }
-
-    public List<Exporter<T>> getExporters() {
-        return Collections.unmodifiableList(exporters);
-    }
-
-    protected boolean serviceExists(URL url) {
-        return existingServices.contains(url.getIdentity());
-    }
+    // service auth token, empty means no auth
+    private String token;
 
     public synchronized void export() {
         if (exported.get()) {
@@ -137,6 +103,38 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         }
     }
 
+    private Map<String, Integer> getProtocolAndPort() {
+        if (StringUtils.isBlank(export)) {
+            throw new JawsServiceException("export should not empty in service config:" + interfaceClass.getName());
+        }
+
+        Map<String, Integer> pps = new HashMap<>();
+        String[] protocolAndPorts = JawsConstants.COMMA_SPLIT_PATTERN.split(export);
+        for (String pp : protocolAndPorts) {
+            if (StringUtils.isBlank(pp)) {
+                continue;
+            }
+            String[] ppDetail = pp.split(":");
+            if (ppDetail.length == 2) {
+                pps.put(ppDetail[0], Integer.parseInt(ppDetail[1]));
+            } else if (ppDetail.length == 1) {
+                if (JawsConstants.PROTOCOL_INJVM.equals(ppDetail[0])) {
+                    pps.put(ppDetail[0], JawsConstants.DEFAULT_INT_VALUE);
+                } else {
+                    int port = MathUtils.parseInt(ppDetail[0], 0);
+                    if (port < -1) {
+                        throw new JawsServiceException("Export is malformed :" + export);
+                    } else {
+                        pps.put(JawsConstants.PROTOCOL_JAWS, port);
+                    }
+                }
+            } else {
+                throw new JawsServiceException("Export is malformed :" + export);
+            }
+        }
+        return pps;
+    }
+
     private void doExport(ProtocolConfig protocolConfig, int port) {
         String protocolName = protocolConfig.getName();
         if (protocolName == null || protocolName.isEmpty()) {
@@ -166,7 +164,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
         URL serviceUrl = new URL(protocolName, hostAddress, port, interfaceClass.getName(), map);
 
-        if (serviceExists(serviceUrl)) {
+        if (EXPORTED_SERVICES.contains(serviceUrl.getIdentity())) {
             log.warn("{} configService is malformed, for same service ({}) already exists ",
                     interfaceClass.getName(), serviceUrl.getIdentity());
             throw new JawsFrameworkException(String.format("%s configService is malformed, for same service (%s) already exists ",
@@ -202,10 +200,22 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         exporters.add(serviceDeployer.export(interfaceClass, ref, registryUrls, serviceUrl));
     }
 
+    private static synchronized int resolveDynamicPort() {
+        if (dynamicPort != -1) {
+            return dynamicPort;
+        }
+        int port = 10000;
+        while (!NetUtils.isPortAvailable(port)) {
+            port++;
+        }
+        dynamicPort = port;
+        return port;
+    }
+
     private void afterExport() {
         exported.set(true);
         for (Exporter<T> ep : exporters) {
-            existingServices.add(ep.getProvider().getUrl().getIdentity());
+            EXPORTED_SERVICES.add(ep.getProvider().getUrl().getIdentity());
         }
         // Register JVM shutdown hook to trigger graceful shutdown
         ShutdownHook.registerShutdownHook(this::unexport);
@@ -214,16 +224,28 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
     private void afterUnexport() {
         exported.set(false);
         for (Exporter<T> ep : exporters) {
-            existingServices.remove(ep.getProvider().getUrl().getIdentity());
+            EXPORTED_SERVICES.remove(ep.getProvider().getUrl().getIdentity());
         }
         exporters.clear();
     }
 
-    public Map<String, Integer> getProtocolAndPort() {
-        if (StringUtils.isBlank(export)) {
-            throw new JawsServiceException("export should not empty in service config:" + interfaceClass.getName());
+    public Class<?> getInterface() {
+        return interfaceClass;
+    }
+
+    public void setInterface(Class<T> interfaceClass) {
+        if (interfaceClass != null && !interfaceClass.isInterface()) {
+            throw new IllegalStateException("The interface class " + interfaceClass + " is not a interface!");
         }
-        return ConfigUtils.parseExport(this.export);
+        this.interfaceClass = interfaceClass;
+    }
+
+    public T getRef() {
+        return ref;
+    }
+
+    public void setRef(T ref) {
+        this.ref = ref;
     }
 
     public String getExport() {
@@ -232,6 +254,14 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
     public void setExport(String export) {
         this.export = export;
+    }
+
+    public AtomicBoolean getExported() {
+        return exported;
+    }
+
+    public List<Exporter<T>> getExporters() {
+        return Collections.unmodifiableList(exporters);
     }
 
     @ConfigDesc(excluded = true)
@@ -243,19 +273,11 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         this.host = host;
     }
 
-    public AtomicBoolean getExported() {
-        return exported;
+    public String getToken() {
+        return token;
     }
 
-    private static synchronized int resolveDynamicPort() {
-        if (dynamicPort != -1) {
-            return dynamicPort;
-        }
-        int port = 10000;
-        while (!NetUtils.isPortAvailable(port)) {
-            port++;
-        }
-        dynamicPort = port;
-        return port;
+    public void setToken(String token) {
+        this.token = token;
     }
 }
