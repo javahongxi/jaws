@@ -38,7 +38,7 @@ public class ReflectUtils {
      * @return
      */
     public static String getMethodParamDesc(Method method) {
-        if (method.getParameterTypes() == null || method.getParameterTypes().length == 0) {
+        if (method.getParameterTypes().length == 0) {
             return EMPTY_PARAM;
         }
 

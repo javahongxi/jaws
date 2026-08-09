@@ -16,6 +16,7 @@ import org.hongxi.jaws.rpc.URL;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * <pre>
@@ -89,154 +90,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 具体到方法的配置
     protected List<MethodConfig> methods;
 
-    public Integer getRetries() {
-        return retries;
-    }
-
-    public void setRetries(Integer retries) {
-        this.retries = retries;
-    }
-
-    public String getVersion() {
-        return version;
-    }
-
-    public void setVersion(String version) {
-        this.version = version;
-    }
-
-    public String getProxy() {
-        return proxy;
-    }
-
-    public void setProxy(String proxy) {
-        this.proxy = proxy;
-    }
-
-    public String getFilter() {
-        return filter;
-    }
-
-    public void setFilter(String filter) {
-        this.filter = filter;
-    }
-
-    public String getApplication() {
-        return application;
-    }
-
-    public void setApplication(String application) {
-        this.application = application;
-    }
-
-    public String getModule() {
-        return module;
-    }
-
-    public void setModule(String module) {
-        this.module = module;
-    }
-
-    public String getGroup() {
-        return group;
-    }
-
-    public void setGroup(String group) {
-        this.group = group;
-    }
-
-    public String getAccessLog() {
-        return accessLog;
-    }
-
-    public void setAccessLog(String accessLog) {
-        this.accessLog = accessLog;
-    }
-
-    public List<RegistryConfig> getRegistries() {
-        return registries;
-    }
-
-    public void setRegistries(List<RegistryConfig> registries) {
-        this.registries = registries;
-    }
-
-    public void setRegistry(RegistryConfig registry) {
-        this.registries = Collections.singletonList(registry);
-    }
-
-    public String getCheck() {
-        return check;
-    }
-
-    public void setCheck(String check) {
-        this.check = check;
-    }
-
-    public Boolean getShareChannel() {
-        return shareChannel;
-    }
-
-    public void setShareChannel(Boolean shareChannel) {
-        this.shareChannel = shareChannel;
-    }
-
-    public List<ProtocolConfig> getProtocols() {
-        return protocols;
-    }
-
-    public void setProtocols(List<ProtocolConfig> protocols) {
-        this.protocols = protocols;
-    }
-
-    public void setProtocol(ProtocolConfig protocol) {
-        this.protocols = Collections.singletonList(protocol);
-    }
-
-    public Boolean getThrowException() {
-        return throwException;
-    }
-
-    public void setThrowException(Boolean throwException) {
-        this.throwException = throwException;
-    }
-
-    public Integer getRequestTimeout() {
-        return requestTimeout;
-    }
-
-    public void setRequestTimeout(Integer requestTimeout) {
-        this.requestTimeout = requestTimeout;
-    }
-
-    public boolean hasProtocol() {
-        return this.protocols != null && !this.protocols.isEmpty();
-    }
-
-    public String getCodec() {
-        return codec;
-    }
-
-    public void setCodec(String codec) {
-        this.codec = codec;
-    }
-
-    public Boolean getTransExceptionStack() {
-        return transExceptionStack;
-    }
-
-    public void setTransExceptionStack(Boolean transExceptionStack) {
-        this.transExceptionStack = transExceptionStack;
-    }
-
-    public List<MethodConfig> getMethods() {
-        return methods;
-    }
-
-    public void setMethods(List<MethodConfig> methods) {
-        this.methods = methods;
-    }
-
     /*
      * 解析注册中心URL
      */
@@ -292,52 +145,188 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 throw new IllegalStateException("MethodConfig name is required! Please check the method config for interface \""
                         + interfaceClass.getName() + "\".");
             }
-            Method hasMethod = null;
+            Method matchedMethod = null;
             for (Method method : interfaceClass.getMethods()) {
                 if (method.getName().equals(methodName)) {
                     if (methodBean.getArgumentTypes() != null
                             && ReflectUtils.getMethodParamDesc(method).equals(methodBean.getArgumentTypes())) {
-                        hasMethod = method;
+                        matchedMethod = method;
                         break;
                     }
                     if (methodBean.getArgumentTypes() != null) {
                         continue;
                     }
-                    if (hasMethod != null) {
+                    if (matchedMethod != null) {
                         throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " has more than one method "
                                 + methodName + " , must set argumentTypes attribute.", JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
                     }
-                    hasMethod = method;
+                    matchedMethod = method;
                 }
             }
-            if (hasMethod == null) {
+            if (matchedMethod == null) {
                 throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " not found method " + methodName,
                         JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
             }
-            methodBean.setArgumentTypes(ReflectUtils.getMethodParamDesc(hasMethod));
+            methodBean.setArgumentTypes(ReflectUtils.getMethodParamDesc(matchedMethod));
         }
     }
 
     protected String getLocalHostAddress() {
-
-        String localAddress = null;
-
-        Map<String, Integer> regHostPorts = new HashMap<>();
-        for (URL ru : registryUrls) {
-            if (StringUtils.isNotBlank(ru.getHost()) && ru.getPort() > 0) {
-                regHostPorts.put(ru.getHost(), ru.getPort());
-            }
-        }
+        Map<String, Integer> regHostPorts = registryUrls.stream()
+                .filter(ru -> StringUtils.isNotBlank(ru.getHost()) && ru.getPort() > 0)
+                .collect(Collectors.toMap(URL::getHost, URL::getPort, (a, b) -> b));
 
         InetAddress address = NetUtils.getLocalAddress(regHostPorts);
-        if (address != null) {
-            localAddress = address.getHostAddress();
-        }
+        String localAddress = address != null ? address.getHostAddress() : null;
 
         if (NetUtils.isValidLocalHost(localAddress)) {
             return localAddress;
         }
         throw new JawsServiceException("Please config local server hostname with intranet IP first!",
                 JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+    }
+
+    public List<ProtocolConfig> getProtocols() {
+        return protocols;
+    }
+
+    public void setProtocols(List<ProtocolConfig> protocols) {
+        this.protocols = protocols;
+    }
+
+    public void setProtocol(ProtocolConfig protocol) {
+        this.protocols = Collections.singletonList(protocol);
+    }
+
+    public List<RegistryConfig> getRegistries() {
+        return registries;
+    }
+
+    public void setRegistries(List<RegistryConfig> registries) {
+        this.registries = registries;
+    }
+
+    public void setRegistry(RegistryConfig registry) {
+        this.registries = Collections.singletonList(registry);
+    }
+
+    public String getApplication() {
+        return application;
+    }
+
+    public void setApplication(String application) {
+        this.application = application;
+    }
+
+    public String getModule() {
+        return module;
+    }
+
+    public void setModule(String module) {
+        this.module = module;
+    }
+
+    public String getGroup() {
+        return group;
+    }
+
+    public void setGroup(String group) {
+        this.group = group;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = version;
+    }
+
+    public String getProxy() {
+        return proxy;
+    }
+
+    public void setProxy(String proxy) {
+        this.proxy = proxy;
+    }
+
+    public String getFilter() {
+        return filter;
+    }
+
+    public void setFilter(String filter) {
+        this.filter = filter;
+    }
+
+    public Boolean getShareChannel() {
+        return shareChannel;
+    }
+
+    public void setShareChannel(Boolean shareChannel) {
+        this.shareChannel = shareChannel;
+    }
+
+    public Boolean getThrowException() {
+        return throwException;
+    }
+
+    public void setThrowException(Boolean throwException) {
+        this.throwException = throwException;
+    }
+
+    public Integer getRequestTimeout() {
+        return requestTimeout;
+    }
+
+    public void setRequestTimeout(Integer requestTimeout) {
+        this.requestTimeout = requestTimeout;
+    }
+
+    public String getAccessLog() {
+        return accessLog;
+    }
+
+    public void setAccessLog(String accessLog) {
+        this.accessLog = accessLog;
+    }
+
+    public String getCheck() {
+        return check;
+    }
+
+    public void setCheck(String check) {
+        this.check = check;
+    }
+
+    public Integer getRetries() {
+        return retries;
+    }
+
+    public void setRetries(Integer retries) {
+        this.retries = retries;
+    }
+
+    public String getCodec() {
+        return codec;
+    }
+
+    public void setCodec(String codec) {
+        this.codec = codec;
+    }
+
+    public Boolean getTransExceptionStack() {
+        return transExceptionStack;
+    }
+
+    public void setTransExceptionStack(Boolean transExceptionStack) {
+        this.transExceptionStack = transExceptionStack;
+    }
+
+    public List<MethodConfig> getMethods() {
+        return methods;
+    }
+
+    public void setMethods(List<MethodConfig> methods) {
+        this.methods = methods;
     }
 }

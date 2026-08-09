@@ -23,7 +23,9 @@ public class AbstractConfig implements Serializable {
     private static final long serialVersionUID = 6221123514996466731L;
 
     private static final Logger log = LoggerFactory.getLogger(AbstractConfig.class);
+
     private static final String[] SUFFIXES = new String[]{"Config", "Bean"};
+
     protected String id;
 
     /**
@@ -61,14 +63,6 @@ public class AbstractConfig implements Serializable {
         }
         tag = tag.toLowerCase();
         return tag;
-    }
-
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
     }
 
     protected void appendConfigParams(Map<String, String> parameters) {
@@ -141,6 +135,14 @@ public class AbstractConfig implements Serializable {
     private boolean isPrimitive(Class<?> type) {
         return type.isPrimitive() || type == String.class || type == Character.class || type == Boolean.class || type == Byte.class
                 || type == Short.class || type == Integer.class || type == Long.class || type == Float.class || type == Double.class;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
     }
 
     @Override
