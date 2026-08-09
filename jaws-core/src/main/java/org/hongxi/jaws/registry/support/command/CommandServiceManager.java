@@ -61,7 +61,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
             finalResult = discoverServiceWithCommand(refUrl, weights, commandCache);
         } else {
             log.info("command cache is null. service:{}", serviceUrl.toSimpleString());
-            // 没有命令时，只返回这个manager实际group对应的结果
+            // 无命令时仅返回当前 group 的结果
             finalResult.addAll(discoverOneGroup(refUrl));
         }
 
@@ -90,17 +90,16 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
                 commandCache.sort();
                 finalResult = discoverServiceWithCommand(refUrl, weights, commandCache);
             } else {
-                // 如果是指令有异常时，应当按没有指令处理，防止错误指令导致服务异常
+                // 解析失败时按无命令处理，防止错误指令导致服务异常
                 if (StringUtils.isNotBlank(commandString)) {
                     log.warn("command parse fail, ignored! command:{}", commandString);
                     commandString = "";
                 }
-                // 没有命令时，只返回这个manager实际group对应的结果
                 finalResult.addAll(discoverOneGroup(refUrl));
 
             }
 
-            // 指令变化时，删除不再有效的缓存，取消订阅不再有效的group
+            // 指令变化时清理失效的 group 缓存并取消订阅
             Set<String> groupKeys = groupServiceCache.keySet();
             for (String gk : groupKeys) {
                 if (!weights.containsKey(gk)) {
@@ -110,14 +109,14 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
                     registry.unsubscribeService(urlTemp, this);
                 }
             }
-            // 当指令从有改到无时，或者没有流量切换指令时，会触发取消订阅所有的group，需要重新订阅本组的service
+            // 指令清空或无匹配时重新订阅本 group
             if ("".equals(commandString) || weights.isEmpty()) {
                 log.info("reSub service" + refUrl.toSimpleString());
                 registry.subscribeService(refUrl, this);
             }
         } else {
             log.info("command not change. url:{}", serviceUrl.toSimpleString());
-            // 指令没有变化，什么也不做
+            // 指令未变化，跳过
             return;
         }
 
@@ -148,14 +147,13 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
             if (match) {
                 hit = true;
                 if (!CollectionUtils.isEmpty(command.getMergeGroups())) {
-                    // 计算出所有要合并的分组及权重
+                    // 按权重合并各 group 的服务列表
                     try {
                         buildWeightsMap(weights, command);
                     } catch (JawsFrameworkException e) {
                         log.warn("build weights map fail! {}", e.getMessage());
                         continue;
                     }
-                    // 根据计算结果，分别发现各个group的service，合并结果
                     mergedResult.addAll(mergeResult(serviceUrl, weights));
                 } else {
                     mergedResult.addAll(discoverOneGroup(serviceUrl));
@@ -261,7 +259,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
         List<URL> finalResult = new ArrayList<>();
 
         if (weights.size() > 1) {
-            // 将所有group及权重拼接成一个rule的URL，并作为第一个元素添加到最终结果中
+            // 将各 group 及权重拼接为 rule URL 作为首元素
             URL ruleUrl = new URL("rule", url.getHost(), url.getPort(), url.getPath());
             StringBuilder weightsBuilder = new StringBuilder(64);
             for (Map.Entry<String, Integer> entry : weights.entrySet()) {

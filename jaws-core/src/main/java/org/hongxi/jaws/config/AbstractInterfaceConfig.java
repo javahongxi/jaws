@@ -23,9 +23,9 @@ import java.util.*;
  *
  * 配置约定
  * 	  1 service 和 reference 端相同的参数的含义一定相同；
- *    2 service端参数的覆盖策略：protocol--basicConfig--service，前面的配置会被后面的config参数覆盖；
+ *    2 service端参数的覆盖策略：protocol -> service，前面的配置会被后面的config参数覆盖；
  *    3 registry 参数不进入service、reference端的参数列表；
- *    4 reference端从注册中心拿到参数后，先用reference端的参数覆盖，然后再使用该service
+ *    4 reference端以注册中心返回的server URL为基础，用reference参数覆盖（application、module保留server端的值）
  * </pre>
  * <p>
  * Created by shenhongxi on 2021/3/5.

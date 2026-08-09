@@ -13,11 +13,9 @@ import org.hongxi.jaws.common.util.StringTools;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.protocol.support.ProtocolFilterDecorator;
-import org.hongxi.jaws.registry.ConfigListener;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
-import org.hongxi.jaws.registry.support.command.CommandFailbackRegistry;
 import org.hongxi.jaws.rpc.Protocol;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.URL;
@@ -27,16 +25,13 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.*;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
-
 /**
  * Notify cluster the references have changed.
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 
-public class ClusterSupport<T> implements NotifyListener, ConfigListener {
+public class ClusterSupport<T> implements NotifyListener {
 
     private static final Logger log = LoggerFactory.getLogger(ClusterSupport.class);
 
@@ -59,13 +54,14 @@ public class ClusterSupport<T> implements NotifyListener, ConfigListener {
     }
 
     private Cluster<T> cluster;
-    private List<URL> registryUrls;
-    private URL url;
-    private Class<T> interfaceClass;
-    private Protocol protocol;
-    private ConcurrentHashMap<URL, List<Reference<T>>> registryReferences = new ConcurrentHashMap<>();
-    private int selectNodeCount;
-    private ConcurrentHashMap<URL, Map<String, GroupUrlsSelector>> registryGroupUrlsSelectorMap = new ConcurrentHashMap<>();
+    private DynamicConfigHandler<T> dynamicConfigHandler;
+    private final List<URL> registryUrls;
+    private final URL url;
+    private final Class<T> interfaceClass;
+    private final Protocol protocol;
+    private final ConcurrentHashMap<URL, List<Reference<T>>> registryReferences = new ConcurrentHashMap<>();
+    private final int selectNodeCount;
+    private final ConcurrentHashMap<URL, Map<String, GroupUrlsSelector>> registryGroupUrlsSelectorMap = new ConcurrentHashMap<>();
 
     public ClusterSupport(Class<T> interfaceClass, List<URL> registryUrls, URL refUrl) {
         this.registryUrls = registryUrls;
@@ -80,10 +76,10 @@ public class ClusterSupport<T> implements NotifyListener, ConfigListener {
     public void init() {
         long start = System.currentTimeMillis();
         prepareCluster();
+        dynamicConfigHandler = new DynamicConfigHandler<>(url, cluster);
 
         URL subUrl = toSubscribeUrl(url);
         for (URL ru : registryUrls) {
-
             String directUrlStr = ru.getParameter(URLParamType.directUrl.getName());
             // 如果有directUrl，直接使用这些directUrls进行初始化，不用到注册中心discover
             if (StringUtils.isNotBlank(directUrlStr)) {
@@ -100,7 +96,7 @@ public class ClusterSupport<T> implements NotifyListener, ConfigListener {
             registry.subscribe(subUrl, this);
 
             // subscribe to dynamic config changes
-            subscribeDynamicConfig(registry, subUrl);
+            dynamicConfigHandler.subscribe(registry, subUrl);
         }
 
         boolean check = Boolean.parseBoolean(url.getParameter(URLParamType.check.getName(), URLParamType.check.value()));
@@ -127,7 +123,7 @@ public class ClusterSupport<T> implements NotifyListener, ConfigListener {
             try {
                 Registry registry = getRegistry(ru);
                 registry.unsubscribe(subscribeUrl, this);
-                unsubscribeDynamicConfig(registry, subscribeUrl);
+                dynamicConfigHandler.unsubscribe(registry, subscribeUrl);
                 if (!JawsConstants.NODE_TYPE_REFERENCE.equals(url.getParameter(URLParamType.nodeType.getName()))) {
                     registry.unregister(url);
                 }
@@ -438,101 +434,6 @@ public class ClusterSupport<T> implements NotifyListener, ConfigListener {
             }
         }
         return directUrls;
-    }
-
-    // ---- dynamic config ----
-
-    private void subscribeDynamicConfig(Registry registry, URL subscribeUrl) {
-        if (registry instanceof CommandFailbackRegistry) {
-            ((CommandFailbackRegistry) registry).subscribeConfig(subscribeUrl, this);
-        }
-    }
-
-    private void unsubscribeDynamicConfig(Registry registry, URL subscribeUrl) {
-        if (registry instanceof CommandFailbackRegistry) {
-            ((CommandFailbackRegistry) registry).unsubscribeConfig(subscribeUrl, this);
-        }
-    }
-
-    @Override
-    public void notifyConfig(URL serviceUrl, String configString) {
-        if (StringUtils.isBlank(configString)) {
-            log.info("ClusterSupport dynamic config cleared, reverting to defaults: service={}", serviceUrl.toSimpleString());
-            return;
-        }
-        try {
-            JSONObject config = JSON.parseObject(configString);
-            if (config == null || config.isEmpty()) {
-                return;
-            }
-            log.info("ClusterSupport dynamic config changed: service={}, config={}", serviceUrl.toSimpleString(), configString);
-            applyDynamicConfig(config);
-        } catch (Exception e) {
-            log.warn("ClusterSupport failed to parse dynamic config: config={}, error={}", configString, e.getMessage());
-        }
-    }
-
-    private synchronized void applyDynamicConfig(JSONObject config) {
-        boolean strategyChanged = false;
-
-        // update loadbalance if changed
-        String newLb = config.getString("loadbalance");
-        if (StringUtils.isNotBlank(newLb)) {
-            String currentLb = url.getParameter(URLParamType.loadbalance.getName(), URLParamType.loadbalance.value());
-            if (!newLb.equals(currentLb)) {
-                try {
-                    LoadBalance<T> newLoadBalance = ExtensionLoader.getExtensionLoader(LoadBalance.class).getExtension(newLb);
-                    // carry over existing weights
-                    String weightStr = cluster.getLoadBalance() != null ? cluster.getLoadBalance().getWeightString() : null;
-                    if (weightStr != null) {
-                        newLoadBalance.setWeightString(weightStr);
-                    }
-                    url.addParameter(URLParamType.loadbalance.getName(), newLb);
-                    cluster.setLoadBalance(newLoadBalance);
-                    // re-feed references to the new loadbalance
-                    newLoadBalance.onRefresh(cluster.getReferences());
-                    strategyChanged = true;
-                    log.info("ClusterSupport loadbalance switched: {} -> {}", currentLb, newLb);
-                } catch (Exception e) {
-                    log.warn("ClusterSupport failed to switch loadbalance to {}: {}", newLb, e.getMessage());
-                }
-            }
-        }
-
-        // update haStrategy if changed
-        String newHa = config.getString("haStrategy");
-        if (StringUtils.isNotBlank(newHa)) {
-            String currentHa = url.getParameter(URLParamType.haStrategy.getName(), URLParamType.haStrategy.value());
-            if (!newHa.equals(currentHa)) {
-                try {
-                    HaStrategy<T> newHaStrategy = ExtensionLoader.getExtensionLoader(HaStrategy.class).getExtension(newHa);
-                    newHaStrategy.setUrl(url);
-                    url.addParameter(URLParamType.haStrategy.getName(), newHa);
-                    cluster.setHaStrategy(newHaStrategy);
-                    strategyChanged = true;
-                    log.info("ClusterSupport haStrategy switched: {} -> {}", currentHa, newHa);
-                } catch (Exception e) {
-                    log.warn("ClusterSupport failed to switch haStrategy to {}: {}", newHa, e.getMessage());
-                }
-            }
-        }
-
-        // update scalar params (requestTimeout, retries) — these are read from URL per call,
-        // so just updating URL parameters is sufficient
-        updateScalarParam(config, "requestTimeout");
-        updateScalarParam(config, "retries");
-
-        if (!strategyChanged) {
-            log.info("ClusterSupport dynamic config applied (scalar params only): {}", config);
-        }
-    }
-
-    private void updateScalarParam(JSONObject config, String key) {
-        String value = config.getString(key);
-        if (StringUtils.isNotBlank(value)) {
-            url.addParameter(key, value);
-            log.info("ClusterSupport dynamic param updated: {}={}", key, value);
-        }
     }
 
     private class GroupUrlsSelector {
