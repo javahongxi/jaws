@@ -69,11 +69,6 @@ public enum URLParamType {
     module("module", JawsConstants.FRAMEWORK_NAME),
 
     retries("retries", 0),
-    mean("mean", "2"),
-    p90("p90", "4"),
-    p99("p99", "10"),
-    p999("p999", "70"),
-    errorRate("errorRate", "0.01"),
     check("check", "true"),
     registrySessionTimeout("registrySessionTimeout", 1 * JawsConstants.MINUTE_MILLS),
     directUrl("directUrl", ""),
