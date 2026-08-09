@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Created by shenhongxi on 2021/4/23.
  */
-public class ReferenceConfig<T> extends AbstractReferenceConfig {
+public class ReferenceConfig<T> extends AbstractInterfaceConfig {
 
     @Serial
     private static final long serialVersionUID = -2299754608229467887L;
@@ -37,13 +37,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
     private T ref;
     private List<ClusterSupport<T>> clusterSupports;
 
-    public String getServiceInterface() {
-        return serviceInterface;
-    }
-
-    public void setServiceInterface(String serviceInterface) {
-        this.serviceInterface = serviceInterface;
-    }
+    protected Boolean asyncInitConnection;
 
     public T getRef() {
         if (ref == null) {
@@ -178,6 +172,14 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
         this.interfaceClass = interfaceClass;
     }
 
+    public String getServiceInterface() {
+        return serviceInterface;
+    }
+
+    public void setServiceInterface(String serviceInterface) {
+        this.serviceInterface = serviceInterface;
+    }
+
     public String getDirectUrl() {
         return directUrl;
     }
@@ -202,4 +204,11 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
         this.generic = generic;
     }
 
+    public Boolean getAsyncInitConnection() {
+        return asyncInitConnection;
+    }
+
+    public void setAsyncInitConnection(Boolean asyncInitConnection) {
+        this.asyncInitConnection = asyncInitConnection;
+    }
 }
