@@ -8,6 +8,8 @@ import org.hongxi.jaws.exception.JawsServiceException;
 
 import java.io.File;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -140,6 +142,39 @@ public class URL {
 
     public String getServerPortStr() {
         return buildHostPortStr(host, port);
+    }
+
+    /**
+     * 获取包含所有备份节点的地址字符串，格式为 host:port,backup1:port1,backup2:port2
+     */
+    public String getBackupAddress() {
+        StringBuilder address = new StringBuilder(host + ":" + port);
+        String backup = getParameter(JawsConstants.BACKUP_KEY);
+        if (backup != null && !backup.isEmpty()) {
+            address.append(',').append(backup);
+        }
+        return address.toString();
+    }
+
+    /**
+     * 获取包含所有备份节点的 URL 列表，第一个为当前 URL，后续为备份节点 URL
+     */
+    public List<URL> getBackupUrls() {
+        List<URL> urls = new ArrayList<>();
+        urls.add(this);
+        String backup = getParameter(JawsConstants.BACKUP_KEY);
+        if (backup != null && !backup.isEmpty()) {
+            String[] backups = JawsConstants.COMMA_SPLIT_PATTERN.split(backup);
+            for (String bk : backups) {
+                String[] hostPort = bk.split(":");
+                URL backupUrl = new URL(this.protocol, hostPort[0].trim(),
+                        hostPort.length > 1 ? Integer.parseInt(hostPort[1].trim()) : this.port,
+                        this.path, new HashMap<>(this.parameters));
+                backupUrl.removeParameter(JawsConstants.BACKUP_KEY);
+                urls.add(backupUrl);
+            }
+        }
+        return urls;
     }
 
     private String buildHostPortStr(String host, int defaultPort) {

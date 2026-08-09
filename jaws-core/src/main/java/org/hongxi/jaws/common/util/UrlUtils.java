@@ -12,8 +12,7 @@ import java.util.Map;
 /**
  * Created by shenhongxi on 2021/3/5.
  */
-public class URLUtils {
-
+public class UrlUtils {
 
     public static List<URL> parseURLs(String address, Map<String, String> defaults) {
         if (address == null || address.isEmpty()) {
@@ -38,6 +37,17 @@ public class URLUtils {
 
         String[] addresses = JawsConstants.COMMA_SPLIT_PATTERN.split(address);
         String url = addresses[0];
+        // 将逗号分隔的后续地址编码为 backup 参数，保留多节点信息
+        if (addresses.length > 1) {
+            StringBuilder backup = new StringBuilder();
+            for (int i = 1; i < addresses.length; i++) {
+                if (i > 1) {
+                    backup.append(',');
+                }
+                backup.append(addresses[i]);
+            }
+            url += "?" + JawsConstants.BACKUP_KEY + "=" + backup;
+        }
 
         String defaultProtocol = defaults == null ? null : defaults.get("protocol");
         if (defaultProtocol == null || defaultProtocol.isEmpty()) {
