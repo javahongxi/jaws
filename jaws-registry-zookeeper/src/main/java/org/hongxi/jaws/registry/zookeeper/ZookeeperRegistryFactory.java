@@ -28,7 +28,7 @@ public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
             int sessionTimeout = registryUrl.getIntParameter(URLParamType.registrySessionTimeout.getName(), URLParamType.registrySessionTimeout.intValue());
             String username = registryUrl.getParameter("username");
             String password = registryUrl.getParameter("password");
-            CuratorFramework curator = createCurator(stripProtocol(registryUrl.getParameter("address")), username, password,
+            CuratorFramework curator = createCurator(registryUrl.getBackupAddress(), username, password,
                     sessionTimeout, timeout);
             return new ZookeeperRegistry(registryUrl, curator);
         } catch (Exception e) {
@@ -53,13 +53,5 @@ public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
         return curator;
     }
 
-    /**
-     * Strip protocol prefix from address (e.g., "zookeeper://127.0.0.1:2181" -> "127.0.0.1:2181").
-     */
-    private static String stripProtocol(String address) {
-        if (address != null && address.contains("://")) {
-            return address.substring(address.indexOf("://") + 3);
-        }
-        return address;
-    }
+
 }

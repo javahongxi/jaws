@@ -28,7 +28,7 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
     @Override
     protected Registry createRegistry(URL registryUrl) {
         try {
-            String address = stripProtocol(registryUrl.getParameter("address"));
+            String address = registryUrl.getBackupAddress();
             String username = registryUrl.getParameter("username");
             String password = registryUrl.getParameter("password");
             int connectTimeout = registryUrl.getIntParameter(URLParamType.connectTimeout.getName(),
@@ -57,13 +57,5 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
         return properties;
     }
 
-    /**
-     * Strip protocol prefix from address (e.g., "nacos://127.0.0.1:8848" -> "127.0.0.1:8848").
-     */
-    private static String stripProtocol(String address) {
-        if (address != null && address.contains("://")) {
-            return address.substring(address.indexOf("://") + 3);
-        }
-        return address;
-    }
+
 }

@@ -16,7 +16,6 @@ import org.hongxi.jaws.rpc.URL;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * <pre>
@@ -168,9 +167,14 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     }
 
     protected String getLocalHostAddress() {
-        Map<String, Integer> regHostPorts = registryUrls.stream()
-                .filter(ru -> StringUtils.isNotBlank(ru.getHost()) && ru.getPort() > 0)
-                .collect(Collectors.toMap(URL::getHost, URL::getPort, (a, b) -> b));
+        Map<String, Integer> regHostPorts = new HashMap<>();
+        for (URL ru : registryUrls) {
+            for (URL backupUrl : ru.getBackupUrls()) {
+                if (StringUtils.isNotBlank(backupUrl.getHost()) && backupUrl.getPort() > 0) {
+                    regHostPorts.put(backupUrl.getHost(), backupUrl.getPort());
+                }
+            }
+        }
 
         InetAddress address = NetUtils.getLocalAddress(regHostPorts);
         String localAddress = address != null ? address.getHostAddress() : null;
