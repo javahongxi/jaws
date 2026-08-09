@@ -15,22 +15,18 @@ public class ProtocolConfig extends AbstractConfig {
     // 请求超时
     protected Integer requestTimeout;
     // client最小连接数
-    protected Integer minClientConnection;
+    protected Integer minClientConnections;
     // client最大连接数
-    protected Integer maxClientConnection;
+    protected Integer maxClientConnections;
     protected Integer maxConnectionPerGroup;
     // 最小工作pool线程数
-    protected Integer minWorkerThread;
+    protected Integer minWorkerThreads;
     // 最大工作pool线程数
-    protected Integer maxWorkerThread;
+    protected Integer maxWorkerThreads;
     // 请求响应包的最大长度限制
     protected Integer maxContentLength;
     // server支持的最大连接数
-    protected Integer maxServerConnection;
-    // 连接池管理方式，是否lifo
-    protected Boolean poolLifo;
-    // 是否延迟init
-    protected Boolean lazyInit;
+    protected Integer maxServerConnections;
     // endpoint factory
     protected String endpointFactory;
     // 采用哪种cluster 的实现
@@ -41,16 +37,10 @@ public class ProtocolConfig extends AbstractConfig {
     protected String haStrategy;
     // server worker queue size
     protected Integer workerQueueSize;
-    // server accept connections count
-    protected Integer acceptConnections;
-    // proxy type, like jdk or javassist
-    protected String proxy;
     // filter, 多个filter用","分割，blank string 表示采用默认的filter配置
     protected String filter;
     // retry count if call failure
     protected Integer retries;
-    // if the request is called async, a taskFuture result will be sent back.
-    protected Boolean async;
     // 服务协议
     private String name;
     // 序列化方式
@@ -122,20 +112,20 @@ public class ProtocolConfig extends AbstractConfig {
         this.requestTimeout = requestTimeout;
     }
 
-    public Integer getMinClientConnection() {
-        return minClientConnection;
+    public Integer getMinClientConnections() {
+        return minClientConnections;
     }
 
-    public void setMinClientConnection(Integer minClientConnection) {
-        this.minClientConnection = minClientConnection;
+    public void setMinClientConnections(Integer minClientConnections) {
+        this.minClientConnections = minClientConnections;
     }
 
-    public Integer getMaxClientConnection() {
-        return maxClientConnection;
+    public Integer getMaxClientConnections() {
+        return maxClientConnections;
     }
 
-    public void setMaxClientConnection(Integer maxClientConnection) {
-        this.maxClientConnection = maxClientConnection;
+    public void setMaxClientConnections(Integer maxClientConnections) {
+        this.maxClientConnections = maxClientConnections;
     }
 
     public Integer getMaxConnectionPerGroup() {
@@ -146,20 +136,20 @@ public class ProtocolConfig extends AbstractConfig {
         this.maxConnectionPerGroup = maxConnectionPerGroup;
     }
 
-    public Integer getMinWorkerThread() {
-        return minWorkerThread;
+    public Integer getMinWorkerThreads() {
+        return minWorkerThreads;
     }
 
-    public void setMinWorkerThread(Integer minWorkerThread) {
-        this.minWorkerThread = minWorkerThread;
+    public void setMinWorkerThreads(Integer minWorkerThreads) {
+        this.minWorkerThreads = minWorkerThreads;
     }
 
-    public Integer getMaxWorkerThread() {
-        return maxWorkerThread;
+    public Integer getMaxWorkerThreads() {
+        return maxWorkerThreads;
     }
 
-    public void setMaxWorkerThread(Integer maxWorkerThread) {
-        this.maxWorkerThread = maxWorkerThread;
+    public void setMaxWorkerThreads(Integer maxWorkerThreads) {
+        this.maxWorkerThreads = maxWorkerThreads;
     }
 
     public Integer getMaxContentLength() {
@@ -170,28 +160,12 @@ public class ProtocolConfig extends AbstractConfig {
         this.maxContentLength = maxContentLength;
     }
 
-    public Integer getMaxServerConnection() {
-        return maxServerConnection;
+    public Integer getMaxServerConnections() {
+        return maxServerConnections;
     }
 
-    public void setMaxServerConnection(Integer maxServerConnection) {
-        this.maxServerConnection = maxServerConnection;
-    }
-
-    public Boolean getPoolLifo() {
-        return poolLifo;
-    }
-
-    public void setPoolLifo(Boolean poolLifo) {
-        this.poolLifo = poolLifo;
-    }
-
-    public Boolean getLazyInit() {
-        return lazyInit;
-    }
-
-    public void setLazyInit(Boolean lazyInit) {
-        this.lazyInit = lazyInit;
+    public void setMaxServerConnections(Integer maxServerConnections) {
+        this.maxServerConnections = maxServerConnections;
     }
 
     public String getEndpointFactory() {
@@ -234,22 +208,6 @@ public class ProtocolConfig extends AbstractConfig {
         this.workerQueueSize = workerQueueSize;
     }
 
-    public Integer getAcceptConnections() {
-        return acceptConnections;
-    }
-
-    public void setAcceptConnections(Integer acceptConnections) {
-        this.acceptConnections = acceptConnections;
-    }
-
-    public String getProxy() {
-        return proxy;
-    }
-
-    public void setProxy(String proxy) {
-        this.proxy = proxy;
-    }
-
     public String getFilter() {
         return filter;
     }
@@ -264,14 +222,6 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setRetries(Integer retries) {
         this.retries = retries;
-    }
-
-    public Boolean getAsync() {
-        return async;
-    }
-
-    public void setAsync(Boolean async) {
-        this.async = async;
     }
 
     public void setDefault(boolean isDefault) {

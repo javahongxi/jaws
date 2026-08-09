@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentMap;
  * 			1.2） share channel ： 某个service 暴露服务的时候，如果有某个模块，但是拆成10个接口，可以使用这种方式，不过有一些约束条件：接口的几个serviceConfig配置需要保持一致。
  *
  * 				不允许差异化的配置如下：
- * 					protocol, codec , serialization, maxContentLength , maxServerConnection , maxWorkerThread, workerQueueSize, heartbeatFactory
+ * 					protocol, codec , serialization, maxContentLength , maxServerConnections , maxWorkerThreads, workerQueueSize, heartbeatFactory
  *
  * 		2）心跳机制：
  *
@@ -77,8 +77,8 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
                 if (!JawsFrameworkUtils.checkIfCanShareServiceChannel(server.getUrl(), url)) {
                     throw new JawsFrameworkException(
                             "Service export Error: share channel but some config param is different, " +
-                                    "protocol or codec or serialize or maxContentLength or maxServerConnection " +
-                                    "or maxWorkerThread or heartbeatFactory, source="
+                                    "protocol or codec or serialize or maxContentLength or maxServerConnections " +
+                                    "or maxWorkerThreads or heartbeatFactory, source="
                                     + server.getUrl() + " target=" + url, JawsErrorMsgConstants.FRAMEWORK_EXPORT_ERROR);
                 }
 

@@ -73,7 +73,6 @@ public enum URLParamType {
     registrySessionTimeout("registrySessionTimeout", 1 * JawsConstants.MINUTE_MILLS),
     directUrl("directUrl", ""),
 
-    subscribe("subscribe", true),
     throwException("throwException", "true"),
     transExceptionStack("transExceptionStack", true),
 

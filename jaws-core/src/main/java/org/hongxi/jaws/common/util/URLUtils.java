@@ -31,22 +31,6 @@ public class URLUtils {
         return registries;
     }
 
-
-    public static Map<String, String> parseQueryParams(String rawRefer) {
-        Map<String, String> map = new HashMap<>();
-        String refer = StringTools.urlDecode(rawRefer);
-        String[] kvs = JawsConstants.QUERY_PARAM_PATTERN.split(refer);
-        for (String kv : kvs) {
-            if (kv != null && kv.contains(JawsConstants.EQUAL_SIGN_SEPARATOR)) {
-                String[] kvArr = JawsConstants.EQUAL_SIGN_PATTERN.split(kv);
-                if (kvArr.length == 2) {
-                    map.put(kvArr[0].trim(), kvArr[1].trim());
-                }
-            }
-        }
-        return map;
-    }
-
     private static URL parseURL(String address, Map<String, String> defaults) {
         if (address == null || address.isEmpty()) {
             return null;

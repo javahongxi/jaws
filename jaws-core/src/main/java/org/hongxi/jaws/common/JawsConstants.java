@@ -73,7 +73,6 @@ public class JawsConstants {
     public static final String PROTOCOL_JAWS = "jaws";
 
     public static final String PROXY_JDK = "jdk";
-    public static final String PROXY_COMMON = "common";
 
     public static final String METHOD_CONFIG_PREFIX = "methodconfig.";
 

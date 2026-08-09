@@ -43,9 +43,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 注册中心的配置列表
     protected List<RegistryConfig> registries;
 
-    // 解析后的所有注册中心url
-    protected List<URL> registryUrls = new ArrayList<>();
-
     // 应用名称
     protected String application;
 
@@ -57,9 +54,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     // 服务版本
     protected String version;
-
-    // 代理类型
-    protected String proxy;
 
     // 过滤器
     protected String filter;
@@ -82,13 +76,14 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 重试次数
     protected Integer retries;
 
-    protected String codec;
-
     // 是否需要传输rpc server 端业务异常栈。默认true
     protected Boolean transExceptionStack;
 
     // 具体到方法的配置
     protected List<MethodConfig> methods;
+
+    // 解析后的所有注册中心url
+    protected List<URL> registryUrls = new ArrayList<>();
 
     /*
      * 解析注册中心URL
@@ -110,8 +105,9 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
                 // 设置默认的registry protocol，parse完protocol后，需要去掉该参数
                 if (!map.containsKey(URLParamType.protocol.getName())) {
-                    if (address.contains("://")) {
-                        map.put(URLParamType.protocol.getName(), address.substring(0, address.indexOf("://")));
+                    if (address.contains(JawsConstants.PROTOCOL_SEPARATOR)) {
+                        map.put(URLParamType.protocol.getName(),
+                                address.substring(0, address.indexOf(JawsConstants.PROTOCOL_SEPARATOR)));
                     } else {
                         map.put(URLParamType.protocol.getName(), JawsConstants.REGISTRY_PROTOCOL_LOCAL);
                     }
@@ -120,6 +116,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 List<URL> urls = URLUtils.parseURLs(address, map);
                 if (urls != null && !urls.isEmpty()) {
                     for (URL url : urls) {
+                        // 协议信息已编码在 URL 结构中，参数中不再保留
                         url.removeParameter(URLParamType.protocol.getName());
                         registryUrls.add(url);
                     }
@@ -242,14 +239,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.version = version;
     }
 
-    public String getProxy() {
-        return proxy;
-    }
-
-    public void setProxy(String proxy) {
-        this.proxy = proxy;
-    }
-
     public String getFilter() {
         return filter;
     }
@@ -304,14 +293,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     public void setRetries(Integer retries) {
         this.retries = retries;
-    }
-
-    public String getCodec() {
-        return codec;
-    }
-
-    public void setCodec(String codec) {
-        this.codec = codec;
     }
 
     public Boolean getTransExceptionStack() {

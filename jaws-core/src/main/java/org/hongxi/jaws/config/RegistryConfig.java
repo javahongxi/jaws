@@ -43,15 +43,6 @@ public class RegistryConfig extends AbstractConfig {
     // 失败后重试的时间间隔
     private Integer registryRetryPeriod;
 
-    // 启动时检查注册中心是否存在
-    private String check;
-
-    // 在该注册中心上服务是否暴露
-    private Boolean register;
-
-    // 在该注册中心上服务是否引用
-    private Boolean subscribe;
-
     private Boolean isDefault;
 
     // vintage的配置移除策略，@see #RegistryConfig#Excise
@@ -95,30 +86,6 @@ public class RegistryConfig extends AbstractConfig {
 
     public void setPassword(String password) {
         this.password = password;
-    }
-
-    public String getCheck() {
-        return check;
-    }
-
-    public void setCheck(String check) {
-        this.check = check;
-    }
-
-    public Boolean getRegister() {
-        return register;
-    }
-
-    public void setRegister(Boolean register) {
-        this.register = register;
-    }
-
-    public Boolean getSubscribe() {
-        return subscribe;
-    }
-
-    public void setSubscribe(Boolean subscribe) {
-        this.subscribe = subscribe;
     }
 
     public String getName() {

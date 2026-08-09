@@ -46,7 +46,6 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
         return ref;
     }
 
-    @SuppressWarnings("unchecked")
     public synchronized void initRef() {
         if (initialized.get()) {
             return;
@@ -59,6 +58,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
                         "Generic invocation requires serviceInterface to be set to the real interface name",
                         JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
             }
+            // noinspection unchecked
             interfaceClass = (Class<T>) GenericService.class;
         }
 
@@ -71,7 +71,6 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
 
         clusterSupports = new ArrayList<>(protocols.size());
         List<Cluster<T>> clusters = new ArrayList<>(protocols.size());
-        String proxy = null;
 
         ServiceDeployer serviceDeployer = ExtensionLoader.getExtensionLoader(ServiceDeployer.class).getExtension(JawsConstants.DEFAULT_VALUE);
 
@@ -92,18 +91,10 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
 
             clusterSupports.add(clusterSupport);
             clusters.add(clusterSupport.getCluster());
-
-            if (proxy == null) {
-                if (generic) {
-                    proxy = "generic";
-                } else {
-                    String defaultValue = StringUtils.isBlank(serviceInterface) ? URLParamType.proxy.value() : JawsConstants.PROXY_COMMON;
-                    proxy = refUrl.getParameter(URLParamType.proxy.getName(), defaultValue);
-                }
-            }
         }
 
-        ref = serviceDeployer.refer(interfaceClass, clusters, proxy);
+        String proxyType = generic ? "generic" : URLParamType.proxy.value();
+        ref = serviceDeployer.refer(interfaceClass, clusters, proxyType);
 
         initialized.set(true);
     }
