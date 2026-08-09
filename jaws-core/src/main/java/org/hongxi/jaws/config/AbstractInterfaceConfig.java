@@ -103,7 +103,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 map.put(URLParamType.path.getName(), RegistryService.class.getName());
                 map.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
-                // 设置默认的registry protocol，parse完protocol后，需要去掉该参数
+                // 从 address 解析 registry protocol，临时放入参数中
                 if (!map.containsKey(URLParamType.protocol.getName())) {
                     if (address.contains(JawsConstants.PROTOCOL_SEPARATOR)) {
                         map.put(URLParamType.protocol.getName(),

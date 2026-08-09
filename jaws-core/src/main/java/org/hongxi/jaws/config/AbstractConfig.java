@@ -48,21 +48,10 @@ public class AbstractConfig implements Serializable {
         }
         for (MethodConfig mc : methods) {
             if (mc != null) {
-                mc.appendConfigParams(parameters, JawsConstants.METHOD_CONFIG_PREFIX + mc.getName() + "(" + mc.getArgumentTypes() + ")");
+                String prefix = JawsConstants.METHOD_CONFIG_PREFIX + mc.getName() + "(" + mc.getArgumentTypes() + ")";
+                mc.appendConfigParams(parameters, prefix);
             }
         }
-    }
-
-    private static String getTagName(Class<?> cls) {
-        String tag = cls.getSimpleName();
-        for (String suffix : SUFFIXES) {
-            if (tag.endsWith(suffix)) {
-                tag = tag.substring(0, tag.length() - suffix.length());
-                break;
-            }
-        }
-        tag = tag.toLowerCase();
-        return tag;
     }
 
     protected void appendConfigParams(Map<String, String> parameters) {
@@ -101,7 +90,7 @@ public class AbstractConfig implements Serializable {
                     parameters.put(key, String.valueOf(value).trim());
                 } else if ("getParameters".equals(name) && Modifier.isPublic(method.getModifiers())
                         && method.getParameterTypes().length == 0 && method.getReturnType() == Map.class) {
-                    @SuppressWarnings("unchecked")
+                    // noinspection unchecked
                     Map<String, String> map = (Map<String, String>) method.invoke(this);
                     if (map != null && !map.isEmpty()) {
                         String pre = prefix != null && !prefix.isEmpty() ? prefix + "." : "";
@@ -178,5 +167,17 @@ public class AbstractConfig implements Serializable {
             log.warn(t.getMessage(), t);
             return super.toString();
         }
+    }
+
+    private static String getTagName(Class<?> cls) {
+        String tag = cls.getSimpleName();
+        for (String suffix : SUFFIXES) {
+            if (tag.endsWith(suffix)) {
+                tag = tag.substring(0, tag.length() - suffix.length());
+                break;
+            }
+        }
+        tag = tag.toLowerCase();
+        return tag;
     }
 }
