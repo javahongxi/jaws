@@ -11,9 +11,7 @@ import java.lang.reflect.Method;
 @Spi(scope = Scope.PROTOTYPE)
 public interface Provider<T> extends Caller<T> {
 
-    Class<T> getInterface();
-
-    Method lookupMethod(String methodName, String methodDesc);
+    Method lookupMethod(String methodName, String paramDesc);
 
     T getImpl();
 }

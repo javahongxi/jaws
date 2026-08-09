@@ -56,7 +56,6 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
         manager.removeNotifyListener(listener);
         unsubscribeService(urlCopy, manager);
         unsubscribeCommand(urlCopy, manager);
-
     }
 
     @Override
@@ -91,20 +90,6 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
         return finalResult;
     }
 
-    public List<URL> commandPreview(URL url, RpcCommand rpcCommand, String previewIP) {
-        List<URL> finalResult;
-        URL urlCopy = url.createCopy();
-
-        if (rpcCommand != null) {
-            CommandServiceManager manager = getCommandServiceManager(urlCopy);
-            finalResult = manager.discoverServiceWithCommand(urlCopy, new HashMap<>(), rpcCommand, previewIP);
-        } else {
-            finalResult = discoverService(urlCopy);
-        }
-
-        return finalResult;
-    }
-
     private CommandServiceManager getCommandServiceManager(URL urlCopy) {
         CommandServiceManager manager = commandManagerMap.get(urlCopy);
         if (manager == null) {
@@ -114,13 +99,6 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
             if (manager1 != null) manager = manager1;
         }
         return manager;
-    }
-
-    /*
-     * for UnitTest
-     */
-    public ConcurrentHashMap<URL, CommandServiceManager> getCommandManagerMap() {
-        return commandManagerMap;
     }
 
     protected abstract void subscribeService(URL url, ServiceListener listener);

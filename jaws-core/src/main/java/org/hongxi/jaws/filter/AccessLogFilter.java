@@ -66,7 +66,7 @@ public class AccessLogFilter implements Filter {
         append(builder, NetUtils.getLocalAddress().getHostAddress());
         append(builder, request.getInterfaceName());
         append(builder, request.getMethodName());
-        append(builder, request.getParametersDesc());
+        append(builder, request.getParamDesc());
         // 对于client，url中的remote ip, application, module,reference 和 service获取的地方不同
         if (JawsConstants.NODE_TYPE_REFERENCE.equals(side)) {
             append(builder, caller.getUrl().getHost());

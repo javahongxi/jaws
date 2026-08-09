@@ -26,7 +26,7 @@ public interface Request {
      *
      * @return
      */
-    String getParametersDesc();
+    String getParamDesc();
 
     /**
      * service method param

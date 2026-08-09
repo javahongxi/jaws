@@ -80,9 +80,9 @@ public class GenericReferenceInvocationHandler<T> extends AbstractReferenceHandl
 
         // Set parameter description from the type names (empty string for no-arg methods)
         if (parameterTypes != null && parameterTypes.length > 0) {
-            request.setParametersDesc(GenericUtils.buildParameterDesc(parameterTypes));
+            request.setParamDesc(GenericUtils.buildParameterDesc(parameterTypes));
         } else {
-            request.setParametersDesc("");
+            request.setParamDesc("");
         }
 
         // Mark this as a generic invocation so the provider knows to convert parameters

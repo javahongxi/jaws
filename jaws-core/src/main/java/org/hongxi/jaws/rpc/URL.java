@@ -10,7 +10,6 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created by shenhongxi on 2020/6/14.
@@ -25,9 +24,7 @@ public class URL {
 
     private String path;
 
-    private Map<String, String> parameters;
-
-    private volatile transient Map<String, Number> numbers;
+    private final Map<String, String> parameters;
 
     public URL(String protocol, String host, int port, String path) {
         this(protocol, host, port, path, new HashMap<>());
@@ -52,11 +49,11 @@ public class URL {
         Map<String, String> parameters = new HashMap<>();
         int i = url.indexOf("?"); // separator between body and parameters
         if (i >= 0) {
-            String[] parts = url.substring(i + 1).split("\\&");
+            String[] parts = url.substring(i + 1).split("&");
 
             for (String part : parts) {
                 part = part.trim();
-                if (part.length() > 0) {
+                if (!part.isEmpty()) {
                     int j = part.indexOf('=');
                     if (j >= 0) {
                         parameters.put(part.substring(0, j), part.substring(j + 1));
@@ -68,17 +65,9 @@ public class URL {
             url = url.substring(0, i);
         }
         i = url.indexOf("://");
-        if (i >= 0) {
-            if (i == 0) throw new IllegalStateException("url missing protocol: \"" + url + "\"");
+        if (i > 0) {
             protocol = url.substring(0, i);
             url = url.substring(i + 3);
-        } else {
-            i = url.indexOf(":/");
-            if (i >= 0) {
-                if (i == 0) throw new IllegalStateException("url missing protocol: \"" + url + "\"");
-                protocol = url.substring(0, i);
-                url = url.substring(i + 1);
-            }
         }
 
         i = url.indexOf("/");
@@ -92,7 +81,7 @@ public class URL {
             port = Integer.parseInt(url.substring(i + 1));
             url = url.substring(0, i);
         }
-        if (url.length() > 0) host = url;
+        if (!url.isEmpty()) host = url;
         return new URL(protocol, host, port, path, parameters);
     }
 
@@ -294,18 +283,11 @@ public class URL {
     }
 
     public Integer getMethodParameter(String methodName, String paramDesc, String name, int defaultValue) {
-        String key = methodName + "(" + paramDesc + ")." + name;
-        Number n = getNumbers().get(key);
-        if (n != null) {
-            return n.intValue();
-        }
         String value = getMethodParameter(methodName, paramDesc, name);
         if (value == null || value.isEmpty()) {
             return defaultValue;
         }
-        int i = Integer.parseInt(value);
-        getNumbers().put(key, i);
-        return i;
+        return Integer.parseInt(value);
     }
 
     public String getMethodParameter(String methodName, String paramDesc, String name) {
@@ -314,14 +296,6 @@ public class URL {
             return getParameter(name);
         }
         return value;
-    }
-
-    private Map<String, Number> getNumbers() {
-        // 允许并发重复创建
-        if (numbers == null) {
-            numbers = new ConcurrentHashMap<>();
-        }
-        return numbers;
     }
 
     /**

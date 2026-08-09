@@ -45,7 +45,7 @@ public class JawsMcpToolHandler {
             DefaultRequest jawsRequest = new DefaultRequest();
             jawsRequest.setInterfaceName(spec.getInterfaceName());
             jawsRequest.setMethodName(spec.getMethodName());
-            jawsRequest.setParametersDesc(buildParametersDesc(spec.getParameterTypes()));
+            jawsRequest.setParamDesc(buildParametersDesc(spec.getParameterTypes()));
 
             // Convert arguments using shared ArgumentConverter
             Object[] args = ArgumentConverter.convertArguments(spec.getParameters(), arguments);

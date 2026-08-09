@@ -176,7 +176,7 @@ public class JawsFrameworkUtils {
      */
     public static String getFullMethodString(Request request) {
         return request.getInterfaceName() + "." + request.getMethodName() + "("
-                + request.getParametersDesc() + ")";
+                + request.getParamDesc() + ")";
     }
 
     /**
@@ -189,6 +189,6 @@ public class JawsFrameworkUtils {
         return "requestId=" + request.getRequestId() +
                 " interface=" + request.getInterfaceName() +
                 " method=" + request.getMethodName()
-                + "(" + request.getParametersDesc() + ")";
+                + "(" + request.getParamDesc() + ")";
     }
 }

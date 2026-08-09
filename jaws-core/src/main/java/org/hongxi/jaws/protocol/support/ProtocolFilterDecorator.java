@@ -87,8 +87,8 @@ public class ProtocolFilterDecorator implements Protocol {
                 }
 
                 @Override
-                public Method lookupMethod(String methodName, String methodDesc) {
-                    return lp.lookupMethod(methodName, methodDesc);
+                public Method lookupMethod(String methodName, String paramDesc) {
+                    return lp.lookupMethod(methodName, paramDesc);
                 }
 
                 @Override

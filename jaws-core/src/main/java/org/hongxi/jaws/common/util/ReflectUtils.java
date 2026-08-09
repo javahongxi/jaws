@@ -55,7 +55,7 @@ public class ReflectUtils {
     }
 
     /**
-     * 获取方法的标示 : method_name + "(" + paramDesc + ")"
+     * 获取方法的标识 : method_name + "(" + paramDesc + ")"
      *
      * @param method
      * @return
@@ -66,7 +66,7 @@ public class ReflectUtils {
     }
 
     /**
-     * 获取方法的标示 : method_name + "(" + paramDesc + ")"
+     * 获取方法的标识 : method_name + "(" + paramDesc + ")"
      *
      * @param
      * @return

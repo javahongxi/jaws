@@ -102,8 +102,4 @@ public class RpcCommand {
             this.remark = remark;
         }
     }
-
-    public static class ServerCommand {
-
-    }
 }

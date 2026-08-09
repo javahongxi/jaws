@@ -70,20 +70,20 @@ public abstract class AbstractProvider<T> implements Provider<T> {
     }
 
     @Override
-    public Method lookupMethod(String methodName, String methodDesc) {
+    public Method lookupMethod(String methodName, String paramDesc) {
         Method method;
-        String fullMethodName = ReflectUtils.getMethodDesc(methodName, methodDesc);
-        method = methodMap.get(fullMethodName);
-        if (method == null && StringUtils.isBlank(methodDesc)) {
+        String methodDesc = ReflectUtils.getMethodDesc(methodName, paramDesc);
+        method = methodMap.get(methodDesc);
+        if (method == null && StringUtils.isBlank(paramDesc)) {
             method = methodMap.get(methodName);
-            if (method == null) {
-                method = methodMap.get(methodName.substring(0, 1).toLowerCase() + methodName.substring(1));
-            }
         }
-
         return method;
     }
 
+    /**
+     * 构建方法路由表，既支持精确的签名匹配，也对无重载方法支持简写匹配，重载方法则强制要求完整参数描述
+     * @param clazz
+     */
     private void initMethodMap(Class<T> clazz) {
         Method[] methods = clazz.getMethods();
 

@@ -36,12 +36,12 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
     public Response invoke(Request request) {
         DefaultResponse response = new DefaultResponse();
 
-        Method method = lookupMethod(request.getMethodName(), request.getParametersDesc());
+        Method method = lookupMethod(request.getMethodName(), request.getParamDesc());
 
         if (method == null) {
             JawsServiceException exception =
                     new JawsServiceException("Service method not exist: " + request.getInterfaceName() + "." + request.getMethodName()
-                            + "(" + request.getParametersDesc() + ")", JawsErrorMsgConstants.SERVICE_NOT_FOUND);
+                            + "(" + request.getParamDesc() + ")", JawsErrorMsgConstants.SERVICE_NOT_FOUND);
 
             response.setException(exception);
             return response;
@@ -54,7 +54,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             if (value instanceof CompletableFuture<?> cf) {
                 try {
                     long timeout = this.url.getMethodParameter(
-                            request.getMethodName(), request.getParametersDesc(),
+                            request.getMethodName(), request.getParamDesc(),
                             URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
                     if (timeout > 0) {
                         value = cf.get(timeout, java.util.concurrent.TimeUnit.MILLISECONDS);

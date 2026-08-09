@@ -15,7 +15,7 @@ public class DefaultRequest implements Request, Serializable {
 
     private String interfaceName;
     private String methodName;
-    private String parametersDesc;
+    private String paramDesc;
     private Object[] arguments;
     private Map<String, String> attachments;
     private int retries = 0;
@@ -42,12 +42,12 @@ public class DefaultRequest implements Request, Serializable {
     }
 
     @Override
-    public String getParametersDesc() {
-        return parametersDesc;
+    public String getParamDesc() {
+        return paramDesc;
     }
 
-    public void setParametersDesc(String parametersDesc) {
-        this.parametersDesc = parametersDesc;
+    public void setParamDesc(String paramDesc) {
+        this.paramDesc = paramDesc;
     }
 
     @Override
@@ -107,6 +107,6 @@ public class DefaultRequest implements Request, Serializable {
 
     @Override
     public String toString() {
-        return interfaceName + "." + methodName + "(" + parametersDesc + ") requestId=" + requestId;
+        return interfaceName + "." + methodName + "(" + paramDesc + ") requestId=" + requestId;
     }
 }

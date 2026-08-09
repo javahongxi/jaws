@@ -156,7 +156,7 @@ public class JawsCodec extends AbstractCodec {
         ObjectOutput output = createOutput(outputStream);
         output.writeUTF(request.getInterfaceName());
         output.writeUTF(request.getMethodName());
-        output.writeUTF(request.getParametersDesc());
+        output.writeUTF(request.getParamDesc());
 
         Serialization serialization =
                 ExtensionLoader.getExtensionLoader(Serialization.class).getExtension(
@@ -295,14 +295,14 @@ public class JawsCodec extends AbstractCodec {
 
         String interfaceName = input.readUTF();
         String methodName = input.readUTF();
-        String paramtersDesc = input.readUTF();
+        String paramDesc = input.readUTF();
 
         DefaultRequest rpcRequest = new DefaultRequest();
         rpcRequest.setRequestId(requestId);
         rpcRequest.setInterfaceName(interfaceName);
         rpcRequest.setMethodName(methodName);
-        rpcRequest.setParametersDesc(paramtersDesc);
-        rpcRequest.setArguments(decodeRequestParameter(input, paramtersDesc, serialization));
+        rpcRequest.setParamDesc(paramDesc);
+        rpcRequest.setArguments(decodeRequestParameter(input, paramDesc, serialization));
         rpcRequest.setAttachments(decodeRequestAttachments(input));
 
         input.close();

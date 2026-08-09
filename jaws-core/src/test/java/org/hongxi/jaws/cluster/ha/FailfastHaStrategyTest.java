@@ -47,7 +47,7 @@ class FailfastHaStrategyTest {
     private static class StubRequest implements Request {
         @Override public String getInterfaceName() { return "testService"; }
         @Override public String getMethodName() { return "testMethod"; }
-        @Override public String getParametersDesc() { return ""; }
+        @Override public String getParamDesc() { return ""; }
         @Override public Object[] getArguments() { return new Object[0]; }
         @Override public Map<String, String> getAttachments() { return new HashMap<>(); }
         @Override public void setAttachment(String name, String value) {}

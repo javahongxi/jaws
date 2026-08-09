@@ -103,7 +103,7 @@ class RoundRobinLoadBalanceTest {
         return new Request() {
             @Override public String getInterfaceName() { return "TestService"; }
             @Override public String getMethodName() { return "test"; }
-            @Override public String getParametersDesc() { return ""; }
+            @Override public String getParamDesc() { return ""; }
             @Override public Object[] getArguments() { return null; }
             @Override public java.util.Map<String, String> getAttachments() { return null; }
             @Override public void setAttachment(String name, String value) {}

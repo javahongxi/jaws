@@ -90,7 +90,7 @@ public class ProviderMessageRouter implements MessageHandler {
             return handleGenericInvocation(request, provider);
         }
 
-        Method method = provider.lookupMethod(request.getMethodName(), request.getParametersDesc());
+        Method method = provider.lookupMethod(request.getMethodName(), request.getParamDesc());
         fillParamDesc(request, method);
         Response response = call(request, provider);
         response.setSerializationNumber(request.getSerializationNumber());
@@ -103,14 +103,14 @@ public class ProviderMessageRouter implements MessageHandler {
      */
     private Response handleGenericInvocation(Request request, Provider<?> provider) {
         String methodName = request.getMethodName();
-        String parametersDesc = request.getParametersDesc();
+        String paramDesc = request.getParamDesc();
         Object[] originalArgs = request.getArguments();
 
-        Method method = provider.lookupMethod(methodName, parametersDesc);
+        Method method = provider.lookupMethod(methodName, paramDesc);
         if (method == null) {
             JawsServiceException exception = new JawsServiceException(
                     "Generic invocation: method not found: " + request.getInterfaceName() + "." + methodName
-                            + "(" + parametersDesc + ")");
+                            + "(" + paramDesc + ")");
             DefaultResponse response = JawsFrameworkUtils.buildErrorResponse(request, exception);
             response.setSerializationNumber(request.getSerializationNumber());
             return response;
@@ -128,7 +128,7 @@ public class ProviderMessageRouter implements MessageHandler {
         // Update the request with converted arguments and real parameter description
         if (request instanceof DefaultRequest dr) {
             dr.setArguments(convertedArgs);
-            dr.setParametersDesc(org.hongxi.jaws.common.util.ReflectUtils.getMethodParamDesc(method));
+            dr.setParamDesc(org.hongxi.jaws.common.util.ReflectUtils.getMethodParamDesc(method));
         }
 
         fillParamDesc(request, method);
@@ -155,9 +155,9 @@ public class ProviderMessageRouter implements MessageHandler {
     }
 
     private void fillParamDesc(Request request, Method method) {
-        if (method != null && StringUtils.isBlank(request.getParametersDesc())
+        if (method != null && StringUtils.isBlank(request.getParamDesc())
                 && request instanceof DefaultRequest dr) {
-            dr.setParametersDesc(ReflectUtils.getMethodParamDesc(method));
+            dr.setParamDesc(ReflectUtils.getMethodParamDesc(method));
             dr.setMethodName(method.getName());
         }
     }

@@ -40,7 +40,7 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
         URL refUrl = references.get(0).getUrl();
         // 先使用method的配置
         int tryCount =
-                refUrl.getMethodParameter(request.getMethodName(), request.getParametersDesc(), URLParamType.retries.getName(),
+                refUrl.getMethodParameter(request.getMethodName(), request.getParamDesc(), URLParamType.retries.getName(),
                         URLParamType.retries.intValue());
         // 如果有问题，则设置为不重试
         if (tryCount < 0) {

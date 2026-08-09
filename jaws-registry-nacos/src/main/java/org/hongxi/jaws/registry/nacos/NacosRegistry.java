@@ -397,59 +397,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         return urls;
     }
 
-    private void reconnectService() {
-        Collection<URL> allRegisteredServices = getRegisteredServiceUrls();
-        if (allRegisteredServices != null && !allRegisteredServices.isEmpty()) {
-            try {
-                serverLock.lock();
-                for (URL url : getRegisteredServiceUrls()) {
-                    doRegisterInternal(url);
-                }
-                log.info("[{}] reconnect: register services {}", registryClassName, allRegisteredServices);
-
-                for (URL url : availableServices) {
-                    if (!getRegisteredServiceUrls().contains(url)) {
-                        log.warn("reconnect url not registered. url:{}", url);
-                        continue;
-                    }
-                    doAvailableInternal(url);
-                }
-                log.info("[{}] reconnect: available services {}", registryClassName, availableServices);
-            } finally {
-                serverLock.unlock();
-            }
-        }
-    }
-
-    private void reconnectClient() {
-        if (serviceListeners != null && !serviceListeners.isEmpty()) {
-            try {
-                clientLock.lock();
-                for (Map.Entry<URL, ConcurrentHashMap<ServiceListener, EventListener>> entry : serviceListeners.entrySet()) {
-                    URL url = entry.getKey();
-                    ConcurrentHashMap<ServiceListener, EventListener> listeners = serviceListeners.get(url);
-                    if (listeners != null) {
-                        for (Map.Entry<ServiceListener, EventListener> e : listeners.entrySet()) {
-                            subscribeServiceInternal(url, e.getKey());
-                        }
-                    }
-                }
-                for (Map.Entry<URL, ConcurrentHashMap<CommandListener, Listener>> entry : commandListeners.entrySet()) {
-                    URL url = entry.getKey();
-                    ConcurrentHashMap<CommandListener, Listener> listeners = commandListeners.get(url);
-                    if (listeners != null) {
-                        for (Map.Entry<CommandListener, Listener> e : listeners.entrySet()) {
-                            subscribeCommandInternal(url, e.getKey());
-                        }
-                    }
-                }
-                log.info("[{}] reconnect all clients", registryClassName);
-            } finally {
-                clientLock.unlock();
-            }
-        }
-    }
-
     @Override
     public void close() {
         try {

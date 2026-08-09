@@ -20,7 +20,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -35,12 +34,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
 
     private static final ConcurrentHashSet<String> existingServices = new ConcurrentHashSet<>();
 
-    /*
-     * Dynamic port allocation: when port is -1, allocate from DYNAMIC_PORT_START incrementally.
-     * Same application shares the same dynamic port (works with shareChannel=true).
-     */
-    private static final int DYNAMIC_PORT_START = 10000;
-    private static final Map<String, Integer> dynamicPorts = new ConcurrentHashMap<>();
+    private static int dynamicPort = -1;
     // 具体到方法的配置
     protected List<MethodConfig> methods;
 
@@ -53,7 +47,6 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
     // service 对应的exporters，用于管理service服务的生命周期
     private List<Exporter<T>> exporters = new CopyOnWriteArrayList<>();
     private Class<T> interfaceClass;
-    private BasicServiceInterfaceConfig basicService;
     private AtomicBoolean exported = new AtomicBoolean(false);
 
     public String getToken() {
@@ -157,20 +150,15 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
             protocolName = URLParamType.protocol.value();
         }
 
-        /*
-         * Dynamic port: -1 means auto-allocate from 10000 incrementally.
-         * Same application reuses the same port so that shareChannel works.
-         */
         if (port == -1) {
-            String app = (application != null) ? application : "default";
-            port = resolveDynamicPort(app);
-            log.info("Dynamic port allocated: {} for application={}", port, app);
+            if (Boolean.FALSE.equals(shareChannel)) {
+                throw new JawsServiceException(
+                        "Dynamic port (-1) requires shareChannel=true, please set explicit port for shareChannel=false");
+            }
+            port = resolveDynamicPort();
         }
 
         String hostAddress = host;
-        if (StringUtils.isBlank(hostAddress) && basicService != null) {
-            hostAddress = basicService.getHost();
-        }
         if (NetUtils.isInvalidLocalHost(hostAddress)) {
             hostAddress = getLocalHostAddress();
         }
@@ -180,7 +168,7 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
         map.put(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_SERVICE);
         map.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
-        collectConfigParams(map, protocolConfig, basicService, this);
+        collectConfigParams(map, protocolConfig, this);
         collectMethodConfigParams(map, this.getMethods());
 
         URL serviceUrl = new URL(protocolName, hostAddress, port, interfaceClass.getName(), map);
@@ -192,12 +180,12 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
                     interfaceClass.getName(), serviceUrl.getIdentity()), JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
 
-        List<URL> urls = new ArrayList<>();
+        List<URL> registryUrls = new ArrayList<>();
 
         // injvm 协议只支持注册到本地，其他协议可以注册到local、remote
         if (JawsConstants.PROTOCOL_INJVM.equals(protocolConfig.getId())) {
             URL localRegistryUrl = null;
-            for (URL ru : registryUrls) {
+            for (URL ru : this.registryUrls) {
                 if (JawsConstants.REGISTRY_PROTOCOL_LOCAL.equals(ru.getProtocol())) {
                     localRegistryUrl = ru.createCopy();
                     break;
@@ -209,16 +197,16 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
                                 RegistryService.class.getName());
             }
 
-            urls.add(localRegistryUrl);
+            registryUrls.add(localRegistryUrl);
         } else {
-            for (URL ru : registryUrls) {
-                urls.add(ru.createCopy());
+            for (URL ru : this.registryUrls) {
+                registryUrls.add(ru.createCopy());
             }
         }
 
         ConfigHandler configHandler = ExtensionLoader.getExtensionLoader(ConfigHandler.class).getExtension(JawsConstants.DEFAULT_VALUE);
 
-        exporters.add(configHandler.export(interfaceClass, ref, urls, serviceUrl));
+        exporters.add(configHandler.export(interfaceClass, ref, registryUrls, serviceUrl));
     }
 
     private void afterExport() {
@@ -236,15 +224,6 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
             existingServices.remove(ep.getProvider().getUrl().getIdentity());
         }
         exporters.clear();
-    }
-
-    @ConfigDesc(excluded = true)
-    public BasicServiceInterfaceConfig getBasicService() {
-        return basicService;
-    }
-
-    public void setBasicService(BasicServiceInterfaceConfig basicService) {
-        this.basicService = basicService;
     }
 
     public Map<String, Integer> getProtocolAndPort() {
@@ -267,26 +246,15 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
         return exported;
     }
 
-    /*
-     * Resolve dynamic port for this application.
-     * Each application gets a unique port starting from DYNAMIC_PORT_START (10000).
-     * Multiple services within the same application share the same port (works with shareChannel=true).
-     */
-    private static synchronized int resolveDynamicPort(String app) {
-        Integer existingPort = dynamicPorts.get(app);
-        if (existingPort != null) {
-            return existingPort;
+    private static synchronized int resolveDynamicPort() {
+        if (dynamicPort != -1) {
+            return dynamicPort;
         }
-        int startPort = DYNAMIC_PORT_START;
-        if (!dynamicPorts.isEmpty()) {
-            int maxPort = dynamicPorts.values().stream().mapToInt(Integer::intValue).max().orElse(DYNAMIC_PORT_START - 1);
-            startPort = maxPort + 1;
-        }
-        int port = startPort;
+        int port = 10000;
         while (!NetUtils.isPortAvailable(port)) {
             port++;
         }
-        dynamicPorts.put(app, port);
+        dynamicPort = port;
         return port;
     }
 }

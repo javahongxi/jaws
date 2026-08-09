@@ -62,7 +62,7 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
             completableFutureReturn = true;
         }
         request.setMethodName(methodName);
-        request.setParametersDesc(ReflectUtils.getMethodParamDesc(method));
+        request.setParamDesc(ReflectUtils.getMethodParamDesc(method));
         request.setInterfaceName(interfaceName);
 
         Class<?> returnType = getRealReturnType(async, this.clazz, method, methodName);
