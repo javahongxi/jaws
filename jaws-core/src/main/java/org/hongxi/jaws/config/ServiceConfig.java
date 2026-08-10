@@ -114,7 +114,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         List<URL> registryUrls = new ArrayList<>();
 
         // injvm 协议只支持注册到本地，其他协议可以注册到local、remote
-        if (JawsConstants.PROTOCOL_INJVM.equals(protocolConfig.getId())) {
+        if (JawsConstants.PROTOCOL_INJVM.equals(protocolName)) {
             URL localRegistryUrl = null;
             for (URL ru : this.registryUrls) {
                 if (JawsConstants.REGISTRY_PROTOCOL_LOCAL.equals(ru.getProtocol())) {

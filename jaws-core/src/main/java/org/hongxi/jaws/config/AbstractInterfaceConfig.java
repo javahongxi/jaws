@@ -80,6 +80,15 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 具体到方法的配置
     protected List<MethodConfig> methods;
 
+    // 采用哪种 cluster 的实现
+    protected String cluster;
+
+    // loadBalance 方式
+    protected String loadBalance;
+
+    // high available strategy
+    protected String haStrategy;
+
     // 解析后的所有注册中心url
     protected List<URL> registryUrls = new ArrayList<>();
 
@@ -313,5 +322,29 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     public void setMethods(List<MethodConfig> methods) {
         this.methods = methods;
+    }
+
+    public String getCluster() {
+        return cluster;
+    }
+
+    public void setCluster(String cluster) {
+        this.cluster = cluster;
+    }
+
+    public String getLoadBalance() {
+        return loadBalance;
+    }
+
+    public void setLoadBalance(String loadBalance) {
+        this.loadBalance = loadBalance;
+    }
+
+    public String getHaStrategy() {
+        return haStrategy;
+    }
+
+    public void setHaStrategy(String haStrategy) {
+        this.haStrategy = haStrategy;
     }
 }
