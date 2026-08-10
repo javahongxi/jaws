@@ -52,6 +52,12 @@ public class JawsAutoConfiguration {
         protocolConfig.setId(protocolProps.getName());
         protocolConfig.setEndpointFactory(protocolProps.getEndpointFactory());
         protocolConfig.setSerialization(protocolProps.getSerialization());
+        if (protocolProps.getHost() != null) {
+            protocolConfig.setHost(protocolProps.getHost());
+        }
+        if (protocolProps.getPort() != null) {
+            protocolConfig.setPort(protocolProps.getPort());
+        }
         if (protocolProps.getCodec() != null) {
             protocolConfig.setCodec(protocolProps.getCodec());
         }

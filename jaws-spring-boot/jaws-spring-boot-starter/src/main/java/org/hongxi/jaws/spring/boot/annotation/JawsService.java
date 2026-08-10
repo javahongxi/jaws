@@ -43,13 +43,6 @@ public @interface JawsService {
     Class<?> interfaceClass() default void.class;
 
     /**
-     * Export protocol and port, format: "protocol:port".
-     * Use "jaws:-1" for dynamic port allocation.
-     * If empty, defaults to the global protocol config.
-     */
-    String export() default "";
-
-    /**
      * Service group for routing isolation.
      */
     String group() default "";

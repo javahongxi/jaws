@@ -73,7 +73,6 @@ public class InjvmRpcDemo {
         demoServiceConfig.setVersion("1.0");
         demoServiceConfig.setProtocol(createInjvmProtocol());
         demoServiceConfig.setRegistry(createLocalRegistry());
-        demoServiceConfig.setExport(JawsConstants.PROTOCOL_INJVM + ":0");
         demoServiceConfig.export();
         System.out.println("DemoService exported.");
 
@@ -86,7 +85,6 @@ public class InjvmRpcDemo {
         orderServiceConfig.setVersion("1.0");
         orderServiceConfig.setProtocol(createInjvmProtocol());
         orderServiceConfig.setRegistry(createLocalRegistry());
-        orderServiceConfig.setExport(JawsConstants.PROTOCOL_INJVM + ":0");
         orderServiceConfig.export();
         System.out.println("OrderService exported.\n");
     }

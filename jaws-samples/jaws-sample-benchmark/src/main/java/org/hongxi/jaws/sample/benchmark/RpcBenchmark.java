@@ -113,12 +113,6 @@ public class RpcBenchmark {
         serviceConfig.setProtocol(createProtocolConfig());
         serviceConfig.setRegistry(createRegistryConfig());
 
-        if ("jaws".equals(PROTOCOL)) {
-            serviceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + PORT);
-        } else {
-            serviceConfig.setExport(JawsConstants.PROTOCOL_INJVM + ":0");
-        }
-
         serviceConfig.export();
         System.out.println("DemoService exported (" + PROTOCOL + ").");
     }
@@ -145,6 +139,7 @@ public class RpcBenchmark {
         if ("jaws".equals(PROTOCOL)) {
             protocol.setEndpointFactory("netty");
             protocol.setSerialization(SERIALIZATION);
+            protocol.setPort(PORT);
         }
         return protocol;
     }

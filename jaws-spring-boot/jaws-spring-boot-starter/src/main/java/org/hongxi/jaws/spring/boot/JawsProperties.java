@@ -14,6 +14,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   version: "1.0"
  *   protocol:
  *     name: jaws
+ *     port: 10000
  *     serialization: fastjson2
  *     endpoint-factory: netty
  *   registry:
@@ -21,7 +22,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     username: nacos
  *     password: nacos
  *   service:
- *     export: "jaws:-1"
  *     share-channel: true
  *   reference:
  *     request-timeout: 2000
@@ -156,6 +156,16 @@ public class JawsProperties {
         private String name = "jaws";
 
         /**
+         * Service host. Usually not needed, auto-detected.
+         */
+        private String host;
+
+        /**
+         * Service port. Use -1 for dynamic port allocation.
+         */
+        private Integer port = -1;
+
+        /**
          * Serialization type (e.g., fastjson2, hessian2).
          */
         private String serialization = "fastjson2";
@@ -176,6 +186,22 @@ public class JawsProperties {
 
         public void setName(String name) {
             this.name = name;
+        }
+
+        public String getHost() {
+            return host;
+        }
+
+        public void setHost(String host) {
+            this.host = host;
+        }
+
+        public Integer getPort() {
+            return port;
+        }
+
+        public void setPort(Integer port) {
+            this.port = port;
         }
 
         public String getSerialization() {
@@ -294,22 +320,9 @@ public class JawsProperties {
     public static class Service {
 
         /**
-         * Export string, format: "protocol:port" (e.g., "jaws:-1" for dynamic port).
-         */
-        private String export = "jaws:-1";
-
-        /**
          * Whether to share a single channel for all services on the same port.
          */
         private Boolean shareChannel = true;
-
-        public String getExport() {
-            return export;
-        }
-
-        public void setExport(String export) {
-            this.export = export;
-        }
 
         public Boolean getShareChannel() {
             return shareChannel;

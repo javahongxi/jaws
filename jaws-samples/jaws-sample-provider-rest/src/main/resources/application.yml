@@ -11,8 +11,7 @@ jaws:
   protocol:
     name: jaws
     serialization: fastjson2
-  service:
-    export: "jaws:10002"
+    port: 10002
   registry:
     address: nacos://127.0.0.1:8848
   rest:

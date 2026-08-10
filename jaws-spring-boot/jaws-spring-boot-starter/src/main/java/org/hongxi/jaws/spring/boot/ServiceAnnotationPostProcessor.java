@@ -182,11 +182,6 @@ public class ServiceAnnotationPostProcessor
         /* interface class */
         builder.addPropertyValue("interface", interfaceClass);
 
-        /* export: annotation > global service config */
-        String export = StringUtils.isNotBlank(jawsService.export())
-                ? jawsService.export() : environment.getProperty("jaws.service.export", "jaws:-1");
-        builder.addPropertyValue("export", export);
-
         /* application name */
         String application = StringUtils.isNotBlank(jawsService.application())
                 ? jawsService.application() : environment.getProperty("jaws.application.name");

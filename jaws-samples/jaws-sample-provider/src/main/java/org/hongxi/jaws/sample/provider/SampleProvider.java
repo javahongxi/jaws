@@ -41,7 +41,6 @@ public class SampleProvider {
         demoServiceConfig.setVersion("2.0");
         demoServiceConfig.setProtocol(protocolConfig);
         demoServiceConfig.setRegistry(registryConfig);
-        demoServiceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + PORT);
         demoServiceConfig.export();
         System.out.println("DemoService exported.");
 
@@ -55,7 +54,6 @@ public class SampleProvider {
         orderServiceConfig.setVersion("2.0");
         orderServiceConfig.setProtocol(protocolConfig);
         orderServiceConfig.setRegistry(registryConfig);
-        orderServiceConfig.setExport(JawsConstants.PROTOCOL_JAWS + ":" + PORT);
         orderServiceConfig.export();
         System.out.println("OrderService exported.");
 
@@ -68,6 +66,7 @@ public class SampleProvider {
         protocolConfig.setId(protocolConfig.getName());
         protocolConfig.setEndpointFactory("netty");
         protocolConfig.setSerialization("fastjson2");
+        protocolConfig.setPort(PORT);
         return protocolConfig;
     }
 

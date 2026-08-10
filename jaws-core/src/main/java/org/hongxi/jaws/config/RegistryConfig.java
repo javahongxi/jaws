@@ -77,6 +77,14 @@ public class RegistryConfig extends AbstractConfig {
         this.password = password;
     }
 
+    public Integer getConnectTimeout() {
+        return connectTimeout;
+    }
+
+    public void setConnectTimeout(Integer connectTimeout) {
+        this.connectTimeout = connectTimeout;
+    }
+
     public Integer getRegistrySessionTimeout() {
         return registrySessionTimeout;
     }
@@ -91,13 +99,5 @@ public class RegistryConfig extends AbstractConfig {
 
     public void setRegistryRetryPeriod(Integer registryRetryPeriod) {
         this.registryRetryPeriod = registryRetryPeriod;
-    }
-
-    public Integer getConnectTimeout() {
-        return connectTimeout;
-    }
-
-    public void setConnectTimeout(Integer connectTimeout) {
-        this.connectTimeout = connectTimeout;
     }
 }

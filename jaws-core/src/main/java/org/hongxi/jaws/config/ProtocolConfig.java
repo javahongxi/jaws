@@ -12,6 +12,19 @@ public class ProtocolConfig extends AbstractConfig {
 
     @Serial
     private static final long serialVersionUID = 7605496816982926360L;
+
+    // 服务协议
+    private String name;
+    // 服务host
+    private String host;
+    // 服务port
+    private Integer port;
+    // 序列化方式
+    private String serialization;
+    // 协议编码
+    private String codec;
+    // endpoint factory
+    protected String endpointFactory;
     // client最小连接数
     protected Integer minClientConnections;
     // client最大连接数
@@ -25,8 +38,6 @@ public class ProtocolConfig extends AbstractConfig {
     protected Integer maxContentLength;
     // server支持的最大连接数
     protected Integer maxServerConnections;
-    // endpoint factory
-    protected String endpointFactory;
     // 采用哪种cluster 的实现
     protected String cluster;
     // loadBalance 方式
@@ -35,12 +46,6 @@ public class ProtocolConfig extends AbstractConfig {
     protected String haStrategy;
     // server worker queue size
     protected Integer workerQueueSize;
-    // 服务协议
-    private String name;
-    // 序列化方式
-    private String serialization;
-    // 协议编码
-    private String codec;
 
     // 扩展参数
     private Map<String, String> parameters;
@@ -52,6 +57,24 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    @ConfigDesc(excluded = true)
+    public String getHost() {
+        return host;
+    }
+
+    public void setHost(String host) {
+        this.host = host;
+    }
+
+    @ConfigDesc(excluded = true)
+    public Integer getPort() {
+        return port;
+    }
+
+    public void setPort(Integer port) {
+        this.port = port;
     }
 
     public String getSerialization() {
