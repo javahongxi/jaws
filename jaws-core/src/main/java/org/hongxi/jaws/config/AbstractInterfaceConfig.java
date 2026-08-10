@@ -35,6 +35,8 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     @Serial
     private static final long serialVersionUID = 4841644071068578653L;
 
+    // ========== Server & Client 共享配置 ==========
+
     // 暴露、使用的协议，暴露可以使用多种协议，但client只能用一种协议进行访问，原因是便于client的管理
     protected List<ProtocolConfig> protocols;
 
@@ -56,8 +58,24 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 过滤器
     protected String filter;
 
+    // 具体到方法的配置
+    protected List<MethodConfig> methods;
+
+    // 解析后的所有注册中心url
+    protected List<URL> registryUrls = new ArrayList<>();
+
+    // ========== Server 独有配置 ==========
+
     // 是否共享 channel
     protected Boolean shareChannel;
+
+    // 是否记录访问日志，true记录，false不记录
+    protected String accessLog;
+
+    // 是否需要传输rpc server 端业务异常栈。默认true
+    protected Boolean transExceptionStack;
+
+    // ========== Client 独有配置 ==========
 
     // if throw exception when call failure，the default value is true
     protected Boolean throwException;
@@ -65,20 +83,11 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 请求超时时间
     protected Integer requestTimeout;
 
-    // 是否记录访问日志，true记录，false不记录
-    protected String accessLog;
-
     // 是否进行check，如果为true，则在检测失败后抛异常
     protected Boolean check;
 
     // 重试次数
     protected Integer retries;
-
-    // 是否需要传输rpc server 端业务异常栈。默认true
-    protected Boolean transExceptionStack;
-
-    // 具体到方法的配置
-    protected List<MethodConfig> methods;
 
     // 采用哪种 cluster 的实现
     protected String cluster;
@@ -88,9 +97,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     // high available strategy
     protected String haStrategy;
-
-    // 解析后的所有注册中心url
-    protected List<URL> registryUrls = new ArrayList<>();
 
     /*
      * 解析注册中心URL
@@ -196,6 +202,8 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
     }
 
+    // ========== Server & Client 共享配置 getter/setter ==========
+
     public List<ProtocolConfig> getProtocols() {
         return protocols;
     }
@@ -260,6 +268,16 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.filter = filter;
     }
 
+    public List<MethodConfig> getMethods() {
+        return methods;
+    }
+
+    public void setMethods(List<MethodConfig> methods) {
+        this.methods = methods;
+    }
+
+    // ========== Server 独有配置 getter/setter ==========
+
     public Boolean getShareChannel() {
         return shareChannel;
     }
@@ -267,6 +285,24 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     public void setShareChannel(Boolean shareChannel) {
         this.shareChannel = shareChannel;
     }
+
+    public String getAccessLog() {
+        return accessLog;
+    }
+
+    public void setAccessLog(String accessLog) {
+        this.accessLog = accessLog;
+    }
+
+    public Boolean getTransExceptionStack() {
+        return transExceptionStack;
+    }
+
+    public void setTransExceptionStack(Boolean transExceptionStack) {
+        this.transExceptionStack = transExceptionStack;
+    }
+
+    // ========== Client 独有配置 getter/setter ==========
 
     public Boolean getThrowException() {
         return throwException;
@@ -284,14 +320,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.requestTimeout = requestTimeout;
     }
 
-    public String getAccessLog() {
-        return accessLog;
-    }
-
-    public void setAccessLog(String accessLog) {
-        this.accessLog = accessLog;
-    }
-
     public Boolean getCheck() {
         return check;
     }
@@ -306,22 +334,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     public void setRetries(Integer retries) {
         this.retries = retries;
-    }
-
-    public Boolean getTransExceptionStack() {
-        return transExceptionStack;
-    }
-
-    public void setTransExceptionStack(Boolean transExceptionStack) {
-        this.transExceptionStack = transExceptionStack;
-    }
-
-    public List<MethodConfig> getMethods() {
-        return methods;
-    }
-
-    public void setMethods(List<MethodConfig> methods) {
-        this.methods = methods;
     }
 
     public String getCluster() {
