@@ -42,7 +42,6 @@ public enum URLParamType {
 
     /** multi services share the same channel (port) */
     shareChannel("shareChannel", true),
-    asyncInitConnection("asyncInitConnection", false),
     fusingThreshold("fusingThreshold", 10),
 
     heartbeatFactory("heartbeatFactory", "jaws"),

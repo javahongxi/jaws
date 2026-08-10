@@ -43,6 +43,10 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
      */
     private final AtomicBoolean initialized = new AtomicBoolean(false);
 
+    /**
+     * ClusterSupport instances for each protocol, responsible for registry subscription,
+     * provider discovery and Reference lifecycle management. One ClusterSupport per protocol.
+     */
     private List<ClusterSupport<T>> clusterSupports;
 
     /**
@@ -59,8 +63,6 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
      * The real interface name to invoke when using generic invocation
      */
     private String serviceInterface;
-
-    protected Boolean asyncInitConnection;
 
     public T getRef() {
         if (ref == null) {
@@ -143,7 +145,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
                         urlBuilder.append(StringTools.urlEncode(directCopy.toFullStr())).append(JawsConstants.COMMA_SEPARATOR);
                     }
                 }
-                if (urlBuilder.length() > 0) {
+                if (!urlBuilder.isEmpty()) {
                     urlBuilder.deleteCharAt(urlBuilder.length() - 1);
                     regUrl.addParameter(URLParamType.directUrl.getName(), urlBuilder.toString());
                 }
@@ -216,13 +218,5 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
 
     public void setGeneric(boolean generic) {
         this.generic = generic;
-    }
-
-    public Boolean getAsyncInitConnection() {
-        return asyncInitConnection;
-    }
-
-    public void setAsyncInitConnection(Boolean asyncInitConnection) {
-        this.asyncInitConnection = asyncInitConnection;
     }
 }

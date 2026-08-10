@@ -1,8 +1,6 @@
 package org.hongxi.jaws.transport;
 
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
-import org.hongxi.jaws.common.threadpool.StandardThreadPoolExecutor;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.MathUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -12,7 +10,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -21,8 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class AbstractSharedPoolClient extends AbstractClient {
     private static final Logger log = LoggerFactory.getLogger(AbstractSharedPoolClient.class);
 
-    private static final ThreadPoolExecutor EXECUTOR = new StandardThreadPoolExecutor(1, 300, 20000,
-            new DefaultThreadFactory("AbstractPoolClient-initPool-", true));
     private final AtomicInteger idx = new AtomicInteger();
     protected SharedObjectFactory<Channel> factory;
     protected List<Channel> channels;
@@ -45,19 +40,10 @@ public abstract class AbstractSharedPoolClient extends AbstractClient {
             channels.add(factory.makeObject());
         }
 
-        initConnections(url.getBooleanParameter(URLParamType.asyncInitConnection.getName(),
-                URLParamType.asyncInitConnection.boolValue()));
+        createConnections();
     }
 
     protected abstract SharedObjectFactory<Channel> createChannelFactory();
-
-    protected void initConnections(boolean async) {
-        if (async) {
-            EXECUTOR.execute(() -> createConnections());
-        } else {
-            createConnections();
-        }
-    }
 
     private void createConnections() {
         for (Channel channel : channels) {
