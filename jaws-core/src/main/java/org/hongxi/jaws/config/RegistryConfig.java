@@ -3,38 +3,51 @@ package org.hongxi.jaws.config;
 import java.io.Serial;
 
 /**
- * registry config
- * <p>
  * Created by shenhongxi on 2021/3/5.
  */
-
 public class RegistryConfig extends AbstractConfig {
 
     @Serial
     private static final long serialVersionUID = 3236055928361714933L;
 
-    // 注册协议
+    /**
+     * Protocol used for the register center.
+     */
     private String protocol;
 
-    // 注册中心地址，支持多个ip+port，格式：(protocol://)ip1:port1,ip2:port2,ip3，如果没有port，则使用默认的port
+    /**
+     * Register center address.
+     */
     private String address;
 
-    // 注册中心缺省端口
+    /**
+     * Default port for the register center.
+     */
     private Integer port;
 
-    // 注册中心用户名（如Nacos鉴权）
+    /**
+     * Username to login the register center.
+     */
     private String username;
 
-    // 注册中心密码（如Nacos鉴权）
+    /**
+     * Password to login the register center.
+     */
     private String password;
 
-    // 注册中心连接超时时间(毫秒)
+    /**
+     * Connect timeout in milliseconds for the register center.
+     */
     private Integer connectTimeout;
 
-    // 注册中心会话超时时间(毫秒)
+    /**
+     * Session timeout in milliseconds for the register center.
+     */
     private Integer registrySessionTimeout;
 
-    // 失败后重试的时间间隔
+    /**
+     * Failed retry period in milliseconds for the register center.
+     */
     private Integer registryRetryPeriod;
 
     public String getProtocol() {

@@ -127,7 +127,6 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
     private ClusterSupport<T> createClusterSupport(URL refUrl, ServiceDeployer serviceDeployer) {
         List<URL> regUrls = new ArrayList<>();
 
-        // 如果用户指定directUrls 或者 injvm协议访问，则使用local registry
         if (StringUtils.isNotBlank(directUrl) || JawsConstants.PROTOCOL_INJVM.equals(refUrl.getProtocol())) {
             URL regUrl =
                     new URL(JawsConstants.REGISTRY_PROTOCOL_LOCAL, NetUtils.LOCALHOST, JawsConstants.DEFAULT_INT_VALUE,
@@ -152,7 +151,6 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
             }
             regUrls.add(regUrl);
         } else {
-            // 通过注册中心配置拼装URL，注册中心可能在本地，也可能在远端
             if (registryUrls == null || registryUrls.isEmpty()) {
                 throw new IllegalStateException(
                         String.format(

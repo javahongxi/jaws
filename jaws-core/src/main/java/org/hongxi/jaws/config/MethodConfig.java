@@ -11,13 +11,24 @@ public class MethodConfig extends AbstractConfig {
     @Serial
     private static final long serialVersionUID = -1996115906176873773L;
 
-    // 方法名
+    /**
+     * The method name
+     */
     private String name;
-    // 参数类型（逗号分隔）
+
+    /**
+     * The argument types of method, split by comma
+     */
     private String argumentTypes;
-    // 超时时间
+
+    /**
+     * The request timeout
+     */
     private Integer requestTimeout;
-    // 失败重试次数（默认为0，不重试）
+
+    /**
+     * The retries times when request failed
+     */
     private Integer retries;
 
     @ConfigDesc(excluded = true)

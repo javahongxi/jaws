@@ -21,7 +21,8 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * Created by shenhongxi on 2021/3/6.
+ * Default implementation of {@link ServiceDeployer} that handles service export, unexport,
+ * and reference operations including registry integration and graceful shutdown.
  */
 @SpiMeta(name = JawsConstants.DEFAULT_VALUE)
 public class SimpleServiceDeployer implements ServiceDeployer {
@@ -31,7 +32,7 @@ public class SimpleServiceDeployer implements ServiceDeployer {
     @Override
     public <T> Exporter<T> export(Class<T> interfaceClass, T ref, List<URL> registryUrls, URL serviceUrl) {
         // export service
-        // 利用protocol decorator来增加filter特性
+        // Use protocol decorator to add filter capability
         String protocolName = serviceUrl.getParameter(URLParamType.protocol.getName(), URLParamType.protocol.value());
         Protocol delegate = ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(protocolName);
         Provider<T> provider = getProvider(ref, serviceUrl, interfaceClass);
@@ -120,7 +121,7 @@ public class SimpleServiceDeployer implements ServiceDeployer {
         // record startup timestamp for consumer-side warm-up calculation
         serviceUrl.addParameter(URLParamType.timestamp.getName(), String.valueOf(System.currentTimeMillis()));
         for (URL url : registryUrls) {
-            // 根据check参数的设置，register失败可能会抛异常，上层应该知晓
+            // Depending on the check parameter, register failure may throw an exception that the caller should be aware of
             RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
             if (registryFactory == null) {
                 throw new JawsFrameworkException(new JawsErrorMsg(500, JawsErrorMsgConstants.FRAMEWORK_REGISTER_ERROR_CODE,
@@ -134,7 +135,7 @@ public class SimpleServiceDeployer implements ServiceDeployer {
 
     private void unRegister(Collection<URL> registryUrls, URL serviceUrl) {
         for (URL url : registryUrls) {
-            // 不管check的设置如何，做完所有unregistry，做好清理工作
+            // Regardless of the check setting, always attempt to unregister all and clean up properly
             try {
                 RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
                 Registry registry = registryFactory.getRegistry(url);

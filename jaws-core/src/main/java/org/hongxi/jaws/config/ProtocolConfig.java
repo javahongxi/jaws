@@ -11,38 +11,80 @@ public class ProtocolConfig extends AbstractConfig {
     @Serial
     private static final long serialVersionUID = 7605496816982926360L;
 
-    // 服务协议
+    /**
+     * The name of the protocol.
+     */
     private String name;
-    // 服务host
+
+    /**
+     * The service's IP address (useful when there are multiple network cards available).
+     */
     private String host;
-    // 服务port
+
+    /**
+     * The service's port number.
+     */
     private Integer port;
-    // 序列化方式
+
+    /**
+     * The serialization method.
+     */
     private String serialization;
-    // 协议编码
+
+    /**
+     * The protocol codec.
+     */
     private String codec;
-    // endpoint factory
+
+    /**
+     * The endpoint factory.
+     */
     protected String endpointFactory;
 
-    // server端
-    // server支持的最大连接数
+    // server side
+
+    /**
+     * The maximum number of server connections.
+     */
     protected Integer maxServerConnections;
-    // 最小工作pool线程数
+
+    /**
+     * The minimum number of worker threads.
+     */
     protected Integer minWorkerThreads;
-    // 最大工作pool线程数
+
+    /**
+     * The maximum number of worker threads.
+     */
     protected Integer maxWorkerThreads;
-    // server worker queue size
+
+    /**
+     * The worker queue size.
+     */
     protected Integer workerQueueSize;
 
-    // client端
-    // client最小连接数
+    // client side
+
+    /**
+     * The minimum number of client connections.
+     */
     protected Integer minClientConnections;
-    // client最大连接数
+
+    /**
+     * The maximum number of client connections.
+     */
     protected Integer maxClientConnections;
+
+    /**
+     * The maximum number of connections per group.
+     */
     protected Integer maxConnectionsPerGroup;
 
-    // server & client共用
-    // 请求响应包的最大长度限制
+    // server & client side
+
+    /**
+     * The maximum content length.
+     */
     protected Integer maxContentLength;
 
     @ConfigDesc(key = "protocol", required = true)
@@ -96,7 +138,7 @@ public class ProtocolConfig extends AbstractConfig {
         this.endpointFactory = endpointFactory;
     }
 
-    // --- server端 getter/setter ---
+    // --- server-only getter/setter ---
 
     public Integer getMaxServerConnections() {
         return maxServerConnections;
@@ -130,7 +172,7 @@ public class ProtocolConfig extends AbstractConfig {
         this.workerQueueSize = workerQueueSize;
     }
 
-    // --- client端 getter/setter ---
+    // --- client-only getter/setter ---
 
     public Integer getMinClientConnections() {
         return minClientConnections;
@@ -156,7 +198,7 @@ public class ProtocolConfig extends AbstractConfig {
         this.maxConnectionsPerGroup = maxConnectionsPerGroup;
     }
 
-    // --- server & client共用 getter/setter ---
+    // --- server & client shared getter/setter ---
 
     public Integer getMaxContentLength() {
         return maxContentLength;

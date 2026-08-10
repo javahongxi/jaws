@@ -31,21 +31,39 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
     private static final Logger log = LoggerFactory.getLogger(ServiceConfig.class);
 
+    /**
+     * Set of identities of all exported services, used to prevent duplicate exports
+     */
     private static final ConcurrentHashSet<String> EXPORTED_SERVICES = new ConcurrentHashSet<>();
 
+    /**
+     * Dynamic port counter for shareChannel mode with no explicit port configured
+     */
     private static int dynamicPort = -1;
 
+    /**
+     * The service interface class
+     */
     private Class<T> interfaceClass;
 
-    // 接口实现类引用
+    /**
+     * Reference to the interface implementation
+     */
     private T ref;
 
+    /**
+     * Whether this service has been exported
+     */
     private final AtomicBoolean exported = new AtomicBoolean(false);
 
-    // service 对应的exporters，用于管理service服务的生命周期
+    /**
+     * Exporters for this service, used to manage the service lifecycle
+     */
     private final List<Exporter<T>> exporters = new CopyOnWriteArrayList<>();
 
-    // service auth token, empty means no auth
+    /**
+     * Service auth token, empty means no auth
+     */
     private String token;
 
     public synchronized void export() {
@@ -113,7 +131,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
         List<URL> registryUrls = new ArrayList<>();
 
-        // injvm 协议只支持注册到本地，其他协议可以注册到local、remote
+        // injvm protocol only supports local registration; other protocols can register to local or remote
         if (JawsConstants.PROTOCOL_INJVM.equals(protocolName)) {
             URL localRegistryUrl = null;
             for (URL ru : this.registryUrls) {

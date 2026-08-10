@@ -24,12 +24,18 @@ public class AbstractConfig implements Serializable {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractConfig.class);
 
+    /**
+     * Suffixes to strip when deriving the config tag name (e.g. "ServiceConfig" -> "service").
+     */
     private static final String[] SUFFIXES = new String[]{"Config", "Bean"};
 
+    /**
+     * The unique identifier of this config instance.
+     */
     protected String id;
 
     /**
-     * 按顺序进行config 参数append and override，按照configs出现的顺序，后面的会覆盖前面的相同名称的参数
+     * Append and override config parameters in order; later configs override earlier ones with the same key.
      *
      * @param parameters
      * @param configs
@@ -59,7 +65,7 @@ public class AbstractConfig implements Serializable {
     }
 
     /**
-     * 将config 参数录入Map中
+     * Append config properties into the given parameter map.
      *
      * @param parameters
      */
@@ -153,7 +159,7 @@ public class AbstractConfig implements Serializable {
             }
             return buf.toString();
         } catch (Throwable t) {
-            // 防御性容错
+            // Defensive error handling
             log.warn(t.getMessage(), t);
             return super.toString();
         }

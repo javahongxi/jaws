@@ -19,13 +19,14 @@ import java.util.*;
 
 /**
  * <pre>
- * Interface config，
+ * Interface config.
  *
- * 配置约定
- * 	  1 service 和 reference 端相同的参数的含义一定相同；
- *    2 service端参数的覆盖策略：protocol -> service，前面的配置会被后面的config参数覆盖；
- *    3 registry 参数不进入service、reference端的参数列表；
- *    4 reference端以注册中心返回的server URL为基础，用reference参数覆盖（application、module保留server端的值）
+ * Configuration conventions:
+ *   1. The meaning of the same parameter on service and reference sides must be identical;
+ *   2. Service-side parameter override strategy: protocol -> service, earlier config is overridden by later config;
+ *   3. Registry parameters do not enter the parameter list of service/reference;
+ *   4. The reference side uses the server URL returned by the registry as the base,
+ *      overriding with reference parameters (application and module retain server-side values).
  * </pre>
  * <p>
  * Created by shenhongxi on 2021/3/5.
@@ -35,71 +36,109 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     @Serial
     private static final long serialVersionUID = 4841644071068578653L;
 
-    // ========== Server & Client 共享配置 ==========
+    // ========== Server & Client shared configuration ==========
 
-    // 暴露、使用的协议，暴露可以使用多种协议，但client只能用一种协议进行访问，原因是便于client的管理
+    /**
+     * List of protocols for service exposure or reference.
+     */
     protected List<ProtocolConfig> protocols;
 
-    // 注册中心的配置列表
+    /**
+     * Registries for service registration or discovery.
+     */
     protected List<RegistryConfig> registries;
 
-    // 应用名称
+    /**
+     * The application name.
+     */
     protected String application;
 
-    // 模块名称
+    /**
+     * The module name.
+     */
     protected String module;
 
-    // 分组
+    /**
+     * The service group.
+     */
     protected String group;
 
-    // 服务版本
+    /**
+     * The service version.
+     */
     protected String version;
 
-    // 过滤器
+    /**
+     * Filters for service exposure or reference (multiple filters can be separated by commas).
+     */
     protected String filter;
 
-    // 具体到方法的配置
+    /**
+     * Method-specific configuration.
+     */
     protected List<MethodConfig> methods;
 
-    // 解析后的所有注册中心url
+    /**
+     * Parsed registry URLs
+     */
     protected List<URL> registryUrls = new ArrayList<>();
 
-    // ========== Server 独有配置 ==========
+    // ========== Server-only configuration ==========
 
-    // 是否共享 channel
+    /**
+     * Whether to share the channel.
+     */
     protected Boolean shareChannel;
 
-    // 是否记录访问日志，true记录，false不记录
+    /**
+     * Whether to log access records; true = log, false = do not log.
+     */
     protected String accessLog;
 
-    // 是否需要传输rpc server 端业务异常栈。默认true
+    /**
+     * Whether to transmit the RPC server-side business exception stack; default is true.
+     */
     protected Boolean transExceptionStack;
 
-    // ========== Client 独有配置 ==========
+    // ========== Client-only configuration ==========
 
-    // if throw exception when call failure，the default value is true
+    /**
+     * Whether to throw exception on call failure; default is true.
+     */
     protected Boolean throwException;
 
-    // 请求超时时间
+    /**
+     * Request timeout in milliseconds.
+     */
     protected Integer requestTimeout;
 
-    // 是否进行check，如果为true，则在检测失败后抛异常
+    /**
+     * Whether to perform a startup check; if true, an exception is thrown when the check fails.
+     */
     protected Boolean check;
 
-    // 重试次数
+    /**
+     * Number of retries.
+     */
     protected Integer retries;
 
-    // 采用哪种 cluster 的实现
+    /**
+     * Which cluster implementation to use.
+     */
     protected String cluster;
 
-    // loadBalance 方式
+    /**
+     * Load balancing strategy.
+     */
     protected String loadBalance;
 
-    // high available strategy
+    /**
+     * High available strategy.
+     */
     protected String haStrategy;
 
-    /*
-     * 解析注册中心URL
+    /**
+     * Parse registry URLs.
      */
     protected void loadRegistryUrls() {
         registryUrls.clear();
@@ -116,7 +155,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 map.put(URLParamType.path.getName(), RegistryService.class.getName());
                 map.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
-                // 确定 registry protocol：优先从 address 解析，其次用 RegistryConfig.protocol，最后 fallback 到 local
+                // Determine registry protocol: prefer parsing from address, then RegistryConfig.protocol, finally fall back to local
                 String protocol;
                 if (address.contains(JawsConstants.PROTOCOL_SEPARATOR)) {
                     protocol = address.substring(0, address.indexOf(JawsConstants.PROTOCOL_SEPARATOR));
@@ -126,11 +165,11 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                     protocol = JawsConstants.REGISTRY_PROTOCOL_LOCAL;
                 }
                 map.put(URLParamType.protocol.getName(), protocol);
-                // address内部可能包含多个注册中心地址
+                // The address may contain multiple registry addresses
                 List<URL> urls = UrlUtils.parseURLs(address, map);
                 if (urls != null && !urls.isEmpty()) {
                     for (URL url : urls) {
-                        // 协议信息已编码在 URL 结构中，参数中不再保留
+                        // Protocol information is already encoded in the URL structure; no longer retained in parameters
                         url.removeParameter(URLParamType.protocol.getName());
                         registryUrls.add(url);
                     }
@@ -149,7 +188,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         if (methods == null || methods.isEmpty()) {
             return;
         }
-        // 检查方法是否在接口中存在
+        // Check whether each method exists in the interface
         for (MethodConfig methodBean : methods) {
             String methodName = methodBean.getName();
             if (methodName == null || methodName.isEmpty()) {
@@ -202,7 +241,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
     }
 
-    // ========== Server & Client 共享配置 getter/setter ==========
+    // ========== Server & Client shared configuration getter/setter ==========
 
     public List<ProtocolConfig> getProtocols() {
         return protocols;
@@ -276,7 +315,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.methods = methods;
     }
 
-    // ========== Server 独有配置 getter/setter ==========
+    // ========== Server-only configuration getter/setter ==========
 
     public Boolean getShareChannel() {
         return shareChannel;
@@ -302,7 +341,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.transExceptionStack = transExceptionStack;
     }
 
-    // ========== Client 独有配置 getter/setter ==========
+    // ========== Client-only configuration getter/setter ==========
 
     public Boolean getThrowException() {
         return throwException;

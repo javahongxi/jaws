@@ -3,9 +3,12 @@ package org.hongxi.jaws.config.annotation;
 import java.lang.annotation.*;
 
 /**
- * 对配置参数的描述，用于通过配置方法进行配置属性自动装载
+ * Annotates getter methods in configuration classes to control how properties
+ * are exported into URL parameter maps via {@code AbstractConfig.appendConfigParams}.
  * <p>
- * Created by shenhongxi on 2021/3/5.
+ * By default, all public getter methods returning primitive/wrapper types are included.
+ * Use {@link #key()} to override the parameter key name, {@link #excluded()} to skip
+ * a getter, and {@link #required()} to enforce that the property must not be null or empty.
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
