@@ -49,8 +49,6 @@ public class ProtocolConfig extends AbstractConfig {
     private String codec;
     // IO线程池大小
     private Integer iothreads;
-    // 是否缺省配置
-    private Boolean isDefault;
 
     // 扩展参数
     private Map<String, String> parameters;
@@ -94,14 +92,6 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setCodec(String codec) {
         this.codec = codec;
-    }
-
-    public Boolean getIsDefault() {
-        return isDefault;
-    }
-
-    public void setIsDefault(Boolean isDefault) {
-        this.isDefault = isDefault;
     }
 
     public Integer getRequestTimeout() {
@@ -222,13 +212,5 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setRetries(Integer retries) {
         this.retries = retries;
-    }
-
-    public void setDefault(boolean isDefault) {
-        this.isDefault = isDefault;
-    }
-
-    public Boolean isDefault() {
-        return isDefault;
     }
 }

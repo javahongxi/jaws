@@ -108,7 +108,7 @@ public class AbstractConfig implements Serializable {
 
     private boolean isConfigMethod(Method method) {
         boolean checkMethod =
-                (method.getName().startsWith("get") || method.getName().startsWith("is")) && !"isDefault".equals(method.getName())
+                (method.getName().startsWith("get") || method.getName().startsWith("is"))
                         && Modifier.isPublic(method.getModifiers()) && method.getParameterTypes().length == 0
                         && isPrimitive(method.getReturnType());
 

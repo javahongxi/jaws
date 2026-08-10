@@ -238,11 +238,6 @@ public class JawsProperties {
         private String password;
 
         /**
-         * Request timeout in milliseconds.
-         */
-        private Integer requestTimeout;
-
-        /**
          * Connect timeout in milliseconds.
          */
         private Integer connectTimeout;
@@ -279,14 +274,6 @@ public class JawsProperties {
 
         public void setPassword(String password) {
             this.password = password;
-        }
-
-        public Integer getRequestTimeout() {
-            return requestTimeout;
-        }
-
-        public void setRequestTimeout(Integer requestTimeout) {
-            this.requestTimeout = requestTimeout;
         }
 
         public Integer getConnectTimeout() {

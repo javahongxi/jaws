@@ -101,15 +101,16 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 map.put(URLParamType.path.getName(), RegistryService.class.getName());
                 map.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
-                // 从 address 解析 registry protocol，临时放入参数中
-                if (!map.containsKey(URLParamType.protocol.getName())) {
-                    if (address.contains(JawsConstants.PROTOCOL_SEPARATOR)) {
-                        map.put(URLParamType.protocol.getName(),
-                                address.substring(0, address.indexOf(JawsConstants.PROTOCOL_SEPARATOR)));
-                    } else {
-                        map.put(URLParamType.protocol.getName(), JawsConstants.REGISTRY_PROTOCOL_LOCAL);
-                    }
+                // 确定 registry protocol：优先从 address 解析，其次用 RegistryConfig.protocol，最后 fallback 到 local
+                String protocol;
+                if (address.contains(JawsConstants.PROTOCOL_SEPARATOR)) {
+                    protocol = address.substring(0, address.indexOf(JawsConstants.PROTOCOL_SEPARATOR));
+                } else if (StringUtils.isNotBlank(config.getProtocol())) {
+                    protocol = config.getProtocol();
+                } else {
+                    protocol = JawsConstants.REGISTRY_PROTOCOL_LOCAL;
                 }
+                map.put(URLParamType.protocol.getName(), protocol);
                 // address内部可能包含多个注册中心地址
                 List<URL> urls = UrlUtils.parseURLs(address, map);
                 if (urls != null && !urls.isEmpty()) {

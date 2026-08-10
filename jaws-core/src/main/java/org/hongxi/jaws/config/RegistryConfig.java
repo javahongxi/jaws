@@ -31,9 +31,6 @@ public class RegistryConfig extends AbstractConfig {
     // 注册中心密码（如Nacos鉴权）
     private String password;
 
-    // 注册中心请求超时时间(毫秒)
-    private Integer requestTimeout;
-
     // 注册中心连接超时时间(毫秒)
     private Integer connectTimeout;
 
@@ -42,11 +39,6 @@ public class RegistryConfig extends AbstractConfig {
 
     // 失败后重试的时间间隔
     private Integer registryRetryPeriod;
-
-    private Boolean isDefault;
-
-    // vintage的配置移除策略，@see #RegistryConfig#Excise
-    private String excise;
 
     public String getProtocol() {
         return protocol;
@@ -96,14 +88,6 @@ public class RegistryConfig extends AbstractConfig {
         this.name = name;
     }
 
-    public Integer getRequestTimeout() {
-        return requestTimeout;
-    }
-
-    public void setRequestTimeout(Integer requestTimeout) {
-        this.requestTimeout = requestTimeout;
-    }
-
     public Integer getRegistrySessionTimeout() {
         return registrySessionTimeout;
     }
@@ -120,48 +104,11 @@ public class RegistryConfig extends AbstractConfig {
         this.registryRetryPeriod = registryRetryPeriod;
     }
 
-    public String getExcise() {
-        return excise;
-    }
-
-    public void setExcise(String excise) {
-        this.excise = excise;
-    }
-
-    public void setDefault(boolean isDefault) {
-        this.isDefault = isDefault;
-    }
-
-    public Boolean isDefault() {
-        return isDefault;
-    }
-
     public Integer getConnectTimeout() {
         return connectTimeout;
     }
 
     public void setConnectTimeout(Integer connectTimeout) {
         this.connectTimeout = connectTimeout;
-    }
-
-    /**
-     * <pre>
-     * vintage 的 excise 方式，static、dynamic、ratio；
-     * static表示使用静态列表，不剔除unreachable的node；dynamic完全剔除；ratio按比例提出。
-     * 配置方式，ratio直接使用数字，其他使用数字0-100.
-     * </pre>
-     */
-    public enum Excise {
-        STATIC("static"), DYNAMIC("dynamic"), RATIO("ratio");
-
-        private String name;
-
-        Excise(String n) {
-            this.name = n;
-        }
-
-        public String getName() {
-            return name;
-        }
     }
 }

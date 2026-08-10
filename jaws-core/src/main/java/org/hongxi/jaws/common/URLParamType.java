@@ -1,7 +1,5 @@
 package org.hongxi.jaws.common;
 
-import org.hongxi.jaws.config.RegistryConfig;
-
 /**
  * Created by shenhongxi on 2020/6/27.
  */
@@ -28,8 +26,6 @@ public enum URLParamType {
     maxConnectionsPerGroup("maxConnectionsPerGroup", 0),
 
     registryRetryPeriod("registryRetryPeriod", 30 * JawsConstants.SECOND_MILLS),
-    /** how to excise unavailable nodes from registry */
-    excise("excise", RegistryConfig.Excise.DYNAMIC.getName()),
     cluster("cluster", JawsConstants.DEFAULT_VALUE),
     loadbalance("loadbalance", "leastActive"),
     haStrategy("haStrategy", "failover"),

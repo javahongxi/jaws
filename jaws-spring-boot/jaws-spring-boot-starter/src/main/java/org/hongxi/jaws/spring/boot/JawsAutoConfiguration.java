@@ -75,9 +75,6 @@ public class JawsAutoConfiguration {
         if (registryProps.getPassword() != null) {
             registryConfig.setPassword(registryProps.getPassword());
         }
-        if (registryProps.getRequestTimeout() != null) {
-            registryConfig.setRequestTimeout(registryProps.getRequestTimeout());
-        }
         if (registryProps.getConnectTimeout() != null) {
             registryConfig.setConnectTimeout(registryProps.getConnectTimeout());
         }
