@@ -149,8 +149,7 @@ public class SampleConsumer {
     private static RegistryConfig createRegistryConfig(String protocolName) {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setProtocol(protocolName);
-        registryConfig.setName("defaultRegistry");
-        registryConfig.setId(registryConfig.getName());
+        registryConfig.setId("defaultRegistry");
         registryConfig.setAddress("127.0.0.1");
         registryConfig.setPort(2181);
         return registryConfig;

@@ -13,9 +13,6 @@ public class RegistryConfig extends AbstractConfig {
     @Serial
     private static final long serialVersionUID = 3236055928361714933L;
 
-    // 注册配置名称
-    private String name;
-
     // 注册协议
     private String protocol;
 
@@ -78,14 +75,6 @@ public class RegistryConfig extends AbstractConfig {
 
     public void setPassword(String password) {
         this.password = password;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
     }
 
     public Integer getRegistrySessionTimeout() {

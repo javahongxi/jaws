@@ -166,11 +166,6 @@ public class JawsProperties {
         private String endpointFactory = "netty";
 
         /**
-         * Request timeout in milliseconds.
-         */
-        private Integer requestTimeout;
-
-        /**
          * Codec type.
          */
         private String codec;
@@ -197,14 +192,6 @@ public class JawsProperties {
 
         public void setEndpointFactory(String endpointFactory) {
             this.endpointFactory = endpointFactory;
-        }
-
-        public Integer getRequestTimeout() {
-            return requestTimeout;
-        }
-
-        public void setRequestTimeout(Integer requestTimeout) {
-            this.requestTimeout = requestTimeout;
         }
 
         public String getCodec() {

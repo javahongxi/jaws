@@ -82,8 +82,7 @@ public class GenericSampleConsumer {
     private static RegistryConfig createRegistryConfig() {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setProtocol(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
-        registryConfig.setName("defaultRegistry");
-        registryConfig.setId(registryConfig.getName());
+        registryConfig.setId("defaultRegistry");
         registryConfig.setAddress("127.0.0.1");
         registryConfig.setPort(2181);
         return registryConfig;

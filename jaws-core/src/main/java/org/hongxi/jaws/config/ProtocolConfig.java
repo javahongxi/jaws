@@ -12,13 +12,11 @@ public class ProtocolConfig extends AbstractConfig {
 
     @Serial
     private static final long serialVersionUID = 7605496816982926360L;
-    // 请求超时
-    protected Integer requestTimeout;
     // client最小连接数
     protected Integer minClientConnections;
     // client最大连接数
     protected Integer maxClientConnections;
-    protected Integer maxConnectionPerGroup;
+    protected Integer maxConnectionsPerGroup;
     // 最小工作pool线程数
     protected Integer minWorkerThreads;
     // 最大工作pool线程数
@@ -37,18 +35,12 @@ public class ProtocolConfig extends AbstractConfig {
     protected String haStrategy;
     // server worker queue size
     protected Integer workerQueueSize;
-    // filter, 多个filter用","分割，blank string 表示采用默认的filter配置
-    protected String filter;
-    // retry count if call failure
-    protected Integer retries;
     // 服务协议
     private String name;
     // 序列化方式
     private String serialization;
     // 协议编码
     private String codec;
-    // IO线程池大小
-    private Integer iothreads;
 
     // 扩展参数
     private Map<String, String> parameters;
@@ -78,28 +70,12 @@ public class ProtocolConfig extends AbstractConfig {
         this.parameters = parameters;
     }
 
-    public Integer getIothreads() {
-        return iothreads;
-    }
-
-    public void setIothreads(Integer iothreads) {
-        this.iothreads = iothreads;
-    }
-
     public String getCodec() {
         return codec;
     }
 
     public void setCodec(String codec) {
         this.codec = codec;
-    }
-
-    public Integer getRequestTimeout() {
-        return requestTimeout;
-    }
-
-    public void setRequestTimeout(Integer requestTimeout) {
-        this.requestTimeout = requestTimeout;
     }
 
     public Integer getMinClientConnections() {
@@ -118,12 +94,12 @@ public class ProtocolConfig extends AbstractConfig {
         this.maxClientConnections = maxClientConnections;
     }
 
-    public Integer getMaxConnectionPerGroup() {
-        return maxConnectionPerGroup;
+    public Integer getMaxConnectionsPerGroup() {
+        return maxConnectionsPerGroup;
     }
 
-    public void setMaxConnectionPerGroup(Integer maxConnectionPerGroup) {
-        this.maxConnectionPerGroup = maxConnectionPerGroup;
+    public void setMaxConnectionsPerGroup(Integer maxConnectionsPerGroup) {
+        this.maxConnectionsPerGroup = maxConnectionsPerGroup;
     }
 
     public Integer getMinWorkerThreads() {
@@ -198,19 +174,4 @@ public class ProtocolConfig extends AbstractConfig {
         this.workerQueueSize = workerQueueSize;
     }
 
-    public String getFilter() {
-        return filter;
-    }
-
-    public void setFilter(String filter) {
-        this.filter = filter;
-    }
-
-    public Integer getRetries() {
-        return retries;
-    }
-
-    public void setRetries(Integer retries) {
-        this.retries = retries;
-    }
 }

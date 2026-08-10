@@ -52,9 +52,6 @@ public class JawsAutoConfiguration {
         protocolConfig.setId(protocolProps.getName());
         protocolConfig.setEndpointFactory(protocolProps.getEndpointFactory());
         protocolConfig.setSerialization(protocolProps.getSerialization());
-        if (protocolProps.getRequestTimeout() != null) {
-            protocolConfig.setRequestTimeout(protocolProps.getRequestTimeout());
-        }
         if (protocolProps.getCodec() != null) {
             protocolConfig.setCodec(protocolProps.getCodec());
         }
@@ -66,8 +63,7 @@ public class JawsAutoConfiguration {
     public RegistryConfig registryConfig() {
         JawsProperties.Registry registryProps = properties.getRegistry();
         RegistryConfig registryConfig = new RegistryConfig();
-        registryConfig.setName("defaultRegistry");
-        registryConfig.setId(registryConfig.getName());
+        registryConfig.setId("defaultRegistry");
         registryConfig.setAddress(registryProps.getAddress());
         if (registryProps.getUsername() != null) {
             registryConfig.setUsername(registryProps.getUsername());
