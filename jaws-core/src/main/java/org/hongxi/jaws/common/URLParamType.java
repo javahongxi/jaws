@@ -27,7 +27,7 @@ public enum URLParamType {
 
     registryRetryPeriod("registryRetryPeriod", 30 * JawsConstants.SECOND_MILLS),
     cluster("cluster", JawsConstants.DEFAULT_VALUE),
-    loadbalance("loadbalance", "leastActive"),
+    loadBalance("loadBalance", "leastActive"),
     haStrategy("haStrategy", "failover"),
     protocol("protocol", JawsConstants.PROTOCOL_JAWS),
     path("path", ""),

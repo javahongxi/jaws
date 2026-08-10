@@ -411,13 +411,13 @@ public class ClusterSupport<T> implements NotifyListener {
 
     private void prepareCluster() {
         String clusterName = url.getParameter(URLParamType.cluster.getName(), URLParamType.cluster.value());
-        String loadbalanceName = url.getParameter(URLParamType.loadbalance.getName(), URLParamType.loadbalance.value());
+        String loadBalanceName = url.getParameter(URLParamType.loadBalance.getName(), URLParamType.loadBalance.value());
         String haStrategyName = url.getParameter(URLParamType.haStrategy.getName(), URLParamType.haStrategy.value());
 
         // noinspection unchecked
         cluster = ExtensionLoader.getExtensionLoader(Cluster.class).getExtension(clusterName);
         // noinspection unchecked
-        LoadBalance<T> loadBalance = ExtensionLoader.getExtensionLoader(LoadBalance.class).getExtension(loadbalanceName);
+        LoadBalance<T> loadBalance = ExtensionLoader.getExtensionLoader(LoadBalance.class).getExtension(loadBalanceName);
         // noinspection unchecked
         HaStrategy<T> ha = ExtensionLoader.getExtensionLoader(HaStrategy.class).getExtension(haStrategyName);
         ha.setUrl(url);

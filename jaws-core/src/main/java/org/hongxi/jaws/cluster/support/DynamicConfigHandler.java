@@ -66,10 +66,10 @@ public class DynamicConfigHandler<T> implements ConfigListener {
     private synchronized void applyDynamicConfig(JSONObject config) {
         boolean strategyChanged = false;
 
-        // update loadbalance if changed
-        String newLb = config.getString("loadbalance");
+        // update loadBalance if changed
+        String newLb = config.getString("loadBalance");
         if (StringUtils.isNotBlank(newLb)) {
-            String currentLb = url.getParameter(URLParamType.loadbalance.getName(), URLParamType.loadbalance.value());
+            String currentLb = url.getParameter(URLParamType.loadBalance.getName(), URLParamType.loadBalance.value());
             if (!newLb.equals(currentLb)) {
                 try {
                     LoadBalance<T> newLoadBalance = ExtensionLoader.getExtensionLoader(LoadBalance.class).getExtension(newLb);
@@ -78,14 +78,14 @@ public class DynamicConfigHandler<T> implements ConfigListener {
                     if (weightStr != null) {
                         newLoadBalance.setWeightString(weightStr);
                     }
-                    url.addParameter(URLParamType.loadbalance.getName(), newLb);
+                    url.addParameter(URLParamType.loadBalance.getName(), newLb);
                     cluster.setLoadBalance(newLoadBalance);
-                    // re-feed references to the new loadbalance
+                    // re-feed references to the new loadBalance
                     newLoadBalance.onRefresh(cluster.getReferences());
                     strategyChanged = true;
-                    log.info("DynamicConfigHandler loadbalance switched: {} -> {}", currentLb, newLb);
+                    log.info("DynamicConfigHandler loadBalance switched: {} -> {}", currentLb, newLb);
                 } catch (Exception e) {
-                    log.warn("DynamicConfigHandler failed to switch loadbalance to {}: {}", newLb, e.getMessage());
+                    log.warn("DynamicConfigHandler failed to switch loadBalance to {}: {}", newLb, e.getMessage());
                 }
             }
         }

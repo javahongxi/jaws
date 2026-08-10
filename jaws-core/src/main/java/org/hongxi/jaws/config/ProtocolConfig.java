@@ -29,8 +29,8 @@ public class ProtocolConfig extends AbstractConfig {
     protected String endpointFactory;
     // 采用哪种cluster 的实现
     protected String cluster;
-    // loadbalance 方式
-    protected String loadbalance;
+    // loadBalance 方式
+    protected String loadBalance;
     // high available strategy
     protected String haStrategy;
     // server worker queue size
@@ -150,12 +150,12 @@ public class ProtocolConfig extends AbstractConfig {
         this.cluster = cluster;
     }
 
-    public String getLoadbalance() {
-        return loadbalance;
+    public String getLoadBalance() {
+        return loadBalance;
     }
 
-    public void setLoadbalance(String loadbalance) {
-        this.loadbalance = loadbalance;
+    public void setLoadBalance(String loadBalance) {
+        this.loadBalance = loadBalance;
     }
 
     public String getHaStrategy() {
