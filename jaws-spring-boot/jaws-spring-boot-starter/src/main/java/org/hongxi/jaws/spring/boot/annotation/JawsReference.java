@@ -48,7 +48,7 @@ public @interface JawsReference {
     /**
      * Whether to check if the service is available on startup.
      */
-    String check() default "";
+    boolean check() default false;
 
     /**
      * Direct connect URL (bypasses registry). Format: "host:port".

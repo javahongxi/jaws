@@ -68,8 +68,8 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // 是否记录访问日志，true记录，false不记录
     protected String accessLog;
 
-    // 是否进行check，如果为true，则在监测失败后抛异常
-    protected String check;
+    // 是否进行check，如果为true，则在检测失败后抛异常
+    protected Boolean check;
 
     // 重试次数
     protected Integer retries;
@@ -283,11 +283,11 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.accessLog = accessLog;
     }
 
-    public String getCheck() {
+    public Boolean getCheck() {
         return check;
     }
 
-    public void setCheck(String check) {
+    public void setCheck(Boolean check) {
         this.check = check;
     }
 

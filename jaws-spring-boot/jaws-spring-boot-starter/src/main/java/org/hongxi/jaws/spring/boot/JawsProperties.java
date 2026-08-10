@@ -333,7 +333,7 @@ public class JawsProperties {
         /**
          * Whether to check service availability on startup.
          */
-        private String check;
+        private Boolean check;
 
         /**
          * Retry count on failure.
@@ -348,11 +348,11 @@ public class JawsProperties {
             this.requestTimeout = requestTimeout;
         }
 
-        public String getCheck() {
+        public Boolean getCheck() {
             return check;
         }
 
-        public void setCheck(String check) {
+        public void setCheck(Boolean check) {
             this.check = check;
         }
 

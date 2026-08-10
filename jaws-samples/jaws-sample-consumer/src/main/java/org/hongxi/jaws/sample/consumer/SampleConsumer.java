@@ -45,7 +45,7 @@ public class SampleConsumer {
         demoRef.setGroup("test");
         demoRef.setRequestTimeout(2000);
         demoRef.setVersion("2.0");
-        demoRef.setCheck("false");
+        demoRef.setCheck(false);
         demoRef.setProtocol(protocolConfig);
         demoRef.setRegistry(registryConfig);
 
@@ -102,7 +102,7 @@ public class SampleConsumer {
         orderRef.setModule("sample");
         orderRef.setGroup("test");
         orderRef.setVersion("2.0");
-        orderRef.setCheck("false");
+        orderRef.setCheck(false);
         orderRef.setProtocol(protocolConfig);
         orderRef.setRegistry(registryConfig);
 

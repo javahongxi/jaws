@@ -37,7 +37,7 @@ public class GenericSampleConsumer {
         ref.setGroup("test");
         ref.setVersion("2.0");
         ref.setRequestTimeout(3000);
-        ref.setCheck("false");
+        ref.setCheck(false);
         ref.setProtocol(protocolConfig);
         ref.setRegistry(registryConfig);
 

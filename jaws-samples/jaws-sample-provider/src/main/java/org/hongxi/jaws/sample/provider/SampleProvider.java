@@ -35,7 +35,7 @@ public class SampleProvider {
         demoServiceConfig.setRef(new DemoServiceImpl());
         demoServiceConfig.setApplication("sample-provider");
         demoServiceConfig.setModule("sample");
-        demoServiceConfig.setCheck("true");
+        demoServiceConfig.setCheck(true);
         demoServiceConfig.setInterface(DemoService.class);
         demoServiceConfig.setGroup("test");
         demoServiceConfig.setVersion("2.0");

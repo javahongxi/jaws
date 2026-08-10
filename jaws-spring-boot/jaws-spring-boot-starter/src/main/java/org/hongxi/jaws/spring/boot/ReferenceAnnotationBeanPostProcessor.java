@@ -95,10 +95,10 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
         }
 
         /* check: annotation > global reference */
-        String check = StringUtils.isNotBlank(jawsRef.check())
-                ? jawsRef.check() : properties.getReference().getCheck();
-        if (StringUtils.isNotBlank(check)) {
-            refConfig.setCheck(check);
+        if (jawsRef.check()) {
+            refConfig.setCheck(true);
+        } else if (properties.getReference().getCheck() != null) {
+            refConfig.setCheck(properties.getReference().getCheck());
         }
 
         /* retries */
