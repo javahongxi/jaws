@@ -41,8 +41,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     private static final Logger log = LoggerFactory.getLogger(NacosRegistry.class);
 
     private static final String METADATA_KEY_FULL_URL = "fullUrl";
-    private static final String METADATA_KEY_NODE_TYPE = "nodeType";
-    private static final String NODE_TYPE_AVAILABLE = "available";
 
     private final NamingService namingService;
     private final ConfigService configService;
@@ -232,8 +230,8 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         try {
             serverLock.lock();
             // Remove stale nodes that may not have been properly unregistered
-            removeInstance(url, NODE_TYPE_AVAILABLE);
-            registerInstance(url, NODE_TYPE_AVAILABLE);
+            removeInstance(url);
+            registerInstance(url);
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to register %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -246,7 +244,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     protected void doUnregister(URL url) {
         try {
             serverLock.lock();
-            removeInstance(url, NODE_TYPE_AVAILABLE);
+            removeInstance(url);
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to unregister %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -255,7 +253,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         }
     }
 
-    private void registerInstance(URL url, String nodeType) {
+    private void registerInstance(URL url) {
         try {
             String serviceName = NacosPathUtils.toServiceName(url);
             String group = NacosPathUtils.toGroup(url);
@@ -266,7 +264,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
             instance.setEphemeral(true);
             Map<String, String> metadata = new HashMap<>();
             metadata.put(METADATA_KEY_FULL_URL, url.toFullStr());
-            metadata.put(METADATA_KEY_NODE_TYPE, nodeType);
             instance.setMetadata(metadata);
             namingService.registerInstance(serviceName, group, instance);
         } catch (Exception e) {
@@ -274,21 +271,18 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         }
     }
 
-    private void removeInstance(URL url, String nodeType) {
+    private void removeInstance(URL url) {
         try {
             String serviceName = NacosPathUtils.toServiceName(url);
             String group = NacosPathUtils.toGroup(url);
             Instance instance = new Instance();
             instance.setIp(url.getHost());
             instance.setPort(url.getPort());
-            Map<String, String> metadata = new HashMap<>();
-            metadata.put(METADATA_KEY_NODE_TYPE, nodeType);
-            instance.setMetadata(metadata);
             namingService.deregisterInstance(serviceName, group, instance);
         } catch (Exception e) {
             // deregister may fail if instance not exists, just log and ignore
-            log.debug("[NacosRegistry] deregister instance failed, serviceName={}, nodeType={}, msg={}",
-                    NacosPathUtils.toServiceName(url), nodeType, e.getMessage());
+            log.debug("[NacosRegistry] deregister instance failed, serviceName={}, msg={}",
+                    NacosPathUtils.toServiceName(url), e.getMessage());
         }
     }
 

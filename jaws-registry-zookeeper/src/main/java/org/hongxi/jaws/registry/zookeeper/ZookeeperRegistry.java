@@ -52,12 +52,16 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         ShutdownHook.registerShutdownHook(this);
     }
 
-    public Map<URL, Map<ServiceListener, CuratorCache>> getServiceListeners() {
-        return serviceListeners;
-    }
-
-    public Map<URL, Map<CommandListener, CuratorCache>> getCommandListeners() {
-        return commandListeners;
+    @Override
+    protected void subscribeService(final URL url, final ServiceListener serviceListener) {
+        try {
+            clientLock.lock();
+            subscribeServiceInternal(url, serviceListener);
+        } catch (Throwable e) {
+            throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        } finally {
+            clientLock.unlock();
+        }
     }
 
     private void subscribeServiceInternal(final URL url, final ServiceListener serviceListener) {
@@ -96,10 +100,10 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
     }
 
     @Override
-    protected void subscribeService(final URL url, final ServiceListener serviceListener) {
+    protected void subscribeCommand(final URL url, final CommandListener commandListener) {
         try {
             clientLock.lock();
-            subscribeServiceInternal(url, serviceListener);
+            subscribeCommandInternal(url, commandListener);
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         } finally {
@@ -132,18 +136,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
 
         String commandPath = ZkUtils.toCommandPath(url);
         log.info("[ZookeeperRegistry] subscribe command: path={}, info={}", commandPath, url.toFullStr());
-    }
-
-    @Override
-    protected void subscribeCommand(final URL url, final CommandListener commandListener) {
-        try {
-            clientLock.lock();
-            subscribeCommandInternal(url, commandListener);
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            clientLock.unlock();
-        }
     }
 
     @Override
@@ -215,18 +207,13 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         }
     }
 
-    private void doRegisterInternal(URL url) {
-        // Remove stale nodes that may not have been properly unregistered
-        removeNode(url, ZkNodeType.AVAILABLE_SERVER);
-        removeNode(url, ZkNodeType.UNAVAILABLE_SERVER);
-        createNode(url, ZkNodeType.AVAILABLE_SERVER);
-    }
-
     @Override
     protected void doRegister(URL url) {
         try {
             serverLock.lock();
-            doRegisterInternal(url);
+            // Remove stale nodes that may not have been properly unregistered
+            removeNode(url, ZkNodeType.AVAILABLE_SERVER);
+            createNode(url, ZkNodeType.AVAILABLE_SERVER);
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to register %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         } finally {
@@ -239,7 +226,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         try {
             serverLock.lock();
             removeNode(url, ZkNodeType.AVAILABLE_SERVER);
-            removeNode(url, ZkNodeType.UNAVAILABLE_SERVER);
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to unregister %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         } finally {
@@ -324,7 +310,9 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
             try {
                 serverLock.lock();
                 for (URL url : getRegisteredServiceUrls()) {
-                    doRegisterInternal(url);
+                    // Remove stale nodes that may not have been properly unregistered
+                    removeNode(url, ZkNodeType.AVAILABLE_SERVER);
+                    createNode(url, ZkNodeType.AVAILABLE_SERVER);
                 }
                 log.info("[{}] reconnect: register services {}", registryClassName, allRegisteredServices);
             } finally {

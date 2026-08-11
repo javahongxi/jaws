@@ -6,10 +6,9 @@ package org.hongxi.jaws.registry.zookeeper;
 public enum ZkNodeType {
 
     AVAILABLE_SERVER("server"),
-    UNAVAILABLE_SERVER("unavailableServer"),
     CLIENT("client");
 
-    private String value;
+    private final String value;
 
     ZkNodeType(String value) {
         this.value = value;
