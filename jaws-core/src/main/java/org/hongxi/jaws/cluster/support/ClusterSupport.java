@@ -5,6 +5,7 @@ import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.HaStrategy;
 import org.hongxi.jaws.cluster.LoadBalance;
+import org.hongxi.jaws.cluster.loadbalance.AbstractLoadBalance;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -16,6 +17,9 @@ import org.hongxi.jaws.protocol.support.ProtocolFilterDecorator;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
+import org.hongxi.jaws.registry.support.command.CommandFailbackRegistry;
+import org.hongxi.jaws.registry.support.command.CommandRouter;
+import org.hongxi.jaws.registry.support.command.CommandServiceManager;
 import org.hongxi.jaws.rpc.Protocol;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.URL;
@@ -97,6 +101,9 @@ public class ClusterSupport<T> implements NotifyListener {
 
             // subscribe to dynamic config changes
             dynamicConfigHandler.subscribe(registry, subUrl);
+
+            // wire CommandRouter for IP-based route rule filtering at call time
+            setupCommandRouter(registry, subUrl);
         }
 
         boolean check = Boolean.parseBoolean(url.getParameter(URLParamType.check.getName(), URLParamType.check.value()));
@@ -142,6 +149,28 @@ public class ClusterSupport<T> implements NotifyListener {
     protected Registry getRegistry(URL url) {
         RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
         return registryFactory.getRegistry(url);
+    }
+
+    /**
+     * If the registry is a {@link CommandFailbackRegistry}, create a {@link CommandRouter}
+     * and add it to the load balance so that IP-based route rules are evaluated
+     * on every RPC call instead of at discover time.
+     */
+    private void setupCommandRouter(Registry registry, URL subscribeUrl) {
+        if (!(registry instanceof CommandFailbackRegistry)) {
+            return;
+        }
+        CommandFailbackRegistry cmdRegistry = (CommandFailbackRegistry) registry;
+        CommandServiceManager manager = cmdRegistry.getCommandManager(subscribeUrl);
+        if (manager == null) {
+            return;
+        }
+        LoadBalance<T> lb = cluster.getLoadBalance();
+        if (lb instanceof AbstractLoadBalance) {
+            // noinspection unchecked
+            ((AbstractLoadBalance<T>) lb).addRouter(new CommandRouter<>(manager, url.getPath()));
+            log.info("CommandRouter wired for service: {}", url.getPath());
+        }
     }
 
     private URL toSubscribeUrl(URL url) {

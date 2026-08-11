@@ -1,6 +1,8 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
 import org.hongxi.jaws.cluster.LoadBalance;
+import org.hongxi.jaws.cluster.Router;
+import org.hongxi.jaws.cluster.support.RouterChain;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -22,6 +24,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
     private static final Logger log = LoggerFactory.getLogger(AbstractLoadBalance.class);
     private List<Reference<T>> references;
     private volatile String weightString;
+    private volatile RouterChain<T> routerChain;
 
     @Override
     public void onRefresh(List<Reference<T>> references) {
@@ -32,7 +35,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
     @Override
     public Reference<T> select(Request request) {
-        List<Reference<T>> references = this.references;
+        List<Reference<T>> references = applyRouter(this.references, request);
         if (references == null) {
             throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call request:" + request);
         }
@@ -52,7 +55,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
     @Override
     public void selectToHolder(Request request, List<Reference<T>> refersHolder) {
-        List<Reference<T>> references = this.references;
+        List<Reference<T>> references = applyRouter(this.references, request);
 
         if (references == null) {
             throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call : references_size= 0 "
@@ -89,6 +92,42 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
     protected abstract Reference<T> doSelect(Request request);
 
     protected abstract void doSelectToHolder(Request request, List<Reference<T>> refersHolder);
+
+    /**
+     * Set the router chain for filtering references before selection.
+     */
+    public void setRouterChain(RouterChain<T> routerChain) {
+        this.routerChain = routerChain;
+    }
+
+    /**
+     * Add a single router to the chain.
+     */
+    public void addRouter(Router<T> router) {
+        if (this.routerChain == null) {
+            synchronized (this) {
+                if (this.routerChain == null) {
+                    this.routerChain = new RouterChain<>();
+                }
+            }
+        }
+        this.routerChain.addRouter(router);
+    }
+
+    /**
+     * Apply the router chain to filter references.
+     * Returns the original list if no router chain is configured.
+     */
+    private List<Reference<T>> applyRouter(List<Reference<T>> references, Request request) {
+        if (references == null || references.isEmpty()) {
+            return references;
+        }
+        RouterChain<T> chain = this.routerChain;
+        if (chain == null || !chain.hasRouters()) {
+            return references;
+        }
+        return chain.route(references, request);
+    }
 
     /**
      * Calculate warm-up weight for a reference based on its startup timestamp.

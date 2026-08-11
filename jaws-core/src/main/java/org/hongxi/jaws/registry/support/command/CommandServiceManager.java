@@ -4,7 +4,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
-import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.rpc.URL;
@@ -13,34 +12,49 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
 
 /**
- * Created by shenhongxi on 2021/4/23.
+ * Manages service discovery and command-based cross-group merging.
+ * <p>
+ * This class subscribes to both service list changes and command configuration changes.
+ * When either changes, it recomputes the final service URL list by merging groups
+ * according to the current command configuration.
+ * <p>
+ * Note: IP-based route rules are NOT handled here. They are delegated to
+ * {@link CommandRouter} which evaluates them on each RPC call.
  */
 public class CommandServiceManager implements CommandListener, ServiceListener {
 
     private static final Logger log = LoggerFactory.getLogger(CommandServiceManager.class);
-    private static Pattern IP_PATTERN = Pattern.compile("^!?[0-9.]*\\*?$");
 
-    private URL refUrl;
-    private ConcurrentHashSet<NotifyListener> notifySet;
+    private final URL refUrl;
+    private final ConcurrentHashSet<NotifyListener> notifySet;
     private CommandFailbackRegistry registry;
-    // service cache
-    private Map<String, List<URL>> groupServiceCache;
-    // command cache
+
+    /**
+     * Service cache keyed by group name.
+     */
+    private final Map<String, List<URL>> groupServiceCache;
+
+    /**
+     * Raw command string cache for change detection.
+     */
     private volatile String commandStringCache = "";
+
+    /**
+     * Parsed command cache. Updated atomically under lock.
+     */
     private volatile RpcCommand commandCache;
 
     public CommandServiceManager(URL refUrl) {
         log.info("CommandServiceManager init url:{}", refUrl.toFullStr());
         this.refUrl = refUrl;
-        notifySet = new ConcurrentHashSet<>();
-        groupServiceCache = new ConcurrentHashMap<>();
+        this.notifySet = new ConcurrentHashSet<>();
+        this.groupServiceCache = new ConcurrentHashMap<>();
     }
 
     @Override
-    public void notifyService(URL serviceUrl, URL registryUrl, List<URL> urls) {
+    public synchronized void notifyService(URL serviceUrl, URL registryUrl, List<URL> urls) {
         if (registry == null) {
             throw new JawsFrameworkException("registry must be set.");
         }
@@ -49,15 +63,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
         String groupName = urlCopy.getParameter(URLParamType.group.getName(), URLParamType.group.value());
         groupServiceCache.put(groupName, urls);
 
-        List<URL> finalResult = new ArrayList<>();
-        if (commandCache != null) {
-            Map<String, Integer> weights = new HashMap<>();
-            finalResult = discoverServiceWithCommand(refUrl, weights, commandCache);
-        } else {
-            log.info("command cache is null. service:{}", serviceUrl.toSimpleString());
-            // 无命令时仅返回当前 group 的结果
-            finalResult.addAll(discoverOneGroup(refUrl));
-        }
+        List<URL> finalResult = computeFinalResult();
 
         for (NotifyListener notifyListener : notifySet) {
             notifyListener.notify(registry.getUrl(), finalResult);
@@ -65,170 +71,187 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
     }
 
     @Override
-    public void notifyCommand(URL serviceUrl, String commandString) {
-        log.info("CommandServiceManager notify command. service:" + serviceUrl.toSimpleString() + ", command:" + commandString);
+    public synchronized void notifyCommand(URL serviceUrl, String commandString) {
+        log.info("CommandServiceManager notify command. service:{}, command:{}", serviceUrl.toSimpleString(), commandString);
 
         if (commandString == null) {
             commandString = "";
         }
 
-        List<URL> finalResult = new ArrayList<>();
-        URL urlCopy = serviceUrl.createCopy();
-
-        if (!StringUtils.equals(commandString, commandStringCache)) {
-            commandStringCache = commandString;
-            commandCache = RpcCommandUtils.stringToCommand(commandStringCache);
-            Map<String, Integer> weights = new HashMap<>();
-
-            if (commandCache != null && commandCache.getClientCommands() != null && !commandCache.getClientCommands().isEmpty()) {
-                commandCache.sort();
-                finalResult = discoverServiceWithCommand(refUrl, weights, commandCache);
-            } else {
-                // 解析失败时按无命令处理，防止错误指令导致服务异常
-                if (StringUtils.isNotBlank(commandString)) {
-                    log.warn("command parse fail, ignored! command:{}", commandString);
-                    commandString = "";
-                }
-                finalResult.addAll(discoverOneGroup(refUrl));
-
-            }
-
-            // 指令变化时清理失效的 group 缓存并取消订阅
-            Set<String> groupKeys = groupServiceCache.keySet();
-            for (String gk : groupKeys) {
-                if (!weights.containsKey(gk)) {
-                    groupServiceCache.remove(gk);
-                    URL urlTemp = urlCopy.createCopy();
-                    urlTemp.addParameter(URLParamType.group.getName(), gk);
-                    registry.unsubscribeService(urlTemp, this);
-                }
-            }
-            // 指令清空或无匹配时重新订阅本 group
-            if ("".equals(commandString) || weights.isEmpty()) {
-                log.info("reSub service" + refUrl.toSimpleString());
-                registry.subscribeService(refUrl, this);
-            }
-        } else {
+        if (StringUtils.equals(commandString, commandStringCache)) {
             log.info("command not change. url:{}", serviceUrl.toSimpleString());
-            // 指令未变化，跳过
             return;
         }
+
+        commandStringCache = commandString;
+        commandCache = RpcCommandUtils.stringToCommand(commandStringCache);
+
+        if (commandCache != null && commandCache.getClientCommands() != null && !commandCache.getClientCommands().isEmpty()) {
+            commandCache.sort();
+        } else if (StringUtils.isNotBlank(commandString)) {
+            // parse failure, fall back to no-command mode
+            log.warn("command parse fail, ignored! command:{}", commandString);
+            commandStringCache = "";
+            commandCache = null;
+        }
+
+        // clean up group caches for groups no longer referenced by the command
+        cleanupStaleGroups();
+
+        // if command is cleared or has no merge groups, re-subscribe to the original group
+        if (commandCache == null || CollectionUtils.isEmpty(commandCache.getClientCommands())) {
+            log.info("reSub service {}", refUrl.toSimpleString());
+            registry.subscribeService(refUrl, this);
+        }
+
+        List<URL> finalResult = computeFinalResult();
 
         for (NotifyListener notifyListener : notifySet) {
             notifyListener.notify(registry.getUrl(), finalResult);
         }
     }
 
-    public List<URL> discoverServiceWithCommand(URL serviceUrl, Map<String, Integer> weights, RpcCommand rpcCommand) {
-        String localIP = NetUtils.getLocalAddress().getHostAddress();
-        return this.discoverServiceWithCommand(serviceUrl, weights, rpcCommand, localIP);
+    /**
+     * Compute the final URL list based on the current command and group caches.
+     * Evaluates ALL matching client commands (not just the first one) and merges
+     * their group results.
+     */
+    private List<URL> computeFinalResult() {
+        RpcCommand currentCommand = this.commandCache;
+        if (currentCommand == null || CollectionUtils.isEmpty(currentCommand.getClientCommands())) {
+            return discoverOneGroup(refUrl);
+        }
+
+        String path = refUrl.getPath();
+        List<URL> mergedResult = null;
+        boolean hit = false;
+
+        for (RpcCommand.ClientCommand command : currentCommand.getClientCommands()) {
+            if (!RpcCommandUtils.match(command.getPattern(), path)) {
+                continue;
+            }
+            hit = true;
+
+            if (!CollectionUtils.isEmpty(command.getMergeGroups())) {
+                Map<String, Integer> weights = new HashMap<>();
+                try {
+                    buildWeightsMap(weights, command);
+                } catch (JawsFrameworkException e) {
+                    log.warn("build weights map fail! {}", e.getMessage());
+                    continue;
+                }
+                List<URL> groupResult = mergeResult(refUrl, weights);
+                if (mergedResult == null) {
+                    mergedResult = groupResult;
+                } else {
+                    mergedResult.addAll(groupResult);
+                }
+            } else {
+                List<URL> groupResult = discoverOneGroup(refUrl);
+                if (mergedResult == null) {
+                    mergedResult = new ArrayList<>(groupResult);
+                } else {
+                    mergedResult.addAll(groupResult);
+                }
+            }
+        }
+
+        if (!hit || mergedResult == null) {
+            return discoverOneGroup(refUrl);
+        }
+
+        log.info("mergedResult: size-{} --- {}", mergedResult.size(), mergedResult);
+        return mergedResult;
     }
 
-    public List<URL> discoverServiceWithCommand(URL serviceUrl, Map<String, Integer> weights, RpcCommand rpcCommand, String localIP) {
+    /**
+     * Remove group caches and unsubscribe for groups no longer referenced by the current command.
+     */
+    private void cleanupStaleGroups() {
+        Set<String> activeGroups = collectActiveGroups();
+
+        Set<String> groupKeys = new HashSet<>(groupServiceCache.keySet());
+        for (String gk : groupKeys) {
+            if (!activeGroups.contains(gk)) {
+                groupServiceCache.remove(gk);
+                URL urlTemp = refUrl.createCopy();
+                urlTemp.addParameter(URLParamType.group.getName(), gk);
+                registry.unsubscribeService(urlTemp, this);
+            }
+        }
+    }
+
+    /**
+     * Collect all group names referenced by the current command plus the original group.
+     */
+    private Set<String> collectActiveGroups() {
+        Set<String> activeGroups = new HashSet<>();
+        String defaultGroup = refUrl.getParameter(URLParamType.group.getName(), URLParamType.group.value());
+        activeGroups.add(defaultGroup);
+
+        RpcCommand currentCommand = this.commandCache;
+        if (currentCommand != null && !CollectionUtils.isEmpty(currentCommand.getClientCommands())) {
+            String path = refUrl.getPath();
+            for (RpcCommand.ClientCommand cmd : currentCommand.getClientCommands()) {
+                if (RpcCommandUtils.match(cmd.getPattern(), path) && !CollectionUtils.isEmpty(cmd.getMergeGroups())) {
+                    for (String rule : cmd.getMergeGroups()) {
+                        String[] gw = rule.split(":");
+                        activeGroups.add(gw[0]);
+                    }
+                }
+            }
+        }
+        return activeGroups;
+    }
+
+    /**
+     * Discover the merged service list for a command, subscribing to new groups as needed.
+     * Route rules are NOT applied here; they are handled by {@link CommandRouter}.
+     */
+    public List<URL> discoverServiceWithCommand(URL serviceUrl, Map<String, Integer> weights, RpcCommand rpcCommand) {
         if (rpcCommand == null || CollectionUtils.isEmpty(rpcCommand.getClientCommands())) {
             return discoverOneGroup(serviceUrl);
         }
 
-        List<URL> mergedResult = new LinkedList<>();
         String path = serviceUrl.getPath();
-
-        List<RpcCommand.ClientCommand> clientCommands = rpcCommand.getClientCommands();
+        List<URL> mergedResult = null;
         boolean hit = false;
-        for (RpcCommand.ClientCommand command : clientCommands) {
-            mergedResult = new LinkedList<>();
-            // 判断当前url是否符合过滤条件
-            boolean match = RpcCommandUtils.match(command.getPattern(), path);
-            if (match) {
-                hit = true;
-                if (!CollectionUtils.isEmpty(command.getMergeGroups())) {
-                    // 按权重合并各 group 的服务列表
-                    try {
-                        buildWeightsMap(weights, command);
-                    } catch (JawsFrameworkException e) {
-                        log.warn("build weights map fail! {}", e.getMessage());
-                        continue;
-                    }
-                    mergedResult.addAll(mergeResult(serviceUrl, weights));
+
+        for (RpcCommand.ClientCommand command : rpcCommand.getClientCommands()) {
+            if (!RpcCommandUtils.match(command.getPattern(), path)) {
+                continue;
+            }
+            hit = true;
+
+            if (!CollectionUtils.isEmpty(command.getMergeGroups())) {
+                try {
+                    buildWeightsMap(weights, command);
+                } catch (JawsFrameworkException e) {
+                    log.warn("build weights map fail! {}", e.getMessage());
+                    continue;
+                }
+                List<URL> groupResult = mergeResult(serviceUrl, weights);
+                if (mergedResult == null) {
+                    mergedResult = new ArrayList<>(groupResult);
                 } else {
-                    mergedResult.addAll(discoverOneGroup(serviceUrl));
+                    mergedResult.addAll(groupResult);
                 }
-
-                log.info("mergedResult: size-{} --- {}", mergedResult.size(), mergedResult);
-
-                if (!CollectionUtils.isEmpty(command.getRouteRules())) {
-                    log.info("router: " + command.getRouteRules().toString());
-
-                    for (String routeRule : command.getRouteRules()) {
-                        String[] fromTo = routeRule.replaceAll("\\s+", "").split("to");
-
-                        if (fromTo.length != 2) {
-                            routeRuleConfigError();
-                            continue;
-                        }
-                        String from = fromTo[0];
-                        String to = fromTo[1];
-                        if (from.length() < 1 || to.length() < 1 || !IP_PATTERN.matcher(from).find() || !IP_PATTERN.matcher(to).find()) {
-                            routeRuleConfigError();
-                            continue;
-                        }
-                        boolean oppositeFrom = from.startsWith("!");
-                        boolean oppositeTo = to.startsWith("!");
-                        if (oppositeFrom) {
-                            from = from.substring(1);
-                        }
-                        if (oppositeTo) {
-                            to = to.substring(1);
-                        }
-                        int idx = from.indexOf('*');
-                        boolean matchFrom;
-                        if (idx != -1) {
-                            matchFrom = localIP.startsWith(from.substring(0, idx));
-                        } else {
-                            matchFrom = localIP.equals(from);
-                        }
-
-                        // 开头有!，取反
-                        if (oppositeFrom) {
-                            matchFrom = !matchFrom;
-                        }
-                        log.info("matchFrom: {}, localIP: {}, from: {}", matchFrom, localIP, from);
-                        if (matchFrom) {
-                            boolean matchTo;
-                            Iterator<URL> iterator = mergedResult.iterator();
-                            while (iterator.hasNext()) {
-                                URL url = iterator.next();
-                                if (url.getProtocol().equalsIgnoreCase("rule")) {
-                                    continue;
-                                }
-                                idx = to.indexOf('*');
-                                if (idx != -1) {
-                                    matchTo = url.getHost().startsWith(to.substring(0, idx));
-                                } else {
-                                    matchTo = url.getHost().equals(to);
-                                }
-                                if (oppositeTo) {
-                                    matchTo = !matchTo;
-                                }
-                                if (!matchTo) {
-                                    iterator.remove();
-                                    log.info("router To not match. url remove : " + url.toSimpleString());
-                                }
-                            }
-                        }
-                    }
+            } else {
+                List<URL> groupResult = discoverOneGroup(serviceUrl);
+                if (mergedResult == null) {
+                    mergedResult = new ArrayList<>(groupResult);
+                } else {
+                    mergedResult.addAll(groupResult);
                 }
-                // 只取第一个匹配的 TODO 考虑是否能满足绝大多数场景需求
-                break;
             }
         }
 
-        List<URL> finalResult = new ArrayList<>();
-        if (!hit) {
-            finalResult = discoverOneGroup(serviceUrl);
-        } else {
-            finalResult.addAll(mergedResult);
+        if (!hit || mergedResult == null) {
+            return discoverOneGroup(serviceUrl);
         }
-        return finalResult;
+
+        log.info("mergedResult: size-{} --- {}", mergedResult.size(), mergedResult);
+        return mergedResult;
     }
 
     private void buildWeightsMap(Map<String, Integer> weights, RpcCommand.ClientCommand command) {
@@ -253,7 +276,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
         List<URL> finalResult = new ArrayList<>();
 
         if (weights.size() > 1) {
-            // 将各 group 及权重拼接为 rule URL 作为首元素
+            // encode weight info as a special "rule" protocol URL for LoadBalance
             URL ruleUrl = new URL("rule", url.getHost(), url.getPort(), url.getPath());
             StringBuilder weightsBuilder = new StringBuilder(64);
             for (Map.Entry<String, Integer> entry : weights.entrySet()) {
@@ -277,7 +300,7 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
     }
 
     private List<URL> discoverOneGroup(URL urlCopy) {
-        log.info("CommandServiceManager discover one group. url:" + urlCopy.toSimpleString());
+        log.info("CommandServiceManager discover one group. url:{}", urlCopy.toSimpleString());
         String group = urlCopy.getParameter(URLParamType.group.getName(), URLParamType.group.value());
         List<URL> list = groupServiceCache.get(group);
         if (list == null) {
@@ -287,11 +310,21 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
         return list;
     }
 
+    /**
+     * Set the command cache. Called by {@link CommandFailbackRegistry} during initial discover.
+     */
     public void setCommandCache(String command) {
-        commandStringCache = command;
+        commandStringCache = command != null ? command : "";
         commandCache = RpcCommandUtils.stringToCommand(commandStringCache);
-        log.info("CommandServiceManager set commandcache. commandstring:{}, comandcache {}",
+        log.info("CommandServiceManager set commandcache. commandstring:{}, commandcache {}",
                 commandStringCache, commandCache == null ? "is null." : "is not null.");
+    }
+
+    /**
+     * Get the current parsed command. Used by {@link CommandRouter} to apply route rules at call time.
+     */
+    public RpcCommand getCommandCache() {
+        return commandCache;
     }
 
     public void addNotifyListener(NotifyListener notifyListener) {
@@ -309,9 +342,4 @@ public class CommandServiceManager implements CommandListener, ServiceListener {
     private void weightConfigError() {
         throw new JawsFrameworkException("Weight ratio must be an integer in [0,100]");
     }
-
-    private void routeRuleConfigError() {
-        log.warn("Invalid route rule configuration");
-    }
-
 }

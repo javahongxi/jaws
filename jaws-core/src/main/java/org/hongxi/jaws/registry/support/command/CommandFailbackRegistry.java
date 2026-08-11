@@ -78,8 +78,7 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
             CommandServiceManager manager = getCommandServiceManager(urlCopy);
             finalResult = manager.discoverServiceWithCommand(urlCopy, new HashMap<>(), rpcCommand);
 
-            // 在subscribeCommon时，可能订阅完马上就notify，导致首次notify指令时，可能还有其他service没有完成订阅，
-            // 此处先对manager更新指令，避免首次订阅无效的问题。
+            // cache the command so that subsequent notify calls have the latest rules
             manager.setCommandCache(commandStr);
         } else {
             finalResult = discoverService(urlCopy);
@@ -88,6 +87,14 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
         log.info("CommandFailbackRegistry discover size: {}", finalResult == null ? "0" : finalResult.size());
 
         return finalResult;
+    }
+
+    /**
+     * Get the {@link CommandServiceManager} for the given URL.
+     * Used by the cluster layer to create a {@link CommandRouter}.
+     */
+    public CommandServiceManager getCommandManager(URL url) {
+        return commandManagerMap.get(url);
     }
 
     private CommandServiceManager getCommandServiceManager(URL urlCopy) {

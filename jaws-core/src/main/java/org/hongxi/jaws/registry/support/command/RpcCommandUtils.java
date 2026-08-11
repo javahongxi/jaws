@@ -1,30 +1,21 @@
 package org.hongxi.jaws.registry.support.command;
 
 import com.alibaba.fastjson2.JSON;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 /**
- * Created by shenhongxi on 2021/4/23.
+ * Utility methods for command parsing and pattern matching.
  */
 public class RpcCommandUtils {
 
     private static final Logger log = LoggerFactory.getLogger(RpcCommandUtils.class);
-    private static final PatternEvaluator evaluator = new PatternEvaluator();
 
     /**
-     * 把指令字符串转为指令对象
+     * Parse a command JSON string into an {@link RpcCommand} object.
      *
-     * @param commandString
-     * @return
+     * @param commandString JSON string
+     * @return parsed command, or null if parsing fails
      */
     public static RpcCommand stringToCommand(String commandString) {
         try {
@@ -36,170 +27,36 @@ public class RpcCommandUtils {
     }
 
     /**
-     * 指令对象转为string
+     * Serialize a command to JSON string.
      *
-     * @param command
-     * @return
+     * @param command the command object
+     * @return JSON string
      */
     public static String commandToString(RpcCommand command) {
         return JSON.toJSONString(command);
     }
 
+    /**
+     * Match a service interface path against a pattern expression.
+     * <p>
+     * The pattern supports:
+     * <ul>
+     *   <li>Exact match: {@code "com.example.DemoService"}</li>
+     *   <li>Wildcard suffix: {@code "com.example.*"} matches any interface starting with "com.example."</li>
+     * </ul>
+     *
+     * @param expression the pattern expression
+     * @param path       the service interface name to match
+     * @return true if the path matches the expression
+     */
     public static boolean match(String expression, String path) {
         if (expression == null || expression.isEmpty()) {
             return false;
         }
-        return evaluator.match(expression, path);
-    }
-
-
-    /**
-     * 匹配规则解析类
-     */
-    private static class PatternEvaluator {
-
-        Pattern pattern = Pattern.compile("[a-zA-Z0-9_$.*]+");
-        Set<Character> all = ImmutableSet.of('(', ')', '0', '1', '!', '&', '|');
-        Map<Character, ImmutableSet<Character>> following = ImmutableMap.<Character, ImmutableSet<Character>>builder()
-                .put('(', ImmutableSet.of('0', '1', '!')).put(')', ImmutableSet.of('|', '&', ')')).put('0', ImmutableSet.of('|', '&', ')'))
-                .put('1', ImmutableSet.of('|', '&', ')')).put('!', ImmutableSet.of('(', '0', '1', '!'))
-                .put('&', ImmutableSet.of('(', '0', '1', '!')).put('|', ImmutableSet.of('(', '0', '1', '!')).build();
-
-        boolean match(String expression, String path) {
-
-            // 匹配出每一项，求值，依据结果替换为0和1
-            Matcher matcher = pattern.matcher(expression.replaceAll("\\s+", ""));
-            StringBuffer buffer = new StringBuffer();
-            while (matcher.find()) {
-                String s = matcher.group();
-                int idx = s.indexOf('*');
-                if (idx != -1) {
-                    matcher.appendReplacement(buffer, path.startsWith(s.substring(0, idx)) ? "1" : "0");
-                } else {
-                    matcher.appendReplacement(buffer, s.equals(path) ? "1" : "0");
-                }
-            }
-            matcher.appendTail(buffer);
-            String result1 = buffer.toString();
-
-            // 嵌套链表结构用于处理圆括号
-            LinkedList<LinkedList<Character>> outer = new LinkedList<>();
-            LinkedList<Character> inner = new LinkedList<>();
-            inner.push('#');
-            outer.push(inner);
-
-            int i = 0;
-            int len = result1.length();
-            while (outer.size() > 0 && i < len) {
-                LinkedList<Character> sub = outer.peekLast();
-                while (sub.size() > 0 && i < len) {
-                    char curr = result1.charAt(i++);
-                    support(curr);
-                    char prev = sub.peekFirst();
-                    if (prev != '#') {
-                        supportFollowing(prev, curr);
-                    }
-
-                    switch (curr) {
-                        case '(':
-                            sub = new LinkedList<>();
-                            sub.push('#');
-                            outer.push(sub);
-                            break;
-                        case ')':
-                            outer.removeFirst();
-                            outer.peekFirst().push(evalWithinParentheses(sub));
-                            sub = outer.peekFirst();
-                            break;
-                        default:
-                            sub.push(curr);
-                    }
-                }
-            }
-            if (outer.size() != 1) {
-                throw new IllegalArgumentException("Syntax error: parentheses may not be closed");
-            }
-            char result = evalWithinParentheses(outer.peekLast());
-            return result == '1';
+        int idx = expression.indexOf('*');
+        if (idx != -1) {
+            return path.startsWith(expression.substring(0, idx));
         }
-
-        /**
-         * 对圆括号内的子表达式求值
-         *
-         * @param list
-         * @return
-         */
-        char evalWithinParentheses(LinkedList<Character> list) {
-            char operand = list.pop();
-            if (operand != '0' && operand != '1') {
-                syntaxError();
-            }
-
-            // 处理!
-            while (!list.isEmpty()) {
-                char curr = list.pop();
-                if (curr == '!') {
-                    operand = operand == '0' ? '1' : '0';
-                } else if (curr == '#') {
-                    break;
-                } else {
-                    if (operand == '0' || operand == '1') {
-                        list.addLast(operand);
-                        list.addLast(curr);
-                        operand = '\0';
-                    } else {
-                        operand = curr;
-                    }
-                }
-            }
-            list.addLast(operand);
-
-            // 处理&
-            list.addLast('#');
-            operand = list.pop();
-            while (!list.isEmpty()) {
-                char curr = list.pop();
-                if (curr == '&') {
-                    char c = list.pop();
-                    operand = (operand == '1' && c == '1') ? '1' : '0';
-                } else if (curr == '#') {
-                    break;
-                } else {
-                    if (operand == '0' || operand == '1') {
-                        list.addLast(operand);
-                        list.addLast(curr);
-                        operand = '\0';
-                    } else {
-                        operand = curr;
-                    }
-                }
-            }
-            list.addLast(operand);
-
-            // 处理|
-            operand = '0';
-            while (!list.isEmpty() && (operand = list.pop()) != '1') ;
-            return operand;
-        }
-
-        void syntaxError() {
-            throw new IllegalArgumentException("Syntax error: only parentheses (), NOT !, AND &, OR | are supported, with decreasing precedence");
-        }
-
-        void syntaxError(String s) {
-            throw new IllegalArgumentException("Syntax error: " + s);
-        }
-
-        void support(char c) {
-            if (!all.contains(c)) {
-                syntaxError("Unsupported character: " + c);
-            }
-        }
-
-        void supportFollowing(char prev, char c) {
-            if (!following.get(prev).contains(c)) {
-                syntaxError("prev=" + prev + ", c=" + c);
-            }
-        }
+        return expression.equals(path);
     }
 }
