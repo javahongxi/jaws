@@ -28,7 +28,8 @@ public class DirectRegistry extends AbstractRegistry {
                 }
             } catch (Exception e) {
                 throw new JawsFrameworkException(
-                        String.format("parse direct url error, invalid direct registry address %s, address should be ip1:port1,ip2:port2 ...", address));
+                        String.format("parse direct url error, invalid direct registry address %s, " +
+                                "address should be ip1:port1,ip2:port2 ...", address));
             }
         } else {
             registerDirectUrl(url.getHost(), url.getPort());
@@ -38,7 +39,7 @@ public class DirectRegistry extends AbstractRegistry {
     private void parseDirectUrl(String directUrl) {
         String[] ipAndPort = directUrl.split(":");
         String ip = ipAndPort[0];
-        Integer port = Integer.parseInt(ipAndPort[1]);
+        int port = Integer.parseInt(ipAndPort[1]);
         if (port < 0 || port > 65535) {
             throw new RuntimeException();
         }
@@ -72,11 +73,6 @@ public class DirectRegistry extends AbstractRegistry {
 
     @Override
     protected List<URL> doDiscover(URL subscribeUrl) {
-        return createSubscribeUrl(subscribeUrl);
-    }
-
-    private List<URL> createSubscribeUrl(URL subscribeUrl) {
-        URL url = this.getUrl();
         List<URL> result = new ArrayList<>(directUrls.size());
         for (URL directUrl : directUrls) {
             URL tmp = subscribeUrl.createCopy();

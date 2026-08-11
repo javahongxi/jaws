@@ -12,9 +12,10 @@ import java.util.Set;
 
 /**
  * <pre>
- * Abstract registry。
+ * Abstract registry.
  *
- * 对进出的url都进行createCopy保护，避免registry中的对象被修改，避免潜在的并发问题。
+ * Performs createCopy on all incoming URLs to prevent objects in the registry from being modified,
+ * avoiding potential concurrency issues.
  *
  * </pre>
  * <p>

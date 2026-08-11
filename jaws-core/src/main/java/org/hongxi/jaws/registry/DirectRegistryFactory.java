@@ -13,6 +13,4 @@ public class DirectRegistryFactory extends AbstractRegistryFactory {
     protected Registry createRegistry(URL url) {
         return new DirectRegistry(url);
     }
-
-
 }
