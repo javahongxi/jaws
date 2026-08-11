@@ -1,2 +1,2 @@
-org.hongxi.jaws.proxy.support.JdkProxyFactory
-org.hongxi.jaws.proxy.support.GenericProxyFactory
+org.hongxi.jaws.proxy.JdkProxyFactory
+org.hongxi.jaws.proxy.GenericProxyFactory

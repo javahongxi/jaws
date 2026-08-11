@@ -1,10 +1,9 @@
-package org.hongxi.jaws.protocol.injvm;
+package org.hongxi.jaws.protocol;
 
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.protocol.AbstractProtocol;
 import org.hongxi.jaws.rpc.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

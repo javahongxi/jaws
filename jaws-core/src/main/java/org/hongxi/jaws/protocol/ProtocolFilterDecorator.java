@@ -1,4 +1,4 @@
-package org.hongxi.jaws.protocol.support;
+package org.hongxi.jaws.protocol;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;

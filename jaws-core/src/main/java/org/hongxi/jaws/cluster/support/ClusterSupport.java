@@ -12,7 +12,7 @@ import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.StringTools;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.protocol.support.ProtocolFilterDecorator;
+import org.hongxi.jaws.protocol.ProtocolFilterDecorator;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;

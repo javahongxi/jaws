@@ -5,7 +5,7 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Client;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.Server;
-import org.hongxi.jaws.transport.support.AbstractEndpointFactory;
+import org.hongxi.jaws.transport.AbstractEndpointFactory;
 
 /**
  * Created by shenhongxi on 2020/7/31.

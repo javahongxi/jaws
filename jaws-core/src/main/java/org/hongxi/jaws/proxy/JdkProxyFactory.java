@@ -1,9 +1,7 @@
-package org.hongxi.jaws.proxy.support;
+package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.proxy.ProxyFactory;
-import org.hongxi.jaws.proxy.ReferenceInvocationHandler;
 
 import java.lang.reflect.Proxy;
 import java.util.List;
