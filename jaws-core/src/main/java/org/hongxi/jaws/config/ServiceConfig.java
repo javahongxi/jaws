@@ -115,7 +115,6 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         Map<String, String> map = new HashMap<>();
 
         map.put(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_SERVICE);
-        map.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
         collectConfigParams(map, protocolConfig, this);
         collectMethodConfigParams(map, this.getMethods());

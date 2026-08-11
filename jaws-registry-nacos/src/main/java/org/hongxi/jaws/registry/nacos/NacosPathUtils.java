@@ -11,7 +11,7 @@ import org.hongxi.jaws.rpc.URL;
  * <ul>
  *   <li>Nacos group = Jaws group</li>
  *   <li>Nacos serviceName = "jaws/{path}" (e.g. jaws/org.hongxi.jaws.sample.api.DemoService)</li>
- *   <li>Nacos instance metadata carries the full URL string and node type</li>
+ *   <li>Nacos instance metadata carries URL parameters (protocol, path, etc.)</li>
  * </ul>
  * <p>
  * Created by shenhongxi on 2026/7/17.

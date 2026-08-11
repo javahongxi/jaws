@@ -109,8 +109,16 @@ public class AbstractConfig implements Serializable {
                         && isPrimitive(method.getReturnType());
 
         if (checkMethod) {
+            // Check method-level exclusion
             ConfigDesc configDesc = method.getAnnotation(ConfigDesc.class);
             if (configDesc != null && configDesc.excluded()) {
+                return false;
+            }
+            // Check class-level exclusion: if the declaring class is annotated with
+            // @ConfigDesc(excluded = true), skip all its declared getters
+            Class<?> declaringClass = method.getDeclaringClass();
+            ConfigDesc classDesc = declaringClass.getAnnotation(ConfigDesc.class);
+            if (classDesc != null && classDesc.excluded()) {
                 return false;
             }
         }

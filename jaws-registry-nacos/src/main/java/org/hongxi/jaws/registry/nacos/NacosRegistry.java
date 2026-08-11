@@ -4,7 +4,6 @@ import com.alibaba.nacos.api.naming.NamingService;
 import com.alibaba.nacos.api.naming.listener.EventListener;
 import com.alibaba.nacos.api.naming.listener.NamingEvent;
 import com.alibaba.nacos.api.naming.pojo.Instance;
-import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.lifecycle.Closeable;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -23,7 +22,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>
  * Maps Jaws registry operations to Nacos NamingService:
  * <ul>
- *   <li>Service registration: register Nacos instances with metadata containing full URL</li>
+ *   <li>Service registration: register Nacos instances with metadata containing URL parameters</li>
  *   <li>Service discovery: query all instances and convert back to URLs</li>
  *   <li>Service subscription: use Nacos subscribe to watch instance changes</li>
  * </ul>
@@ -34,7 +33,8 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
 
     private static final Logger log = LoggerFactory.getLogger(NacosRegistry.class);
 
-    private static final String METADATA_KEY_FULL_URL = "fullUrl";
+    private static final String METADATA_KEY_PROTOCOL = "protocol";
+    private static final String METADATA_KEY_PATH = "path";
 
     private final NamingService namingService;
     private final ConcurrentHashMap<URL, ConcurrentHashMap<NotifyListener, EventListener>> serviceListeners = new ConcurrentHashMap<>();
@@ -166,8 +166,10 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
             instance.setPort(url.getPort());
             instance.setHealthy(true);
             instance.setEphemeral(true);
-            Map<String, String> metadata = new HashMap<>();
-            metadata.put(METADATA_KEY_FULL_URL, url.toFullStr());
+            // Store all URL parameters as metadata map, along with protocol and path
+            Map<String, String> metadata = new HashMap<>(url.getParameters());
+            metadata.put(METADATA_KEY_PROTOCOL, url.getProtocol());
+            metadata.put(METADATA_KEY_PATH, url.getPath());
             instance.setMetadata(metadata);
             namingService.registerInstance(serviceName, group, instance);
         } catch (Exception e) {
@@ -195,16 +197,13 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
         if (instances != null) {
             for (Instance instance : instances) {
                 Map<String, String> metadata = instance.getMetadata();
-                String fullUrl = metadata != null ? metadata.get(METADATA_KEY_FULL_URL) : null;
-                URL parsedUrl = null;
-                if (StringUtils.isNotBlank(fullUrl)) {
-                    try {
-                        parsedUrl = URL.valueOf(fullUrl);
-                    } catch (Exception e) {
-                        log.warn("Found malformed urls from NacosRegistry, fullUrl={}", fullUrl, e);
-                    }
-                }
-                if (parsedUrl == null) {
+                URL parsedUrl;
+                if (metadata != null && metadata.containsKey(METADATA_KEY_PROTOCOL)) {
+                    String protocol = metadata.get(METADATA_KEY_PROTOCOL);
+                    String path = metadata.get(METADATA_KEY_PATH);
+                    parsedUrl = new URL(protocol, instance.getIp(), instance.getPort(), path, new HashMap<>(metadata));
+                } else {
+                    // Fallback: reconstruct from reference URL
                     parsedUrl = refUrl.createCopy();
                     parsedUrl.setHost(instance.getIp());
                     parsedUrl.setPort(instance.getPort());
