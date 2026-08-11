@@ -19,7 +19,7 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(CommandFailbackRegistry.class);
 
-    private ConcurrentHashMap<URL, CommandServiceManager> commandManagerMap;
+    private final ConcurrentHashMap<URL, CommandServiceManager> commandManagerMap;
 
     public CommandFailbackRegistry(URL url) {
         super(url);
@@ -136,20 +136,9 @@ public abstract class CommandFailbackRegistry extends FailbackRegistry {
         doUnsubscribeConfig(url.createCopy(), listener);
     }
 
-    /**
-     * Publish dynamic configuration for a service (called by provider side).
-     */
-    public void publishConfig(URL url, String configString) {
-        log.info("CommandFailbackRegistry publishConfig: url={}, config={}", url.toSimpleString(), configString);
-        doPublishConfig(url.createCopy(), configString);
-    }
-
     protected abstract void doSubscribeConfig(URL url, ConfigListener listener);
 
     protected abstract void doUnsubscribeConfig(URL url, ConfigListener listener);
 
     protected abstract String doDiscoverConfig(URL url);
-
-    protected abstract void doPublishConfig(URL url, String configString);
-
 }

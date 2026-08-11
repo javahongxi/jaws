@@ -9,7 +9,6 @@ import com.alibaba.nacos.api.naming.pojo.Instance;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.lifecycle.Closeable;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
-import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.registry.ConfigListener;
 import org.hongxi.jaws.registry.support.command.CommandFailbackRegistry;
@@ -45,11 +44,9 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     private static final String METADATA_KEY_NODE_TYPE = "nodeType";
     private static final String NODE_TYPE_AVAILABLE = "available";
     private static final String NODE_TYPE_UNAVAILABLE = "unavailable";
-    private static final String NODE_TYPE_CLIENT = "client";
 
     private final NamingService namingService;
     private final ConfigService configService;
-    private final Set<URL> availableServices = new ConcurrentHashSet<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, EventListener>> serviceListeners = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, Listener>> commandListeners = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<URL, ConcurrentHashMap<ConfigListener, Listener>> configListeners = new ConcurrentHashMap<>();
@@ -63,15 +60,19 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         ShutdownHook.registerShutdownHook(this);
     }
 
-    public ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, EventListener>> getServiceListeners() {
-        return serviceListeners;
+    @Override
+    protected void subscribeService(URL url, ServiceListener serviceListener) {
+        try {
+            clientLock.lock();
+            subscribeServiceInternal(url, serviceListener);
+        } catch (Throwable e) {
+            throw new JawsFrameworkException(
+                    String.format("Failed to subscribe %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        } finally {
+            clientLock.unlock();
+        }
     }
 
-    public ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, Listener>> getCommandListeners() {
-        return commandListeners;
-    }
-
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
     private void subscribeServiceInternal(URL url, ServiceListener serviceListener) {
         ConcurrentHashMap<ServiceListener, EventListener> listeners = serviceListeners.get(url);
         if (listeners == null) {
@@ -108,19 +109,18 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     }
 
     @Override
-    protected void subscribeService(URL url, ServiceListener serviceListener) {
+    protected void subscribeCommand(URL url, CommandListener commandListener) {
         try {
             clientLock.lock();
-            subscribeServiceInternal(url, serviceListener);
+            subscribeCommandInternal(url, commandListener);
         } catch (Throwable e) {
             throw new JawsFrameworkException(
-                    String.format("Failed to subscribe %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+                    String.format("Failed to subscribe command %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         } finally {
             clientLock.unlock();
         }
     }
 
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
     private void subscribeCommandInternal(URL url, CommandListener commandListener) {
         ConcurrentHashMap<CommandListener, Listener> listeners = commandListeners.get(url);
         if (listeners == null) {
@@ -156,19 +156,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
 
         log.info("[NacosRegistry] subscribe command: dataId={}, group={}",
                 NacosPathUtils.toCommandDataId(url), NacosPathUtils.toCommandGroup(url));
-    }
-
-    @Override
-    protected void subscribeCommand(URL url, CommandListener commandListener) {
-        try {
-            clientLock.lock();
-            subscribeCommandInternal(url, commandListener);
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(
-                    String.format("Failed to subscribe command %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            clientLock.unlock();
-        }
     }
 
     @Override
@@ -241,19 +228,14 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         }
     }
 
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
-    private void doRegisterInternal(URL url) {
-        // 防止旧节点未正常注销
-        removeInstance(url, NODE_TYPE_AVAILABLE);
-        removeInstance(url, NODE_TYPE_UNAVAILABLE);
-        registerInstance(url, NODE_TYPE_UNAVAILABLE);
-    }
-
     @Override
     protected void doRegister(URL url) {
         try {
             serverLock.lock();
-            doRegisterInternal(url);
+            // Remove stale nodes that may not have been properly unregistered
+            removeInstance(url, NODE_TYPE_AVAILABLE);
+            removeInstance(url, NODE_TYPE_UNAVAILABLE);
+            registerInstance(url, NODE_TYPE_UNAVAILABLE);
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to register %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -276,47 +258,23 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         }
     }
 
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
-    private void doAvailableInternal(URL url) {
-        if (url == null) {
-            availableServices.addAll(getRegisteredServiceUrls());
-            for (URL u : getRegisteredServiceUrls()) {
-                removeInstance(u, NODE_TYPE_AVAILABLE);
-                removeInstance(u, NODE_TYPE_UNAVAILABLE);
-                registerInstance(u, NODE_TYPE_AVAILABLE);
-            }
-        } else {
-            availableServices.add(url);
-            removeInstance(url, NODE_TYPE_AVAILABLE);
-            removeInstance(url, NODE_TYPE_UNAVAILABLE);
-            registerInstance(url, NODE_TYPE_AVAILABLE);
-        }
-    }
-
     @Override
     protected void doAvailable(URL url) {
         try {
             serverLock.lock();
-            doAvailableInternal(url);
+            if (url == null) {
+                for (URL u : getRegisteredServiceUrls()) {
+                    removeInstance(u, NODE_TYPE_AVAILABLE);
+                    removeInstance(u, NODE_TYPE_UNAVAILABLE);
+                    registerInstance(u, NODE_TYPE_AVAILABLE);
+                }
+            } else {
+                removeInstance(url, NODE_TYPE_AVAILABLE);
+                removeInstance(url, NODE_TYPE_UNAVAILABLE);
+                registerInstance(url, NODE_TYPE_AVAILABLE);
+            }
         } finally {
             serverLock.unlock();
-        }
-    }
-
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
-    private void doUnavailableInternal(URL url) {
-        if (url == null) {
-            availableServices.removeAll(getRegisteredServiceUrls());
-            for (URL u : getRegisteredServiceUrls()) {
-                removeInstance(u, NODE_TYPE_AVAILABLE);
-                removeInstance(u, NODE_TYPE_UNAVAILABLE);
-                registerInstance(u, NODE_TYPE_UNAVAILABLE);
-            }
-        } else {
-            availableServices.remove(url);
-            removeInstance(url, NODE_TYPE_AVAILABLE);
-            removeInstance(url, NODE_TYPE_UNAVAILABLE);
-            registerInstance(url, NODE_TYPE_UNAVAILABLE);
         }
     }
 
@@ -324,7 +282,17 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     protected void doUnavailable(URL url) {
         try {
             serverLock.lock();
-            doUnavailableInternal(url);
+            if (url == null) {
+                for (URL u : getRegisteredServiceUrls()) {
+                    removeInstance(u, NODE_TYPE_AVAILABLE);
+                    removeInstance(u, NODE_TYPE_UNAVAILABLE);
+                    registerInstance(u, NODE_TYPE_UNAVAILABLE);
+                }
+            } else {
+                removeInstance(url, NODE_TYPE_AVAILABLE);
+                removeInstance(url, NODE_TYPE_UNAVAILABLE);
+                registerInstance(url, NODE_TYPE_UNAVAILABLE);
+            }
         } finally {
             serverLock.unlock();
         }
@@ -372,11 +340,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         if (instances != null) {
             for (Instance instance : instances) {
                 Map<String, String> metadata = instance.getMetadata();
-                String nodeType = metadata != null ? metadata.get(METADATA_KEY_NODE_TYPE) : null;
-                /* skip client instances - they are consumers, not providers */
-                if (NODE_TYPE_CLIENT.equals(nodeType)) {
-                    continue;
-                }
                 String fullUrl = metadata != null ? metadata.get(METADATA_KEY_FULL_URL) : null;
                 URL parsedUrl = null;
                 if (StringUtils.isNotBlank(fullUrl)) {
@@ -474,18 +437,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
             log.warn("[NacosRegistry] discover config failed: dataId={}, msg={}",
                     NacosPathUtils.toConfigDataId(url), e.getMessage());
             return "";
-        }
-    }
-
-    @Override
-    protected void doPublishConfig(URL url, String configString) {
-        try {
-            String dataId = NacosPathUtils.toConfigDataId(url);
-            String group = NacosPathUtils.toConfigGroup(url);
-            configService.publishConfig(dataId, group, configString != null ? configString : "");
-        } catch (Exception e) {
-            throw new JawsFrameworkException(
-                    String.format("Failed to publish config %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         }
     }
 }

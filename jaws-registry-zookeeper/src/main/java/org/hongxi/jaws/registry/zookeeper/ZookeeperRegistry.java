@@ -23,7 +23,6 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -36,10 +35,10 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
     private final CuratorFramework curator;
-    private Set<URL> availableServices = new ConcurrentHashSet<>();
-    private ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, CuratorCache>> serviceListeners = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, CuratorCache>> commandListeners = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<URL, ConcurrentHashMap<ConfigListener, CuratorCache>> configListeners = new ConcurrentHashMap<>();
+    private final Set<URL> availableServices = new ConcurrentHashSet<>();
+    private final Map<URL, Map<ServiceListener, CuratorCache>> serviceListeners = new HashMap<>();
+    private final Map<URL, Map<CommandListener, CuratorCache>> commandListeners = new HashMap<>();
+    private final Map<URL, Map<ConfigListener, CuratorCache>> configListeners = new HashMap<>();
 
     public ZookeeperRegistry(URL url, CuratorFramework client) {
         super(url);
@@ -55,21 +54,16 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         ShutdownHook.registerShutdownHook(this);
     }
 
-    public ConcurrentHashMap<URL, ConcurrentHashMap<ServiceListener, CuratorCache>> getServiceListeners() {
+    public Map<URL, Map<ServiceListener, CuratorCache>> getServiceListeners() {
         return serviceListeners;
     }
 
-    public ConcurrentHashMap<URL, ConcurrentHashMap<CommandListener, CuratorCache>> getCommandListeners() {
+    public Map<URL, Map<CommandListener, CuratorCache>> getCommandListeners() {
         return commandListeners;
     }
 
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
     private void subscribeServiceInternal(final URL url, final ServiceListener serviceListener) {
-        ConcurrentHashMap<ServiceListener, CuratorCache> childChangeListeners = serviceListeners.get(url);
-        if (childChangeListeners == null) {
-            serviceListeners.putIfAbsent(url, new ConcurrentHashMap<>());
-            childChangeListeners = serviceListeners.get(url);
-        }
+        Map<ServiceListener, CuratorCache> childChangeListeners = serviceListeners.computeIfAbsent(url, k -> new HashMap<>());
         CuratorCache curatorCache = childChangeListeners.get(serviceListener);
         if (curatorCache == null) {
             String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
@@ -88,13 +82,12 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
                     }
                 }
             });
-            childChangeListeners.putIfAbsent(serviceListener, curatorCache);
-            curatorCache = childChangeListeners.get(serviceListener);
+            childChangeListeners.put(serviceListener, curatorCache);
             curatorCache.start();
         }
 
         try {
-            // 防止旧节点未正常注销
+            // Remove stale nodes that may not have been properly unregistered
             removeNode(url, ZkNodeType.CLIENT);
             createNode(url, ZkNodeType.CLIENT);
         } catch (Exception e) {
@@ -116,13 +109,8 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         }
     }
 
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
     private void subscribeCommandInternal(final URL url, final CommandListener commandListener) {
-        ConcurrentHashMap<CommandListener, CuratorCache> dataChangeListeners = commandListeners.get(url);
-        if (dataChangeListeners == null) {
-            commandListeners.putIfAbsent(url, new ConcurrentHashMap<>());
-            dataChangeListeners = commandListeners.get(url);
-        }
+        Map<CommandListener, CuratorCache> dataChangeListeners = commandListeners.computeIfAbsent(url, k -> new HashMap<>());
         CuratorCache curatorCache = dataChangeListeners.get(commandListener);
         if (curatorCache == null) {
             final String commandPath = ZkUtils.toCommandPath(url);
@@ -140,8 +128,7 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
                     }
                 }
             });
-            dataChangeListeners.putIfAbsent(commandListener, curatorCache);
-            curatorCache = dataChangeListeners.get(commandListener);
+            dataChangeListeners.put(commandListener, curatorCache);
             curatorCache.start();
         }
 
@@ -230,9 +217,8 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         }
     }
 
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
     private void doRegisterInternal(URL url) {
-        // 防止旧节点未正常注销
+        // Remove stale nodes that may not have been properly unregistered
         removeNode(url, ZkNodeType.AVAILABLE_SERVER);
         removeNode(url, ZkNodeType.UNAVAILABLE_SERVER);
         createNode(url, ZkNodeType.UNAVAILABLE_SERVER);
@@ -263,7 +249,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         }
     }
 
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
     private void doAvailableInternal(URL url) {
         if (url == null) {
             availableServices.addAll(getRegisteredServiceUrls());
@@ -290,7 +275,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         }
     }
 
-    /* Internal method without locking, called by reconnect to avoid lock reentrancy */
     private void doUnavailableInternal(URL url) {
         if (url == null) {
             availableServices.removeAll(getRegisteredServiceUrls());
@@ -416,18 +400,18 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         if (serviceListeners != null && !serviceListeners.isEmpty()) {
             try {
                 clientLock.lock();
-                for (Map.Entry<URL, ConcurrentHashMap<ServiceListener, CuratorCache>> entry : serviceListeners.entrySet()) {
+                for (Map.Entry<URL, Map<ServiceListener, CuratorCache>> entry : serviceListeners.entrySet()) {
                     URL url = entry.getKey();
-                    ConcurrentHashMap<ServiceListener, CuratorCache> childChangeListeners = serviceListeners.get(url);
+                    Map<ServiceListener, CuratorCache> childChangeListeners = entry.getValue();
                     if (childChangeListeners != null) {
                         for (Map.Entry<ServiceListener, CuratorCache> e : childChangeListeners.entrySet()) {
                             subscribeServiceInternal(url, e.getKey());
                         }
                     }
                 }
-                for (Map.Entry<URL, ConcurrentHashMap<CommandListener, CuratorCache>> entry : commandListeners.entrySet()) {
+                for (Map.Entry<URL, Map<CommandListener, CuratorCache>> entry : commandListeners.entrySet()) {
                     URL url = entry.getKey();
-                    ConcurrentHashMap<CommandListener, CuratorCache> dataChangeListeners = commandListeners.get(url);
+                    Map<CommandListener, CuratorCache> dataChangeListeners = entry.getValue();
                     if (dataChangeListeners != null) {
                         for (Map.Entry<CommandListener, CuratorCache> e : dataChangeListeners.entrySet()) {
                             subscribeCommandInternal(url, e.getKey());
@@ -450,44 +434,49 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
 
     @Override
     protected void doSubscribeConfig(URL url, ConfigListener listener) {
-        ConcurrentHashMap<ConfigListener, CuratorCache> listeners = configListeners.get(url);
-        if (listeners == null) {
-            configListeners.putIfAbsent(url, new ConcurrentHashMap<>());
-            listeners = configListeners.get(url);
-        }
-        CuratorCache curatorCache = listeners.get(listener);
-        if (curatorCache == null) {
-            String configPath = ZkUtils.toConfigPath(url);
-            curatorCache = CuratorCache.build(curator, configPath);
-            curatorCache.listenable().addListener(new CuratorCacheListener() {
-                @Override
-                public void event(Type type, ChildData oldData, ChildData data) {
-                    if (type == Type.NODE_CHANGED || type == Type.NODE_CREATED) {
-                        String config = data == null || data.getData() == null ? null
-                                : new String(data.getData(), StandardCharsets.UTF_8);
-                        listener.notifyConfig(url, config);
-                        log.info("[ZookeeperRegistry] config data change: path={}, config={}", configPath, config);
-                    } else if (type == Type.NODE_DELETED) {
-                        listener.notifyConfig(url, null);
-                        log.info("[ZookeeperRegistry] config deleted: path={}", configPath);
+        try {
+            clientLock.lock();
+            Map<ConfigListener, CuratorCache> listeners = configListeners.computeIfAbsent(url, k -> new HashMap<>());
+            CuratorCache curatorCache = listeners.get(listener);
+            if (curatorCache == null) {
+                String configPath = ZkUtils.toConfigPath(url);
+                curatorCache = CuratorCache.build(curator, configPath);
+                curatorCache.listenable().addListener(new CuratorCacheListener() {
+                    @Override
+                    public void event(Type type, ChildData oldData, ChildData data) {
+                        if (type == Type.NODE_CHANGED || type == Type.NODE_CREATED) {
+                            String config = data == null || data.getData() == null ? null
+                                    : new String(data.getData(), StandardCharsets.UTF_8);
+                            listener.notifyConfig(url, config);
+                            log.info("[ZookeeperRegistry] config data change: path={}, config={}", configPath, config);
+                        } else if (type == Type.NODE_DELETED) {
+                            listener.notifyConfig(url, null);
+                            log.info("[ZookeeperRegistry] config deleted: path={}", configPath);
+                        }
                     }
-                }
-            });
-            listeners.putIfAbsent(listener, curatorCache);
-            curatorCache = listeners.get(listener);
-            curatorCache.start();
+                });
+                listeners.put(listener, curatorCache);
+                curatorCache.start();
+            }
+            log.info("[ZookeeperRegistry] subscribe config: path={}", ZkUtils.toConfigPath(url));
+        } finally {
+            clientLock.unlock();
         }
-        log.info("[ZookeeperRegistry] subscribe config: path={}", ZkUtils.toConfigPath(url));
     }
 
     @Override
     protected void doUnsubscribeConfig(URL url, ConfigListener listener) {
-        Map<ConfigListener, CuratorCache> listeners = configListeners.get(url);
-        if (listeners != null) {
-            CuratorCache curatorCache = listeners.remove(listener);
-            if (curatorCache != null) {
-                curatorCache.close();
+        try {
+            clientLock.lock();
+            Map<ConfigListener, CuratorCache> listeners = configListeners.get(url);
+            if (listeners != null) {
+                CuratorCache curatorCache = listeners.remove(listener);
+                if (curatorCache != null) {
+                    curatorCache.close();
+                }
             }
+        } finally {
+            clientLock.unlock();
         }
     }
 
@@ -505,20 +494,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         } catch (Exception e) {
             log.warn("[ZookeeperRegistry] discover config failed: path={}, msg={}", ZkUtils.toConfigPath(url), e.getMessage());
             return "";
-        }
-    }
-
-    @Override
-    protected void doPublishConfig(URL url, String configString) {
-        try {
-            String configPath = ZkUtils.toConfigPath(url);
-            if (curator.checkExists().forPath(configPath) == null) {
-                curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(configPath);
-            }
-            curator.setData().forPath(configPath, configString.getBytes(StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            throw new JawsFrameworkException(
-                    String.format("Failed to publish config %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         }
     }
 }

@@ -23,14 +23,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * Created by shenhongxi on 2021/4/21.
  */
-
 public abstract class AbstractRegistry implements Registry {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRegistry.class);
+
     protected String registryClassName = this.getClass().getSimpleName();
-    private ConcurrentHashMap<URL, Map<String, List<URL>>> subscribedCategoryResponses = new ConcurrentHashMap<>();
-    private URL registryUrl;
-    private Set<URL> registeredServiceUrls = new ConcurrentHashSet<>();
+    private final ConcurrentHashMap<URL, Map<String, List<URL>>> subscribedCategoryResponses = new ConcurrentHashMap<>();
+    private final URL registryUrl;
+    private final Set<URL> registeredServiceUrls = new ConcurrentHashSet<>();
 
     public AbstractRegistry(URL url) {
         this.registryUrl = url.createCopy();
@@ -55,7 +55,7 @@ public abstract class AbstractRegistry implements Registry {
             return;
         }
         log.info("[{}] Url ({}) will register to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
-        doRegister(removeUnnecessaryParams(url.createCopy()));
+        doRegister(removeRegistryUnnecessaryParams(url.createCopy()));
         registeredServiceUrls.add(url);
         // available if heartbeat toggle already open
         if (JawsToggleUtils.isOpen(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE)) {
@@ -70,7 +70,7 @@ public abstract class AbstractRegistry implements Registry {
             return;
         }
         log.info("[{}] Url ({}) will unregister to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
-        doUnregister(removeUnnecessaryParams(url.createCopy()));
+        doUnregister(removeRegistryUnnecessaryParams(url.createCopy()));
         registeredServiceUrls.remove(url);
     }
 
@@ -137,7 +137,7 @@ public abstract class AbstractRegistry implements Registry {
     public void available(URL url) {
         log.info("[{}] Url ({}) will set to available to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
         if (url != null) {
-            doAvailable(removeUnnecessaryParams(url.createCopy()));
+            doAvailable(removeRegistryUnnecessaryParams(url.createCopy()));
         } else {
             doAvailable(null);
         }
@@ -147,7 +147,7 @@ public abstract class AbstractRegistry implements Registry {
     public void unavailable(URL url) {
         log.info("[{}] Url ({}) will set to unavailable to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
         if (url != null) {
-            doUnavailable(removeUnnecessaryParams(url.createCopy()));
+            doUnavailable(removeRegistryUnnecessaryParams(url.createCopy()));
         } else {
             doUnavailable(null);
         }
@@ -197,13 +197,47 @@ public abstract class AbstractRegistry implements Registry {
     }
 
     /**
-     * 移除不必提交到注册中心的参数。这些参数不需要被client端感知。
-     *
-     * @param url
+     * Remove parameters that are irrelevant to service discovery before interacting with the registry.
+     * <p>
+     * These fall into two categories:
+     * <ul>
+     *   <li>Provider-local settings (e.g. thread pool, server connections, codec, endpointFactory)
+     *       that are transport/server concerns and not needed by consumers.</li>
+     *   <li>Consumer-local settings (e.g. retries, loadBalance, cluster, haStrategy, check)
+     *       that each consumer configures independently and should not be inherited from the provider.</li>
+     * </ul>
      */
-    private URL removeUnnecessaryParams(URL url) {
-        // codec参数不能提交到注册中心，如果client端没有对应的codec会导致client端不能正常请求。
+    private URL removeRegistryUnnecessaryParams(URL url) {
+        // Transport SPI: codec is a local transport concern, consumer applies default on connect
         url.getParameters().remove(URLParamType.codec.getName());
+        url.getParameters().remove(URLParamType.endpointFactory.getName());
+
+        // Provider-local server settings
+        url.getParameters().remove(URLParamType.maxServerConnections.getName());
+        url.getParameters().remove(URLParamType.minWorkerThreads.getName());
+        url.getParameters().remove(URLParamType.maxWorkerThreads.getName());
+        url.getParameters().remove(URLParamType.workerQueueSize.getName());
+        url.getParameters().remove(URLParamType.maxContentLength.getName());
+        url.getParameters().remove(URLParamType.shareChannel.getName());
+        url.getParameters().remove(URLParamType.accessLog.getName());
+
+        // Provider-local client connection settings
+        url.getParameters().remove(URLParamType.minClientConnections.getName());
+        url.getParameters().remove(URLParamType.maxClientConnections.getName());
+        url.getParameters().remove(URLParamType.maxConnectionsPerGroup.getName());
+
+        // Consumer-local settings: each consumer configures these independently
+        url.getParameters().remove(URLParamType.retries.getName());
+        url.getParameters().remove(URLParamType.check.getName());
+        url.getParameters().remove(URLParamType.throwException.getName());
+        url.getParameters().remove(URLParamType.cluster.getName());
+        url.getParameters().remove(URLParamType.loadBalance.getName());
+        url.getParameters().remove(URLParamType.haStrategy.getName());
+        url.getParameters().remove(URLParamType.requestTimeout.getName());
+        url.getParameters().remove(URLParamType.connectTimeout.getName());
+        url.getParameters().remove(URLParamType.filter.getName());
+        url.getParameters().remove(URLParamType.fusingThreshold.getName());
+
         return url;
     }
 
