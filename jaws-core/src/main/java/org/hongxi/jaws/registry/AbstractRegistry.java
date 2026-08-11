@@ -1,15 +1,14 @@
-package org.hongxi.jaws.registry.support;
+package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
-import org.hongxi.jaws.registry.NotifyListener;
-import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 /**
  * <pre>
@@ -30,8 +29,6 @@ public abstract class AbstractRegistry implements Registry {
     private final URL registryUrl;
 
     protected final Set<URL> registeredServiceUrls = new ConcurrentHashSet<>();
-
-    private final ConcurrentHashMap<URL, Map<String, List<URL>>> subscribedCategoryResponses = new ConcurrentHashMap<>();
 
     public AbstractRegistry(URL url) {
         this.registryUrl = url.createCopy();
@@ -67,26 +64,11 @@ public abstract class AbstractRegistry implements Registry {
 
     @Override
     public List<URL> discover(URL url) {
-        if (url == null) {
-            log.warn("[{}] discover with malformed param, refUrl is null", registryClassName);
-            return Collections.emptyList();
-        }
-        url = url.createCopy();
         List<URL> results = new ArrayList<>();
-
-        Map<String, List<URL>> categoryUrls = subscribedCategoryResponses.get(url);
-        if (categoryUrls != null && !categoryUrls.isEmpty()) {
-            for (List<URL> urls : categoryUrls.values()) {
-                for (URL tempUrl : urls) {
-                    results.add(tempUrl.createCopy());
-                }
-            }
-        } else {
-            List<URL> urlsDiscovered = doDiscover(url);
-            if (urlsDiscovered != null) {
-                for (URL u : urlsDiscovered) {
-                    results.add(u.createCopy());
-                }
+        List<URL> urls = doDiscover(url.createCopy());
+        if (urls != null) {
+            for (URL u : urls) {
+                results.add(u.createCopy());
             }
         }
         return results;
@@ -95,49 +77,6 @@ public abstract class AbstractRegistry implements Registry {
     @Override
     public URL getUrl() {
         return registryUrl;
-    }
-
-    protected List<URL> getCachedUrls(URL url) {
-        Map<String, List<URL>> rsUrls = subscribedCategoryResponses.get(url);
-        if (rsUrls == null || rsUrls.isEmpty()) {
-            return null;
-        }
-
-        List<URL> urls = new ArrayList<>();
-        for (List<URL> us : rsUrls.values()) {
-            for (URL tempUrl : us) {
-                urls.add(tempUrl.createCopy());
-            }
-        }
-        return urls;
-    }
-
-    protected void notify(URL refUrl, NotifyListener listener, List<URL> urls) {
-        if (listener == null || urls == null) {
-            return;
-        }
-        Map<String, List<URL>> nodeTypeUrlsInRs = new HashMap<>();
-        for (URL surl : urls) {
-            String nodeType = surl.getParameter(URLParamType.nodeType.getName(), URLParamType.nodeType.value());
-            List<URL> oneNodeTypeUrls = nodeTypeUrlsInRs.get(nodeType);
-            if (oneNodeTypeUrls == null) {
-                nodeTypeUrlsInRs.put(nodeType, new ArrayList<>());
-                oneNodeTypeUrls = nodeTypeUrlsInRs.get(nodeType);
-            }
-            oneNodeTypeUrls.add(surl);
-        }
-        Map<String, List<URL>> curls = subscribedCategoryResponses.get(refUrl);
-        if (curls == null) {
-            subscribedCategoryResponses.putIfAbsent(refUrl, new ConcurrentHashMap<>());
-            curls = subscribedCategoryResponses.get(refUrl);
-        }
-
-        // refresh local urls cache
-        curls.putAll(nodeTypeUrlsInRs);
-
-        for (List<URL> us : nodeTypeUrlsInRs.values()) {
-            listener.notify(getUrl(), us);
-        }
     }
 
     /**

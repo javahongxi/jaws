@@ -1,9 +1,7 @@
-package org.hongxi.jaws.registry.support;
+package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.registry.Registry;
-import org.hongxi.jaws.registry.RegistryFactory;
 import org.hongxi.jaws.rpc.URL;
 
 import java.util.concurrent.ConcurrentHashMap;

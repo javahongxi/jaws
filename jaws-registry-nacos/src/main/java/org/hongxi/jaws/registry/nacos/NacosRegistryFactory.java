@@ -6,7 +6,7 @@ import com.alibaba.nacos.api.naming.NamingService;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.registry.Registry;
-import org.hongxi.jaws.registry.support.AbstractRegistryFactory;
+import org.hongxi.jaws.registry.AbstractRegistryFactory;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

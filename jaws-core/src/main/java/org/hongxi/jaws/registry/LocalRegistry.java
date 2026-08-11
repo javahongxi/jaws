@@ -1,11 +1,10 @@
-package org.hongxi.jaws.registry.support;
+package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
-import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

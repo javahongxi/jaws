@@ -1,2 +1,2 @@
-org.hongxi.jaws.registry.support.LocalRegistryFactory
-org.hongxi.jaws.registry.support.DirectRegistryFactory
+org.hongxi.jaws.registry.LocalRegistryFactory
+org.hongxi.jaws.registry.DirectRegistryFactory

@@ -1,7 +1,6 @@
-package org.hongxi.jaws.registry.support;
+package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.rpc.URL;
 
 /**

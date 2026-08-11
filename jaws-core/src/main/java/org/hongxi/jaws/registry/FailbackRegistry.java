@@ -4,7 +4,6 @@ import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.registry.support.AbstractRegistry;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +22,8 @@ import java.util.concurrent.TimeUnit;
 public abstract class FailbackRegistry extends AbstractRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(FailbackRegistry.class);
-    private static ScheduledExecutorService retryExecutor = Executors.newScheduledThreadPool(1);
+
+    private static final ScheduledExecutorService retryExecutor = Executors.newScheduledThreadPool(2);
 
     static {
         ShutdownHook.registerShutdownHook(() -> {
@@ -33,10 +33,10 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         });
     }
 
-    private Set<URL> failedRegistered = new ConcurrentHashSet<>();
-    private Set<URL> failedUnregistered = new ConcurrentHashSet<>();
-    private ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedSubscribed = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<>();
+    private final Set<URL> failedRegistered = new ConcurrentHashSet<>();
+    private final Set<URL> failedUnregistered = new ConcurrentHashSet<>();
+    private final ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedSubscribed = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<>();
 
     public FailbackRegistry(URL url) {
         super(url);
@@ -47,7 +47,6 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             } catch (Exception e) {
                 log.warn("[{}] False when retry in failback registry", registryClassName, e);
             }
-
         }, retryPeriod, retryPeriod, TimeUnit.MILLISECONDS);
     }
 
@@ -88,10 +87,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         try {
             super.subscribe(url, listener);
         } catch (Exception e) {
-            List<URL> cachedUrls = getCachedUrls(url);
-            if (cachedUrls != null && !cachedUrls.isEmpty()) {
-                listener.notify(getUrl(), cachedUrls);
-            } else if (isCheckingUrls(getUrl(), url)) {
+            if (isCheckingUrls(getUrl(), url)) {
                 log.warn("[{}] false to subscribe {} from {}", registryClassName, url, getUrl(), e);
                 throw new JawsFrameworkException(String.format("[%s] false to subscribe %s from %s", registryClassName, url, getUrl()), e);
             }
@@ -119,9 +115,8 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         try {
             return super.discover(url);
         } catch (Exception e) {
-            // 如果discover失败，返回一个empty list吧，毕竟是个下行动作，
             log.warn("Failed to discover url:{} in registry ({})", url, getUrl(), e);
-            return Collections.emptyList();
+            return List.of();
         }
     }
 

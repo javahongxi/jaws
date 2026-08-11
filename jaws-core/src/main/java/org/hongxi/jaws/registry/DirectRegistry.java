@@ -1,14 +1,12 @@
-package org.hongxi.jaws.registry.support;
+package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.rpc.URL;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created by shenhongxi on 2021/4/22.
