@@ -49,8 +49,6 @@ public enum URLParamType {
     codec("codec", "jaws"),
     endpointFactory("endpointFactory", "netty"),
 
-    toggleService("toggleService", "localToggleService"),
-
     /************************** SPI end ******************************/
 
     group("group", "default_rpc"),

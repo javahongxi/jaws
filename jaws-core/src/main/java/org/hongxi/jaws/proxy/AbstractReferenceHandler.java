@@ -9,9 +9,8 @@ import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsServiceException;
+import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.rpc.*;
-import org.hongxi.jaws.toggle.Toggle;
-import org.hongxi.jaws.toggle.ToggleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,12 +33,8 @@ public class AbstractReferenceHandler<T> {
     protected Class<T> clazz;
     protected String interfaceName;
 
-    protected ToggleService toggleService = null;
-
     void init() {
-        // clusters 不应该为空
-        String toggleName = this.clusters.get(0).getUrl().getParameter(URLParamType.toggleService.getName(), URLParamType.toggleService.value());
-        toggleService = ExtensionLoader.getExtensionLoader(ToggleService.class).getExtension(toggleName);
+        // DynamicConfiguration is accessed via DynamicConfigurationUtils (global singleton)
     }
 
     Object invokeRequest(Request request, Class<?> returnType, boolean async) throws Throwable {
@@ -73,8 +68,7 @@ public class AbstractReferenceHandler<T> {
 
         for (Cluster<T> cluster : clusters) {
             String protocolToggle = JawsConstants.PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
-            Toggle toggle = toggleService.getToggle(protocolToggle);
-            if (toggle != null && !toggle.isOn()) {
+            if (!DynamicConfigurationUtils.isEnabled(protocolToggle, true)) {
                 continue;
             }
 
@@ -145,10 +139,7 @@ public class AbstractReferenceHandler<T> {
         // 那么正常情况下只会使用A，如果A被开关降级，那么就会使用B，B也被降级，那么会使用C
         for (Cluster<T> cluster : clusters) {
             String protocolToggle = JawsConstants.PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
-
-            Toggle toggle = toggleService.getToggle(protocolToggle);
-
-            if (toggle != null && !toggle.isOn()) {
+            if (!DynamicConfigurationUtils.isEnabled(protocolToggle, true)) {
                 continue;
             }
 

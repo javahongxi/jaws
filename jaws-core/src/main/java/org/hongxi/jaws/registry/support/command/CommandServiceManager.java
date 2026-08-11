@@ -8,7 +8,6 @@ import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.toggle.JawsToggleUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,13 +20,8 @@ import java.util.regex.Pattern;
  */
 public class CommandServiceManager implements CommandListener, ServiceListener {
 
-    public static final String JAWS_COMMAND_TOGGLE = "feature.jawsrpc.command.enable";
     private static final Logger log = LoggerFactory.getLogger(CommandServiceManager.class);
     private static Pattern IP_PATTERN = Pattern.compile("^!?[0-9.]*\\*?$");
-
-    static {
-        JawsToggleUtils.initToggle(JAWS_COMMAND_TOGGLE, true);
-    }
 
     private URL refUrl;
     private ConcurrentHashSet<NotifyListener> notifySet;
