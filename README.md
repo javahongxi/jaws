@@ -18,7 +18,9 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
 - **服务鉴权 / Token** — 基于 Token 的服务认证，防止未授权调用，通过 Filter 自动生效
 - **配置热更新** — 运行时动态调整负载均衡、容错策略、超时、重试等参数，无需重启服务
-- **流量调度 / Command** — 跨分组流量调度，支持按权重合并多 group 服务、IP 路由规则，灰度发布利器
+- **流量调度 / Command** — 跨分组流量调度，支持按权重合并多 group 服务，灰度发布利器
+- **路由链 / Router** — 可扩展的调用时路由过滤链，内置 IP 路由规则，通过 Router SPI 灵活定制流量策略
+- **动态配置** — 运行时键值配置与监听通知机制，支持本地内存与 Nacos / ZooKeeper 远程配置中心
 - **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 - **MCP 桥接** — 将 Jaws RPC 服务自动暴露为 MCP Tools，AI Agent 可直接调用后端服务
 - **REST 桥接** — 将 Jaws RPC 服务通过 REST API 对外暴露，传统 HTTP 客户端可直接调用，与 MCP 共享核心组件
@@ -164,7 +166,7 @@ public class MyRunner implements CommandLineRunner {
 | [服务鉴权](doc/token-auth.md)          | 基于 Token 的服务认证                    |
 | [连接预热](doc/warm-up.md)             | Provider 冷启动权重渐增                  |
 | [配置热更新](doc/config-hot-reload.md) | 运行时动态调整负载均衡、容错、超时等参数 |
-| [流量调度](doc/command-routing.md)     | 跨分组流量合并与 IP 路由规则             |
+| [流量调度](doc/command-routing.md)     | 跨分组流量合并与权重调度                 |
 | [可观测性](doc/observability.md)       | Micrometer 指标 + OpenTelemetry 链路追踪 |
 | [MCP 桥接](doc/mcp-bridge.md)          | 将 RPC 服务自动暴露为 MCP Tools          |
 | [REST 桥接](doc/rest-bridge.md)        | 将 RPC 服务通过 REST API 对外暴露        |
