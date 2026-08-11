@@ -8,7 +8,6 @@ import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.OrderService;
 import org.hongxi.jaws.sample.provider.service.DemoServiceImpl;
 import org.hongxi.jaws.sample.provider.service.OrderServiceImpl;
-import org.hongxi.jaws.toggle.JawsToggleUtils;
 
 /**
  * 服务提供者示例
@@ -56,8 +55,6 @@ public class SampleProvider {
         orderServiceConfig.setRegistry(registryConfig);
         orderServiceConfig.export();
         System.out.println("OrderService exported.");
-
-        JawsToggleUtils.setToggleValue(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE, true);
     }
 
     private static ProtocolConfig createProtocolConfig(String protocolName) {

@@ -11,7 +11,6 @@ import org.apache.zookeeper.CreateMode;
 import org.hongxi.jaws.lifecycle.Closeable;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.registry.ConfigListener;
 import org.hongxi.jaws.registry.support.command.CommandFailbackRegistry;
@@ -35,7 +34,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
     private final CuratorFramework curator;
-    private final Set<URL> availableServices = new ConcurrentHashSet<>();
     private final Map<URL, Map<ServiceListener, CuratorCache>> serviceListeners = new HashMap<>();
     private final Map<URL, Map<CommandListener, CuratorCache>> commandListeners = new HashMap<>();
     private final Map<URL, Map<ConfigListener, CuratorCache>> configListeners = new HashMap<>();
@@ -221,7 +219,7 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         // Remove stale nodes that may not have been properly unregistered
         removeNode(url, ZkNodeType.AVAILABLE_SERVER);
         removeNode(url, ZkNodeType.UNAVAILABLE_SERVER);
-        createNode(url, ZkNodeType.UNAVAILABLE_SERVER);
+        createNode(url, ZkNodeType.AVAILABLE_SERVER);
     }
 
     @Override
@@ -244,58 +242,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
             removeNode(url, ZkNodeType.UNAVAILABLE_SERVER);
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to unregister %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            serverLock.unlock();
-        }
-    }
-
-    private void doAvailableInternal(URL url) {
-        if (url == null) {
-            availableServices.addAll(getRegisteredServiceUrls());
-            for (URL u : getRegisteredServiceUrls()) {
-                removeNode(u, ZkNodeType.AVAILABLE_SERVER);
-                removeNode(u, ZkNodeType.UNAVAILABLE_SERVER);
-                createNode(u, ZkNodeType.AVAILABLE_SERVER);
-            }
-        } else {
-            availableServices.add(url);
-            removeNode(url, ZkNodeType.AVAILABLE_SERVER);
-            removeNode(url, ZkNodeType.UNAVAILABLE_SERVER);
-            createNode(url, ZkNodeType.AVAILABLE_SERVER);
-        }
-    }
-
-    @Override
-    protected void doAvailable(URL url) {
-        try {
-            serverLock.lock();
-            doAvailableInternal(url);
-        } finally {
-            serverLock.unlock();
-        }
-    }
-
-    private void doUnavailableInternal(URL url) {
-        if (url == null) {
-            availableServices.removeAll(getRegisteredServiceUrls());
-            for (URL u : getRegisteredServiceUrls()) {
-                removeNode(u, ZkNodeType.AVAILABLE_SERVER);
-                removeNode(u, ZkNodeType.UNAVAILABLE_SERVER);
-                createNode(u, ZkNodeType.UNAVAILABLE_SERVER);
-            }
-        } else {
-            availableServices.remove(url);
-            removeNode(url, ZkNodeType.AVAILABLE_SERVER);
-            removeNode(url, ZkNodeType.UNAVAILABLE_SERVER);
-            createNode(url, ZkNodeType.UNAVAILABLE_SERVER);
-        }
-    }
-
-    @Override
-    protected void doUnavailable(URL url) {
-        try {
-            serverLock.lock();
-            doUnavailableInternal(url);
         } finally {
             serverLock.unlock();
         }
@@ -381,15 +327,6 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
                     doRegisterInternal(url);
                 }
                 log.info("[{}] reconnect: register services {}", registryClassName, allRegisteredServices);
-
-                for (URL url : availableServices) {
-                    if (!getRegisteredServiceUrls().contains(url)) {
-                        log.warn("reconnect url not register. url:{}", url);
-                        continue;
-                    }
-                    doAvailableInternal(url);
-                }
-                log.info("[{}] reconnect: available services {}", registryClassName, availableServices);
             } finally {
                 serverLock.unlock();
             }

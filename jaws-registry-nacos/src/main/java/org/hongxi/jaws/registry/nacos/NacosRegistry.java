@@ -43,7 +43,6 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
     private static final String METADATA_KEY_FULL_URL = "fullUrl";
     private static final String METADATA_KEY_NODE_TYPE = "nodeType";
     private static final String NODE_TYPE_AVAILABLE = "available";
-    private static final String NODE_TYPE_UNAVAILABLE = "unavailable";
 
     private final NamingService namingService;
     private final ConfigService configService;
@@ -234,8 +233,7 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
             serverLock.lock();
             // Remove stale nodes that may not have been properly unregistered
             removeInstance(url, NODE_TYPE_AVAILABLE);
-            removeInstance(url, NODE_TYPE_UNAVAILABLE);
-            registerInstance(url, NODE_TYPE_UNAVAILABLE);
+            registerInstance(url, NODE_TYPE_AVAILABLE);
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to register %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -249,50 +247,9 @@ public class NacosRegistry extends CommandFailbackRegistry implements Closeable 
         try {
             serverLock.lock();
             removeInstance(url, NODE_TYPE_AVAILABLE);
-            removeInstance(url, NODE_TYPE_UNAVAILABLE);
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to unregister %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            serverLock.unlock();
-        }
-    }
-
-    @Override
-    protected void doAvailable(URL url) {
-        try {
-            serverLock.lock();
-            if (url == null) {
-                for (URL u : getRegisteredServiceUrls()) {
-                    removeInstance(u, NODE_TYPE_AVAILABLE);
-                    removeInstance(u, NODE_TYPE_UNAVAILABLE);
-                    registerInstance(u, NODE_TYPE_AVAILABLE);
-                }
-            } else {
-                removeInstance(url, NODE_TYPE_AVAILABLE);
-                removeInstance(url, NODE_TYPE_UNAVAILABLE);
-                registerInstance(url, NODE_TYPE_AVAILABLE);
-            }
-        } finally {
-            serverLock.unlock();
-        }
-    }
-
-    @Override
-    protected void doUnavailable(URL url) {
-        try {
-            serverLock.lock();
-            if (url == null) {
-                for (URL u : getRegisteredServiceUrls()) {
-                    removeInstance(u, NODE_TYPE_AVAILABLE);
-                    removeInstance(u, NODE_TYPE_UNAVAILABLE);
-                    registerInstance(u, NODE_TYPE_UNAVAILABLE);
-                }
-            } else {
-                removeInstance(url, NODE_TYPE_AVAILABLE);
-                removeInstance(url, NODE_TYPE_UNAVAILABLE);
-                registerInstance(url, NODE_TYPE_UNAVAILABLE);
-            }
         } finally {
             serverLock.unlock();
         }

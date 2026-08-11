@@ -91,14 +91,4 @@ public class DirectRegistry extends AbstractRegistry {
         }
         return result;
     }
-
-    @Override
-    protected void doAvailable(URL url) {
-        // do nothing
-    }
-
-    @Override
-    protected void doUnavailable(URL url) {
-        // do nothing
-    }
 }

@@ -1,7 +1,5 @@
 package org.hongxi.jaws.spring.boot;
 
-import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.toggle.JawsToggleUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationListener;
@@ -65,13 +63,6 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
             }
         }
 
-        /* start heartbeat after all services are exported */
-        try {
-            JawsToggleUtils.setToggleValue(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE, true);
-        } catch (Exception e) {
-            log.warn("[JawsBootstrap] failed to start heartbeat toggle", e);
-        }
-
         log.info("[JawsBootstrap] all services exported, count={}", serviceBeans.size());
     }
 
@@ -82,13 +73,6 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
         stopped = true;
 
         log.info("[JawsBootstrap] starting graceful shutdown...");
-
-        // Stop heartbeat first to prevent registry from thinking service is still alive
-        try {
-            JawsToggleUtils.setToggleValue(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE, false);
-        } catch (Exception e) {
-            log.debug("[JawsBootstrap] failed to close heartbeat toggle", e);
-        }
 
         // Trigger graceful shutdown via ServiceBean.destroy() -> unexport() -> 4-phase shutdown
         Map<String, ServiceBean> serviceBeans =

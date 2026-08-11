@@ -27,8 +27,6 @@ public class JawsConstants {
     public static final String ZOOKEEPER_REGISTRY_COMMAND = "/command";
     public static final String ZOOKEEPER_REGISTRY_CONFIG = "/config";
 
-    public static final String REGISTRY_HEARTBEAT_TOGGLE = "feature.configserver.heartbeat";
-
     public static final String PROTOCOL_TOGGLE_PREFIX = "protocol:";
 
     /**

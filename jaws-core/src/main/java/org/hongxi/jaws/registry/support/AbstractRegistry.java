@@ -1,12 +1,10 @@
 package org.hongxi.jaws.registry.support;
 
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.toggle.JawsToggleUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,18 +32,6 @@ public abstract class AbstractRegistry implements Registry {
 
     public AbstractRegistry(URL url) {
         this.registryUrl = url.createCopy();
-
-        // register a heartbeat toggle to perceive service state change and change available state
-        JawsToggleUtils.initToggle(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE, false);
-        JawsToggleUtils.registerToggleListener(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE, (key, value) -> {
-            if (key != null && value != null) {
-                if (value) {
-                    available(null);
-                } else {
-                    unavailable(null);
-                }
-            }
-        });
     }
 
     @Override
@@ -57,10 +43,6 @@ public abstract class AbstractRegistry implements Registry {
         log.info("[{}] Url ({}) will register to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
         doRegister(removeRegistryUnnecessaryParams(url.createCopy()));
         registeredServiceUrls.add(url);
-        // available if heartbeat toggle already open
-        if (JawsToggleUtils.isOpen(JawsConstants.REGISTRY_HEARTBEAT_TOGGLE)) {
-            available(url);
-        }
     }
 
     @Override
@@ -131,26 +113,6 @@ public abstract class AbstractRegistry implements Registry {
     @Override
     public Collection<URL> getRegisteredServiceUrls() {
         return registeredServiceUrls;
-    }
-
-    @Override
-    public void available(URL url) {
-        log.info("[{}] Url ({}) will set to available to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
-        if (url != null) {
-            doAvailable(removeRegistryUnnecessaryParams(url.createCopy()));
-        } else {
-            doAvailable(null);
-        }
-    }
-
-    @Override
-    public void unavailable(URL url) {
-        log.info("[{}] Url ({}) will set to unavailable to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
-        if (url != null) {
-            doUnavailable(removeRegistryUnnecessaryParams(url.createCopy()));
-        } else {
-            doUnavailable(null);
-        }
     }
 
     protected List<URL> getCachedUrls(URL url) {
@@ -250,9 +212,5 @@ public abstract class AbstractRegistry implements Registry {
     protected abstract void doUnsubscribe(URL url, NotifyListener listener);
 
     protected abstract List<URL> doDiscover(URL url);
-
-    protected abstract void doAvailable(URL url);
-
-    protected abstract void doUnavailable(URL url);
 
 }
