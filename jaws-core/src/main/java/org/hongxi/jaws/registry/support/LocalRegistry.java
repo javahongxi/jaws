@@ -5,9 +5,7 @@ import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
-import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.registry.NotifyListener;
-import org.hongxi.jaws.registry.RegistryService;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,15 +25,10 @@ public class LocalRegistry extends AbstractRegistry {
     /**
      * Map<interface/nodeType, List<URL>>, List 中的url用identity/id来区分唯一性
      */
-    private ConcurrentMap<String, List<URL>> registeredServices = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, List<URL>> registeredServices = new ConcurrentHashMap<>();
 
     private ConcurrentHashMap<String, ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>>> subscribeListeners =
             new ConcurrentHashMap<>();
-
-    public LocalRegistry() {
-        this(new URL(JawsConstants.REGISTRY_PROTOCOL_LOCAL, NetUtils.LOCALHOST, JawsConstants.DEFAULT_INT_VALUE,
-                RegistryService.class.getName()));
-    }
 
     public LocalRegistry(URL url) {
         super(url);

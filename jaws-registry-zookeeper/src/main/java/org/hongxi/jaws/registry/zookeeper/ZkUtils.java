@@ -16,14 +16,6 @@ public class ZkUtils {
         return toGroupPath(url) + JawsConstants.PATH_SEPARATOR + url.getPath();
     }
 
-    public static String toCommandPath(URL url) {
-        return toGroupPath(url) + JawsConstants.ZOOKEEPER_REGISTRY_COMMAND;
-    }
-
-    public static String toConfigPath(URL url) {
-        return toServicePath(url) + JawsConstants.ZOOKEEPER_REGISTRY_CONFIG;
-    }
-
     public static String toNodeTypePath(URL url, ZkNodeType nodeType) {
         return toServicePath(url) + JawsConstants.PATH_SEPARATOR + nodeType.getValue();
     }

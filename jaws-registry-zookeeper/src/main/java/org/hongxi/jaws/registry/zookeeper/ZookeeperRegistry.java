@@ -12,10 +12,8 @@ import org.hongxi.jaws.lifecycle.Closeable;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.registry.ConfigListener;
-import org.hongxi.jaws.registry.support.command.CommandFailbackRegistry;
-import org.hongxi.jaws.registry.support.command.CommandListener;
-import org.hongxi.jaws.registry.support.command.ServiceListener;
+import org.hongxi.jaws.registry.FailbackRegistry;
+import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,16 +25,14 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Created by shenhongxi on 2021/4/24.
  */
-public class ZookeeperRegistry extends CommandFailbackRegistry implements Closeable {
+public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     private static final Logger log = LoggerFactory.getLogger(ZookeeperRegistry.class);
 
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
     private final CuratorFramework curator;
-    private final Map<URL, Map<ServiceListener, CuratorCache>> serviceListeners = new HashMap<>();
-    private final Map<URL, Map<CommandListener, CuratorCache>> commandListeners = new HashMap<>();
-    private final Map<URL, Map<ConfigListener, CuratorCache>> configListeners = new HashMap<>();
+    private final Map<URL, Map<NotifyListener, CuratorCache>> serviceListeners = new HashMap<>();
 
     public ZookeeperRegistry(URL url, CuratorFramework client) {
         super(url);
@@ -44,167 +40,12 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         ConnectionStateListener connectionStateListener = (curatorFramework, connectionState) -> {
             if (connectionState == ConnectionState.RECONNECTED) {
                 log.info("zkRegistry get reconnected notify.");
-                reconnectService();
-                reconnectClient();
+                reregisterServices();
+                resubscribeServices();
             }
         };
         curator.getConnectionStateListenable().addListener(connectionStateListener);
         ShutdownHook.registerShutdownHook(this);
-    }
-
-    @Override
-    protected void subscribeService(final URL url, final ServiceListener serviceListener) {
-        try {
-            clientLock.lock();
-            subscribeServiceInternal(url, serviceListener);
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            clientLock.unlock();
-        }
-    }
-
-    private void subscribeServiceInternal(final URL url, final ServiceListener serviceListener) {
-        Map<ServiceListener, CuratorCache> childChangeListeners = serviceListeners.computeIfAbsent(url, k -> new HashMap<>());
-        CuratorCache curatorCache = childChangeListeners.get(serviceListener);
-        if (curatorCache == null) {
-            String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
-            curatorCache = CuratorCache.build(curator, serverTypePath);
-            curatorCache.listenable().addListener(new CuratorCacheListener() {
-                @Override
-                public void event(Type type, ChildData oldData, ChildData data) {
-                    if (type == Type.NODE_CREATED || type == Type.NODE_DELETED) {
-                        try {
-                            List<String> currentChildren = curator.getChildren().forPath(serverTypePath);
-                            serviceListener.notifyService(url, getUrl(), nodeChildrenToUrls(url, serverTypePath, currentChildren));
-                            log.info("[ZookeeperRegistry] service list change: path={}, currentChildren={}", serverTypePath, currentChildren);
-                        } catch (Exception e) {
-                            log.warn("[ZookeeperRegistry] failed to get children for path {}", serverTypePath, e);
-                        }
-                    }
-                }
-            });
-            childChangeListeners.put(serviceListener, curatorCache);
-            curatorCache.start();
-        }
-
-        try {
-            // Remove stale nodes that may not have been properly unregistered
-            removeNode(url, ZkNodeType.CLIENT);
-            createNode(url, ZkNodeType.CLIENT);
-        } catch (Exception e) {
-            log.warn("[ZookeeperRegistry] subscribe service: create node error, path={}, msg={}", ZkUtils.toNodePath(url, ZkNodeType.CLIENT), e.getMessage());
-        }
-
-        log.info("[ZookeeperRegistry] subscribe service: path={}, info={}", ZkUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr());
-    }
-
-    @Override
-    protected void subscribeCommand(final URL url, final CommandListener commandListener) {
-        try {
-            clientLock.lock();
-            subscribeCommandInternal(url, commandListener);
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            clientLock.unlock();
-        }
-    }
-
-    private void subscribeCommandInternal(final URL url, final CommandListener commandListener) {
-        Map<CommandListener, CuratorCache> dataChangeListeners = commandListeners.computeIfAbsent(url, k -> new HashMap<>());
-        CuratorCache curatorCache = dataChangeListeners.get(commandListener);
-        if (curatorCache == null) {
-            final String commandPath = ZkUtils.toCommandPath(url);
-            curatorCache = CuratorCache.build(curator, commandPath);
-            curatorCache.listenable().addListener(new CuratorCacheListener() {
-                @Override
-                public void event(Type type, ChildData oldData, ChildData data) {
-                    if (type == Type.NODE_CHANGED || type == Type.NODE_CREATED) {
-                        String command = data == null || data.getData() == null ? null : new String(data.getData(), StandardCharsets.UTF_8);
-                        commandListener.notifyCommand(url, command);
-                        log.info("[ZookeeperRegistry] command data change: path={}, command={}", commandPath, command);
-                    } else if (type == Type.NODE_DELETED) {
-                        commandListener.notifyCommand(url, null);
-                        log.info("[ZookeeperRegistry] command deleted: path={}", commandPath);
-                    }
-                }
-            });
-            dataChangeListeners.put(commandListener, curatorCache);
-            curatorCache.start();
-        }
-
-        String commandPath = ZkUtils.toCommandPath(url);
-        log.info("[ZookeeperRegistry] subscribe command: path={}, info={}", commandPath, url.toFullStr());
-    }
-
-    @Override
-    protected void unsubscribeService(URL url, ServiceListener serviceListener) {
-        try {
-            clientLock.lock();
-            Map<ServiceListener, CuratorCache> childChangeListeners = serviceListeners.get(url);
-            if (childChangeListeners != null) {
-                CuratorCache curatorCache = childChangeListeners.get(serviceListener);
-                if (curatorCache != null) {
-                    curatorCache.close();
-                    childChangeListeners.remove(serviceListener);
-                }
-            }
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(String.format("Failed to unsubscribe service %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            clientLock.unlock();
-        }
-    }
-
-    @Override
-    protected void unsubscribeCommand(URL url, CommandListener commandListener) {
-        try {
-            clientLock.lock();
-            Map<CommandListener, CuratorCache> dataChangeListeners = commandListeners.get(url);
-            if (dataChangeListeners != null) {
-                CuratorCache curatorCache = dataChangeListeners.get(commandListener);
-                if (curatorCache != null) {
-                    curatorCache.close();
-                    dataChangeListeners.remove(commandListener);
-                }
-            }
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(String.format("Failed to unsubscribe command %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            clientLock.unlock();
-        }
-    }
-
-    @Override
-    protected List<URL> discoverService(URL url) {
-        try {
-            String parentPath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
-            List<String> currentChildren = new ArrayList<>();
-            if (curator.checkExists().forPath(parentPath) != null) {
-                currentChildren = curator.getChildren().forPath(parentPath);
-            }
-            return nodeChildrenToUrls(url, parentPath, currentChildren);
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(String.format("Failed to discover service %s from zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        }
-    }
-
-    @Override
-    protected String discoverCommand(URL url) {
-        try {
-            String commandPath = ZkUtils.toCommandPath(url);
-            String command = "";
-            if (curator.checkExists().forPath(commandPath) != null) {
-                byte[] data = curator.getData().forPath(commandPath);
-                if (data != null) {
-                    command = new String(data, StandardCharsets.UTF_8);
-                }
-            }
-            return command;
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(String.format("Failed to discover command %s from zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()));
-        }
     }
 
     @Override
@@ -230,6 +71,86 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
             throw new JawsFrameworkException(String.format("Failed to unregister %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         } finally {
             serverLock.unlock();
+        }
+    }
+
+    @Override
+    protected void doSubscribe(final URL url, final NotifyListener listener) {
+        try {
+            clientLock.lock();
+            subscribeServiceInternal(url, listener);
+        } catch (Throwable e) {
+            throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        } finally {
+            clientLock.unlock();
+        }
+    }
+
+    private void subscribeServiceInternal(final URL url, final NotifyListener listener) {
+        Map<NotifyListener, CuratorCache> childChangeListeners = serviceListeners.computeIfAbsent(url, k -> new HashMap<>());
+        CuratorCache curatorCache = childChangeListeners.get(listener);
+        if (curatorCache == null) {
+            String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
+            curatorCache = CuratorCache.build(curator, serverTypePath);
+            curatorCache.listenable().addListener(new CuratorCacheListener() {
+                @Override
+                public void event(Type type, ChildData oldData, ChildData data) {
+                    if (type == Type.NODE_CREATED || type == Type.NODE_DELETED) {
+                        try {
+                            List<String> currentChildren = curator.getChildren().forPath(serverTypePath);
+                            List<URL> urls = nodeChildrenToUrls(url, serverTypePath, currentChildren);
+                            listener.notify(getUrl(), urls);
+                            log.info("[ZookeeperRegistry] service list change: path={}, currentChildren={}", serverTypePath, currentChildren);
+                        } catch (Exception e) {
+                            log.warn("[ZookeeperRegistry] failed to get children for path {}", serverTypePath, e);
+                        }
+                    }
+                }
+            });
+            childChangeListeners.put(listener, curatorCache);
+            curatorCache.start();
+        }
+
+        try {
+            // Remove stale nodes that may not have been properly unregistered
+            removeNode(url, ZkNodeType.CLIENT);
+            createNode(url, ZkNodeType.CLIENT);
+        } catch (Exception e) {
+            log.warn("[ZookeeperRegistry] subscribe service: create node error, path={}, msg={}", ZkUtils.toNodePath(url, ZkNodeType.CLIENT), e.getMessage());
+        }
+
+        log.info("[ZookeeperRegistry] subscribe service: path={}, info={}", ZkUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr());
+    }
+
+    @Override
+    protected void doUnsubscribe(URL url, NotifyListener listener) {
+        try {
+            clientLock.lock();
+            Map<NotifyListener, CuratorCache> childChangeListeners = serviceListeners.get(url);
+            if (childChangeListeners != null) {
+                CuratorCache curatorCache = childChangeListeners.remove(listener);
+                if (curatorCache != null) {
+                    curatorCache.close();
+                }
+            }
+        } catch (Throwable e) {
+            throw new JawsFrameworkException(String.format("Failed to unsubscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        } finally {
+            clientLock.unlock();
+        }
+    }
+
+    @Override
+    protected List<URL> doDiscover(URL url) {
+        try {
+            String parentPath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
+            List<String> currentChildren = new ArrayList<>();
+            if (curator.checkExists().forPath(parentPath) != null) {
+                currentChildren = curator.getChildren().forPath(parentPath);
+            }
+            return nodeChildrenToUrls(url, parentPath, currentChildren);
+        } catch (Throwable e) {
+            throw new JawsFrameworkException(String.format("Failed to discover service %s from zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         }
     }
 
@@ -304,43 +225,31 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
         }
     }
 
-    private void reconnectService() {
-        Collection<URL> allRegisteredServices = getRegisteredServiceUrls();
-        if (allRegisteredServices != null && !allRegisteredServices.isEmpty()) {
+    private void reregisterServices() {
+        if (!registeredServiceUrls.isEmpty()) {
             try {
                 serverLock.lock();
-                for (URL url : getRegisteredServiceUrls()) {
+                for (URL url : registeredServiceUrls) {
                     // Remove stale nodes that may not have been properly unregistered
                     removeNode(url, ZkNodeType.AVAILABLE_SERVER);
                     createNode(url, ZkNodeType.AVAILABLE_SERVER);
                 }
-                log.info("[{}] reconnect: register services {}", registryClassName, allRegisteredServices);
+                log.info("[{}] reconnect: registered services {}", registryClassName, registeredServiceUrls);
             } finally {
                 serverLock.unlock();
             }
         }
     }
 
-    private void reconnectClient() {
-        if (serviceListeners != null && !serviceListeners.isEmpty()) {
+    private void resubscribeServices() {
+        if (!serviceListeners.isEmpty()) {
             try {
                 clientLock.lock();
-                for (Map.Entry<URL, Map<ServiceListener, CuratorCache>> entry : serviceListeners.entrySet()) {
+                for (Map.Entry<URL, Map<NotifyListener, CuratorCache>> entry : serviceListeners.entrySet()) {
                     URL url = entry.getKey();
-                    Map<ServiceListener, CuratorCache> childChangeListeners = entry.getValue();
-                    if (childChangeListeners != null) {
-                        for (Map.Entry<ServiceListener, CuratorCache> e : childChangeListeners.entrySet()) {
-                            subscribeServiceInternal(url, e.getKey());
-                        }
-                    }
-                }
-                for (Map.Entry<URL, Map<CommandListener, CuratorCache>> entry : commandListeners.entrySet()) {
-                    URL url = entry.getKey();
-                    Map<CommandListener, CuratorCache> dataChangeListeners = entry.getValue();
-                    if (dataChangeListeners != null) {
-                        for (Map.Entry<CommandListener, CuratorCache> e : dataChangeListeners.entrySet()) {
-                            subscribeCommandInternal(url, e.getKey());
-                        }
+                    Map<NotifyListener, CuratorCache> childChangeListeners = entry.getValue();
+                    for (NotifyListener listener : childChangeListeners.keySet()) {
+                        subscribeServiceInternal(url, listener);
                     }
                 }
                 log.info("[{}] reconnect all clients", registryClassName);
@@ -353,72 +262,5 @@ public class ZookeeperRegistry extends CommandFailbackRegistry implements Closea
     @Override
     public void close() {
         curator.close();
-    }
-
-    // ---- dynamic config ----
-
-    @Override
-    protected void doSubscribeConfig(URL url, ConfigListener listener) {
-        try {
-            clientLock.lock();
-            Map<ConfigListener, CuratorCache> listeners = configListeners.computeIfAbsent(url, k -> new HashMap<>());
-            CuratorCache curatorCache = listeners.get(listener);
-            if (curatorCache == null) {
-                String configPath = ZkUtils.toConfigPath(url);
-                curatorCache = CuratorCache.build(curator, configPath);
-                curatorCache.listenable().addListener(new CuratorCacheListener() {
-                    @Override
-                    public void event(Type type, ChildData oldData, ChildData data) {
-                        if (type == Type.NODE_CHANGED || type == Type.NODE_CREATED) {
-                            String config = data == null || data.getData() == null ? null
-                                    : new String(data.getData(), StandardCharsets.UTF_8);
-                            listener.notifyConfig(url, config);
-                            log.info("[ZookeeperRegistry] config data change: path={}, config={}", configPath, config);
-                        } else if (type == Type.NODE_DELETED) {
-                            listener.notifyConfig(url, null);
-                            log.info("[ZookeeperRegistry] config deleted: path={}", configPath);
-                        }
-                    }
-                });
-                listeners.put(listener, curatorCache);
-                curatorCache.start();
-            }
-            log.info("[ZookeeperRegistry] subscribe config: path={}", ZkUtils.toConfigPath(url));
-        } finally {
-            clientLock.unlock();
-        }
-    }
-
-    @Override
-    protected void doUnsubscribeConfig(URL url, ConfigListener listener) {
-        try {
-            clientLock.lock();
-            Map<ConfigListener, CuratorCache> listeners = configListeners.get(url);
-            if (listeners != null) {
-                CuratorCache curatorCache = listeners.remove(listener);
-                if (curatorCache != null) {
-                    curatorCache.close();
-                }
-            }
-        } finally {
-            clientLock.unlock();
-        }
-    }
-
-    @Override
-    protected String doDiscoverConfig(URL url) {
-        try {
-            String configPath = ZkUtils.toConfigPath(url);
-            if (curator.checkExists().forPath(configPath) != null) {
-                byte[] data = curator.getData().forPath(configPath);
-                if (data != null) {
-                    return new String(data, StandardCharsets.UTF_8);
-                }
-            }
-            return "";
-        } catch (Exception e) {
-            log.warn("[ZookeeperRegistry] discover config failed: path={}, msg={}", ZkUtils.toConfigPath(url), e.getMessage());
-            return "";
-        }
     }
 }

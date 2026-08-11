@@ -1,8 +1,6 @@
 package org.hongxi.jaws.registry.nacos;
 
 import com.alibaba.nacos.api.PropertyKeyConst;
-import com.alibaba.nacos.api.config.ConfigFactory;
-import com.alibaba.nacos.api.config.ConfigService;
 import com.alibaba.nacos.api.naming.NamingFactory;
 import com.alibaba.nacos.api.naming.NamingService;
 import org.hongxi.jaws.common.URLParamType;
@@ -35,9 +33,7 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
                     URLParamType.connectTimeout.intValue());
             NamingService namingService = NamingFactory.createNamingService(
                     buildProperties(address, username, password, connectTimeout));
-            ConfigService configService = ConfigFactory.createConfigService(
-                    buildProperties(address, username, password, connectTimeout));
-            return new NacosRegistry(registryUrl, namingService, configService);
+            return new NacosRegistry(registryUrl, namingService);
         } catch (Exception e) {
             log.error("[NacosRegistry] fail to connect nacos", e);
             throw new RuntimeException(e);

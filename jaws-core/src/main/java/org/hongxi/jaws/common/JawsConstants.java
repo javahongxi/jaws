@@ -24,8 +24,6 @@ public class JawsConstants {
     public static final String NODE_TYPE_REFERENCE = "reference";
 
     public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
-    public static final String ZOOKEEPER_REGISTRY_COMMAND = "/command";
-    public static final String ZOOKEEPER_REGISTRY_CONFIG = "/config";
 
     public static final String PROTOCOL_TOGGLE_PREFIX = "protocol:";
 

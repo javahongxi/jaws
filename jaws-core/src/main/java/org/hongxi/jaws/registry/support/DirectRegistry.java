@@ -15,7 +15,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class DirectRegistry extends AbstractRegistry {
 
-    private ConcurrentHashMap<URL, Object> subscribeUrls = new ConcurrentHashMap<>();
     private final List<URL> directUrls = Collections.synchronizedList(new ArrayList<>());
 
     public DirectRegistry(URL url) {
@@ -65,13 +64,11 @@ public class DirectRegistry extends AbstractRegistry {
 
     @Override
     protected void doSubscribe(URL url, NotifyListener listener) {
-        subscribeUrls.putIfAbsent(url, 1);
         listener.notify(this.getUrl(), doDiscover(url));
     }
 
     @Override
     protected void doUnsubscribe(URL url, NotifyListener listener) {
-        subscribeUrls.remove(url);
         listener.notify(this.getUrl(), doDiscover(url));
     }
 
