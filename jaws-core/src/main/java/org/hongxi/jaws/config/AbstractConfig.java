@@ -130,6 +130,7 @@ public class AbstractConfig implements Serializable {
                 || type == Short.class || type == Integer.class || type == Long.class || type == Float.class || type == Double.class;
     }
 
+    @ConfigDesc(excluded = true)
     public String getId() {
         return id;
     }

@@ -153,7 +153,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
                 map.put(URLParamType.application.getName(), getApplication());
                 map.put(URLParamType.path.getName(), RegistryService.class.getName());
-                map.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
                 // Determine registry protocol: prefer parsing from address, then RegistryConfig.protocol, finally fall back to local
                 String protocol;

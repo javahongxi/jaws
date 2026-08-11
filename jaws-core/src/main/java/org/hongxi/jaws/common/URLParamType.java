@@ -7,7 +7,7 @@ public enum URLParamType {
 
     version("version", JawsConstants.DEFAULT_VERSION),
 
-    requestTimeout("requestTimeout", 200),
+    requestTimeout("requestTimeout", 1000),
     /** request id from http interface */
     requestIdFromClient("requestIdFromClient", 0),
 
@@ -55,7 +55,6 @@ public enum URLParamType {
     clientGroup("clientGroup", "default_rpc"),
     accessLog("accessLog", false),
 
-    refreshTimestamp("refreshTimestamp", 0),
     nodeType("nodeType", JawsConstants.NODE_TYPE_SERVICE),
 
     application("application", JawsConstants.FRAMEWORK_NAME),

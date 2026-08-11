@@ -105,7 +105,6 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
             Map<String, String> params = new HashMap<>();
             params.put(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_REFERENCE);
             params.put(URLParamType.version.getName(), URLParamType.version.value());
-            params.put(URLParamType.refreshTimestamp.getName(), String.valueOf(System.currentTimeMillis()));
 
             collectConfigParams(params, protocol, this);
             collectMethodConfigParams(params, this.getMethods());
