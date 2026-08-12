@@ -2,7 +2,6 @@ package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.rpc.URL;
@@ -16,7 +15,6 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * Created by shenhongxi on 2021/4/21.
  */
-@SpiMeta(name = "local")
 public class LocalRegistry extends AbstractRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(LocalRegistry.class);

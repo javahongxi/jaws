@@ -1,7 +1,5 @@
 package org.hongxi.jaws.registry;
 
-import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.rpc.URL;
 
@@ -13,6 +11,6 @@ public class LocalRegistryFactory extends AbstractRegistryFactory {
 
     @Override
     protected Registry createRegistry(URL url) {
-        return ExtensionLoader.getExtensionLoader(Registry.class).getExtension(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
+        return new LocalRegistry(url);
     }
 }

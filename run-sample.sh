@@ -69,19 +69,24 @@ EOF
 }
 
 ensure_built() {
-    if [ ! -d "jaws-core/target/classes" ]; then
-        echo "项目未编译，正在编译..."
+    # mvn exec:java resolves dependencies from ~/.m2, so we need install (not just compile).
+    # Re-install only when sources are newer than the installed JAR.
+    local jar="$HOME/.m2/repository/org/hongxi/jaws-core/0.0.4-SNAPSHOT/jaws-core-0.0.4-SNAPSHOT.jar"
+    local src="jaws-core/src/main/java"
+    if [ ! -f "$jar" ] || [ "$(find "$src" -newer "$jar" -print -quit 2>/dev/null)" ]; then
+        echo "项目未编译或源码已更新，正在编译安装..."
         $MVN install -DskipTests -q
     fi
 }
 
 #
 # Build full classpath for java -cp (project modules + external dependencies)
+# Uses target/classes for project modules to avoid duplicate SPI files from ~/.m2 JARs.
 #
 build_classpath() {
     local module="$1"
     local deps
-    deps=$($MVN -pl "$module" dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=/dev/stdout -q 2>/dev/null)
+    deps=$($MVN -pl "$module" dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=/dev/stdout -DexcludeGroupIds=org.hongxi -q 2>/dev/null)
     echo "jaws-core/target/classes:jaws-transport-netty/target/classes:jaws-registry-zookeeper/target/classes:jaws-samples/jaws-sample-api/target/classes:$deps"
 }
 
