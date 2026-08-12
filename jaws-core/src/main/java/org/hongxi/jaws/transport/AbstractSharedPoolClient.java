@@ -25,7 +25,7 @@ public abstract class AbstractSharedPoolClient extends AbstractClient {
 
     public AbstractSharedPoolClient(URL url) {
         super(url);
-        connections = url.getIntParameter(URLParamType.minClientConnections.getName(),
+        connections = url.getParameter(URLParamType.minClientConnections.getName(),
                 URLParamType.minClientConnections.intValue());
         if (connections <= 0) {
             connections = URLParamType.minClientConnections.intValue();

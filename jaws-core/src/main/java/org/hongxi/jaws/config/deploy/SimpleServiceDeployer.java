@@ -57,7 +57,7 @@ public class SimpleServiceDeployer implements ServiceDeployer {
         }
 
         // Determine graceful shutdown timeout from the first exporter's URL config
-        long gracefulTimeout = exporters.get(0).getUrl().getIntParameter(
+        long gracefulTimeout = exporters.get(0).getUrl().getParameter(
                 URLParamType.gracefulShutdownTimeout.getName(),
                 URLParamType.gracefulShutdownTimeout.intValue());
 

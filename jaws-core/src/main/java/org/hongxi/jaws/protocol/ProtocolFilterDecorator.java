@@ -210,7 +210,7 @@ public class ProtocolFilterDecorator implements Protocol {
         }
 
         // add filter via other configs, like accessLog and so on
-        boolean accessLog = url.getBooleanParameter(URLParamType.accessLog.getName(), URLParamType.accessLog.boolValue());
+        boolean accessLog = url.getParameter(URLParamType.accessLog.getName(), URLParamType.accessLog.boolValue());
         if (accessLog) {
             addIfAbsent(filters, AccessLogFilter.class.getAnnotation(SpiMeta.class).name());
         }

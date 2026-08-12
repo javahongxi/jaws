@@ -115,7 +115,7 @@ public class NettyChannel implements Channel {
         try {
             long start = System.currentTimeMillis();
             channelFuture = nettyClient.getBootstrap().connect(remoteAddress);
-            int timeout = nettyClient.getUrl().getIntParameter(
+            int timeout = nettyClient.getUrl().getParameter(
                     URLParamType.connectTimeout.getName(), URLParamType.connectTimeout.intValue());
             if (timeout <= 0) {
                 throw new JawsFrameworkException("NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",

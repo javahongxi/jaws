@@ -79,7 +79,7 @@ public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
                 if (!retryScheduled) {
                     retryScheduled = true;
                     int period = url != null
-                            ? url.getIntParameter(URLParamType.failbackPeriod.getName(), URLParamType.failbackPeriod.intValue())
+                            ? url.getParameter(URLParamType.failbackPeriod.getName(), URLParamType.failbackPeriod.intValue())
                             : URLParamType.failbackPeriod.intValue();
                     RETRY_EXECUTOR.scheduleAtFixedRate(this::retry, period, period, TimeUnit.MILLISECONDS);
                 }

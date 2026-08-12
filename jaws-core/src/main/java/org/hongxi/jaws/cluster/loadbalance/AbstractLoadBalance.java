@@ -145,12 +145,12 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
         if (serviceUrl == null) {
             return defaultWeight;
         }
-        int warmup = serviceUrl.getIntParameter(
+        int warmup = serviceUrl.getParameter(
                 URLParamType.warmup.getName(), URLParamType.warmup.intValue());
         if (warmup <= 0) {
             return defaultWeight;
         }
-        long timestamp = serviceUrl.getLongParameter(
+        long timestamp = serviceUrl.getParameter(
                 URLParamType.timestamp.getName(), 0L);
         if (timestamp <= 0) {
             return defaultWeight;

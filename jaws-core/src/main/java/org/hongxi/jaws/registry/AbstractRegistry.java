@@ -7,8 +7,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * <pre>
@@ -29,7 +32,9 @@ public abstract class AbstractRegistry implements Registry {
 
     private final URL registryUrl;
 
-    protected final Set<URL> registeredServiceUrls = new ConcurrentHashSet<>();
+    protected final Set<URL> registered = new ConcurrentHashSet<>();
+
+    protected final Map<URL, Set<NotifyListener>> subscribed = new ConcurrentHashMap<>();
 
     public AbstractRegistry(URL url) {
         this.registryUrl = url.createCopy();
@@ -38,21 +43,22 @@ public abstract class AbstractRegistry implements Registry {
     @Override
     public void register(URL url) {
         log.info("[{}] Url ({}) will register to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
+        registered.add(url);
         doRegister(removeRegistryUnnecessaryParams(url.createCopy()));
-        registeredServiceUrls.add(url);
     }
 
     @Override
     public void unregister(URL url) {
         log.info("[{}] Url ({}) will unregister to Registry [{}]", registryClassName, url, registryUrl.getIdentity());
         doUnregister(removeRegistryUnnecessaryParams(url.createCopy()));
-        registeredServiceUrls.remove(url);
+        registered.remove(url);
     }
 
     @Override
     public void subscribe(URL url, NotifyListener listener) {
         log.info("[{}] Listener ({}) will subscribe to url ({}) in Registry [{}]",
                 registryClassName, listener, url, registryUrl.getIdentity());
+        subscribed.computeIfAbsent(url, k -> new ConcurrentHashSet<>()).add(listener);
         doSubscribe(url.createCopy(), listener);
     }
 
@@ -61,6 +67,13 @@ public abstract class AbstractRegistry implements Registry {
         log.info("[{}] Listener ({}) will unsubscribe from url ({}) in Registry [{}]",
                 registryClassName, listener, url, registryUrl.getIdentity());
         doUnsubscribe(url.createCopy(), listener);
+        Set<NotifyListener> listeners = subscribed.get(url);
+        if (listeners != null) {
+            listeners.remove(listener);
+            if (listeners.isEmpty()) {
+                subscribed.remove(url);
+            }
+        }
     }
 
     @Override
@@ -123,6 +136,14 @@ public abstract class AbstractRegistry implements Registry {
         url.getParameters().remove(URLParamType.fusingThreshold.getName());
 
         return url;
+    }
+
+    public Set<URL> getRegistered() {
+        return Collections.unmodifiableSet(registered);
+    }
+
+    public Map<URL, Set<NotifyListener>> getSubscribed() {
+        return Collections.unmodifiableMap(subscribed);
     }
 
     protected abstract void doRegister(URL url);

@@ -56,7 +56,7 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
             String ipPort = url.getServerPortStr();
             String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
 
-            boolean shareChannel = url.getBooleanParameter(URLParamType.shareChannel.getName(),
+            boolean shareChannel = url.getParameter(URLParamType.shareChannel.getName(),
                     URLParamType.shareChannel.boolValue());
 
             // 独享一个端口
@@ -107,7 +107,7 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
 
     @Override
     public void safeReleaseResource(Server server, URL url) {
-        boolean shareChannel = url.getBooleanParameter(URLParamType.shareChannel.getName(),
+        boolean shareChannel = url.getParameter(URLParamType.shareChannel.getName(),
                 URLParamType.shareChannel.boolValue());
 
         if (!shareChannel) {

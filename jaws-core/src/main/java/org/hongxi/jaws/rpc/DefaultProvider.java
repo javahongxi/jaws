@@ -120,7 +120,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
 
         if (response.getException() != null) {
             // 是否传输业务异常栈
-            boolean transExceptionStack = this.url.getBooleanParameter(URLParamType.transExceptionStack.getName(), defaultThrowExceptionStack);
+            boolean transExceptionStack = this.url.getParameter(URLParamType.transExceptionStack.getName(), defaultThrowExceptionStack);
             // 不传输业务异常栈
             if (!transExceptionStack) {
                 ExceptionUtils.setMockStackTrace(response.getException().getCause());

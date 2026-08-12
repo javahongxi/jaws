@@ -98,9 +98,9 @@ public enum URLParamType {
 
     retries("retries", 0),
 
-    check("check", "true"),
+    check("check", true),
 
-    throwException("throwException", "true"),
+    throwException("throwException", true),
 
     fusingThreshold("fusingThreshold", 10);
 

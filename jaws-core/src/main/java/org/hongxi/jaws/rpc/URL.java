@@ -107,7 +107,7 @@ public class URL {
         return parameters.getOrDefault(name, defaultValue);
     }
 
-    public boolean getBooleanParameter(String name, boolean defaultValue) {
+    public boolean getParameter(String name, boolean defaultValue) {
         String value = getParameter(name);
         if (value == null || value.isEmpty()) {
             return defaultValue;
@@ -115,7 +115,7 @@ public class URL {
         return Boolean.parseBoolean(value);
     }
 
-    public int getIntParameter(String name, int defaultValue) {
+    public int getParameter(String name, int defaultValue) {
         String value = getParameter(name);
         if (value == null || value.isEmpty()) {
             return defaultValue;
@@ -123,7 +123,7 @@ public class URL {
         return Integer.parseInt(value);
     }
 
-    public long getLongParameter(String name, long defaultValue) {
+    public long getParameter(String name, long defaultValue) {
         String value = getParameter(name);
         if (value == null || value.isEmpty()) {
             return defaultValue;

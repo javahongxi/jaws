@@ -42,6 +42,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                 log.info("zkRegistry get reconnected notify.");
                 reregisterServices();
                 resubscribeServices();
+                // Recover any operations that failed during disconnect window
+                recover();
             }
         };
         curator.getConnectionStateListenable().addListener(connectionStateListener);
@@ -226,15 +228,16 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
     }
 
     private void reregisterServices() {
-        if (!registeredServiceUrls.isEmpty()) {
+        Set<URL> registered = getRegistered();
+        if (!registered.isEmpty()) {
             try {
                 serverLock.lock();
-                for (URL url : registeredServiceUrls) {
+                for (URL url : registered) {
                     // Remove stale nodes that may not have been properly unregistered
                     removeNode(url, ZkNodeType.AVAILABLE_SERVER);
                     createNode(url, ZkNodeType.AVAILABLE_SERVER);
                 }
-                log.info("[{}] reconnect: registered services {}", registryClassName, registeredServiceUrls);
+                log.info("[{}] reconnect: registered services {}", registryClassName, registered);
             } finally {
                 serverLock.unlock();
             }

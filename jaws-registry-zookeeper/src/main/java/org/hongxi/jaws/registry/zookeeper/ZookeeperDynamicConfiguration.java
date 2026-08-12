@@ -51,8 +51,8 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
      * Initialize with a registry URL. Extracts connection info to create CuratorFramework.
      */
     public void init(URL registryUrl) {
-        int timeout = registryUrl.getIntParameter("connectTimeout", 1000);
-        int sessionTimeout = registryUrl.getIntParameter("registrySessionTimeout", 30000);
+        int timeout = registryUrl.getParameter("connectTimeout", 1000);
+        int sessionTimeout = registryUrl.getParameter("registrySessionTimeout", 30000);
         String username = registryUrl.getParameter("username");
         String password = registryUrl.getParameter("password");
         CuratorFrameworkFactory.Builder builder = CuratorFrameworkFactory.builder()

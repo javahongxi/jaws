@@ -50,7 +50,7 @@ public class NettyClient extends AbstractSharedPoolClient {
 
     public NettyClient(URL url) {
         super(url);
-        fusingThreshold = url.getIntParameter(URLParamType.fusingThreshold.getName(),
+        fusingThreshold = url.getParameter(URLParamType.fusingThreshold.getName(),
                 URLParamType.fusingThreshold.intValue());
         timeMonitorFuture = scheduledExecutor.scheduleWithFixedDelay(
                 new TimeoutMonitor("timeout_monitor_" + url.getHost() + "_" + url.getPort()),
@@ -135,7 +135,7 @@ public class NettyClient extends AbstractSharedPoolClient {
         }
 
         bootstrap = new Bootstrap();
-        int timeout = getUrl().getIntParameter(URLParamType.connectTimeout.getName(),
+        int timeout = getUrl().getParameter(URLParamType.connectTimeout.getName(),
                 URLParamType.connectTimeout.intValue());
         if (timeout <= 0) {
             throw new JawsFrameworkException("NettyClient init Error: timeout(" +
@@ -146,7 +146,7 @@ public class NettyClient extends AbstractSharedPoolClient {
         bootstrap.option(ChannelOption.TCP_NODELAY, true);
         bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
         // 最大响应包限制
-        final int maxContentLength = url.getIntParameter(URLParamType.maxContentLength.getName(),
+        final int maxContentLength = url.getParameter(URLParamType.maxContentLength.getName(),
                 URLParamType.maxContentLength.intValue());
         bootstrap.group(nioEventLoopGroup)
                 .channel(NioSocketChannel.class)

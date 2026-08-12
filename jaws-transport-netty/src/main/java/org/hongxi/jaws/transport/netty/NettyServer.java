@@ -73,26 +73,26 @@ public class NettyServer extends AbstractServer {
         }
 
         log.info("server channel start open, url={}", url);
-        boolean shareChannel = url.getBooleanParameter(
+        boolean shareChannel = url.getParameter(
                 URLParamType.shareChannel.getName(), URLParamType.shareChannel.boolValue());
-        int maxContentLength = url.getIntParameter(
+        int maxContentLength = url.getParameter(
                 URLParamType.maxContentLength.getName(), URLParamType.maxContentLength.intValue());
-        int maxServerConnections = url.getIntParameter(
+        int maxServerConnections = url.getParameter(
                 URLParamType.maxServerConnections.getName(), URLParamType.maxServerConnections.intValue());
-        int maxQueueSize = url.getIntParameter(
+        int maxQueueSize = url.getParameter(
                 URLParamType.workerQueueSize.getName(), URLParamType.workerQueueSize.intValue());
 
         int minWorkerThreads;
         int maxWorkerThreads;
         if (shareChannel) {
-            minWorkerThreads = url.getIntParameter(URLParamType.minWorkerThreads.getName(),
+            minWorkerThreads = url.getParameter(URLParamType.minWorkerThreads.getName(),
                     JawsConstants.NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS);
-            maxWorkerThreads = url.getIntParameter(URLParamType.maxWorkerThreads.getName(),
+            maxWorkerThreads = url.getParameter(URLParamType.maxWorkerThreads.getName(),
                     JawsConstants.NETTY_SHARE_CHANNEL_MAX_WORKER_THREADS);
         } else {
-            minWorkerThreads = url.getIntParameter(URLParamType.minWorkerThreads.getName(),
+            minWorkerThreads = url.getParameter(URLParamType.minWorkerThreads.getName(),
                     JawsConstants.NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS);
-            maxWorkerThreads = url.getIntParameter(URLParamType.maxWorkerThreads.getName(),
+            maxWorkerThreads = url.getParameter(URLParamType.maxWorkerThreads.getName(),
                     JawsConstants.NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS);
         }
 

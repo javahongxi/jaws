@@ -29,7 +29,7 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
             String address = registryUrl.getBackupAddress();
             String username = registryUrl.getParameter("username");
             String password = registryUrl.getParameter("password");
-            int connectTimeout = registryUrl.getIntParameter(URLParamType.connectTimeout.getName(),
+            int connectTimeout = registryUrl.getParameter(URLParamType.connectTimeout.getName(),
                     URLParamType.connectTimeout.intValue());
             NamingService namingService = NamingFactory.createNamingService(
                     buildProperties(address, username, password, connectTimeout));

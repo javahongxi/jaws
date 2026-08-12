@@ -35,7 +35,7 @@ public class AccessLogFilter implements Filter {
 
     @Override
     public Response filter(Caller<?> caller, Request request) {
-        boolean needLog = caller.getUrl().getBooleanParameter(
+        boolean needLog = caller.getUrl().getParameter(
                 URLParamType.accessLog.getName(), URLParamType.accessLog.boolValue());
         if (needLog) {
             long t1 = System.currentTimeMillis();

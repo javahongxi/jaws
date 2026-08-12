@@ -67,8 +67,8 @@ public class ClusterSupport<T> implements NotifyListener {
         this.interfaceClass = interfaceClass;
         this.url = refUrl;
         protocol = getDecorateProtocol(url.getProtocol());
-        int maxConnectionCount = this.url.getIntParameter(URLParamType.maxConnectionsPerGroup.getName(), URLParamType.maxConnectionsPerGroup.intValue());
-        int maxClientConnection = this.url.getIntParameter(URLParamType.maxClientConnections.getName(), URLParamType.maxClientConnections.intValue());
+        int maxConnectionCount = this.url.getParameter(URLParamType.maxConnectionsPerGroup.getName(), URLParamType.maxConnectionsPerGroup.intValue());
+        int maxClientConnection = this.url.getParameter(URLParamType.maxClientConnections.getName(), URLParamType.maxClientConnections.intValue());
         selectNodeCount = (int) Math.ceil(1.0 * maxConnectionCount / maxClientConnection);
     }
 

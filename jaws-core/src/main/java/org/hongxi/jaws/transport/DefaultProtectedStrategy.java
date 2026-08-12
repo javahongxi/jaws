@@ -50,7 +50,7 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
     @Override
     public Response call(Request request, Provider<?> provider) {
         // 支持的最大worker thread数
-        int maxThread = provider.getUrl().getIntParameter(URLParamType.maxWorkerThreads.getName(), URLParamType.maxWorkerThreads.intValue());
+        int maxThread = provider.getUrl().getParameter(URLParamType.maxWorkerThreads.getName(), URLParamType.maxWorkerThreads.intValue());
 
         String requestKey = JawsFrameworkUtils.getFullMethodString(request);
 
