@@ -27,22 +27,13 @@ public class JawsConstants {
 
     public static final String PROTOCOL_TOGGLE_PREFIX = "protocol:";
 
-    /**
-     * 默认的consistent的hash的数量
-     */
     public static final int DEFAULT_CONSISTENT_HASH_BASE_LOOP = 1000;
 
-    /**
-     * netty channel constants start
-     */
-
     public static final short NETTY_MAGIC_TYPE = (short) 0xF1F1;
-
     public static final int NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS = 40;
     public static final int NETTY_SHARE_CHANNEL_MAX_WORKER_THREADS = 800;
     public static final int NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS = 20;
     public static final int NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS = 200;
-
     public static final int NETTY_TIMEOUT_TIMER_PERIOD = 100;
 
     public static final int REFRESH_PERIOD = 60;

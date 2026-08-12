@@ -5,6 +5,8 @@ package org.hongxi.jaws.common;
  */
 public enum URLParamType {
 
+    // ==================== Server & Client Shared ====================
+
     version("version", JawsConstants.DEFAULT_VERSION),
 
     requestTimeout("requestTimeout", 1000),
@@ -12,21 +14,8 @@ public enum URLParamType {
     /** client-side request id passed to provider via attachment */
     requestIdFromClient("requestIdFromClient", 0),
 
-    connectTimeout("connectTimeout", 1000),
-
-    minWorkerThreads("minWorkerThreads", 20),
-
-    maxWorkerThreads("maxWorkerThreads", 200),
-
     maxContentLength("maxContentLength", 10 * 1024 * 1024),
 
-    maxServerConnections("maxServerConnections", 100000),
-
-    minClientConnections("minClientConnections", 2),
-    maxClientConnections("maxClientConnections", 10),
-    maxConnectionsPerGroup("maxConnectionsPerGroup", 0),
-
-    registryRetryPeriod("registryRetryPeriod", 30 * JawsConstants.SECOND_MILLS),
     cluster("cluster", JawsConstants.DEFAULT_VALUE),
     loadBalance("loadBalance", "leastActive"),
     haStrategy("haStrategy", "failover"),
@@ -37,52 +26,32 @@ public enum URLParamType {
     proxy("proxy", JawsConstants.PROXY_JDK),
     filter("filter", ""),
 
-    /** multi services share the same channel (port) */
-    shareChannel("shareChannel", true),
-    fusingThreshold("fusingThreshold", 10),
-
     heartbeatFactory("heartbeatFactory", "jaws"),
 
-    /************************** SPI start ******************************/
-
     serialization("serialization", "hessian2"),
-
     codec("codec", "jaws"),
     endpointFactory("endpointFactory", "netty"),
 
-    /************************** SPI end ******************************/
-
     group("group", "default_rpc"),
     clientGroup("clientGroup", "default_rpc"),
-    accessLog("accessLog", false),
 
     nodeType("nodeType", JawsConstants.NODE_TYPE_SERVICE),
 
     application("application", JawsConstants.FRAMEWORK_NAME),
     module("module", JawsConstants.FRAMEWORK_NAME),
 
-    retries("retries", 0),
-    check("check", "true"),
-    registrySessionTimeout("registrySessionTimeout", JawsConstants.MINUTE_MILLS),
     directUrl("directUrl", ""),
 
-    throwException("throwException", "true"),
     transExceptionStack("transExceptionStack", true),
-
-    /** weight ratio for each group when switching groups, no weight by default */
-    weights("weights", ""),
 
     /** message processing dispatch strategy */
     providerProtectedStrategy("providerProtectedStrategy", "jaws"),
 
-    workerQueueSize("workerQueueSize", 0),
+    /** weight ratio for each group when switching groups, no weight by default */
+    weights("weights", ""),
 
     /** interval in milliseconds between failback retry attempts */
     failbackPeriod("failbackPeriod", 5000),
-
-    /** Graceful shutdown timeout in milliseconds. During this period, the server stops accepting
-     *  new requests and waits for in-flight requests to complete before closing connections. */
-    gracefulShutdownTimeout("gracefulShutdownTimeout", 10000),
 
     /** Warm-up duration in milliseconds. A newly started provider gradually increases its
      *  weight from 0 to full over this period to avoid cold-start overload. Default 10 minutes. */
@@ -94,7 +63,46 @@ public enum URLParamType {
 
     /** Service auth token. Provider registers it to registry; consumer reads it and
      *  attaches to request. Provider validates the token on each invocation. */
-    token("token", "");
+    token("token", ""),
+
+    // ==================== Server Only ====================
+
+    maxServerConnections("maxServerConnections", 100000),
+
+    minWorkerThreads("minWorkerThreads", 20),
+
+    maxWorkerThreads("maxWorkerThreads", 200),
+
+    workerQueueSize("workerQueueSize", 0),
+
+    /** multi services share the same channel (port) */
+    shareChannel("shareChannel", true),
+
+    accessLog("accessLog", false),
+
+    /** Graceful shutdown timeout in milliseconds. During this period, the server stops accepting
+     *  new requests and waits for in-flight requests to complete before closing connections. */
+    gracefulShutdownTimeout("gracefulShutdownTimeout", 10000),
+
+    // ==================== Client Only ====================
+
+    connectTimeout("connectTimeout", 1000),
+
+    minClientConnections("minClientConnections", 2),
+    maxClientConnections("maxClientConnections", 10),
+    maxConnectionsPerGroup("maxConnectionsPerGroup", 0),
+
+    registryRetryPeriod("registryRetryPeriod", 30 * JawsConstants.SECOND_MILLS),
+
+    registrySessionTimeout("registrySessionTimeout", JawsConstants.MINUTE_MILLS),
+
+    retries("retries", 0),
+
+    check("check", "true"),
+
+    throwException("throwException", "true"),
+
+    fusingThreshold("fusingThreshold", 10);
 
     private final String name;
     private final String value;
