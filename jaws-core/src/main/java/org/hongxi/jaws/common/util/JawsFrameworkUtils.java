@@ -64,13 +64,6 @@ public class JawsFrameworkUtils {
         return value;
     }
 
-    public static String removeAsyncSuffix(String path) {
-        if (path != null && path.endsWith(JawsConstants.ASYNC_SUFFIX)) {
-            return path.substring(0, path.length() - JawsConstants.ASYNC_SUFFIX.length());
-        }
-        return path;
-    }
-
     public static DefaultResponse buildErrorResponse(Request request, Exception e) {
         return buildErrorResponse(request.getRequestId(), e);
     }

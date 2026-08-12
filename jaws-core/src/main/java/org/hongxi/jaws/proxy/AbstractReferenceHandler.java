@@ -4,7 +4,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -15,8 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +36,7 @@ public class AbstractReferenceHandler<T> {
 
     Object invokeRequest(Request request, Class<?> returnType, boolean async) throws Throwable {
         RpcContext curContext = RpcContext.getContext();
-        curContext.putAttribute(JawsConstants.ASYNC_SUFFIX, async);
+        curContext.putAttribute(JawsConstants.ASYNC_FLAG, async);
 
         return doInvoke(request, returnType, async, false);
     }
@@ -50,7 +47,7 @@ public class AbstractReferenceHandler<T> {
      */
     CompletableFuture<Object> invokeCompletableFutureRequest(Request request, Class<?> returnType, Method method) {
         RpcContext curContext = RpcContext.getContext();
-        curContext.putAttribute(JawsConstants.ASYNC_SUFFIX, true);
+        curContext.putAttribute(JawsConstants.ASYNC_FLAG, true);
 
         // set rpc context attachments to request
         Map<String, String> attachments = curContext.getRpcAttachments();
@@ -120,7 +117,7 @@ public class AbstractReferenceHandler<T> {
 
     private Object doInvoke(Request request, Class<?> returnType, boolean async, boolean completableFutureReturn) throws Throwable {
         RpcContext curContext = RpcContext.getContext();
-        curContext.putAttribute(JawsConstants.ASYNC_SUFFIX, async);
+        curContext.putAttribute(JawsConstants.ASYNC_FLAG, async);
 
         // set rpc context attachments to request
         Map<String, String> attachments = curContext.getRpcAttachments();

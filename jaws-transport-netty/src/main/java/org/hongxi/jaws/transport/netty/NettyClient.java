@@ -74,7 +74,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                     + url.getUri() + JawsFrameworkUtils.toString(request));
         }
         boolean isAsync = false;
-        Object async = RpcContext.getContext().getAttribute(JawsConstants.ASYNC_SUFFIX);
+        Object async = RpcContext.getContext().getAttribute(JawsConstants.ASYNC_FLAG);
         if (async instanceof Boolean b) {
             isAsync = b;
         }

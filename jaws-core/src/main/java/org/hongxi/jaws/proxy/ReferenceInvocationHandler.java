@@ -1,21 +1,16 @@
 package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.common.util.RequestIdGenerator;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Reference;
-import org.hongxi.jaws.rpc.ResponseFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -30,22 +25,18 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         this.clazz = clazz;
         this.clusters = clusters;
         init();
-        interfaceName = JawsFrameworkUtils.removeAsyncSuffix(clazz.getName());
+        interfaceName = clazz.getName();
     }
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         if (isLocalMethod(method)) {
-            if ("toString".equals(method.getName())) {
-                return clustersToString();
-            }
-            if ("equals".equals(method.getName())) {
-                return proxyEquals(args[0]);
-            }
-            if ("hashCode".equals(method.getName())) {
-                return this.clusters == null ? 0 : this.clusters.hashCode();
-            }
-            throw new JawsServiceException("can not invoke local method:" + method.getName());
+            return switch (method.getName()) {
+                case "toString" -> clustersToString();
+                case "equals" -> proxyEquals(args[0]);
+                case "hashCode" -> this.clusters == null ? 0 : this.clusters.hashCode();
+                default -> throw new JawsServiceException("can not invoke local method:" + method.getName());
+            };
         }
 
         DefaultRequest request = new DefaultRequest();
@@ -54,10 +45,7 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         String methodName = method.getName();
         boolean async = false;
         boolean completableFutureReturn = false;
-        if (methodName.endsWith(JawsConstants.ASYNC_SUFFIX) && method.getReturnType().equals(ResponseFuture.class)) {
-            methodName = JawsFrameworkUtils.removeAsyncSuffix(methodName);
-            async = true;
-        } else if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
+        if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
             async = true;
             completableFutureReturn = true;
         }

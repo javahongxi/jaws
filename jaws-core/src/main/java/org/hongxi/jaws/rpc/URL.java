@@ -3,7 +3,6 @@ package org.hongxi.jaws.rpc;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 
 import java.io.File;
@@ -141,11 +140,25 @@ public class URL {
     }
 
     public String getServerPortStr() {
-        return buildHostPortStr(host, port);
+        if (this.port <= 0) {
+            return host;
+        }
+
+        int idx = host.indexOf(":");
+        if (idx < 0) {
+            return host + ":" + this.port;
+        }
+
+        int port = Integer.parseInt(host.substring(idx + 1));
+        if (port <= 0) {
+            return host.substring(0, idx + 1) + ":" + this.port;
+        }
+
+        return host;
     }
 
     /**
-     * 获取包含所有备份节点的地址字符串，格式为 host:port,backup1:port1,backup2:port2
+     * Get the address string including all backup nodes, formatted as host:port,backup1:port1,backup2:port2
      */
     public String getBackupAddress() {
         StringBuilder address = new StringBuilder(host + ":" + port);
@@ -157,7 +170,7 @@ public class URL {
     }
 
     /**
-     * 获取包含所有备份节点的 URL 列表，第一个为当前 URL，后续为备份节点 URL
+     * Get the list of URLs including all backup nodes. The first is this URL, the rest are backup node URLs.
      */
     public List<URL> getBackupUrls() {
         List<URL> urls = new ArrayList<>();
@@ -175,24 +188,6 @@ public class URL {
             }
         }
         return urls;
-    }
-
-    private String buildHostPortStr(String host, int defaultPort) {
-        if (defaultPort <= 0) {
-            return host;
-        }
-
-        int idx = host.indexOf(":");
-        if (idx < 0) {
-            return host + ":" + defaultPort;
-        }
-
-        int port = Integer.parseInt(host.substring(idx + 1));
-        if (port <= 0) {
-            return host.substring(0, idx + 1) + ":" + defaultPort;
-        }
-
-        return host;
     }
 
     public URL createCopy() {
@@ -233,7 +228,7 @@ public class URL {
     }
 
     public void setPath(String path) {
-        this.path = removeAsyncPath(path);
+        this.path = path;
     }
 
     public String getVersion() {
@@ -258,9 +253,10 @@ public class URL {
     }
 
     /**
-     * 返回一个service or reference的identity,如果两个url的identity相同，则表示相同的一个service或者reference
+     * Return a service or reference identity. If two URLs have the same identity,
+     * they represent the same service or reference.
      *
-     * @return
+     * @return the identity string
      */
     public String getIdentity() {
         return protocol + JawsConstants.PROTOCOL_SEPARATOR + host + ":" + port +
@@ -270,10 +266,7 @@ public class URL {
     }
 
     /**
-     * check if this url can serve the refUrl.
-     *
-     * @param refUrl
-     * @return
+     * Check if this url can serve the refUrl.
      */
     public boolean canServe(URL refUrl) {
         if (refUrl == null || !this.getPath().equals(refUrl.getPath())) {
@@ -299,22 +292,10 @@ public class URL {
         if (!serialize.equals(refSerialize)) {
             return false;
         }
-        // 由于需要提供跨group访问rpc的能力，所以不再验证group是否一致。
-        return true;
-    }
-
-    public String toFullStr() {
-        StringBuilder builder = new StringBuilder();
-        builder.append(getUri()).append("?");
-
-        for (Map.Entry<String, String> entry : parameters.entrySet()) {
-            String name = entry.getKey();
-            String value = entry.getValue();
-
-            builder.append(name).append("=").append(value).append("&");
-        }
-
-        return builder.toString();
+        // check group
+        String group = getParameter(URLParamType.group.getName(), URLParamType.group.value());
+        String refGroup = refUrl.getParameter(URLParamType.group.getName(), URLParamType.group.value());
+        return group.equals(refGroup);
     }
 
     public Integer getMethodParameter(String methodName, String paramDesc, String name, int defaultValue) {
@@ -333,17 +314,6 @@ public class URL {
         return value;
     }
 
-    /**
-     * because async call in client path with Async suffix,we need
-     * remove Async suffix in path for subscribe.
-     *
-     * @param path
-     * @return
-     */
-    private String removeAsyncPath(String path) {
-        return JawsFrameworkUtils.removeAsyncSuffix(path);
-    }
-
     @Override
     public int hashCode() {
         int factor = 31;
@@ -358,7 +328,7 @@ public class URL {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj == null || !(obj instanceof URL ou)) {
+        if (!(obj instanceof URL ou)) {
             return false;
         }
         if (!Objects.equals(this.protocol, ou.protocol)) {
@@ -381,10 +351,24 @@ public class URL {
         return toSimpleString();
     }
 
-    /*
-     * 包含协议、host、port、path、group
+    /**
+     * Includes protocol, host, port, path, and group
      */
     public String toSimpleString() {
         return getUri() + "?group=" + getGroup();
+    }
+
+    public String toFullStr() {
+        StringBuilder builder = new StringBuilder();
+        builder.append(getUri()).append("?");
+
+        for (Map.Entry<String, String> entry : parameters.entrySet()) {
+            String name = entry.getKey();
+            String value = entry.getValue();
+
+            builder.append(name).append("=").append(value).append("&");
+        }
+
+        return builder.toString();
     }
 }

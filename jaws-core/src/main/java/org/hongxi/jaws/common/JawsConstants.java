@@ -47,8 +47,8 @@ public class JawsConstants {
 
     public static final int REFRESH_PERIOD = 60;
 
-    // suffix for async call.
-    public static final String ASYNC_SUFFIX = "Async";
+    // RpcContext attribute key for async call flag.
+    public static final String ASYNC_FLAG = "async";
 
     public static final String DEFAULT_VALUE = "default";
     public static final int DEFAULT_INT_VALUE = 0;

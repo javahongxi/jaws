@@ -5,6 +5,7 @@ import org.hongxi.jaws.common.extension.SpiMeta;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -41,11 +42,7 @@ public class LocalDynamicConfiguration implements DynamicConfiguration {
     public void addListener(String key, ConfigurationListener listener) {
         List<ConfigurationListener> listeners = Collections.synchronizedList(new ArrayList<>());
         List<ConfigurationListener> existing = listenerMap.putIfAbsent(key, listeners);
-        if (existing == null) {
-            listeners.add(listener);
-        } else {
-            existing.add(listener);
-        }
+        Objects.requireNonNullElse(existing, listeners).add(listener);
     }
 
     @Override
