@@ -18,16 +18,8 @@ public class JawsConstants {
     public static final String COMMA_SEPARATOR = ",";
     public static final Pattern COMMA_SPLIT_PATTERN = Pattern.compile("\\s*[,]+\\s*");
 
-    public static final String BACKUP_KEY = "backup";
-
     public static final String NODE_TYPE_SERVICE = "service";
     public static final String NODE_TYPE_REFERENCE = "reference";
-
-    public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
-
-    public static final String PROTOCOL_TOGGLE_PREFIX = "protocol:";
-
-    public static final int DEFAULT_CONSISTENT_HASH_BASE_LOOP = 1000;
 
     public static final short NETTY_MAGIC_TYPE = (short) 0xF1F1;
     public static final int NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS = 40;
@@ -35,33 +27,22 @@ public class JawsConstants {
     public static final int NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS = 20;
     public static final int NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS = 200;
     public static final int NETTY_TIMEOUT_TIMER_PERIOD = 100;
-
-    public static final int REFRESH_PERIOD = 60;
+    public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
 
     // RpcContext attribute key for async call flag.
     public static final String ASYNC_FLAG = "async";
 
     public static final String DEFAULT_VALUE = "default";
     public static final int DEFAULT_INT_VALUE = 0;
-    public static final String DEFAULT_VERSION = "1.0";
-
-    public static final int SECOND_MILLS = 1000;
-    public static final int MINUTE_MILLS = 60 * SECOND_MILLS;
-
-    public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
-
-    public static final String CONTENT_LENGTH = "Content-Length";
 
     public static final String REGISTRY_PROTOCOL_LOCAL = "local";
-    public static final String REGISTRY_PROTOCOL_DIRECT = "direct";
     public static final String REGISTRY_PROTOCOL_ZOOKEEPER = "zookeeper";
-    public static final String REGISTRY_PROTOCOL_NACOS = "nacos";
 
+    public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
     public static final String NACOS_REGISTRY_NAMESPACE = "jaws";
+
     public static final String PROTOCOL_INJVM = "injvm";
     public static final String PROTOCOL_JAWS = "jaws";
-
-    public static final String PROXY_JDK = "jdk";
 
     public static final String METHOD_CONFIG_PREFIX = "methodconfig.";
 
@@ -72,5 +53,4 @@ public class JawsConstants {
     public static final byte FLAG_OTHER = (byte) 0xFF;
 
     public static final Pattern REGISTRY_SPLIT_PATTERN = Pattern.compile("\\s*[|;]+\\s*");
-
 }

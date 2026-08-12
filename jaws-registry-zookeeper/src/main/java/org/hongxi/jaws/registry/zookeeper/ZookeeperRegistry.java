@@ -42,8 +42,6 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                 log.info("zkRegistry get reconnected notify.");
                 reregisterServices();
                 resubscribeServices();
-                // Recover any operations that failed during disconnect window
-                recover();
             }
         };
         curator.getConnectionStateListenable().addListener(connectionStateListener);

@@ -34,6 +34,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class NettyChannelHandler extends ChannelDuplexHandler {
     private static final Logger log = LoggerFactory.getLogger(NettyChannelHandler.class);
 
+    private static final String CONTENT_LENGTH = "Content-Length";
+
     private ThreadPoolExecutor threadPoolExecutor;
     private MessageHandler messageHandler;
     private Channel channel;
@@ -167,7 +169,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     private ChannelFuture sendResponse(ChannelHandlerContext ctx, Response response) {
         byte[] msg = CodecUtils.encodeObjectToBytes(channel, codec, response);
-        response.setAttachment(JawsConstants.CONTENT_LENGTH, String.valueOf(msg.length));
+        response.setAttachment(CONTENT_LENGTH, String.valueOf(msg.length));
         if (ctx.channel().isActive()) {
             return ctx.channel().writeAndFlush(msg);
         }

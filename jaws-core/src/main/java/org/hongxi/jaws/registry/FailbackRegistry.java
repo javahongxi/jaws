@@ -20,15 +20,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(FailbackRegistry.class);
 
-    private static final ScheduledExecutorService retryExecutor = Executors.newScheduledThreadPool(2);
-
-    static {
-        ShutdownHook.registerShutdownHook(() -> {
-            if (!retryExecutor.isShutdown()) {
-                retryExecutor.shutdown();
-            }
-        });
-    }
+    private final ScheduledExecutorService retryExecutor = Executors.newSingleThreadScheduledExecutor();
 
     private final Set<URL> failedRegistered = new ConcurrentHashSet<>();
     private final Set<URL> failedUnregistered = new ConcurrentHashSet<>();
@@ -37,7 +29,8 @@ public abstract class FailbackRegistry extends AbstractRegistry {
 
     public FailbackRegistry(URL url) {
         super(url);
-        long retryPeriod = url.getParameter(URLParamType.registryRetryPeriod.getName(), URLParamType.registryRetryPeriod.intValue());
+
+        long retryPeriod = url.getLongParameter(URLParamType.registryRetryPeriod);
         retryExecutor.scheduleAtFixedRate(() -> {
             try {
                 retry();
@@ -45,6 +38,12 @@ public abstract class FailbackRegistry extends AbstractRegistry {
                 log.warn("[{}] False when retry in failback registry", registryClassName, e);
             }
         }, retryPeriod, retryPeriod, TimeUnit.MILLISECONDS);
+
+        ShutdownHook.registerShutdownHook(() -> {
+            if (!retryExecutor.isShutdown()) {
+                retryExecutor.shutdown();
+            }
+        });
     }
 
     @Override
@@ -197,7 +196,6 @@ public abstract class FailbackRegistry extends AbstractRegistry {
                 log.warn("[{}] Failed to retry register, retry later, failedRegistered.size={}",
                         registryClassName, failedRegistered.size(), e);
             }
-
         }
 
         if (!failedUnregistered.isEmpty()) {
@@ -212,7 +210,6 @@ public abstract class FailbackRegistry extends AbstractRegistry {
                 log.warn("[{}] Failed to retry unregister, retry later, failedUnregistered.size={}",
                         registryClassName, failedUnregistered.size(), e);
             }
-
         }
 
         if (!failedSubscribed.isEmpty()) {

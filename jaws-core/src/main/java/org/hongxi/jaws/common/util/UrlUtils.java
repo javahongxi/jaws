@@ -46,7 +46,7 @@ public class UrlUtils {
                 }
                 backup.append(addresses[i]);
             }
-            url += "?" + JawsConstants.BACKUP_KEY + "=" + backup;
+            url += "?" + URL.BACKUP_KEY + "=" + backup;
         }
 
         String defaultProtocol = defaults == null ? null : defaults.get("protocol");

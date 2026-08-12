@@ -24,12 +24,12 @@ public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
     @Override
     protected Registry createRegistry(URL registryUrl) {
         try {
-            int timeout = registryUrl.getParameter(URLParamType.connectTimeout.getName(), URLParamType.connectTimeout.intValue());
-            int sessionTimeout = registryUrl.getParameter(URLParamType.registrySessionTimeout.getName(), URLParamType.registrySessionTimeout.intValue());
+            int connectionTimeout = registryUrl.getIntParameter(URLParamType.connectTimeout);
+            int sessionTimeout = registryUrl.getIntParameter(URLParamType.registrySessionTimeout);
             String username = registryUrl.getParameter("username");
             String password = registryUrl.getParameter("password");
-            CuratorFramework curator = createCurator(registryUrl.getBackupAddress(), username, password,
-                    sessionTimeout, timeout);
+            CuratorFramework curator = createCurator(registryUrl.getBackupAddress(),
+                    username, password, sessionTimeout, connectionTimeout);
             return new ZookeeperRegistry(registryUrl, curator);
         } catch (Exception e) {
             log.error("[ZookeeperRegistry] fail to connect zookeeper", e);
@@ -52,6 +52,4 @@ public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
         curator.start();
         return curator;
     }
-
-
 }

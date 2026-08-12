@@ -20,6 +20,8 @@ import java.util.List;
 @SpiMeta(name = "consistentHash")
 public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
 
+    private static final int HASH_LOOP = 1000;
+
     private List<Reference<T>> consistentHashReferences;
 
     @Override
@@ -28,7 +30,7 @@ public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
 
         List<Reference<T>> copyReferences = new ArrayList<Reference<T>>(references);
         List<Reference<T>> tempRefers = new ArrayList<Reference<T>>();
-        for (int i = 0; i < JawsConstants.DEFAULT_CONSISTENT_HASH_BASE_LOOP; i++) {
+        for (int i = 0; i < HASH_LOOP; i++) {
             Collections.shuffle(copyReferences);
             for (Reference<T> ref : copyReferences) {
                 tempRefers.add(ref);

@@ -26,6 +26,8 @@ public class AbstractReferenceHandler<T> {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractReferenceHandler.class);
 
+    private static final String PROTOCOL_TOGGLE_PREFIX = "protocol:";
+
     protected List<Cluster<T>> clusters;
     protected Class<T> clazz;
     protected String interfaceName;
@@ -64,7 +66,7 @@ public class AbstractReferenceHandler<T> {
         CompletableFuture<Object> resultFuture = new CompletableFuture<>();
 
         for (Cluster<T> cluster : clusters) {
-            String protocolToggle = JawsConstants.PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
+            String protocolToggle = PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
             if (!DynamicConfigurationUtils.isEnabled(protocolToggle, true)) {
                 continue;
             }
@@ -135,7 +137,7 @@ public class AbstractReferenceHandler<T> {
         // 当 reference配置多个protocol的时候，比如A,B,C，
         // 那么正常情况下只会使用A，如果A被开关降级，那么就会使用B，B也被降级，那么会使用C
         for (Cluster<T> cluster : clusters) {
-            String protocolToggle = JawsConstants.PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
+            String protocolToggle = PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
             if (!DynamicConfigurationUtils.isEnabled(protocolToggle, true)) {
                 continue;
             }

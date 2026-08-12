@@ -44,7 +44,7 @@ public class ClusterSupport<T> implements NotifyListener {
             for (ClusterSupport<?> clusterSupport : refreshSet) {
                 clusterSupport.refreshReferences();
             }
-        }, JawsConstants.REFRESH_PERIOD, JawsConstants.REFRESH_PERIOD, TimeUnit.SECONDS);
+        }, 60, 60, TimeUnit.SECONDS);
 
         ShutdownHook.registerShutdownHook(() -> {
             if (!executorService.isShutdown()) {

@@ -17,6 +17,8 @@ import java.util.Objects;
  */
 public class URL {
 
+    public static final String BACKUP_KEY = "backup";
+
     private String protocol;
 
     private String host;
@@ -131,6 +133,22 @@ public class URL {
         return Long.parseLong(value);
     }
 
+    public String getParameter(URLParamType paramType) {
+        return getParameter(paramType.getName(), paramType.value());
+    }
+
+    public boolean getBoolParameter(URLParamType paramType) {
+        return getParameter(paramType.getName(), paramType.boolValue());
+    }
+
+    public int getIntParameter(URLParamType paramType) {
+        return getParameter(paramType.getName(), paramType.intValue());
+    }
+
+    public long getLongParameter(URLParamType paramType) {
+        return getParameter(paramType.getName(), paramType.longValue());
+    }
+
     public void addParameters(Map<String, String> params) {
         parameters.putAll(params);
     }
@@ -187,7 +205,7 @@ public class URL {
      */
     public String getBackupAddress() {
         StringBuilder address = new StringBuilder(host + ":" + port);
-        String backup = getParameter(JawsConstants.BACKUP_KEY);
+        String backup = getParameter(BACKUP_KEY);
         if (backup != null && !backup.isEmpty()) {
             address.append(',').append(backup);
         }
@@ -200,7 +218,7 @@ public class URL {
     public List<URL> getBackupUrls() {
         List<URL> urls = new ArrayList<>();
         urls.add(this);
-        String backup = getParameter(JawsConstants.BACKUP_KEY);
+        String backup = getParameter(BACKUP_KEY);
         if (backup != null && !backup.isEmpty()) {
             String[] backups = JawsConstants.COMMA_SPLIT_PATTERN.split(backup);
             for (String bk : backups) {
@@ -208,7 +226,7 @@ public class URL {
                 URL backupUrl = new URL(this.protocol, hostPort[0].trim(),
                         hostPort.length > 1 ? Integer.parseInt(hostPort[1].trim()) : this.port,
                         this.path, new HashMap<>(this.parameters));
-                backupUrl.removeParameter(JawsConstants.BACKUP_KEY);
+                backupUrl.removeParameter(BACKUP_KEY);
                 urls.add(backupUrl);
             }
         }

@@ -7,7 +7,7 @@ public enum URLParamType {
 
     // ==================== Server & Client Shared ====================
 
-    version("version", JawsConstants.DEFAULT_VERSION),
+    version("version", "1.0"),
 
     requestTimeout("requestTimeout", 1000),
 
@@ -23,7 +23,7 @@ public enum URLParamType {
     path("path", ""),
     host("host", ""),
     port("port", 0),
-    proxy("proxy", JawsConstants.PROXY_JDK),
+    proxy("proxy", "jdk"),
     filter("filter", ""),
 
     heartbeatFactory("heartbeatFactory", "jaws"),
@@ -92,9 +92,9 @@ public enum URLParamType {
     maxClientConnections("maxClientConnections", 10),
     maxConnectionsPerGroup("maxConnectionsPerGroup", 0),
 
-    registryRetryPeriod("registryRetryPeriod", 30 * JawsConstants.SECOND_MILLS),
+    registryRetryPeriod("registryRetryPeriod", 30 * 1000L),
 
-    registrySessionTimeout("registrySessionTimeout", JawsConstants.MINUTE_MILLS),
+    registrySessionTimeout("registrySessionTimeout", 60 * 1000),
 
     retries("retries", 0),
 
@@ -107,6 +107,7 @@ public enum URLParamType {
     private final String name;
     private final String value;
     private int intValue;
+    private long longValue;
     private boolean boolValue;
 
     URLParamType(String name, String value) {
@@ -123,6 +124,7 @@ public enum URLParamType {
     URLParamType(String name, long longValue) {
         this.name = name;
         this.value = String.valueOf(longValue);
+        this.longValue = longValue;
     }
 
     URLParamType(String name, boolean boolValue) {
@@ -141,6 +143,10 @@ public enum URLParamType {
 
     public int intValue() {
         return intValue;
+    }
+
+    public long longValue() {
+        return longValue;
     }
 
     public boolean boolValue() {

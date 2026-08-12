@@ -1,6 +1,5 @@
 package org.hongxi.jaws.registry;
 
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
 
@@ -47,7 +46,7 @@ public class DirectRegistry extends AbstractRegistry {
     }
 
     private void registerDirectUrl(String ip, Integer port) {
-        URL url = new URL(JawsConstants.REGISTRY_PROTOCOL_DIRECT, ip, port, "");
+        URL url = new URL("direct", ip, port, "");
         directUrls.add(url);
     }
 
