@@ -8,7 +8,8 @@ public enum URLParamType {
     version("version", JawsConstants.DEFAULT_VERSION),
 
     requestTimeout("requestTimeout", 1000),
-    /** request id from http interface */
+
+    /** client-side request id passed to provider via attachment */
     requestIdFromClient("requestIdFromClient", 0),
 
     connectTimeout("connectTimeout", 1000),
@@ -62,7 +63,7 @@ public enum URLParamType {
 
     retries("retries", 0),
     check("check", "true"),
-    registrySessionTimeout("registrySessionTimeout", 1 * JawsConstants.MINUTE_MILLS),
+    registrySessionTimeout("registrySessionTimeout", JawsConstants.MINUTE_MILLS),
     directUrl("directUrl", ""),
 
     throwException("throwException", "true"),
@@ -95,10 +96,9 @@ public enum URLParamType {
      *  attaches to request. Provider validates the token on each invocation. */
     token("token", "");
 
-    private String name;
-    private String value;
+    private final String name;
+    private final String value;
     private int intValue;
-    private long longValue;
     private boolean boolValue;
 
     URLParamType(String name, String value) {
@@ -115,7 +115,6 @@ public enum URLParamType {
     URLParamType(String name, long longValue) {
         this.name = name;
         this.value = String.valueOf(longValue);
-        this.longValue = longValue;
     }
 
     URLParamType(String name, boolean boolValue) {
@@ -134,10 +133,6 @@ public enum URLParamType {
 
     public int intValue() {
         return intValue;
-    }
-
-    public long longValue() {
-        return longValue;
     }
 
     public boolean boolValue() {

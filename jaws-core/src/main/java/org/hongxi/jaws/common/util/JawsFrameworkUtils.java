@@ -12,38 +12,16 @@ import org.hongxi.jaws.rpc.URL;
  */
 public class JawsFrameworkUtils {
 
-    /**
-     * 目前根据 group/interface/version 来唯一标示一个服务
-     *
-     * @param request
-     * @return
-     */
-
     public static String getServiceKey(Request request) {
-        String version = getVersionFromRequest(request);
         String group = getGroupFromRequest(request);
-
+        String version = getVersionFromRequest(request);
         return getServiceKey(group, request.getInterfaceName(), version);
     }
 
-    /**
-     * 目前根据 group/interface/version 来唯一标示一个服务
-     *
-     * @param url
-     * @return
-     */
     public static String getServiceKey(URL url) {
         return getServiceKey(url.getGroup(), url.getPath(), url.getVersion());
     }
 
-    /**
-     * serviceKey: group/interface/version
-     *
-     * @param group
-     * @param interfaceName
-     * @param version
-     * @return
-     */
     private static String getServiceKey(String group, String interfaceName, String version) {
         return group + JawsConstants.PATH_SEPARATOR + interfaceName + JawsConstants.PATH_SEPARATOR + version;
     }
@@ -77,9 +55,6 @@ public class JawsFrameworkUtils {
 
     /**
      * protocol key: protocol://host:port/group/interface/version
-     *
-     * @param url
-     * @return
      */
     public static String getProtocolKey(URL url) {
         StringBuilder key = new StringBuilder();
@@ -96,22 +71,20 @@ public class JawsFrameworkUtils {
     }
 
     /**
-     * 判断url:source和url:target是否可以使用共享的service channel(port) 对外提供服务
+     * Check whether url:source and url:target can share the same service channel (port)
+     * to provide external services.
      * <p>
      * <pre>
-     * 		1） protocol
-     * 		2） codec
-     * 		3） serialize
-     * 		4） maxContentLength
-     * 		5） maxServerConnection
-     * 		6） maxWorkerThread
-     * 		7） workerQueueSize
-     * 		8） heartbeatFactory
+     * 		The following parameters must be consistent:
+     * 		1) protocol
+     * 		2) codec
+     * 		3) serialize
+     * 		4) maxContentLength
+     * 		5) maxServerConnection
+     * 		6) maxWorkerThread
+     * 		7) workerQueueSize
+     * 		8) heartbeatFactory
      * </pre>
-     *
-     * @param source
-     * @param target
-     * @return
      */
     public static boolean checkIfCanShareServiceChannel(URL source, URL target) {
         if (!StringUtils.equals(source.getProtocol(), target.getProtocol())) {
@@ -153,31 +126,21 @@ public class JawsFrameworkUtils {
     }
 
     /**
-     * 根据Request得到 interface.method(paramDesc) 的 desc
+     * Get the full method descriptor in the form of interface.method(paramDesc).
      * <p>
      * <pre>
-     * 		比如：
+     * 		For example:
      * 			package org.hongxi.jaws;
      *
-     * 		 	interface A { public hello(int age); }
+     * 			interface A { public hello(int age); }
      *
-     * 			那么return "org.hongxi.jaws.A.hell(int)"
+     * 			Then return "org.hongxi.jaws.A.hell(int)"
      * </pre>
-     *
-     * @param request
-     * @return
      */
     public static String getFullMethodString(Request request) {
-        return request.getInterfaceName() + "." + request.getMethodName() + "("
-                + request.getParamDesc() + ")";
+        return request.getInterfaceName() + "." + request.getMethodName() + "(" + request.getParamDesc() + ")";
     }
 
-    /**
-     * 输出请求的关键信息： requestId=** interface=** method=**(**)
-     *
-     * @param request
-     * @return
-     */
     public static String toString(Request request) {
         return "requestId=" + request.getRequestId() +
                 " interface=" + request.getInterfaceName() +

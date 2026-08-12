@@ -39,6 +39,15 @@ public class URL {
         this.parameters = parameters;
     }
 
+    public URL createCopy() {
+        Map<String, String> params = new HashMap<>();
+        if (this.parameters != null) {
+            params.putAll(this.parameters);
+        }
+
+        return new URL(protocol, host, port, path, params);
+    }
+
     public static URL valueOf(String url) {
         if (StringUtils.isBlank(url)) {
             throw new JawsServiceException("url is null");
@@ -139,6 +148,22 @@ public class URL {
         }
     }
 
+    public Integer getMethodParameter(String methodName, String paramDesc, String name, int defaultValue) {
+        String value = getMethodParameter(methodName, paramDesc, name);
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        return Integer.parseInt(value);
+    }
+
+    public String getMethodParameter(String methodName, String paramDesc, String name) {
+        String value = getParameter(JawsConstants.METHOD_CONFIG_PREFIX + methodName + "(" + paramDesc + ")." + name);
+        if (value == null || value.isEmpty()) {
+            return getParameter(name);
+        }
+        return value;
+    }
+
     public String getServerPortStr() {
         if (this.port <= 0) {
             return host;
@@ -188,15 +213,6 @@ public class URL {
             }
         }
         return urls;
-    }
-
-    public URL createCopy() {
-        Map<String, String> params = new HashMap<>();
-        if (this.parameters != null) {
-            params.putAll(this.parameters);
-        }
-
-        return new URL(protocol, host, port, path, params);
     }
 
     public String getProtocol() {
@@ -296,22 +312,6 @@ public class URL {
         String group = getParameter(URLParamType.group.getName(), URLParamType.group.value());
         String refGroup = refUrl.getParameter(URLParamType.group.getName(), URLParamType.group.value());
         return group.equals(refGroup);
-    }
-
-    public Integer getMethodParameter(String methodName, String paramDesc, String name, int defaultValue) {
-        String value = getMethodParameter(methodName, paramDesc, name);
-        if (value == null || value.isEmpty()) {
-            return defaultValue;
-        }
-        return Integer.parseInt(value);
-    }
-
-    public String getMethodParameter(String methodName, String paramDesc, String name) {
-        String value = getParameter(JawsConstants.METHOD_CONFIG_PREFIX + methodName + "(" + paramDesc + ")." + name);
-        if (value == null || value.isEmpty()) {
-            return getParameter(name);
-        }
-        return value;
     }
 
     @Override
