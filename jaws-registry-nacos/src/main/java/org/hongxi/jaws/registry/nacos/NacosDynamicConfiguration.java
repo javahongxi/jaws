@@ -43,12 +43,14 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
     private static final long DEFAULT_TIMEOUT = 5000L;
 
     private volatile ConfigService configService;
+    private final ConcurrentMap<String, String> localCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, List<ConfigurationListener>> listenerMap = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Listener> nacosListenerMap = new ConcurrentHashMap<>();
 
     /**
      * Initialize with a Nacos registry URL. Extracts connection info to create ConfigService.
      */
+    @Override
     public void init(URL registryUrl) {
         try {
             Properties properties = new Properties();
@@ -73,21 +75,28 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
         }
     }
 
-    /**
-     * Initialize with an existing ConfigService (shared with NacosRegistry).
-     */
-    public void init(ConfigService configService) {
-        this.configService = configService;
+    @Override
+    public boolean hasAnyConfig() {
+        return !localCache.isEmpty();
     }
 
     @Override
     public String getConfig(String key) {
+        String value = localCache.get(key);
+        if (value != null) {
+            return value;
+        }
         if (configService == null) {
             log.warn("[NacosDynamicConfiguration] configService not initialized, returning null for key={}", key);
             return null;
         }
         try {
-            return configService.getConfig(key, DEFAULT_GROUP, DEFAULT_TIMEOUT);
+            value = configService.getConfig(key, DEFAULT_GROUP, DEFAULT_TIMEOUT);
+            if (value != null) {
+                localCache.put(key, value);
+                ensureNacosListener(key);
+            }
+            return value;
         } catch (NacosException e) {
             log.warn("[NacosDynamicConfiguration] failed to get config: key={}, msg={}", key, e.getMessage());
             return null;
@@ -103,8 +112,11 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
         try {
             if (value == null) {
                 configService.removeConfig(key, DEFAULT_GROUP);
+                localCache.remove(key);
             } else {
                 configService.publishConfig(key, DEFAULT_GROUP, value);
+                localCache.put(key, value);
+                ensureNacosListener(key);
             }
         } catch (NacosException e) {
             log.warn("[NacosDynamicConfiguration] failed to set config: key={}, msg={}", key, e.getMessage());
@@ -117,8 +129,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
         List<ConfigurationListener> existing = listenerMap.putIfAbsent(key, listeners);
         if (existing == null) {
             listeners.add(listener);
-            // Register Nacos listener if not already registered
-            registerNacosListener(key);
+            ensureNacosListener(key);
         } else {
             existing.add(listener);
         }
@@ -141,38 +152,47 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
         }
     }
 
-    private void registerNacosListener(String key) {
-        if (configService == null) {
+    /**
+     * Ensure a Nacos listener is registered for the given key to keep localCache in sync.
+     */
+    private void ensureNacosListener(String key) {
+        if (configService == null || nacosListenerMap.containsKey(key)) {
             return;
         }
-        Listener nacosListener = nacosListenerMap.get(key);
-        if (nacosListener == null) {
-            nacosListener = new Listener() {
-                @Override
-                public Executor getExecutor() {
-                    return null;
-                }
+        Listener nacosListener = new Listener() {
+            @Override
+            public Executor getExecutor() {
+                return null;
+            }
 
-                @Override
-                public void receiveConfigInfo(String configInfo) {
-                    List<ConfigurationListener> listeners = listenerMap.get(key);
-                    if (listeners != null) {
-                        for (ConfigurationListener l : listeners) {
-                            l.onConfigChanged(key, configInfo);
-                        }
-                    }
-                    log.info("[NacosDynamicConfiguration] config changed: key={}, value={}", key, configInfo);
-                }
-            };
-            Listener prev = nacosListenerMap.putIfAbsent(key, nacosListener);
-            if (prev == null) {
-                try {
-                    configService.addListener(key, DEFAULT_GROUP, nacosListener);
-                } catch (NacosException e) {
-                    log.warn("[NacosDynamicConfiguration] failed to add listener: key={}, msg={}", key, e.getMessage());
-                }
+            @Override
+            public void receiveConfigInfo(String configInfo) {
+                updateCacheFromRemote(key, configInfo);
+            }
+        };
+        Listener prev = nacosListenerMap.putIfAbsent(key, nacosListener);
+        if (prev == null) {
+            try {
+                configService.addListener(key, DEFAULT_GROUP, nacosListener);
+            } catch (NacosException e) {
+                log.warn("[NacosDynamicConfiguration] failed to add listener: key={}, msg={}", key, e.getMessage());
             }
         }
+    }
+
+    private void updateCacheFromRemote(String key, String value) {
+        if (value != null) {
+            localCache.put(key, value);
+        } else {
+            localCache.remove(key);
+        }
+        List<ConfigurationListener> listeners = listenerMap.get(key);
+        if (listeners != null) {
+            for (ConfigurationListener l : listeners) {
+                l.onConfigChanged(key, value);
+            }
+        }
+        log.info("[NacosDynamicConfiguration] config changed: key={}, value={}", key, value);
     }
 
     private void unregisterNacosListener(String key) {

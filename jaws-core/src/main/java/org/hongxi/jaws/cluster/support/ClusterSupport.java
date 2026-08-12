@@ -4,6 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.HaStrategy;
+import org.hongxi.jaws.cluster.loadbalance.AbstractLoadBalance;
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
@@ -61,6 +62,7 @@ public class ClusterSupport<T> implements NotifyListener {
     private final ConcurrentHashMap<URL, List<Reference<T>>> registryReferences = new ConcurrentHashMap<>();
     private final int selectNodeCount;
     private final ConcurrentHashMap<URL, Map<String, GroupUrlsSelector>> registryGroupUrlsSelectorMap = new ConcurrentHashMap<>();
+    private DynamicConfigRouter<T> dynamicConfigRouter;
 
     public ClusterSupport(Class<T> interfaceClass, List<URL> registryUrls, URL refUrl) {
         this.registryUrls = registryUrls;
@@ -137,6 +139,9 @@ public class ClusterSupport<T> implements NotifyListener {
             getCluster().destroy();
         } catch (Exception e) {
             log.warn("Exception when destroy cluster: {}", getCluster().getUrl());
+        }
+        if (dynamicConfigRouter != null) {
+            dynamicConfigRouter.destroy();
         }
     }
 
@@ -425,6 +430,12 @@ public class ClusterSupport<T> implements NotifyListener {
         cluster.setLoadBalance(loadBalance);
         cluster.setHaStrategy(ha);
         cluster.setUrl(url);
+
+        // Register DynamicConfigRouter for dynamic routing rule support
+        if (loadBalance instanceof AbstractLoadBalance) {
+            dynamicConfigRouter = new DynamicConfigRouter<>(interfaceClass.getName());
+            ((AbstractLoadBalance<T>) loadBalance).addRouter(dynamicConfigRouter);
+        }
     }
 
     private List<URL> parseDirectUrls(String directUrlStr) {

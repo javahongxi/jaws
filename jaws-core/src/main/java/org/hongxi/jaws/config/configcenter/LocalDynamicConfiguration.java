@@ -24,6 +24,11 @@ public class LocalDynamicConfiguration implements DynamicConfiguration {
     private final ConcurrentMap<String, List<ConfigurationListener>> listenerMap = new ConcurrentHashMap<>();
 
     @Override
+    public boolean hasAnyConfig() {
+        return !configs.isEmpty();
+    }
+
+    @Override
     public String getConfig(String key) {
         return configs.get(key);
     }

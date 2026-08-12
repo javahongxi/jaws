@@ -2,6 +2,7 @@ package org.hongxi.jaws.config.configcenter;
 
 import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
+import org.hongxi.jaws.rpc.URL;
 
 /**
  * Dynamic configuration abstraction for runtime feature toggles and config management.
@@ -14,8 +15,9 @@ import org.hongxi.jaws.common.extension.Spi;
  * </ul>
  * <p>
  * Default implementation is {@link LocalDynamicConfiguration} (in-memory).
- * When a remote config center (e.g., Nacos) is available, a remote implementation
- * can be loaded via SPI to enable distributed config push.
+ * When a remote config center (e.g., Nacos) is available, the registry module
+ * automatically initializes and installs a remote implementation via
+ * {@link #init(URL)} during registry creation.
  * <p>
  * Created by shenhongxi on 2026/8/11.
  *
@@ -23,6 +25,33 @@ import org.hongxi.jaws.common.extension.Spi;
  */
 @Spi(scope = Scope.SINGLETON)
 public interface DynamicConfiguration {
+
+    /**
+     * Initialize this configuration with a registry URL.
+     * <p>
+     * Called by the registry module after creating the registry, allowing
+     * remote implementations (e.g., Nacos, Zookeeper) to establish their
+     * connections using the same cluster info.
+     * <p>
+     * Default implementation is a no-op (for local/in-memory configs).
+     *
+     * @param registryUrl the registry URL containing connection info
+     */
+    default void init(URL registryUrl) {
+    }
+
+    /**
+     * Check if any configuration entries exist.
+     * <p>
+     * This is a fast-path check for hot paths to avoid expensive key construction
+     * and lookup when no dynamic configuration has been set. Remote implementations
+     * should return {@code true} to always perform lookups.
+     *
+     * @return true if at least one configuration entry exists
+     */
+    default boolean hasAnyConfig() {
+        return true;
+    }
 
     /**
      * Get configuration value by key.
@@ -51,6 +80,44 @@ public interface DynamicConfiguration {
      * @param value the value to set
      */
     void setConfig(String key, String value);
+
+    /**
+     * Get integer configuration value by key with a default.
+     *
+     * @param key          the configuration key
+     * @param defaultValue default value if key not exists or parsing fails
+     * @return the parsed int value, or defaultValue
+     */
+    default int getIntConfig(String key, int defaultValue) {
+        String value = getConfig(key);
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Get long configuration value by key with a default.
+     *
+     * @param key          the configuration key
+     * @param defaultValue default value if key not exists or parsing fails
+     * @return the parsed long value, or defaultValue
+     */
+    default long getLongConfig(String key, long defaultValue) {
+        String value = getConfig(key);
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
 
     /**
      * Check if a boolean toggle is enabled.

@@ -8,6 +8,9 @@ import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
+import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
+import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -54,9 +57,12 @@ public class NettyChannel implements Channel {
 
     @Override
     public Response request(Request request) throws TransportException {
-        int timeout = nettyClient.getUrl().getMethodParameter(
+        // Resolve timeout with dynamic configuration priority:
+        // method-level dynamic > service-level dynamic > global dynamic > URL config
+        int urlTimeout = nettyClient.getUrl().getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),
                 URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
+        int timeout = resolveTimeout(request, urlTimeout);
         if (timeout <= 0) {
             throw new JawsFrameworkException(
                     "NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
@@ -213,5 +219,35 @@ public class NettyChannel implements Channel {
 
     public ReentrantLock getLock() {
         return lock;
+    }
+
+    /**
+     * Resolve request timeout from dynamic configuration with fallback chain:
+     * method-level key -> service-level key -> global key -> URL default.
+     */
+    private int resolveTimeout(Request request, int urlDefault) {
+        DynamicConfiguration dc = DynamicConfigurationUtils.getDynamicConfiguration();
+        if (!dc.hasAnyConfig()) {
+            return urlDefault;
+        }
+        String interfaceName = request.getInterfaceName();
+        String methodName = request.getMethodName();
+
+        // method-level dynamic override
+        int val = dc.getIntConfig(DynamicConfigurationKeys.requestTimeout(interfaceName, methodName), 0);
+        if (val > 0) {
+            return val;
+        }
+        // service-level dynamic override
+        val = dc.getIntConfig(DynamicConfigurationKeys.requestTimeout(interfaceName), 0);
+        if (val > 0) {
+            return val;
+        }
+        // global dynamic override
+        val = dc.getIntConfig(DynamicConfigurationKeys.GLOBAL_REQUEST_TIMEOUT, 0);
+        if (val > 0) {
+            return val;
+        }
+        return urlDefault;
     }
 }

@@ -7,6 +7,9 @@ import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.ActivationComparator;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
+import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
+import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.filter.AccessLogFilter;
@@ -68,6 +71,10 @@ public class ProtocolFilterDecorator implements Protocol {
             lastProvider = new Provider<T>() {
                 @Override
                 public Response call(Request request) {
+                    // Check dynamic filter toggle: skip if explicitly disabled
+                    if (isFilterDisabled(f, request.getInterfaceName())) {
+                        return lp.call(request);
+                    }
                     return f.filter(lp, request);
                 }
 
@@ -129,6 +136,10 @@ public class ProtocolFilterDecorator implements Protocol {
                 public Response call(Request request) {
                     Activation activation = f.getClass().getAnnotation(Activation.class);
                     if (activation != null && !activation.retry() && request.getRetries() != 0) {
+                        return lf.call(request);
+                    }
+                    // Check dynamic filter toggle: skip if explicitly disabled
+                    if (isFilterDisabled(f, request.getInterfaceName())) {
                         return lf.call(request);
                     }
                     return f.filter(lf, request);
@@ -241,5 +252,43 @@ public class ProtocolFilterDecorator implements Protocol {
         if (!exists) {
             filters.add(extFilter);
         }
+    }
+
+    /**
+     * Check if a filter is dynamically disabled via {@link org.hongxi.jaws.config.configcenter.DynamicConfiguration}.
+     * <p>
+     * Resolution order: service-level key -> global key. If neither is set, the filter is enabled by default.
+     *
+     * @param filter        the filter instance
+     * @param interfaceName the service interface name for service-level override
+     * @return true if the filter should be skipped
+     */
+    private boolean isFilterDisabled(Filter filter, String interfaceName) {
+        String filterName = resolveFilterName(filter);
+        if (filterName == null) {
+            return false;
+        }
+        DynamicConfiguration dc = DynamicConfigurationUtils.getDynamicConfiguration();
+        if (!dc.hasAnyConfig()) {
+            return false;
+        }
+        // service-level check first
+        String serviceKey = DynamicConfigurationKeys.filterEnabled(filterName, interfaceName);
+        String serviceVal = dc.getConfig(serviceKey);
+        if (serviceVal != null) {
+            return !"true".equalsIgnoreCase(serviceVal);
+        }
+        // global check
+        String globalKey = DynamicConfigurationKeys.filterEnabled(filterName);
+        String globalVal = dc.getConfig(globalKey);
+        if (globalVal != null) {
+            return !"true".equalsIgnoreCase(globalVal);
+        }
+        return false;
+    }
+
+    private String resolveFilterName(Filter filter) {
+        SpiMeta spiMeta = filter.getClass().getAnnotation(SpiMeta.class);
+        return spiMeta != null ? spiMeta.name() : null;
     }
 }

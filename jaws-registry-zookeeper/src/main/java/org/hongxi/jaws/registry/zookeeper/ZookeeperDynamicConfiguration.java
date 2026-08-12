@@ -44,12 +44,14 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
     private static final String CONFIG_ROOT = JawsConstants.ZOOKEEPER_REGISTRY_NAMESPACE + "/dynamic-config";
 
     private volatile CuratorFramework curator;
+    private final ConcurrentMap<String, String> localCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, List<ConfigurationListener>> listenerMap = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CuratorCache> cacheMap = new ConcurrentHashMap<>();
 
     /**
      * Initialize with a registry URL. Extracts connection info to create CuratorFramework.
      */
+    @Override
     public void init(URL registryUrl) {
         int timeout = registryUrl.getParameter("connectTimeout", 1000);
         int sessionTimeout = registryUrl.getParameter("registrySessionTimeout", 30000);
@@ -71,14 +73,6 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
         log.info("[ZookeeperDynamicConfiguration] initialized with server={}", registryUrl.getBackupAddress());
     }
 
-    /**
-     * Initialize with an existing CuratorFramework (shared with ZookeeperRegistry).
-     */
-    public void init(CuratorFramework curator) {
-        this.curator = curator;
-        ensureRootPath();
-    }
-
     private void ensureRootPath() {
         try {
             if (curator.checkExists().forPath(CONFIG_ROOT) == null) {
@@ -94,7 +88,16 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
     }
 
     @Override
+    public boolean hasAnyConfig() {
+        return !localCache.isEmpty();
+    }
+
+    @Override
     public String getConfig(String key) {
+        String value = localCache.get(key);
+        if (value != null) {
+            return value;
+        }
         if (curator == null) {
             log.warn("[ZookeeperDynamicConfiguration] curator not initialized, returning null for key={}", key);
             return null;
@@ -105,7 +108,13 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
                 return null;
             }
             byte[] data = curator.getData().forPath(path);
-            return data != null ? new String(data, StandardCharsets.UTF_8) : null;
+            if (data != null) {
+                value = new String(data, StandardCharsets.UTF_8);
+                localCache.put(key, value);
+                ensureCacheListener(key);
+                return value;
+            }
+            return null;
         } catch (Exception e) {
             log.warn("[ZookeeperDynamicConfiguration] failed to get config: key={}, msg={}", key, e.getMessage());
             return null;
@@ -124,12 +133,17 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
             if (curator.checkExists().forPath(path) == null) {
                 if (data != null) {
                     curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(path, data);
+                    localCache.put(key, value);
+                    ensureCacheListener(key);
                 }
             } else {
                 if (data != null) {
                     curator.setData().forPath(path, data);
+                    localCache.put(key, value);
+                    ensureCacheListener(key);
                 } else {
                     curator.delete().forPath(path);
+                    localCache.remove(key);
                 }
             }
         } catch (Exception e) {
@@ -143,7 +157,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
         List<ConfigurationListener> existing = listenerMap.putIfAbsent(key, listeners);
         if (existing == null) {
             listeners.add(listener);
-            registerCacheListener(key);
+            ensureCacheListener(key);
         } else {
             existing.add(listener);
         }
@@ -165,43 +179,46 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
         }
     }
 
-    private void registerCacheListener(String key) {
-        if (curator == null) {
+    /**
+     * Ensure a CuratorCache is started for the given key to keep localCache in sync.
+     */
+    private void ensureCacheListener(String key) {
+        if (curator == null || cacheMap.containsKey(key)) {
             return;
         }
-        CuratorCache existingCache = cacheMap.get(key);
-        if (existingCache == null) {
-            String path = toConfigPath(key);
-            CuratorCache cache = CuratorCache.build(curator, path);
-            cache.listenable().addListener(new CuratorCacheListener() {
-                @Override
-                public void event(Type type, ChildData oldData, ChildData data) {
-                    if (type == CuratorCacheListener.Type.NODE_CHANGED || type == CuratorCacheListener.Type.NODE_CREATED) {
-                        String value = data != null && data.getData() != null
-                                ? new String(data.getData(), StandardCharsets.UTF_8) : null;
-                        List<ConfigurationListener> ls = listenerMap.get(key);
-                        if (ls != null) {
-                            for (ConfigurationListener l : ls) {
-                                l.onConfigChanged(key, value);
-                            }
-                        }
-                        log.info("[ZookeeperDynamicConfiguration] config changed: key={}, value={}", key, value);
-                    } else if (type == CuratorCacheListener.Type.NODE_DELETED) {
-                        List<ConfigurationListener> ls = listenerMap.get(key);
-                        if (ls != null) {
-                            for (ConfigurationListener l : ls) {
-                                l.onConfigChanged(key, null);
-                            }
-                        }
-                        log.info("[ZookeeperDynamicConfiguration] config deleted: key={}", key);
-                    }
+        String path = toConfigPath(key);
+        CuratorCache cache = CuratorCache.build(curator, path);
+        cache.listenable().addListener(new CuratorCacheListener() {
+            @Override
+            public void event(Type type, ChildData oldData, ChildData data) {
+                if (type == CuratorCacheListener.Type.NODE_CHANGED || type == CuratorCacheListener.Type.NODE_CREATED) {
+                    String value = data != null && data.getData() != null
+                            ? new String(data.getData(), StandardCharsets.UTF_8) : null;
+                    updateCacheFromRemote(key, value);
+                } else if (type == CuratorCacheListener.Type.NODE_DELETED) {
+                    updateCacheFromRemote(key, null);
                 }
-            });
-            CuratorCache prev = cacheMap.putIfAbsent(key, cache);
-            if (prev == null) {
-                cache.start();
+            }
+        });
+        CuratorCache prev = cacheMap.putIfAbsent(key, cache);
+        if (prev == null) {
+            cache.start();
+        }
+    }
+
+    private void updateCacheFromRemote(String key, String value) {
+        if (value != null) {
+            localCache.put(key, value);
+        } else {
+            localCache.remove(key);
+        }
+        List<ConfigurationListener> listeners = listenerMap.get(key);
+        if (listeners != null) {
+            for (ConfigurationListener l : listeners) {
+                l.onConfigChanged(key, value);
             }
         }
+        log.info("[ZookeeperDynamicConfiguration] config changed: key={}, value={}", key, value);
     }
 
     private void unregisterCacheListener(String key) {

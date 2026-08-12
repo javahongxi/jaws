@@ -1,14 +1,12 @@
 package org.hongxi.jaws.config.configcenter;
 
-import org.hongxi.jaws.common.extension.ExtensionLoader;
-
 /**
  * Static utility for accessing {@link DynamicConfiguration}.
  * <p>
  * Provides a global access point to the current DynamicConfiguration instance.
- * By default uses {@link LocalDynamicConfiguration}. The implementation can be
- * replaced via {@link #setDynamicConfiguration(DynamicConfiguration)} or by
- * loading an SPI implementation (e.g., NacosDynamicConfiguration).
+ * By default uses {@link LocalDynamicConfiguration}. The implementation is
+ * replaced by the registry module when a remote config center is available
+ * (e.g., NacosDynamicConfiguration, ZookeeperDynamicConfiguration).
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
@@ -28,18 +26,6 @@ public class DynamicConfigurationUtils {
      */
     public static void setDynamicConfiguration(DynamicConfiguration configuration) {
         dynamicConfiguration = configuration;
-    }
-
-    /**
-     * Load DynamicConfiguration from SPI by name.
-     *
-     * @param name the SPI extension name
-     */
-    public static void loadFromSpi(String name) {
-        DynamicConfiguration spiConfig = ExtensionLoader.getExtensionLoader(DynamicConfiguration.class).getExtension(name);
-        if (spiConfig != null) {
-            dynamicConfiguration = spiConfig;
-        }
     }
 
     // ---- convenience delegate methods ----

@@ -1,8 +1,13 @@
 package org.hongxi.jaws.registry;
 
+import org.hongxi.jaws.common.extension.ExtensionLoader;
+import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
+import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -14,6 +19,8 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 
 public abstract class AbstractRegistryFactory implements RegistryFactory {
+
+    private static final Logger log = LoggerFactory.getLogger(AbstractRegistryFactory.class);
 
     private static final ReentrantLock lock = new ReentrantLock();
     private static final ConcurrentHashMap<String, Registry> registries = new ConcurrentHashMap<>();
@@ -36,6 +43,7 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
                 throw new JawsFrameworkException("Create registry false for url:" + url, JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
             }
             registries.put(registryUri, registry);
+            initDynamicConfiguration(url);
             return registry;
         } catch (Exception e) {
             throw new JawsFrameworkException("Create registry false for url:" + url, e, JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
@@ -45,4 +53,26 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
     }
 
     protected abstract Registry createRegistry(URL url);
+
+    /**
+     * Try to load and initialize a remote DynamicConfiguration matching the registry type.
+     * <p>
+     * Uses the URL protocol (e.g., "nacos", "zookeeper") as the SPI extension name
+     * to find the corresponding DynamicConfiguration implementation.
+     */
+    private void initDynamicConfiguration(URL url) {
+        try {
+            String registryType = url.getProtocol();
+            DynamicConfiguration dc = ExtensionLoader.getExtensionLoader(DynamicConfiguration.class)
+                    .getExtension(registryType);
+            if (dc != null) {
+                dc.init(url);
+                DynamicConfigurationUtils.setDynamicConfiguration(dc);
+                log.info("DynamicConfiguration initialized with registry type: {}", registryType);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to init DynamicConfiguration for registry type: {}, msg: {}",
+                    url.getProtocol(), e.getMessage());
+        }
+    }
 }

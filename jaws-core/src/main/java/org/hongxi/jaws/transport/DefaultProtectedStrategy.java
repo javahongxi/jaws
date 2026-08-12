@@ -3,6 +3,9 @@ package org.hongxi.jaws.transport;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
+import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
+import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -49,8 +52,10 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
 
     @Override
     public Response call(Request request, Provider<?> provider) {
-        // 支持的最大worker thread数
-        int maxThread = provider.getUrl().getParameter(URLParamType.maxWorkerThreads.getName(), URLParamType.maxWorkerThreads.intValue());
+        // Resolve maxWorkerThreads with dynamic configuration priority:
+        // service-level dynamic > global dynamic > URL config
+        int urlMaxThread = provider.getUrl().getParameter(URLParamType.maxWorkerThreads.getName(), URLParamType.maxWorkerThreads.intValue());
+        int maxThread = resolveMaxWorkerThreads(request.getInterfaceName(), urlMaxThread);
 
         String requestKey = JawsFrameworkUtils.getFullMethodString(request);
 
@@ -122,5 +127,27 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
         // 如果总体线程数超过 maxThread * 3 / 4个，并且对外的method比较多，那么意味着这个时候整体压力比较大，
         // 那么这个时候如果单method超过 maxThread * 1 / 4，那么reject
         return !(methodCounter.get() >= 4 && currentTotal > (maxThread * 3 / 4) && requestCounter > (maxThread / 4));
+    }
+
+    /**
+     * Resolve maxWorkerThreads from dynamic configuration with fallback chain:
+     * service-level key -> global key -> URL default.
+     */
+    private int resolveMaxWorkerThreads(String interfaceName, int urlDefault) {
+        DynamicConfiguration dc = DynamicConfigurationUtils.getDynamicConfiguration();
+        if (!dc.hasAnyConfig()) {
+            return urlDefault;
+        }
+        // service-level dynamic override
+        int val = dc.getIntConfig(DynamicConfigurationKeys.maxWorkerThreads(interfaceName), 0);
+        if (val > 0) {
+            return val;
+        }
+        // global dynamic override
+        val = dc.getIntConfig(DynamicConfigurationKeys.GLOBAL_MAX_WORKER_THREADS, 0);
+        if (val > 0) {
+            return val;
+        }
+        return urlDefault;
     }
 }
