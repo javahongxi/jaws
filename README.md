@@ -176,7 +176,7 @@ public class MyRunner implements CommandLineRunner {
 | 语言     | Java                       | 17             |
 | 网络     | Netty                      | 4.1.132        |
 | 注册中心 | ZooKeeper + Curator        | 3.9 / 5.9      |
-| 注册中心 | Nacos                      | 3.2.2          |
+| 注册中心 | Nacos                      | 3.2.3          |
 | 序列化   | fastjson2 / hessian-lite   | 2.0.62 / 4.0.5 |
 | 框架集成 | Spring Boot                | 3.5            |
 | MCP 协议 | MCP Java SDK               | 2.0.0          |
