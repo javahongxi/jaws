@@ -22,8 +22,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * Maps Jaws registry operations to Nacos NamingService:
  * <ul>
  *   <li>Service registration: register Nacos instances with metadata containing URL parameters</li>
- *   <li>Service discovery: query all instances and convert back to URLs</li>
  *   <li>Service subscription: use Nacos subscribe to watch instance changes</li>
+ *   <li>Service discovery: query all instances and convert back to URLs</li>
  * </ul>
  * <p>
  * Created by shenhongxi on 2026/7/17.
