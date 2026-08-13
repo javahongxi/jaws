@@ -14,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -36,10 +35,10 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
     private static final String METADATA_KEY_PROTOCOL = "protocol";
     private static final String METADATA_KEY_PATH = "path";
 
-    private final NamingService namingService;
-    private final ConcurrentHashMap<URL, ConcurrentHashMap<NotifyListener, EventListener>> serviceListeners = new ConcurrentHashMap<>();
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
+    private final NamingService namingService;
+    private final Map<URL, Map<NotifyListener, EventListener>> serviceListeners = new HashMap<>();
 
     public NacosRegistry(URL url, NamingService namingService) {
         super(url);
@@ -48,51 +47,75 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
     }
 
     @Override
+    protected void doRegister(URL url) {
+        try {
+            serverLock.lock();
+            // Remove stale nodes that may not have been properly unregistered
+            removeInstance(url);
+            registerInstance(url);
+        } catch (Throwable e) {
+            throw new JawsFrameworkException(
+                    String.format("Failed to register %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        } finally {
+            serverLock.unlock();
+        }
+    }
+
+    @Override
+    protected void doUnregister(URL url) {
+        try {
+            serverLock.lock();
+            removeInstance(url);
+        } catch (Throwable e) {
+            throw new JawsFrameworkException(
+                    String.format("Failed to unregister %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+        } finally {
+            serverLock.unlock();
+        }
+    }
+
+    @Override
     protected void doSubscribe(URL url, NotifyListener listener) {
         try {
             clientLock.lock();
-            subscribeServiceInternal(url, listener);
+            Map<NotifyListener, EventListener> listeners = serviceListeners.get(url);
+            if (listeners == null) {
+                serviceListeners.putIfAbsent(url, new HashMap<>());
+                listeners = serviceListeners.get(url);
+            }
+            EventListener eventListener = listeners.get(listener);
+            if (eventListener == null) {
+                String serviceName = NacosPathUtils.toServiceName(url);
+                String group = NacosPathUtils.toGroup(url);
+                eventListener = event -> {
+                    if (event instanceof NamingEvent namingEvent) {
+                        List<Instance> instances = namingEvent.getInstances();
+                        List<URL> urls = instancesToUrls(url, instances);
+                        listener.notify(getUrl(), urls);
+                        log.info("[NacosRegistry] service list change: serviceName={}, group={}, instanceCount={}",
+                                serviceName, group, instances != null ? instances.size() : 0);
+                    }
+                };
+                listeners.putIfAbsent(listener, eventListener);
+                eventListener = listeners.get(listener);
+                try {
+                    namingService.subscribe(serviceName, group, eventListener);
+                } catch (Exception e) {
+                    throw new JawsFrameworkException(
+                            String.format("Failed to subscribe %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
+                }
+            }
+
+            String serviceName = NacosPathUtils.toServiceName(url);
+            String group = NacosPathUtils.toGroup(url);
+            log.info("[NacosRegistry] subscribe service: serviceName={}, group={}, info={}",
+                    serviceName, group, url.toFullStr());
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to subscribe %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
         } finally {
             clientLock.unlock();
         }
-    }
-
-    private void subscribeServiceInternal(URL url, NotifyListener listener) {
-        ConcurrentHashMap<NotifyListener, EventListener> listeners = serviceListeners.get(url);
-        if (listeners == null) {
-            serviceListeners.putIfAbsent(url, new ConcurrentHashMap<>());
-            listeners = serviceListeners.get(url);
-        }
-        EventListener eventListener = listeners.get(listener);
-        if (eventListener == null) {
-            String serviceName = NacosPathUtils.toServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            eventListener = event -> {
-                if (event instanceof NamingEvent namingEvent) {
-                    List<Instance> instances = namingEvent.getInstances();
-                    List<URL> urls = instancesToUrls(url, instances);
-                    listener.notify(getUrl(), urls);
-                    log.info("[NacosRegistry] service list change: serviceName={}, group={}, instanceCount={}",
-                            serviceName, group, instances != null ? instances.size() : 0);
-                }
-            };
-            listeners.putIfAbsent(listener, eventListener);
-            eventListener = listeners.get(listener);
-            try {
-                namingService.subscribe(serviceName, group, eventListener);
-            } catch (Exception e) {
-                throw new JawsFrameworkException(
-                        String.format("Failed to subscribe %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-            }
-        }
-
-        String serviceName = NacosPathUtils.toServiceName(url);
-        String group = NacosPathUtils.toGroup(url);
-        log.info("[NacosRegistry] subscribe service: serviceName={}, group={}, info={}",
-                serviceName, group, url.toFullStr());
     }
 
     @Override
@@ -126,34 +149,6 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to discover service %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        }
-    }
-
-    @Override
-    protected void doRegister(URL url) {
-        try {
-            serverLock.lock();
-            // Remove stale nodes that may not have been properly unregistered
-            removeInstance(url);
-            registerInstance(url);
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(
-                    String.format("Failed to register %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            serverLock.unlock();
-        }
-    }
-
-    @Override
-    protected void doUnregister(URL url) {
-        try {
-            serverLock.lock();
-            removeInstance(url);
-        } catch (Throwable e) {
-            throw new JawsFrameworkException(
-                    String.format("Failed to unregister %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        } finally {
-            serverLock.unlock();
         }
     }
 

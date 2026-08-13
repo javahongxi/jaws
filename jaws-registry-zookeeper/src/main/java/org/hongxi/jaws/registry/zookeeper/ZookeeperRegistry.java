@@ -40,8 +40,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
         ConnectionStateListener connectionStateListener = (curatorFramework, connectionState) -> {
             if (connectionState == ConnectionState.RECONNECTED) {
                 log.info("zkRegistry get reconnected notify.");
-                reregisterServices();
-                resubscribeServices();
+                reRegisterServices();
+                reSubscribeServices();
             }
         };
         curator.getConnectionStateListenable().addListener(connectionStateListener);
@@ -225,7 +225,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
         }
     }
 
-    private void reregisterServices() {
+    private void reRegisterServices() {
         Set<URL> registered = getRegistered();
         if (!registered.isEmpty()) {
             try {
@@ -235,14 +235,14 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                     removeNode(url, ZkNodeType.AVAILABLE_SERVER);
                     createNode(url, ZkNodeType.AVAILABLE_SERVER);
                 }
-                log.info("[{}] reconnect: registered services {}", registryClassName, registered);
+                log.info("[ZookeeperRegistry] reconnect: registered services {}", registered);
             } finally {
                 serverLock.unlock();
             }
         }
     }
 
-    private void resubscribeServices() {
+    private void reSubscribeServices() {
         if (!serviceListeners.isEmpty()) {
             try {
                 clientLock.lock();
@@ -253,7 +253,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                         subscribeServiceInternal(url, listener);
                     }
                 }
-                log.info("[{}] reconnect all clients", registryClassName);
+                log.info("[ZookeeperRegistry] reconnect all clients");
             } finally {
                 clientLock.unlock();
             }
