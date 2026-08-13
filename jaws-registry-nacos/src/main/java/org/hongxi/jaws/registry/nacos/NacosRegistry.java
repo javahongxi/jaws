@@ -50,9 +50,19 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
     protected void doRegister(URL url) {
         try {
             serverLock.lock();
-            // Remove stale nodes that may not have been properly unregistered
-            removeInstance(url);
-            registerInstance(url);
+            String serviceName = NacosPathUtils.toServiceName(url);
+            String group = NacosPathUtils.toGroup(url);
+            Instance instance = new Instance();
+            instance.setIp(url.getHost());
+            instance.setPort(url.getPort());
+            instance.setHealthy(true);
+            instance.setEphemeral(true);
+            // Store all URL parameters as metadata map, along with protocol and path
+            Map<String, String> metadata = new HashMap<>(url.getParameters());
+            metadata.put(METADATA_KEY_PROTOCOL, url.getProtocol());
+            metadata.put(METADATA_KEY_PATH, url.getPath());
+            instance.setMetadata(metadata);
+            namingService.registerInstance(serviceName, group, instance);
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to register %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -65,7 +75,12 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
     protected void doUnregister(URL url) {
         try {
             serverLock.lock();
-            removeInstance(url);
+            String serviceName = NacosPathUtils.toServiceName(url);
+            String group = NacosPathUtils.toGroup(url);
+            Instance instance = new Instance();
+            instance.setIp(url.getHost());
+            instance.setPort(url.getPort());
+            namingService.deregisterInstance(serviceName, group, instance);
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to unregister %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -78,36 +93,19 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
     protected void doSubscribe(URL url, NotifyListener listener) {
         try {
             clientLock.lock();
-            Map<NotifyListener, EventListener> listeners = serviceListeners.get(url);
-            if (listeners == null) {
-                serviceListeners.putIfAbsent(url, new HashMap<>());
-                listeners = serviceListeners.get(url);
-            }
-            EventListener eventListener = listeners.get(listener);
-            if (eventListener == null) {
-                String serviceName = NacosPathUtils.toServiceName(url);
-                String group = NacosPathUtils.toGroup(url);
-                eventListener = event -> {
-                    if (event instanceof NamingEvent namingEvent) {
-                        List<Instance> instances = namingEvent.getInstances();
-                        List<URL> urls = instancesToUrls(url, instances);
-                        listener.notify(getUrl(), urls);
-                        log.info("[NacosRegistry] service list change: serviceName={}, group={}, instanceCount={}",
-                                serviceName, group, instances != null ? instances.size() : 0);
-                    }
-                };
-                listeners.putIfAbsent(listener, eventListener);
-                eventListener = listeners.get(listener);
-                try {
-                    namingService.subscribe(serviceName, group, eventListener);
-                } catch (Exception e) {
-                    throw new JawsFrameworkException(
-                            String.format("Failed to subscribe %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-                }
-            }
-
             String serviceName = NacosPathUtils.toServiceName(url);
             String group = NacosPathUtils.toGroup(url);
+            Map<NotifyListener, EventListener> listeners = serviceListeners.computeIfAbsent(url, k -> new HashMap<>());
+            EventListener eventListener = listeners.computeIfAbsent(listener, k -> event -> {
+                if (event instanceof NamingEvent namingEvent) {
+                    List<Instance> instances = namingEvent.getInstances();
+                    List<URL> urls = instancesToUrls(url, instances);
+                    listener.notify(getUrl(), urls);
+                    log.info("[NacosRegistry] service list change: serviceName={}, group={}, instanceCount={}",
+                            serviceName, group, instances != null ? instances.size() : 0);
+                }
+            });
+            namingService.subscribe(serviceName, group, eventListener);
             log.info("[NacosRegistry] subscribe service: serviceName={}, group={}, info={}",
                     serviceName, group, url.toFullStr());
         } catch (Throwable e) {
@@ -149,41 +147,6 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to discover service %s from nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
-        }
-    }
-
-    private void registerInstance(URL url) {
-        try {
-            String serviceName = NacosPathUtils.toServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            Instance instance = new Instance();
-            instance.setIp(url.getHost());
-            instance.setPort(url.getPort());
-            instance.setHealthy(true);
-            instance.setEphemeral(true);
-            // Store all URL parameters as metadata map, along with protocol and path
-            Map<String, String> metadata = new HashMap<>(url.getParameters());
-            metadata.put(METADATA_KEY_PROTOCOL, url.getProtocol());
-            metadata.put(METADATA_KEY_PATH, url.getPath());
-            instance.setMetadata(metadata);
-            namingService.registerInstance(serviceName, group, instance);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void removeInstance(URL url) {
-        try {
-            String serviceName = NacosPathUtils.toServiceName(url);
-            String group = NacosPathUtils.toGroup(url);
-            Instance instance = new Instance();
-            instance.setIp(url.getHost());
-            instance.setPort(url.getPort());
-            namingService.deregisterInstance(serviceName, group, instance);
-        } catch (Exception e) {
-            // deregister may fail if instance not exists, just log and ignore
-            log.debug("[NacosRegistry] deregister instance failed: serviceName={}, msg={}",
-                    NacosPathUtils.toServiceName(url), e.getMessage());
         }
     }
 
