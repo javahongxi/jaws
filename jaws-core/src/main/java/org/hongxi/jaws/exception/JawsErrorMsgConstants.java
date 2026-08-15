@@ -12,6 +12,7 @@ public class JawsErrorMsgConstants {
     public static final int SERVICE_TASK_CANCEL_ERROR_CODE = 10004;
     // service error status 404
     public static final int SERVICE_NOT_FOUND_ERROR_CODE = 10101;
+    public static final int SERVICE_METHOD_NOT_FOUND_ERROR_CODE = 10102;
     // service error status 403
     public static final int SERVICE_REQUEST_LENGTH_OUT_OF_LIMIT_ERROR_CODE = 10201;
 
@@ -23,6 +24,8 @@ public class JawsErrorMsgConstants {
             new JawsErrorMsg(503, SERVICE_REJECT_ERROR_CODE, "service reject");
     public static final JawsErrorMsg SERVICE_NOT_FOUND =
             new JawsErrorMsg(404, SERVICE_NOT_FOUND_ERROR_CODE, "service not found");
+    public static final JawsErrorMsg SERVICE_METHOD_NOT_FOUND =
+            new JawsErrorMsg(404, SERVICE_METHOD_NOT_FOUND_ERROR_CODE, "service method not found");
     public static final JawsErrorMsg SERVICE_TIMEOUT =
             new JawsErrorMsg(503, SERVICE_TIMEOUT_ERROR_CODE, "service request timeout");
 

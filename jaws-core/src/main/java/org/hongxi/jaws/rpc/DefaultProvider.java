@@ -20,16 +20,16 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultProvider.class);
 
-    protected T proxyImpl;
+    protected T ref;
 
-    public DefaultProvider(T proxyImpl, URL url, Class<T> clazz) {
-        super(url, clazz);
-        this.proxyImpl = proxyImpl;
+    public DefaultProvider(T ref, Class<T> interfaceClass, URL url) {
+        super(interfaceClass, url);
+        this.ref = ref;
     }
 
     @Override
     public T getImpl() {
-        return proxyImpl;
+        return ref;
     }
 
     @Override
@@ -41,15 +41,15 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
         if (method == null) {
             JawsServiceException exception =
                     new JawsServiceException("Service method not exist: " + request.getInterfaceName() + "." + request.getMethodName()
-                            + "(" + request.getParamDesc() + ")", JawsErrorMsgConstants.SERVICE_NOT_FOUND);
+                            + "(" + request.getParamDesc() + ")", JawsErrorMsgConstants.SERVICE_METHOD_NOT_FOUND);
 
             response.setException(exception);
             return response;
         }
 
-        boolean defaultThrowExceptionStack = URLParamType.transExceptionStack.boolValue();
+        boolean defaultTransExceptionStack = URLParamType.transExceptionStack.boolValue();
         try {
-            Object value = method.invoke(proxyImpl, request.getArguments());
+            Object value = method.invoke(ref, request.getArguments());
             // Provider端异步支持：如果方法返回 CompletableFuture，等待结果
             if (value instanceof CompletableFuture<?> cf) {
                 try {
@@ -97,15 +97,15 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             for (Class<?> clazz : method.getExceptionTypes()) {
                 if (clazz.isInstance(response.getException().getCause())) {
                     logException = false;
-                    defaultThrowExceptionStack = false;
+                    defaultTransExceptionStack = false;
                     break;
                 }
             }
             if (logException) {
-                log.error("Exception caught when during method invocation. request: {}", request.toString(), e);
+                log.error("Exception caught when during method invocation. request: {}", request, e);
             } else {
                 log.info("Exception caught when during method invocation. request: {}, exception: {}",
-                        request.toString(), response.getException().getCause().toString());
+                        request, response.getException().getCause().toString());
             }
         } catch (Throwable t) {
             // 如果服务发生Error，将Error转化为Exception，防止拖垮调用方
@@ -120,7 +120,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
 
         if (response.getException() != null) {
             // 是否传输业务异常栈
-            boolean transExceptionStack = this.url.getParameter(URLParamType.transExceptionStack.getName(), defaultThrowExceptionStack);
+            boolean transExceptionStack = this.url.getParameter(URLParamType.transExceptionStack.getName(), defaultTransExceptionStack);
             // 不传输业务异常栈
             if (!transExceptionStack) {
                 ExceptionUtils.setMockStackTrace(response.getException().getCause());

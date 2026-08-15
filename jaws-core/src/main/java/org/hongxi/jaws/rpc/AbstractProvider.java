@@ -13,18 +13,18 @@ import java.util.Map;
  * Created by shenhongxi on 2021/3/7.
  */
 public abstract class AbstractProvider<T> implements Provider<T> {
-    protected Class<T> clazz;
+    protected Class<T> interfaceClass;
     protected URL url;
     protected boolean alive = false;
     protected boolean close = false;
 
     protected Map<String, Method> methodMap = new HashMap<>();
 
-    public AbstractProvider(URL url, Class<T> clazz) {
+    public AbstractProvider(Class<T> interfaceClass, URL url) {
+        this.interfaceClass = interfaceClass;
         this.url = url;
-        this.clazz = clazz;
 
-        initMethodMap(clazz);
+        initMethodMap(interfaceClass);
     }
 
     @Override
@@ -66,14 +66,13 @@ public abstract class AbstractProvider<T> implements Provider<T> {
 
     @Override
     public Class<T> getInterface() {
-        return clazz;
+        return interfaceClass;
     }
 
     @Override
     public Method lookupMethod(String methodName, String paramDesc) {
-        Method method;
         String methodDesc = ReflectUtils.getMethodDesc(methodName, paramDesc);
-        method = methodMap.get(methodDesc);
+        Method method = methodMap.get(methodDesc);
         if (method == null && StringUtils.isBlank(paramDesc)) {
             method = methodMap.get(methodName);
         }
@@ -81,27 +80,27 @@ public abstract class AbstractProvider<T> implements Provider<T> {
     }
 
     /**
-     * 构建方法路由表，既支持精确的签名匹配，也对无重载方法支持简写匹配，重载方法则强制要求完整参数描述
-     * @param clazz
+     * Build the method routing table. Supports exact signature matching for all methods,
+     * and shorthand name matching for non-overloaded methods. Overloaded methods require
+     * the full parameter descriptor for disambiguation.
      */
-    private void initMethodMap(Class<T> clazz) {
-        Method[] methods = clazz.getMethods();
+    private void initMethodMap(Class<T> interfaceClass) {
+        Method[] methods = interfaceClass.getMethods();
 
-        List<String> dupList = new ArrayList<>();
+        List<String> overloadedMethodNames = new ArrayList<>();
         for (Method method : methods) {
             String methodDesc = ReflectUtils.getMethodDesc(method);
             methodMap.put(methodDesc, method);
             if (methodMap.get(method.getName()) == null) {
                 methodMap.put(method.getName(), method);
             } else {
-                dupList.add(method.getName());
+                overloadedMethodNames.add(method.getName());
             }
         }
-        if (!dupList.isEmpty()) {
-            for (String removedName : dupList) {
+        if (!overloadedMethodNames.isEmpty()) {
+            for (String removedName : overloadedMethodNames) {
                 methodMap.remove(removedName);
             }
         }
     }
-
 }

@@ -35,7 +35,7 @@ public class SimpleServiceDeployer implements ServiceDeployer {
         // Use protocol decorator to add filter capability
         String protocolName = serviceUrl.getParameter(URLParamType.protocol.getName(), URLParamType.protocol.value());
         Protocol delegate = ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(protocolName);
-        Provider<T> provider = getProvider(ref, serviceUrl, interfaceClass);
+        Provider<T> provider = getProvider(ref, interfaceClass, serviceUrl);
 
         Protocol protocol = new ProtocolFilterDecorator(delegate);
         Exporter<T> exporter = protocol.export(provider, serviceUrl);
@@ -46,8 +46,8 @@ public class SimpleServiceDeployer implements ServiceDeployer {
         return exporter;
     }
 
-    protected <T> Provider<T> getProvider(T proxyImpl, URL url, Class<T> clazz) {
-        return new DefaultProvider<>(proxyImpl, url, clazz);
+    protected <T> Provider<T> getProvider(T ref, Class<T> interfaceClass, URL url) {
+        return new DefaultProvider<>(ref, interfaceClass, url);
     }
 
     @Override

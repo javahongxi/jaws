@@ -10,16 +10,16 @@ import org.hongxi.jaws.common.extension.Spi;
 public interface Reference<T> extends Caller<T>, Node {
 
     /**
-     * 当前使用该reference的调用数
+     * The number of active calls currently using this reference.
      *
-     * @return
+     * @return active call count
      */
     int activeReferenceCount();
 
     /**
-     * 获取reference的原始service url
+     * Get the original service URL of this reference.
      *
-     * @return
+     * @return service URL
      */
     URL getServiceUrl();
 }
