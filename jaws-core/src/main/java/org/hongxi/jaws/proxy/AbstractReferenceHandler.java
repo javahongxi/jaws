@@ -8,12 +8,10 @@ import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.rpc.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,51 +24,86 @@ public class AbstractReferenceHandler<T> {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractReferenceHandler.class);
 
-    private static final String PROTOCOL_TOGGLE_PREFIX = "protocol:";
-
     protected List<Cluster<T>> clusters;
-    protected Class<T> clazz;
+    protected Class<T> interfaceClass;
     protected String interfaceName;
 
-    void init() {
-        // DynamicConfiguration is accessed via DynamicConfigurationUtils (global singleton)
-    }
+    Object invoke(Request request, Class<?> returnType) throws Throwable {
+        RpcContext context = RpcContext.getContext();
 
-    Object invokeRequest(Request request, Class<?> returnType, boolean async) throws Throwable {
-        RpcContext curContext = RpcContext.getContext();
-        curContext.putAttribute(JawsConstants.ASYNC_FLAG, async);
-
-        return doInvoke(request, returnType, async, false);
-    }
-
-    /**
-     * Invoke with CompletableFuture return type.
-     * The returned CompletableFuture completes when the RPC response arrives.
-     */
-    CompletableFuture<Object> invokeCompletableFutureRequest(Request request, Class<?> returnType, Method method) {
-        RpcContext curContext = RpcContext.getContext();
-        curContext.putAttribute(JawsConstants.ASYNC_FLAG, true);
-
-        // set rpc context attachments to request
-        Map<String, String> attachments = curContext.getRpcAttachments();
+        Map<String, String> attachments = context.getRpcAttachments();
         if (!attachments.isEmpty()) {
             for (Map.Entry<String, String> entry : attachments.entrySet()) {
                 request.setAttachment(entry.getKey(), entry.getValue());
             }
         }
 
-        if (StringUtils.isNotBlank(curContext.getClientRequestId())) {
-            request.setAttachment(URLParamType.requestIdFromClient.getName(), curContext.getClientRequestId());
+        if (StringUtils.isNotBlank(context.getClientRequestId())) {
+            request.setAttachment(URLParamType.requestIdFromClient.getName(), context.getClientRequestId());
+        }
+
+        for (Cluster<T> cluster : clusters) {
+            request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
+            request.setAttachment(URLParamType.clientGroup.getName(), cluster.getUrl().getGroup());
+            request.setAttachment(URLParamType.application.getName(), cluster.getUrl().getApplication());
+            request.setAttachment(URLParamType.module.getName(), cluster.getUrl().getModule());
+
+            try {
+                return cluster.call(request).getValue();
+            } catch (RuntimeException e) {
+                if (ExceptionUtils.isBizException(e)) {
+                    Throwable t = e.getCause();
+                    if (t instanceof Exception) {
+                        throw t;
+                    }
+                    String msg;
+                    if (t == null) {
+                        msg = "biz exception cause is null, original error: " + e.getMessage();
+                    } else {
+                        msg = "biz exception cause is a non-Exception Throwable: "
+                                + t.getClass().getName() + ", message: " + t.getMessage();
+                    }
+                    throw new JawsServiceException(msg);
+                } else if (!cluster.getUrl().getBoolParameter(URLParamType.throwException)) {
+                    log.warn("invoke failed, returning default value as throwException=false: uri={} {}",
+                            cluster.getUrl().getUri(), JawsFrameworkUtils.toString(request), e);
+                    if (returnType != null && returnType.isPrimitive()) {
+                        return PrimitiveDefault.getDefaultReturnValue(returnType);
+                    }
+                    return null;
+                } else {
+                    log.error("invoke Error: uri={} {}",
+                            cluster.getUrl().getUri(), JawsFrameworkUtils.toString(request), e);
+                    throw e;
+                }
+            }
+        }
+        throw new JawsServiceException("Reference call Error: cluster not exist, interface=" + interfaceName + " "
+                + JawsFrameworkUtils.toString(request), JawsErrorMsgConstants.SERVICE_NOT_FOUND, false);
+    }
+
+    /**
+     * Invoke with CompletableFuture return type.
+     * The returned CompletableFuture completes when the RPC response arrives.
+     */
+    CompletableFuture<Object> invokeAsync(Request request, Class<?> returnType) {
+        RpcContext context = RpcContext.getContext();
+        context.putAttribute(JawsConstants.ASYNC_FLAG, true);
+
+        Map<String, String> attachments = context.getRpcAttachments();
+        if (!attachments.isEmpty()) {
+            for (Map.Entry<String, String> entry : attachments.entrySet()) {
+                request.setAttachment(entry.getKey(), entry.getValue());
+            }
+        }
+
+        if (StringUtils.isNotBlank(context.getClientRequestId())) {
+            request.setAttachment(URLParamType.requestIdFromClient.getName(), context.getClientRequestId());
         }
 
         CompletableFuture<Object> resultFuture = new CompletableFuture<>();
 
         for (Cluster<T> cluster : clusters) {
-            String protocolToggle = PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
-            if (!DynamicConfigurationUtils.isEnabled(protocolToggle, true)) {
-                continue;
-            }
-
             request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
             request.setAttachment(URLParamType.clientGroup.getName(), cluster.getUrl().getGroup());
             request.setAttachment(URLParamType.application.getName(), cluster.getUrl().getApplication());
@@ -78,24 +111,17 @@ public class AbstractReferenceHandler<T> {
 
             try {
                 Response response = cluster.call(request);
-                if (response instanceof ResponseFuture rf) {
-                    rf.setReturnType(returnType);
-                    if (rf instanceof DefaultResponseFuture drf) {
-                        drf.toCompletableFuture().thenAccept(resultFuture::complete)
-                                .exceptionally(ex -> {
-                                    resultFuture.completeExceptionally(ex);
-                                    return null;
-                                });
-                    } else {
-                        // Fallback: add listener to bridge
-                        rf.addListener(future -> {
-                            if (future.isSuccess()) {
-                                resultFuture.complete(future.getValue());
-                            } else {
-                                resultFuture.completeExceptionally(future.getException());
-                            }
-                        });
-                    }
+                if (response instanceof DefaultResponseFuture responseFuture) {
+                    responseFuture.setReturnType(returnType);
+                    responseFuture.addListener(future -> {
+                        if (future.isSuccess()) {
+                            resultFuture.complete(future.getValue());
+                        } else {
+                            Exception ex = future.getException();
+                            resultFuture.completeExceptionally(ex != null ? ex
+                                    : new JawsServiceException("response future failed"));
+                        }
+                    });
                 } else {
                     // Synchronous response (e.g., injvm or cached)
                     if (response.getException() != null) {
@@ -106,7 +132,20 @@ public class AbstractReferenceHandler<T> {
                 }
                 return resultFuture;
             } catch (RuntimeException e) {
-                resultFuture.completeExceptionally(e);
+                if (ExceptionUtils.isBizException(e)) {
+                    Throwable t = e.getCause();
+                    if (t instanceof Exception) {
+                        resultFuture.completeExceptionally(t);
+                    } else {
+                        String msg = t == null
+                                ? "biz exception cause is null, original error: " + e.getMessage()
+                                : "biz exception cause is a non-Exception Throwable: "
+                                        + t.getClass().getName() + ", message: " + t.getMessage();
+                        resultFuture.completeExceptionally(new JawsServiceException(msg));
+                    }
+                } else {
+                    resultFuture.completeExceptionally(e);
+                }
                 return resultFuture;
             }
         }
@@ -117,114 +156,22 @@ public class AbstractReferenceHandler<T> {
         return resultFuture;
     }
 
-    private Object doInvoke(Request request, Class<?> returnType, boolean async, boolean completableFutureReturn) throws Throwable {
-        RpcContext curContext = RpcContext.getContext();
-        curContext.putAttribute(JawsConstants.ASYNC_FLAG, async);
-
-        // set rpc context attachments to request
-        Map<String, String> attachments = curContext.getRpcAttachments();
-        if (!attachments.isEmpty()) {
-            for (Map.Entry<String, String> entry : attachments.entrySet()) {
-                request.setAttachment(entry.getKey(), entry.getValue());
-            }
-        }
-
-        // add to attachment if client request id is set
-        if (StringUtils.isNotBlank(curContext.getClientRequestId())) {
-            request.setAttachment(URLParamType.requestIdFromClient.getName(), curContext.getClientRequestId());
-        }
-
-        // 当 reference配置多个protocol的时候，比如A,B,C，
-        // 那么正常情况下只会使用A，如果A被开关降级，那么就会使用B，B也被降级，那么会使用C
-        for (Cluster<T> cluster : clusters) {
-            String protocolToggle = PROTOCOL_TOGGLE_PREFIX + cluster.getUrl().getProtocol();
-            if (!DynamicConfigurationUtils.isEnabled(protocolToggle, true)) {
-                continue;
-            }
-
-            request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
-            request.setAttachment(URLParamType.clientGroup.getName(), cluster.getUrl().getGroup());
-            // 带上client的application和module
-            request.setAttachment(URLParamType.application.getName(), cluster.getUrl().getApplication());
-            request.setAttachment(URLParamType.module.getName(), cluster.getUrl().getModule());
-
-            Response response = null;
-            boolean throwException = Boolean.parseBoolean(cluster.getUrl().getParameter(URLParamType.throwException.getName(), URLParamType.throwException.value()));
-            try {
-                response = cluster.call(request);
-                if (async) {
-                    if (response instanceof ResponseFuture rf) {
-                        rf.setReturnType(returnType);
-                        return response;
-                    } else {
-                        ResponseFuture responseFuture = new DefaultResponseFuture(request, 0, cluster.getUrl());
-                        if (response.getException() != null) {
-                            responseFuture.onFailure(response);
-                        } else {
-                            responseFuture.onSuccess(response);
-                        }
-                        responseFuture.setReturnType(returnType);
-                        return responseFuture;
-                    }
-                } else {
-                    Object value = response.getValue();
-                    return value;
-                }
-            } catch (RuntimeException e) {
-                if (ExceptionUtils.isBizException(e)) {
-                    Throwable t = e.getCause();
-                    // 只抛出Exception，防止抛出远程的Error
-                    if (t != null && t instanceof Exception) {
-                        throw t;
-                    } else {
-                        String msg = t == null ? "biz exception cause is null. origin error msg : " + e.getMessage() : ("biz exception cause is throwable error:" + t.getClass() + ", errmsg:" + t.getMessage());
-                        throw new JawsServiceException(msg);
-                    }
-                } else if (!throwException) {
-                    log.warn("ReferenceInvocationHandler invoke false, so return default value: uri=" + cluster.getUrl().getUri() + " " + JawsFrameworkUtils.toString(request), e);
-                    return getDefaultReturnValue(returnType);
-                } else {
-                    log.error("ReferenceInvocationHandler invoke Error: uri=" + cluster.getUrl().getUri() + " " + JawsFrameworkUtils.toString(request), e);
-                    throw e;
-                }
-            }
-        }
-        throw new JawsServiceException("Reference call Error: cluster not exist, interface=" + interfaceName + " " + JawsFrameworkUtils.toString(request), JawsErrorMsgConstants.SERVICE_NOT_FOUND, false);
-    }
-
-    private Object getDefaultReturnValue(Class<?> returnType) {
-        if (returnType != null && returnType.isPrimitive()) {
-            return PrimitiveDefault.getDefaultReturnValue(returnType);
-        }
-        return null;
-    }
-
     private static class PrimitiveDefault {
-        private static boolean defaultBoolean;
-        private static char defaultChar;
-        private static byte defaultByte;
-        private static short defaultShort;
-        private static int defaultInt;
-        private static long defaultLong;
-        private static float defaultFloat;
-        private static double defaultDouble;
-
         private static final Map<Class<?>, Object> primitiveValues = new HashMap<>();
 
         static {
-            primitiveValues.put(boolean.class, defaultBoolean);
-            primitiveValues.put(char.class, defaultChar);
-            primitiveValues.put(byte.class, defaultByte);
-            primitiveValues.put(short.class, defaultShort);
-            primitiveValues.put(int.class, defaultInt);
-            primitiveValues.put(long.class, defaultLong);
-            primitiveValues.put(float.class, defaultFloat);
-            primitiveValues.put(double.class, defaultDouble);
+            primitiveValues.put(boolean.class, false);
+            primitiveValues.put(char.class, '\u0000');
+            primitiveValues.put(byte.class, (byte) 0);
+            primitiveValues.put(short.class, (short) 0);
+            primitiveValues.put(int.class, 0);
+            primitiveValues.put(long.class, 0L);
+            primitiveValues.put(float.class, 0.0f);
+            primitiveValues.put(double.class, 0.0d);
         }
 
         public static Object getDefaultReturnValue(Class<?> returnType) {
             return primitiveValues.get(returnType);
         }
-
     }
 }

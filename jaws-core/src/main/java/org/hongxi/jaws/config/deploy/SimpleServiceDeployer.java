@@ -32,22 +32,16 @@ public class SimpleServiceDeployer implements ServiceDeployer {
     @Override
     public <T> Exporter<T> export(Class<T> interfaceClass, T ref, List<URL> registryUrls, URL serviceUrl) {
         // export service
-        // Use protocol decorator to add filter capability
-        String protocolName = serviceUrl.getParameter(URLParamType.protocol.getName(), URLParamType.protocol.value());
+        String protocolName = serviceUrl.getParameter(URLParamType.protocol);
         Protocol delegate = ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(protocolName);
-        Provider<T> provider = getProvider(ref, interfaceClass, serviceUrl);
-
         Protocol protocol = new ProtocolFilterDecorator(delegate);
+        Provider<T> provider = new DefaultProvider<>(ref, interfaceClass, serviceUrl);
         Exporter<T> exporter = protocol.export(provider, serviceUrl);
 
         // register service
         register(registryUrls, serviceUrl);
 
         return exporter;
-    }
-
-    protected <T> Provider<T> getProvider(T ref, Class<T> interfaceClass, URL url) {
-        return new DefaultProvider<>(ref, interfaceClass, url);
     }
 
     @Override

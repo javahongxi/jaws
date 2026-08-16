@@ -15,6 +15,7 @@ import org.hongxi.jaws.rpc.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,7 +52,7 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
     }
 
     @Override
-    public Response call(Request request, Provider<?> provider) {
+    public CompletableFuture<Response> call(Request request, Provider<?> provider) {
         // Resolve maxWorkerThreads with dynamic configuration priority:
         // service-level dynamic > global dynamic > URL config
         int urlMaxThread = provider.getUrl().getParameter(URLParamType.maxWorkerThreads.getName(), URLParamType.maxWorkerThreads.intValue());
@@ -59,18 +60,19 @@ public class DefaultProtectedStrategy implements ProviderProtectedStrategy {
 
         String requestKey = JawsFrameworkUtils.getFullMethodString(request);
 
-        try {
-            int requestCounter = incrCounter(requestKey, requestCounters);
-            int currentTotal = incrTotalCounter();
-            if (isAllowRequest(requestCounter, currentTotal, maxThread)) {
-                return provider.call(request);
-            } else {
-                // reject request
-                return reject(request.getInterfaceName() + "." + request.getMethodName(), requestCounter, currentTotal, maxThread, request);
-            }
-        } finally {
+        int requestCounter = incrCounter(requestKey, requestCounters);
+        int currentTotal = incrTotalCounter();
+        if (isAllowRequest(requestCounter, currentTotal, maxThread)) {
+            return provider.callAsync(request).whenComplete((r, t) -> {
+                decrTotalCounter();
+                decrCounter(requestKey, requestCounters);
+            });
+        } else {
+            // reject request
             decrTotalCounter();
             decrCounter(requestKey, requestCounters);
+            return CompletableFuture.completedFuture(
+                    reject(request.getInterfaceName() + "." + request.getMethodName(), requestCounter, currentTotal, maxThread, request));
         }
     }
 

@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public abstract class AbstractReference<T> extends AbstractNode implements Reference<T> {
 
-    protected Class<T> clazz;
+    protected Class<T> interfaceClass;
     protected AtomicInteger activeReferenceCount = new AtomicInteger(0);
     protected URL serviceUrl;
 
@@ -19,21 +19,21 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
     private final AtomicLong succeededElapsed = new AtomicLong(0);
     private final AtomicLong succeededCount = new AtomicLong(0);
 
-    public AbstractReference(Class<T> clazz, URL url) {
+    public AbstractReference(Class<T> interfaceClass, URL url) {
         super(url);
-        this.clazz = clazz;
+        this.interfaceClass = interfaceClass;
         this.serviceUrl = url;
     }
 
-    public AbstractReference(Class<T> clazz, URL url, URL serviceUrl) {
+    public AbstractReference(Class<T> interfaceClass, URL url, URL serviceUrl) {
         super(url);
-        this.clazz = clazz;
+        this.interfaceClass = interfaceClass;
         this.serviceUrl = serviceUrl;
     }
 
     @Override
     public Class<T> getInterface() {
-        return clazz;
+        return interfaceClass;
     }
 
     @Override

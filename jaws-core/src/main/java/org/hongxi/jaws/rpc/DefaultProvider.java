@@ -11,6 +11,9 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Created by shenhongxi on 2021/3/7.
@@ -33,7 +36,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
     }
 
     @Override
-    public Response invoke(Request request) {
+    public CompletableFuture<Response> invoke(Request request) {
         DefaultResponse response = new DefaultResponse();
 
         Method method = lookupMethod(request.getMethodName(), request.getParamDesc());
@@ -44,45 +47,40 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                             + "(" + request.getParamDesc() + ")", JawsErrorMsgConstants.SERVICE_METHOD_NOT_FOUND);
 
             response.setException(exception);
-            return response;
+            return CompletableFuture.completedFuture(response);
         }
 
         boolean defaultTransExceptionStack = URLParamType.transExceptionStack.boolValue();
         try {
             Object value = method.invoke(ref, request.getArguments());
-            // Provider端异步支持：如果方法返回 CompletableFuture，等待结果
-            if (value instanceof CompletableFuture<?> cf) {
-                try {
-                    long timeout = this.url.getMethodParameter(
-                            request.getMethodName(), request.getParamDesc(),
-                            URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
-                    if (timeout > 0) {
-                        value = cf.get(timeout, java.util.concurrent.TimeUnit.MILLISECONDS);
-                    } else {
-                        value = cf.get();
-                    }
-                } catch (java.util.concurrent.ExecutionException ee) {
-                    Throwable cause = ee.getCause() != null ? ee.getCause() : ee;
-                    if (cause instanceof Exception ex) {
-                        response.setException(new JawsBizException("provider async call process error", ex));
-                    } else {
-                        response.setException(new JawsServiceException("provider async call fatal error: " + cause));
-                    }
-                    response.setAttachments(request.getAttachments());
-                    return response;
-                } catch (java.util.concurrent.TimeoutException te) {
-                    response.setException(new JawsServiceException(
-                            "provider async call timeout: " + request.getInterfaceName() + "." + request.getMethodName(),
-                            JawsErrorMsgConstants.SERVICE_TIMEOUT));
-                    response.setAttachments(request.getAttachments());
-                    return response;
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    response.setException(new JawsServiceException("provider async call interrupted",
-                            JawsErrorMsgConstants.SERVICE_TIMEOUT));
-                    response.setAttachments(request.getAttachments());
-                    return response;
+            if (value instanceof CompletableFuture<?> future) {
+                long timeout = this.url.getMethodParameter(
+                        request.getMethodName(), request.getParamDesc(),
+                        URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
+                // noinspection unchecked
+                CompletableFuture<Object> typedFuture = (CompletableFuture<Object>) (CompletableFuture) future;
+                if (timeout > 0) {
+                    typedFuture = typedFuture.orTimeout(timeout, TimeUnit.MILLISECONDS);
                 }
+                return typedFuture.handle((result, throwable) -> {
+                    DefaultResponse asyncResponse = new DefaultResponse();
+                    asyncResponse.setAttachments(request.getAttachments());
+                    if (throwable != null) {
+                        Throwable cause = throwable instanceof CompletionException ? throwable.getCause() : throwable;
+                        if (cause instanceof TimeoutException) {
+                            asyncResponse.setException(new JawsServiceException(
+                                    "provider async call timeout: " + request.getInterfaceName() + "." + request.getMethodName(),
+                                    JawsErrorMsgConstants.SERVICE_TIMEOUT));
+                        } else if (cause instanceof Exception ex) {
+                            asyncResponse.setException(new JawsBizException("provider async call process error", ex));
+                        } else {
+                            asyncResponse.setException(new JawsServiceException("provider async call fatal error: " + cause));
+                        }
+                    } else {
+                        asyncResponse.setValue(result);
+                    }
+                    return asyncResponse;
+                });
             }
             response.setValue(value);
         } catch (Exception e) {
@@ -108,25 +106,25 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                         request, response.getException().getCause().toString());
             }
         } catch (Throwable t) {
-            // 如果服务发生Error，将Error转化为Exception，防止拖垮调用方
+            // If provider encounters an Error, convert it to Exception to prevent dragging down the caller
             if (t.getCause() != null) {
                 response.setException(new JawsServiceException("provider has encountered a fatal error!", t.getCause()));
             } else {
                 response.setException(new JawsServiceException("provider has encountered a fatal error!", t));
             }
-            // 对于Throwable,也记录日志
+            // Also log for Throwable
             log.error("Exception caught when during method invocation. request:{}", request, t);
         }
 
         if (response.getException() != null) {
-            // 是否传输业务异常栈
+            // Whether to transmit business exception stack
             boolean transExceptionStack = this.url.getParameter(URLParamType.transExceptionStack.getName(), defaultTransExceptionStack);
-            // 不传输业务异常栈
+            // Do not transmit business exception stack
             if (!transExceptionStack) {
                 ExceptionUtils.setMockStackTrace(response.getException().getCause());
             }
         }
         response.setAttachments(request.getAttachments());
-        return response;
+        return CompletableFuture.completedFuture(response);
     }
 }

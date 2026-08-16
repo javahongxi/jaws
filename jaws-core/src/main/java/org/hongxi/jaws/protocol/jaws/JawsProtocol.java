@@ -5,9 +5,6 @@ import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.protocol.AbstractProtocol;
 import org.hongxi.jaws.rpc.*;
-import org.hongxi.jaws.transport.ProviderMessageRouter;
-
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created by shenhongxi on 2021/4/21.
@@ -16,18 +13,17 @@ import java.util.concurrent.ConcurrentHashMap;
 public class JawsProtocol extends AbstractProtocol {
 
     public static final String DEFAULT_CODEC = "jaws";
-    private final ConcurrentHashMap<String, ProviderMessageRouter> ipPort2RequestRouter = new ConcurrentHashMap<>();
 
     @Override
     protected <T> Exporter<T> createExporter(Provider<T> provider, URL url) {
         setDefaultCodec(url);
-        return new DefaultRpcExporter<>(provider, url, this.ipPort2RequestRouter, this.exporterMap);
+        return new DefaultRpcExporter<>(provider, url, this.exporterMap);
     }
 
     @Override
-    protected <T> Reference<T> createReference(Class<T> clazz, URL url, URL serviceUrl) {
+    protected <T> Reference<T> createReference(Class<T> interfaceClass, URL url, URL serviceUrl) {
         setDefaultCodec(url);
-        return new DefaultRpcReference<>(clazz, url, serviceUrl);
+        return new DefaultRpcReference<>(interfaceClass, url, serviceUrl);
     }
 
     private void setDefaultCodec(URL url) {

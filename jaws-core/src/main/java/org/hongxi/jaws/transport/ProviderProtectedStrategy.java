@@ -6,6 +6,7 @@ import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -14,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Spi(scope = Scope.PROTOTYPE)
 public interface ProviderProtectedStrategy {
 
-    Response call(Request request, Provider<?> provider);
+    CompletableFuture<Response> call(Request request, Provider<?> provider);
 
     void setMethodCounter(AtomicInteger methodCounter);
 

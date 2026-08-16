@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Created by shenhongxi on 2021/4/21.
@@ -23,21 +24,23 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultRpcExporter.class);
 
-    protected final ConcurrentHashMap<String, ProviderMessageRouter> ipPort2RequestRouter;
-    protected final ConcurrentHashMap<String, Exporter<?>> exporterMap;
-    protected Server server;
-    protected EndpointFactory endpointFactory;
+    private static final ConcurrentMap<String, ProviderMessageRouter> IP_PORT_TO_REQUEST_ROUTER = new ConcurrentHashMap<>();
 
-    public DefaultRpcExporter(Provider<T> provider, URL url, ConcurrentHashMap<String, ProviderMessageRouter> ipPort2RequestRouter,
-                              ConcurrentHashMap<String, Exporter<?>> exporterMap) {
+    protected final ConcurrentMap<String, Exporter<?>> exporterMap;
+    protected EndpointFactory endpointFactory;
+    protected Server server;
+
+    public DefaultRpcExporter(Provider<T> provider, URL url,
+                              ConcurrentMap<String, Exporter<?>> exporterMap) {
         super(provider, url);
         this.exporterMap = exporterMap;
-        this.ipPort2RequestRouter = ipPort2RequestRouter;
 
-        ProviderMessageRouter requestRouter = initRequestRouter(url);
-        endpointFactory =
-                ExtensionLoader.getExtensionLoader(EndpointFactory.class).getExtension(
-                        url.getParameter(URLParamType.endpointFactory.getName(), URLParamType.endpointFactory.value()));
+        ProviderMessageRouter requestRouter = IP_PORT_TO_REQUEST_ROUTER.computeIfAbsent(
+                url.getServerPortStr(), key -> new ProviderMessageRouter(url));
+        requestRouter.addProvider(provider);
+
+        endpointFactory = ExtensionLoader.getExtensionLoader(EndpointFactory.class)
+                .getExtension(url.getParameter(URLParamType.endpointFactory));
         server = endpointFactory.createServer(url, requestRouter);
     }
 
@@ -52,7 +55,7 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
             exporter.destroy();
         }
 
-        ProviderMessageRouter requestRouter = ipPort2RequestRouter.get(ipPort);
+        ProviderMessageRouter requestRouter = IP_PORT_TO_REQUEST_ROUTER.get(ipPort);
         if (requestRouter != null) {
             requestRouter.removeProvider(provider);
         }
@@ -65,12 +68,12 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
         boolean result = server.open();
         // use random port
         if (result && getUrl().getPort() == 0) {
-            ProviderMessageRouter requestRouter = this.ipPort2RequestRouter.remove(getUrl().getServerPortStr());
+            ProviderMessageRouter requestRouter = IP_PORT_TO_REQUEST_ROUTER.remove(getUrl().getServerPortStr());
             if (requestRouter == null) {
                 throw new JawsFrameworkException("can not find message router. url:" + getUrl().getIdentity());
             }
             updateRealServerPort(server.getLocalAddress().getPort());
-            this.ipPort2RequestRouter.put(getUrl().getServerPortStr(), requestRouter);
+            IP_PORT_TO_REQUEST_ROUTER.put(getUrl().getServerPortStr(), requestRouter);
         }
         return result;
     }
@@ -94,19 +97,5 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
     @Override
     public void awaitInactiveRequests(long timeout) {
         server.awaitInactiveRequests(timeout);
-    }
-
-    protected ProviderMessageRouter initRequestRouter(URL url) {
-        String ipPort = url.getServerPortStr();
-        ProviderMessageRouter requestRouter = ipPort2RequestRouter.get(ipPort);
-
-        if (requestRouter == null) {
-            ProviderMessageRouter router = new ProviderMessageRouter(url);
-            ipPort2RequestRouter.putIfAbsent(ipPort, router);
-            requestRouter = ipPort2RequestRouter.get(ipPort);
-        }
-        requestRouter.addProvider(provider);
-
-        return requestRouter;
     }
 }

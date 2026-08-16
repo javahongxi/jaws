@@ -26,7 +26,6 @@ import java.util.List;
  * Created by shenhongxi on 2026/7/18.
  *
  * @see GenericService
- * @see ReferenceConfig
  */
 public class GenericReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> implements InvocationHandler {
 
@@ -42,7 +41,6 @@ public class GenericReferenceInvocationHandler<T> extends AbstractReferenceHandl
         this.realInterfaceName = realInterfaceName;
         this.interfaceName = realInterfaceName;
         this.clusters = clusters;
-        init();
     }
 
     @Override
@@ -91,7 +89,7 @@ public class GenericReferenceInvocationHandler<T> extends AbstractReferenceHandl
         log.debug("[GenericInvoke] interface={}, method={}, paramTypes={}", realInterfaceName, methodName, parameterTypes);
 
         // Invoke through the cluster and convert the result for generic response
-        Object result = invokeRequest(request, Object.class, false);
+        Object result = invoke(request, Object.class);
         return GenericUtils.convertResult(result);
     }
 }

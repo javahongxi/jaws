@@ -5,6 +5,7 @@ import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -17,8 +18,8 @@ public class UnprotectedStrategy implements ProviderProtectedStrategy {
     }
 
     @Override
-    public Response call(Request request, Provider<?> provider) {
-        return provider.call(request);
+    public CompletableFuture<Response> call(Request request, Provider<?> provider) {
+        return provider.callAsync(request);
     }
 
     @Override

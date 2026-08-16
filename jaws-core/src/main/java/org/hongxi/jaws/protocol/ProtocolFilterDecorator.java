@@ -31,7 +31,7 @@ import java.util.List;
 
 public class ProtocolFilterDecorator implements Protocol {
 
-    private Protocol protocol;
+    private final Protocol protocol;
 
     public ProtocolFilterDecorator(Protocol protocol) {
         if (protocol == null) {
@@ -47,8 +47,8 @@ public class ProtocolFilterDecorator implements Protocol {
     }
 
     @Override
-    public <T> Reference<T> refer(Class<T> clazz, URL url, URL serviceUrl) {
-        return decorateWithFilter(protocol.refer(clazz, url, serviceUrl), url);
+    public <T> Reference<T> refer(Class<T> interfaceClass, URL url, URL serviceUrl) {
+        return decorateWithFilter(protocol.refer(interfaceClass, url, serviceUrl), url);
     }
 
     @Override

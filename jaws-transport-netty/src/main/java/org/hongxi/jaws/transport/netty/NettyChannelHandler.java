@@ -20,11 +20,13 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.transport.ProviderMessageRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -140,26 +142,73 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             RpcContext.init(request);
             Object result;
             try {
-                result = messageHandler.handle(channel, request);
+                // Use async path when handler supports it (ProviderMessageRouter)
+                if (messageHandler instanceof ProviderMessageRouter router) {
+                    result = router.handleAsync(channel, request);
+                } else {
+                    result = messageHandler.handle(channel, request);
+                }
             } catch (Exception e) {
                 log.error("processRequest fail! request: {}", JawsFrameworkUtils.toString(request), e);
                 result = JawsFrameworkUtils.buildErrorResponse(request,
                         new JawsServiceException("process request fail. errmsg:" + e.getMessage()));
             }
-            final DefaultResponse response;
-            if (result instanceof DefaultResponse defaultResponse) {
-                response = defaultResponse;
-            } else {
-                response = new DefaultResponse(result);
-            }
-            response.setRequestId(request.getRequestId());
-            response.setProcessTime(System.currentTimeMillis() - processStartTime);
 
-            ChannelFuture channelFuture = sendResponse(ctx, response);
-            if (channelFuture != null) {
-                channelFuture.addListener((ChannelFutureListener) future -> response.onFinish());
+            if (result instanceof CompletableFuture<?> future) {
+                // Async path: non-blocking, write response when future completes
+                future.whenComplete((res, throwable) -> {
+                    try {
+                        RpcContext.init(request);
+                        final DefaultResponse response;
+                        if (throwable != null) {
+                            log.error("processRequest async fail! request: {}", JawsFrameworkUtils.toString(request), throwable);
+                            Response errResp = JawsFrameworkUtils.buildErrorResponse(request,
+                                    new JawsServiceException("async process request fail. errmsg:" + throwable.getMessage()));
+                            response = (errResp instanceof DefaultResponse dr) ? dr : new DefaultResponse(errResp);
+                        } else if (res instanceof DefaultResponse dr) {
+                            response = dr;
+                        } else if (res instanceof Response r) {
+                            response = new DefaultResponse(r);
+                        } else {
+                            response = new DefaultResponse(res);
+                        }
+                        response.setRequestId(request.getRequestId());
+                        response.setProcessTime(System.currentTimeMillis() - processStartTime);
+
+                        ChannelFuture channelFuture = sendResponse(ctx, response);
+                        if (channelFuture != null) {
+                            channelFuture.addListener((ChannelFutureListener) f -> response.onFinish());
+                        }
+                    } finally {
+                        if (channel instanceof NettyServer nettyServer) {
+                            nettyServer.getActiveRequests().decrementAndGet();
+                        }
+                        RpcContext.destroy();
+                    }
+                });
+            } else {
+                // Sync path: write response immediately
+                final DefaultResponse response;
+                if (result instanceof DefaultResponse defaultResponse) {
+                    response = defaultResponse;
+                } else {
+                    response = new DefaultResponse(result);
+                }
+                response.setRequestId(request.getRequestId());
+                response.setProcessTime(System.currentTimeMillis() - processStartTime);
+
+                ChannelFuture channelFuture = sendResponse(ctx, response);
+                if (channelFuture != null) {
+                    channelFuture.addListener((ChannelFutureListener) f -> response.onFinish());
+                }
+                if (channel instanceof NettyServer nettyServer) {
+                    nettyServer.getActiveRequests().decrementAndGet();
+                }
+                RpcContext.destroy();
             }
-        } finally {
+        } catch (Exception e) {
+            // Unexpected error in async path setup
+            log.error("processRequest unexpected error! request: {}", JawsFrameworkUtils.toString(request), e);
             if (channel instanceof NettyServer nettyServer) {
                 nettyServer.getActiveRequests().decrementAndGet();
             }

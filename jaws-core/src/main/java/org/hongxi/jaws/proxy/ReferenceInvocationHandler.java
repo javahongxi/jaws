@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -21,11 +22,10 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceInvocationHandler.class);
 
-    public ReferenceInvocationHandler(Class<T> clazz, List<Cluster<T>> clusters) {
-        this.clazz = clazz;
+    public ReferenceInvocationHandler(Class<T> interfaceClass, List<Cluster<T>> clusters) {
+        this.interfaceClass = interfaceClass;
         this.clusters = clusters;
-        init();
-        interfaceName = clazz.getName();
+        interfaceName = interfaceClass.getName();
     }
 
     @Override
@@ -33,7 +33,7 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         if (isLocalMethod(method)) {
             return switch (method.getName()) {
                 case "toString" -> clustersToString();
-                case "equals" -> proxyEquals(args[0]);
+                case "equals" -> args[0] != null && args[0] == proxy;
                 case "hashCode" -> this.clusters == null ? 0 : this.clusters.hashCode();
                 default -> throw new JawsServiceException("can not invoke local method:" + method.getName());
             };
@@ -42,38 +42,28 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         DefaultRequest request = new DefaultRequest();
         request.setRequestId(RequestIdGenerator.getRequestId());
         request.setArguments(args);
-        String methodName = method.getName();
-        boolean async = false;
-        boolean completableFutureReturn = false;
-        if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
-            async = true;
-            completableFutureReturn = true;
-        }
-        request.setMethodName(methodName);
+        request.setMethodName(method.getName());
         request.setParamDesc(ReflectUtils.getMethodParamDesc(method));
         request.setInterfaceName(interfaceName);
 
-        Class<?> returnType = getRealReturnType(async, this.clazz, method, methodName);
-        if (completableFutureReturn) {
-            return invokeCompletableFutureRequest(request, returnType, method);
+        if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
+            return invokeAsync(request, method.getReturnType());
         }
-        return invokeRequest(request, returnType, async);
+        return invoke(request, method.getReturnType());
     }
 
     /**
-     * tostring,equals,hashCode,finalize等接口未声明的方法不进行远程调用
-     *
-     * @param method
-     * @return
+     * toString,equals,hashCode 等接口未声明的方法不进行远程调用
      */
-    public boolean isLocalMethod(Method method) {
+    private boolean isLocalMethod(Method method) {
         if (method.getDeclaringClass().equals(Object.class)) {
-            try {
-                Method interfaceMethod = clazz.getDeclaredMethod(method.getName(), method.getParameterTypes());
-                return false;
-            } catch (Exception e) {
-                return true;
+            for (Method m : interfaceClass.getMethods()) {
+                if (m.getName().equals(method.getName())
+                        && Arrays.equals(m.getParameterTypes(), method.getParameterTypes())) {
+                    return false;
+                }
             }
+            return true;
         }
         return false;
     }
@@ -92,30 +82,4 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         }
         return sb.toString();
     }
-
-    private boolean proxyEquals(Object o) {
-        if (o == null || this.clusters == null) {
-            return false;
-        }
-        if (o instanceof List) {
-            return this.clusters == o;
-        } else {
-            return o.equals(this.clusters);
-        }
-    }
-
-    private Class<?> getRealReturnType(boolean asyncCall, Class<?> clazz, Method method, String methodName) {
-        if (asyncCall) {
-            try {
-                Method m = clazz.getMethod(methodName, method.getParameterTypes());
-                return m.getReturnType();
-            } catch (Exception e) {
-                log.warn("ReferenceInvocationHandler get real return type fail.", e);
-                return method.getReturnType();
-            }
-        } else {
-            return method.getReturnType();
-        }
-    }
-
 }

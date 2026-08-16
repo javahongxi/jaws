@@ -17,6 +17,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -59,6 +60,14 @@ public class ProviderMessageRouter implements MessageHandler {
 
     @Override
     public Object handle(Channel channel, Object message) {
+        return handleAsync(channel, message).join();
+    }
+
+    /**
+     * Async message handling that returns a CompletableFuture.
+     * Used by the Netty transport layer for non-blocking request processing.
+     */
+    public CompletableFuture<Object> handleAsync(Channel channel, Object message) {
         if (channel == null || message == null) {
             throw new JawsFrameworkException("RequestRouter handler(channel, message) params is null");
         }
@@ -81,27 +90,28 @@ public class ProviderMessageRouter implements MessageHandler {
                             + serviceKey + " " + JawsFrameworkUtils.toString(request));
 
             DefaultResponse response = JawsFrameworkUtils.buildErrorResponse(request, exception);
-            return response;
+            return CompletableFuture.completedFuture(response);
         }
 
         // Handle generic invocation
         boolean isGeneric = "true".equals(request.getAttachments().get("$generic"));
         if (isGeneric) {
-            return handleGenericInvocation(request, provider);
+            return handleGenericInvocationAsync(request, provider);
         }
 
         Method method = provider.lookupMethod(request.getMethodName(), request.getParamDesc());
         fillParamDesc(request, method);
-        Response response = call(request, provider);
-        response.setSerializationNumber(request.getSerializationNumber());
-        return response;
+        return callAsync(request, provider).thenApply(response -> {
+            response.setSerializationNumber(request.getSerializationNumber());
+            return response;
+        });
     }
 
     /**
      * Handle generic invocation: convert Map arguments to actual POJO types,
      * invoke the real method, and convert the result back to Map/simple types.
      */
-    private Response handleGenericInvocation(Request request, Provider<?> provider) {
+    private CompletableFuture<Object> handleGenericInvocationAsync(Request request, Provider<?> provider) {
         String methodName = request.getMethodName();
         String paramDesc = request.getParamDesc();
         Object[] originalArgs = request.getArguments();
@@ -113,7 +123,7 @@ public class ProviderMessageRouter implements MessageHandler {
                             + "(" + paramDesc + ")");
             DefaultResponse response = JawsFrameworkUtils.buildErrorResponse(request, exception);
             response.setSerializationNumber(request.getSerializationNumber());
-            return response;
+            return CompletableFuture.completedFuture(response);
         }
 
         // Convert arguments from Map to actual POJO types
@@ -132,25 +142,25 @@ public class ProviderMessageRouter implements MessageHandler {
         }
 
         fillParamDesc(request, method);
-        Response response = call(request, provider);
-
-        // Convert the result for generic response
-        if (response.getException() == null && response.getValue() != null) {
-            Object convertedResult = GenericUtils.convertResult(response.getValue());
-            if (response instanceof DefaultResponse dr) {
-                dr.setValue(convertedResult);
+        return callAsync(request, provider).thenApply(response -> {
+            // Convert the result for generic response
+            if (response.getException() == null && response.getValue() != null) {
+                Object convertedResult = GenericUtils.convertResult(response.getValue());
+                if (response instanceof DefaultResponse dr) {
+                    dr.setValue(convertedResult);
+                }
             }
-        }
-
-        response.setSerializationNumber(request.getSerializationNumber());
-        return response;
+            response.setSerializationNumber(request.getSerializationNumber());
+            return response;
+        });
     }
 
-    protected Response call(Request request, Provider<?> provider) {
+    protected CompletableFuture<Response> callAsync(Request request, Provider<?> provider) {
         try {
             return strategy.call(request, provider);
         } catch (Exception e) {
-            return JawsFrameworkUtils.buildErrorResponse(request, new JawsBizException("provider call process error", e));
+            return CompletableFuture.completedFuture(
+                    JawsFrameworkUtils.buildErrorResponse(request, new JawsBizException("provider call process error", e)));
         }
     }
 
@@ -189,9 +199,4 @@ public class ProviderMessageRouter implements MessageHandler {
 
         log.info("RequestRouter removeProvider: url={} all_public_method_count={}", provider.getUrl(), methodCounter.get());
     }
-
-    public int getPublicMethodCount() {
-        return methodCounter.get();
-    }
-
 }

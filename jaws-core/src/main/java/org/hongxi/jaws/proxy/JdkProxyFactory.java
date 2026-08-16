@@ -15,8 +15,12 @@ import java.util.List;
 public class JdkProxyFactory implements ProxyFactory {
 
     @Override
-    public <T> T getProxy(Class<T> clazz, List<Cluster<T>> clusters) {
+    public <T> T getProxy(Class<T> interfaceClass, List<Cluster<T>> clusters) {
         // noinspection unchecked
-        return (T) Proxy.newProxyInstance(clazz.getClassLoader(), new Class<?>[]{clazz}, new ReferenceInvocationHandler<>(clazz, clusters));
+        return (T) Proxy.newProxyInstance(
+                interfaceClass.getClassLoader(),
+                new Class<?>[]{interfaceClass},
+                new ReferenceInvocationHandler<>(interfaceClass, clusters)
+        );
     }
 }

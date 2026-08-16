@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Created by shenhongxi on 2021/3/7.
@@ -29,10 +30,15 @@ public abstract class AbstractProvider<T> implements Provider<T> {
 
     @Override
     public Response call(Request request) {
+        return invoke(request).join();
+    }
+
+    @Override
+    public CompletableFuture<Response> callAsync(Request request) {
         return invoke(request);
     }
 
-    protected abstract Response invoke(Request request);
+    protected abstract CompletableFuture<Response> invoke(Request request);
 
     @Override
     public void init() {

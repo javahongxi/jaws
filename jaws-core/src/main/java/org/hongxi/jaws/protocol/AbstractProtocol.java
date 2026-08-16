@@ -7,9 +7,9 @@ import org.hongxi.jaws.rpc.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Created by shenhongxi on 2021/4/21.
@@ -18,11 +18,7 @@ public abstract class AbstractProtocol implements Protocol {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractProtocol.class);
 
-    protected final ConcurrentHashMap<String, Exporter<?>> exporterMap = new ConcurrentHashMap<>();
-
-    public Map<String, Exporter<?>> getExporterMap() {
-        return Collections.unmodifiableMap(exporterMap);
-    }
+    protected final ConcurrentMap<String, Exporter<?>> exporterMap = new ConcurrentHashMap<>();
 
     @Override
     public <T> Exporter<T> export(Provider<T> provider, URL url) {
@@ -43,7 +39,7 @@ public abstract class AbstractProtocol implements Protocol {
             Exporter<T> exporter = (Exporter<T>) exporterMap.get(protocolKey);
 
             if (exporter != null) {
-                throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: service already exist, url=" + url,
+                throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: service already exists, url=" + url,
                         JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
             }
 
@@ -58,8 +54,6 @@ public abstract class AbstractProtocol implements Protocol {
 
             return exporter;
         }
-
-
     }
 
     public <T> Reference<T> refer(Class<T> clazz, URL url) {
