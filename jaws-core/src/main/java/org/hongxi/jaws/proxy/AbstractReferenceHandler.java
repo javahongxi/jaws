@@ -1,6 +1,5 @@
 package org.hongxi.jaws.proxy;
 
-import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
@@ -25,8 +24,12 @@ public class AbstractReferenceHandler<T> {
     private static final Logger log = LoggerFactory.getLogger(AbstractReferenceHandler.class);
 
     protected List<Cluster<T>> clusters;
-    protected Class<T> interfaceClass;
     protected String interfaceName;
+
+    AbstractReferenceHandler(List<Cluster<T>> clusters, String interfaceName) {
+        this.clusters = clusters;
+        this.interfaceName = interfaceName;
+    }
 
     Object invoke(Request request, Class<?> returnType) throws Throwable {
         RpcContext context = RpcContext.getContext();
@@ -38,13 +41,8 @@ public class AbstractReferenceHandler<T> {
             }
         }
 
-        if (StringUtils.isNotBlank(context.getClientRequestId())) {
-            request.setAttachment(URLParamType.requestIdFromClient.getName(), context.getClientRequestId());
-        }
-
         for (Cluster<T> cluster : clusters) {
             request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
-            request.setAttachment(URLParamType.clientGroup.getName(), cluster.getUrl().getGroup());
             request.setAttachment(URLParamType.application.getName(), cluster.getUrl().getApplication());
             request.setAttachment(URLParamType.module.getName(), cluster.getUrl().getModule());
 
@@ -78,7 +76,7 @@ public class AbstractReferenceHandler<T> {
                 }
             }
         }
-        throw new JawsServiceException("Reference call Error: cluster not exist, interface=" + interfaceName + " "
+        throw new JawsServiceException("Reference call Error: cluster not exists, interface=" + interfaceName + " "
                 + JawsFrameworkUtils.toString(request), JawsErrorMsgConstants.SERVICE_NOT_FOUND, false);
     }
 
@@ -97,15 +95,10 @@ public class AbstractReferenceHandler<T> {
             }
         }
 
-        if (StringUtils.isNotBlank(context.getClientRequestId())) {
-            request.setAttachment(URLParamType.requestIdFromClient.getName(), context.getClientRequestId());
-        }
-
         CompletableFuture<Object> resultFuture = new CompletableFuture<>();
 
         for (Cluster<T> cluster : clusters) {
             request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
-            request.setAttachment(URLParamType.clientGroup.getName(), cluster.getUrl().getGroup());
             request.setAttachment(URLParamType.application.getName(), cluster.getUrl().getApplication());
             request.setAttachment(URLParamType.module.getName(), cluster.getUrl().getModule());
 
@@ -151,8 +144,8 @@ public class AbstractReferenceHandler<T> {
         }
 
         resultFuture.completeExceptionally(new JawsServiceException(
-                "Reference call Error: cluster not exist, interface=" + interfaceName + " " + JawsFrameworkUtils.toString(request),
-                JawsErrorMsgConstants.SERVICE_NOT_FOUND, false));
+                "Reference call Error: cluster not exists, interface=" + interfaceName + " "
+                        + JawsFrameworkUtils.toString(request), JawsErrorMsgConstants.SERVICE_NOT_FOUND, false));
         return resultFuture;
     }
 

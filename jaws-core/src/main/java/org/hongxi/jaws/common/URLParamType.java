@@ -11,9 +11,6 @@ public enum URLParamType {
 
     requestTimeout("requestTimeout", 1000),
 
-    /** client-side request id passed to provider via attachment */
-    requestIdFromClient("requestIdFromClient", 0),
-
     maxContentLength("maxContentLength", 10 * 1024 * 1024),
 
     cluster("cluster", JawsConstants.DEFAULT_VALUE),
@@ -33,7 +30,6 @@ public enum URLParamType {
     endpointFactory("endpointFactory", "netty"),
 
     group("group", "default_rpc"),
-    clientGroup("clientGroup", "default_rpc"),
 
     nodeType("nodeType", JawsConstants.NODE_TYPE_SERVICE),
 

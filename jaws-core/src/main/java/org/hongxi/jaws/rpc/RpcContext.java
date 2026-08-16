@@ -14,7 +14,6 @@ public class RpcContext {
     private Map<String, String> attachments = new HashMap<>();
     private Request request;
     private Response response;
-    private String clientRequestId;
     /* 消费端调用后记录实际服务的地址 */
     private URL serverUrl;
 
@@ -36,15 +35,12 @@ public class RpcContext {
         RpcContext context = new RpcContext();
         if (request != null) {
             context.setRequest(request);
-            context.setClientRequestId(
-                    request.getAttachments().get(URLParamType.requestIdFromClient.getName()));
         }
         LOCAL_CONTEXT.set(context);
         return context;
     }
 
     public String getRequestId() {
-        if (clientRequestId != null) return clientRequestId;
         if (request != null) return String.valueOf(request.getRequestId());
         return null;
     }
@@ -101,14 +97,6 @@ public class RpcContext {
 
     public void setResponse(Response response) {
         this.response = response;
-    }
-
-    public String getClientRequestId() {
-        return clientRequestId;
-    }
-
-    public void setClientRequestId(String clientRequestId) {
-        this.clientRequestId = clientRequestId;
     }
 
     public URL getServerUrl() {

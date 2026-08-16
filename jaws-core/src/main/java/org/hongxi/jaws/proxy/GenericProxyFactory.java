@@ -12,7 +12,7 @@ import java.util.List;
  * Proxy factory for generic invocation.
  * <p>
  * Creates a JDK dynamic proxy for {@link GenericService} that delegates to
- * {@link GenericReferenceInvocationHandler} for building generic requests.
+ * {@link GenericInvocationHandler} for building generic requests.
  * <p>
  * Created by shenhongxi on 2026/7/18.
  */
@@ -27,8 +27,8 @@ public class GenericProxyFactory implements ProxyFactory {
         if (realInterfaceName == null) {
             realInterfaceName = clazz.getName();
         }
-        GenericReferenceInvocationHandler<T> handler =
-                new GenericReferenceInvocationHandler<>(realInterfaceName, clusters);
+        GenericInvocationHandler<T> handler =
+                new GenericInvocationHandler<>(realInterfaceName, clusters);
         // noinspection unchecked
         return (T) Proxy.newProxyInstance(
                 GenericService.class.getClassLoader(),

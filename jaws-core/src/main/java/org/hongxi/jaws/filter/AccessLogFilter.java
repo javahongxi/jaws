@@ -79,7 +79,6 @@ public class AccessLogFilter implements Filter {
         }
 
         append(builder, success);
-        append(builder, request.getAttachments().get(URLParamType.requestIdFromClient.getName()));
         append(builder, consumeTime);
 
         accessLog.info(builder.substring(0, builder.length() - 1));

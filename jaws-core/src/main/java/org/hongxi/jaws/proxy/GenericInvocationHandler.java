@@ -3,6 +3,7 @@ package org.hongxi.jaws.proxy;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.util.GenericUtils;
 import org.hongxi.jaws.common.util.RequestIdGenerator;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.GenericService;
 import org.slf4j.Logger;
@@ -27,35 +28,24 @@ import java.util.List;
  *
  * @see GenericService
  */
-public class GenericReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> implements InvocationHandler {
+public class GenericInvocationHandler<T> extends AbstractReferenceHandler<T> implements InvocationHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(GenericReferenceInvocationHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(GenericInvocationHandler.class);
 
-    /**
-     * The real service interface name (e.g., "com.example.DemoService").
-     * This is different from {@code interfaceName} which is "GenericService".
-     */
-    private final String realInterfaceName;
-
-    public GenericReferenceInvocationHandler(String realInterfaceName, List<Cluster<T>> clusters) {
-        this.realInterfaceName = realInterfaceName;
-        this.interfaceName = realInterfaceName;
-        this.clusters = clusters;
+    public GenericInvocationHandler(String interfaceName, List<Cluster<T>> clusters) {
+        super(clusters, interfaceName);
     }
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         // Handle Object methods locally
         if (method.getDeclaringClass() == Object.class) {
-            if ("toString".equals(method.getName())) {
-                return "GenericService[" + realInterfaceName + "]";
-            }
-            if ("hashCode".equals(method.getName())) {
-                return this.clusters == null ? 0 : this.clusters.hashCode();
-            }
-            if ("equals".equals(method.getName())) {
-                return proxy == args[0];
-            }
+            return switch (method.getName()) {
+                case "toString" -> "GenericService[" + interfaceName + "]";
+                case "hashCode" -> this.clusters == null ? 0 : this.clusters.hashCode();
+                case "equals" -> proxy == args[0];
+                default -> throw new JawsServiceException("can not invoke local method:" + method.getName());
+            };
         }
 
         // Only $invoke is supported for GenericService
@@ -72,7 +62,7 @@ public class GenericReferenceInvocationHandler<T> extends AbstractReferenceHandl
         // Build the request targeting the real interface
         DefaultRequest request = new DefaultRequest();
         request.setRequestId(RequestIdGenerator.getRequestId());
-        request.setInterfaceName(realInterfaceName);
+        request.setInterfaceName(interfaceName);
         request.setMethodName(methodName);
         request.setArguments(arguments);
 
@@ -86,7 +76,7 @@ public class GenericReferenceInvocationHandler<T> extends AbstractReferenceHandl
         // Mark this as a generic invocation so the provider knows to convert parameters
         request.setAttachment("$generic", "true");
 
-        log.debug("[GenericInvoke] interface={}, method={}, paramTypes={}", realInterfaceName, methodName, parameterTypes);
+        log.debug("[GenericInvoke] interface={}, method={}, paramTypes={}", interfaceName, methodName, parameterTypes);
 
         // Invoke through the cluster and convert the result for generic response
         Object result = invoke(request, Object.class);
