@@ -21,13 +21,13 @@ public interface Cluster<T> extends Caller<T> {
 
     void setUrl(URL url);
 
-    LoadBalance<T> getLoadBalance();
-
-    void setLoadBalance(LoadBalance<T> loadBalance);
-
-    void setHaStrategy(HaStrategy<T> haStrategy);
-
     void onRefresh(List<Reference<T>> references);
 
     List<Reference<T>> getReferences();
+
+    void setHaStrategy(HaStrategy<T> haStrategy);
+
+    void setLoadBalance(LoadBalance<T> loadBalance);
+
+    LoadBalance<T> getLoadBalance();
 }

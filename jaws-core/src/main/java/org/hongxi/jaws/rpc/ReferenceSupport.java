@@ -1,6 +1,5 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.lifecycle.Closeable;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,12 +15,12 @@ import java.util.concurrent.TimeUnit;
 public class ReferenceSupport {
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceSupport.class);
-    // 正常情况下请求超过1s已经是能够忍耐的极限值了，delay 1s进行destroy
+
     private static final int DELAY_TIME = 1000;
-    private static ScheduledExecutorService scheduledExecutor = Executors.newScheduledThreadPool(10);
+    private static final ScheduledExecutorService scheduledExecutor = Executors.newScheduledThreadPool(10);
 
     static {
-        ShutdownHook.registerShutdownHook((Closeable) () -> {
+        ShutdownHook.registerShutdownHook(() -> {
             if (!scheduledExecutor.isShutdown()) {
                 scheduledExecutor.shutdown();
             }
@@ -38,13 +37,13 @@ public class ReferenceSupport {
                 try {
                     reference.destroy();
                 } catch (Exception e) {
-                    log.error("ReferenceSupport delayDestroy Error: url={}" + reference.getUrl().getUri(), e);
+                    log.error("ReferenceSupport delayDestroy Error: url={}", reference.getUrl().getUri(), e);
                 }
             }
         }, DELAY_TIME, TimeUnit.MILLISECONDS);
 
-        log.info("ReferenceSupport delayDestroy Success: size={} service={} urls={}", references.size(), references.get(0).getUrl()
-                .getIdentity(), getServerPorts(references));
+        log.info("ReferenceSupport delayDestroy Success: size={} service={} urls={}",
+                references.size(), references.get(0).getUrl().getIdentity(), getServerPorts(references));
     }
 
     private static <T> String getServerPorts(List<Reference<T>> references) {
