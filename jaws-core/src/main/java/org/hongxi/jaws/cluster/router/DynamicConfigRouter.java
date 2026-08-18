@@ -1,4 +1,4 @@
-package org.hongxi.jaws.cluster.support;
+package org.hongxi.jaws.cluster.router;
 
 import org.hongxi.jaws.cluster.Router;
 import org.hongxi.jaws.config.configcenter.ConfigurationListener;

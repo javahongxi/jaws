@@ -1,8 +1,5 @@
-package org.hongxi.jaws.cluster.support;
+package org.hongxi.jaws.cluster;
 
-import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.cluster.HaStrategy;
-import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.CollectionUtils;

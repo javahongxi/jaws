@@ -1,4 +1,4 @@
-package org.hongxi.jaws.cluster.support;
+package org.hongxi.jaws.cluster.directory;
 
 import org.hongxi.jaws.cluster.Directory;
 import org.hongxi.jaws.rpc.Reference;

@@ -2,7 +2,7 @@ package org.hongxi.jaws.cluster.loadbalance;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.cluster.Router;
-import org.hongxi.jaws.cluster.support.RouterChain;
+import org.hongxi.jaws.cluster.router.RouterChain;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsServiceException;

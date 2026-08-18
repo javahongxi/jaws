@@ -3,7 +3,7 @@ package org.hongxi.jaws.config;
 import org.apache.commons.lang3.StringUtils;
 import java.io.Serial;
 import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.cluster.support.ConsumerCoordinator;
+import org.hongxi.jaws.cluster.ConsumerCoordinator;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;

@@ -1,10 +1,9 @@
-package org.hongxi.jaws.cluster.support;
+package org.hongxi.jaws.cluster;
 
-import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.cluster.Directory;
-import org.hongxi.jaws.cluster.HaStrategy;
-import org.hongxi.jaws.cluster.LoadBalance;
+import org.hongxi.jaws.cluster.directory.RegistryDirectory;
+import org.hongxi.jaws.cluster.directory.StaticDirectory;
 import org.hongxi.jaws.cluster.loadbalance.AbstractLoadBalance;
+import org.hongxi.jaws.cluster.router.DynamicConfigRouter;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
