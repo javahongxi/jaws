@@ -31,7 +31,8 @@ public class DefaultCluster<T> implements Cluster<T> {
 
     @Override
     public void init() {
-        onRefresh(references);
+        // onRefresh is already triggered by Directory during directory.init()
+        // via the change listener mechanism, so no need to call it again here.
         available.set(true);
     }
 
