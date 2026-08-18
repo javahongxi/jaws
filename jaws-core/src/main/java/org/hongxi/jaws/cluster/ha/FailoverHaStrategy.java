@@ -47,7 +47,7 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
         int urlRetries = refUrl.getMethodParameter(request.getMethodName(), request.getParamDesc(),
                         URLParamType.retries.getName(), URLParamType.retries.intValue());
         int tryCount = resolveRetries(request, urlRetries);
-        // 如果有问题，则设置为不重试
+        // If negative, disable retries
         if (tryCount < 0) {
             tryCount = 0;
         }
@@ -59,7 +59,7 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
                 RpcContext.getContext().setServerUrl(refer.getUrl());
                 return refer.call(request);
             } catch (RuntimeException e) {
-                // 对于业务异常，直接抛出
+                // Rethrow business exceptions directly
                 if (ExceptionUtils.isBizException(e)) {
                     throw e;
                 } else if (i >= tryCount) {

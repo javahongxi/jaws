@@ -12,17 +12,18 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 最短响应负载均衡
+ * Shortest response load balance.
  *
  * <pre>
- * 筛选出成功调用中平均响应时间最短的 Reference。
- * 如果只有一个则直接使用；
- * 如果有多个且权重不同，则按权重随机；
- * 如果权重相同，则随机选择一个。
+ * Select the Reference with the shortest average response time among successful calls.
+ * If only one, use it directly;
+ * If multiple with different weights, select by weighted random;
+ * If weights are the same, select randomly.
  *
- * 预估响应时间 = 平均响应时间 * (活跃连接数 + 1)
+ * Estimated response time = average response time * (active connections + 1)
  *
- * 采用滑动窗口机制定期重置统计偏移量，避免历史数据稀释近期趋势。
+ * Uses a sliding window mechanism to periodically reset statistics offsets,
+ * preventing historical data from diluting recent trends.
  * </pre>
  *
  * @see LeastActiveLoadBalance
@@ -30,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @SpiMeta(name = "shortestResponse")
 public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
 
-    /* 滑动窗口周期（毫秒），超过该周期后异步重置偏移量 */
+    /* Sliding window period (ms); offsets are asynchronously reset after this period */
     private static final long SLIDE_PERIOD = 30_000L;
 
     private final ConcurrentMap<Reference<T>, SlideWindowData> slideWindowMap = new ConcurrentHashMap<>();
@@ -79,7 +80,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
             }
         }
 
-        /* 异步重置滑动窗口偏移量 */
+        /* Asynchronously reset sliding window offsets */
         if (System.currentTimeMillis() - lastUpdateTime > SLIDE_PERIOD
                 && resetting.compareAndSet(false, true)) {
             slideWindowMap.values().forEach(SlideWindowData::reset);
@@ -122,7 +123,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     /**
-     * 滑动窗口数据：记录统计偏移量，用于计算窗口期内的平均响应时间
+     * Sliding window data: records statistics offsets for computing average response time within the window.
      */
     private static class SlideWindowData {
 
@@ -142,7 +143,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
         }
 
         /**
-         * 获取窗口期内的平均响应时间（纳秒），若无数据则返回 0
+         * Get average response time (nanoseconds) within the window; returns 0 if no data.
          */
         private long getAverageElapsed() {
             if (!(reference instanceof AbstractReference<?> ar)) {
@@ -156,14 +157,14 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
         }
 
         /**
-         * 预估响应时间 = 平均响应时间 * (活跃连接数 + 1)
-         * 活跃连接数越多，预估等待时间越长
+         * Estimated response time = average response time * (active connections + 1)
+         * More active connections means longer estimated wait time.
          */
         long getEstimateResponse(Reference<?> ref) {
             int active = ref.activeReferenceCount() + 1;
             long avgElapsed = getAverageElapsed();
             if (avgElapsed == 0) {
-                /* 尚无调用数据时，用活跃连接数作为启发式估计 */
+                /* No call data yet; use active count as a heuristic estimate */
                 return active;
             }
             return avgElapsed * active;

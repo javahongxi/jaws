@@ -10,15 +10,17 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * "最少活跃" 负载均衡（Least Active）
+ * Least Active load balance.
  *
  * <pre>
- * 		1） 最少活跃调用数优先：reference 的某时刻的活跃 call 数越小优先级越高
+ *   1) Least active call count priority: the reference with the smallest active call count
+ *      at a given moment has the highest priority.
  *
- * 		2） 最少活跃 reference 获取策略：
- * 			 由于 Reference List 可能很多，比如上百台，如果每次都要从这上百个 Reference 中选取
- * 			 活跃数最少的，性能有些损耗，因此 random.nextInt(list.size()) 获取一个起始的 index，
- * 			 然后获取最多不超过 MAX_REFERENCE_COUNT 的可用 reference 进行比较。
+ *   2) Least active reference selection strategy:
+ *      Since the Reference List may be large (e.g. hundreds of providers), scanning all
+ *      references to find the one with the least active count would incur performance overhead.
+ *      Therefore, a random start index is chosen via random.nextInt(list.size()), and at most
+ *      MAX_REFERENCE_COUNT available references are compared.
  * </pre>
  * <p>
  * Created by shenhongxi on 2021/4/23.

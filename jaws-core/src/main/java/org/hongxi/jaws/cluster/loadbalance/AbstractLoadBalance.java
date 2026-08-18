@@ -29,7 +29,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
     @Override
     public void onRefresh(List<Reference<T>> references) {
         Collections.shuffle(references);
-        // 只能引用替换，不能进行references update。
+        // Reference replacement only; in-place update of references is not allowed.
         this.references = references;
     }
 
