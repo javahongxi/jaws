@@ -20,9 +20,4 @@ public interface LoadBalance<T> {
     Reference<T> select(Request request);
 
     void selectToHolder(Request request, List<Reference<T>> refersHolder);
-
-    void setWeightString(String weightString);
-
-    String getWeightString();
-
 }

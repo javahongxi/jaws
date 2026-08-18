@@ -88,7 +88,7 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
             refersHolder.add(temp);
         }
 
-        Collections.sort(refersHolder, new LeastActiveComparator<T>());
+        refersHolder.sort(new LeastActiveComparator<>());
     }
 
     private int compare(Reference<T> ref1, int weight1, Reference<T> ref2, int weight2) {
@@ -100,15 +100,10 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
         return effective1 - effective2;
     }
 
-    private int compare(Reference<T> reference1, Reference<T> reference2) {
-        return reference1.activeReferenceCount() - reference2.activeReferenceCount();
-    }
-
     static class LeastActiveComparator<T> implements Comparator<Reference<T>> {
         @Override
         public int compare(Reference<T> reference1, Reference<T> reference2) {
             return reference1.activeReferenceCount() - reference2.activeReferenceCount();
         }
     }
-
 }

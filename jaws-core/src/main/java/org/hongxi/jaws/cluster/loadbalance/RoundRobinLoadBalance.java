@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  *
- * Round robin loadbalance.
+ * Round-robin loadbalance.
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
@@ -71,9 +71,6 @@ public class RoundRobinLoadBalance<T> extends AbstractLoadBalance<T> {
         }
     }
 
-    /*
-     * get non-negative int
-     */
     private int getNextNonNegative() {
         return MathUtils.getNonNegative(idx.incrementAndGet());
     }

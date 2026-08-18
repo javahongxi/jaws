@@ -251,7 +251,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     }
 
     public void setProtocol(ProtocolConfig protocol) {
-        this.protocols = Collections.singletonList(protocol);
+        this.protocols = List.of(protocol);
     }
 
     public List<RegistryConfig> getRegistries() {
@@ -263,7 +263,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     }
 
     public void setRegistry(RegistryConfig registry) {
-        this.registries = Collections.singletonList(registry);
+        this.registries = List.of(registry);
     }
 
     public String getApplication() {

@@ -20,10 +20,10 @@ import java.util.List;
  */
 public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
-    public static final int MAX_REFERENCE_COUNT = 10;
     private static final Logger log = LoggerFactory.getLogger(AbstractLoadBalance.class);
+
+    public static final int MAX_REFERENCE_COUNT = 10;
     private List<Reference<T>> references;
-    private volatile String weightString;
     private volatile RouterChain<T> routerChain;
 
     @Override
@@ -76,17 +76,6 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
     protected List<Reference<T>> getReferences() {
         return references;
-    }
-
-    @Override
-    public void setWeightString(String weightString) {
-        this.weightString = weightString;
-        log.info("weightString updated: {}", weightString);
-    }
-
-    @Override
-    public String getWeightString() {
-        return weightString;
     }
 
     protected abstract Reference<T> doSelect(Request request);

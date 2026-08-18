@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- *
  * random load balance.
  * <p>
  * Created by shenhongxi on 2021/4/23.

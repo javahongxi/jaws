@@ -141,7 +141,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
             }
         }
 
-        /*
+        /**
          * 获取窗口期内的平均响应时间（纳秒），若无数据则返回 0
          */
         private long getAverageElapsed() {
@@ -155,7 +155,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
             return (ar.getSucceededElapsed() - succeededElapsedOffset) / succeed;
         }
 
-        /*
+        /**
          * 预估响应时间 = 平均响应时间 * (活跃连接数 + 1)
          * 活跃连接数越多，预估等待时间越长
          */

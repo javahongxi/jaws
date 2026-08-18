@@ -136,8 +136,6 @@ class FailoverHaStrategyTest {
         @Override public void selectToHolder(Request request, List<Reference<String>> refersHolder) {
             refersHolder.addAll(refs);
         }
-        @Override public void setWeightString(String weightString) {}
-        @Override public String getWeightString() { return null; }
     }
 
     private static URL urlWithRetries(int retries) {

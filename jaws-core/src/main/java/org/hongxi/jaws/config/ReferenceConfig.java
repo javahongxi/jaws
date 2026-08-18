@@ -8,18 +8,14 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.CollectionUtils;
-import org.hongxi.jaws.common.util.NetUtils;
-import org.hongxi.jaws.common.util.StringTools;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.proxy.ProxyFactory;
-import org.hongxi.jaws.registry.RegistryService;
 import org.hongxi.jaws.rpc.GenericService;
 import org.hongxi.jaws.rpc.URL;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 /**
  * Created by shenhongxi on 2021/4/23.
@@ -105,8 +101,13 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
 
         for (ProtocolConfig protocol : protocols) {
             URL refUrl = buildRefUrl(protocol, localIp, path);
-            List<URL> regUrls = resolveRegistryUrls(refUrl);
-            ClusterSupport<T> clusterSupport = new ClusterSupport<>(interfaceClass, refUrl, regUrls);
+            ClusterSupport<T> clusterSupport;
+            if (StringUtils.isNotBlank(directUrl)) {
+                clusterSupport = ClusterSupport.forDirectUrls(interfaceClass, refUrl, directUrl);
+            } else {
+                List<URL> regUrls = resolveRegistryUrls(refUrl);
+                clusterSupport = ClusterSupport.forRegistry(interfaceClass, refUrl, regUrls);
+            }
             clusterSupport.init();
             clusterSupports.add(clusterSupport);
             clusters.add(clusterSupport.getCluster());
@@ -140,15 +141,8 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
 
     /**
      * Resolve registry URLs for the given reference URL.
-     * <p>
-     * For directUrl or injvm protocol, a local registry is returned with direct addresses embedded;
-     * otherwise, copies of the configured registry URLs are returned.
      */
     private List<URL> resolveRegistryUrls(URL refUrl) {
-        if (StringUtils.isNotBlank(directUrl) || JawsConstants.PROTOCOL_INJVM.equals(refUrl.getProtocol())) {
-            return buildLocalRegistryUrls(refUrl);
-        }
-
         if (registryUrls.isEmpty()) {
             throw new IllegalStateException(String.format(
                     "No registry found for service [%s] with protocol [%s], " +
@@ -157,35 +151,6 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
         }
 
         return registryUrls.stream().map(URL::createCopy).toList();
-    }
-
-    /**
-     * Build a local registry URL with direct addresses embedded for peer-to-peer or injvm invocation.
-     */
-    private List<URL> buildLocalRegistryUrls(URL refUrl) {
-        URL regUrl = new URL(
-                JawsConstants.REGISTRY_PROTOCOL_LOCAL,
-                NetUtils.LOCALHOST,
-                0,
-                RegistryService.class.getName()
-        );
-        if (StringUtils.isNotBlank(directUrl)) {
-            String encodedDirectUrls = Arrays.stream(JawsConstants.COMMA_SPLIT_PATTERN.split(directUrl))
-                    .filter(part -> part.contains(":"))
-                    .map(part -> {
-                        String[] hostPort = part.split(":");
-                        URL directCopy = refUrl.createCopy();
-                        directCopy.setHost(hostPort[0].trim());
-                        directCopy.setPort(Integer.parseInt(hostPort[1].trim()));
-                        directCopy.addParameter(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_SERVICE);
-                        return StringTools.urlEncode(directCopy.toFullStr());
-                    })
-                    .collect(Collectors.joining(JawsConstants.COMMA_SEPARATOR));
-            if (!encodedDirectUrls.isEmpty()) {
-                regUrl.addParameter(URLParamType.directUrl.getName(), encodedDirectUrls);
-            }
-        }
-        return List.of(regUrl);
     }
 
     public synchronized void destroy() {

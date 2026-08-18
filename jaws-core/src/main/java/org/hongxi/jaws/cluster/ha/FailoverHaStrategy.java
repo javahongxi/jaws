@@ -37,15 +37,15 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
 
         List<Reference<T>> references = selectReferences(request, loadBalance);
         if (references.isEmpty()) {
-            throw new JawsServiceException(String.format("FailoverHaStrategy No references for request:%s, loadbalance:%s", request,
-                    loadBalance));
+            throw new JawsServiceException(
+                    String.format("FailoverHaStrategy No references for request:%s, loadBalance:%s",
+                            request, loadBalance));
         }
         URL refUrl = references.get(0).getUrl();
         // Resolve retries with dynamic configuration priority:
         // method-level dynamic > service-level dynamic > global dynamic > URL config
-        int urlRetries =
-                refUrl.getMethodParameter(request.getMethodName(), request.getParamDesc(), URLParamType.retries.getName(),
-                        URLParamType.retries.intValue());
+        int urlRetries = refUrl.getMethodParameter(request.getMethodName(), request.getParamDesc(),
+                        URLParamType.retries.getName(), URLParamType.retries.intValue());
         int tryCount = resolveRetries(request, urlRetries);
         // 如果有问题，则设置为不重试
         if (tryCount < 0) {

@@ -123,8 +123,8 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     }
 
     private boolean shouldCheck(URL url) {
-        return getUrl().getParameter(URLParamType.check.getName(), URLParamType.check.boolValue())
-                && url.getParameter(URLParamType.check.getName(), URLParamType.check.boolValue())
+        return getUrl().getBoolParameter(URLParamType.check)
+                && url.getBoolParameter(URLParamType.check)
                 && (url.getPort() != 0);
     }
 

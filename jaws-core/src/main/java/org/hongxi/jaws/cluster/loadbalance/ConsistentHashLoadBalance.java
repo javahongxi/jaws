@@ -1,6 +1,5 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.MathUtils;
 import org.hongxi.jaws.rpc.Reference;
@@ -28,13 +27,11 @@ public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
     public void onRefresh(List<Reference<T>> references) {
         super.onRefresh(references);
 
-        List<Reference<T>> copyReferences = new ArrayList<Reference<T>>(references);
-        List<Reference<T>> tempRefers = new ArrayList<Reference<T>>();
+        List<Reference<T>> copyReferences = new ArrayList<>(references);
+        List<Reference<T>> tempRefers = new ArrayList<>();
         for (int i = 0; i < HASH_LOOP; i++) {
             Collections.shuffle(copyReferences);
-            for (Reference<T> ref : copyReferences) {
-                tempRefers.add(ref);
-            }
+            tempRefers.addAll(copyReferences);
         }
 
         consistentHashReferences = tempRefers;
@@ -42,7 +39,6 @@ public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
 
     @Override
     protected Reference<T> doSelect(Request request) {
-
         int hash = getHash(request);
         Reference<T> ref;
         for (int i = 0; i < getReferences().size(); i++) {

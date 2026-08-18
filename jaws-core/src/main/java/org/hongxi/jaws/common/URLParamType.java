@@ -43,9 +43,6 @@ public enum URLParamType {
     /** message processing dispatch strategy */
     providerProtectedStrategy("providerProtectedStrategy", "jaws"),
 
-    /** weight ratio for each group when switching groups, no weight by default */
-    weights("weights", ""),
-
     /** interval in milliseconds between failback retry attempts */
     failbackPeriod("failbackPeriod", 5000),
 
