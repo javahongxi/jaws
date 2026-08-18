@@ -10,7 +10,7 @@ import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
-import org.hongxi.jaws.protocol.ProtocolFilterWrapper;
+import org.hongxi.jaws.filter.ProtocolFilterWrapper;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
 import org.hongxi.jaws.registry.RegistryService;

@@ -1,29 +1,30 @@
-package org.hongxi.jaws.protocol;
+package org.hongxi.jaws.filter;
 
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
-import org.hongxi.jaws.filter.Filter;
 import org.hongxi.jaws.rpc.*;
 
+import java.lang.reflect.Method;
+
 /**
- * A concrete reference node in the filter chain that wraps an original {@link Reference}
- * with a {@link Filter}. Each node delegates all interface methods to the original reference,
+ * A concrete provider node in the filter chain that wraps an original {@link Provider}
+ * with a {@link Filter}. Each node delegates all interface methods to the original provider,
  * while the {@link #call(Request)} method applies the filter logic.
  * <p>
  * Supports dynamic filter toggle: if the filter is disabled via {@link DynamicConfiguration},
- * the call bypasses the filter and goes directly to the next reference in the chain.
+ * the call bypasses the filter and goes directly to the next provider in the chain.
  *
  * @param <T> service type
  */
-class FilterReferenceWrapper<T> implements Reference<T> {
+class FilterProviderWrapper<T> implements Provider<T> {
 
-    private final Reference<T> original;
+    private final Provider<T> original;
     private final Filter filter;
     private final String filterName;
 
-    FilterReferenceWrapper(Reference<T> original, Filter filter) {
+    FilterProviderWrapper(Provider<T> original, Filter filter) {
         this.original = original;
         this.filter = filter;
         this.filterName = resolveFilterName(filter);
@@ -38,13 +39,13 @@ class FilterReferenceWrapper<T> implements Reference<T> {
     }
 
     @Override
-    public int activeReferenceCount() {
-        return original.activeReferenceCount();
+    public Method lookupMethod(String methodName, String paramDesc) {
+        return original.lookupMethod(methodName, paramDesc);
     }
 
     @Override
-    public URL getServiceUrl() {
-        return original.getServiceUrl();
+    public T getImpl() {
+        return original.getImpl();
     }
 
     @Override

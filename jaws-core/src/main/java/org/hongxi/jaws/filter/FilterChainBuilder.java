@@ -1,4 +1,4 @@
-package org.hongxi.jaws.protocol;
+package org.hongxi.jaws.filter;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
@@ -6,9 +6,6 @@ import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ActivationComparator;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.filter.AccessLogFilter;
-import org.hongxi.jaws.filter.Filter;
-import org.hongxi.jaws.filter.InitializableFilter;
 import org.hongxi.jaws.rpc.*;
 
 import java.util.ArrayList;

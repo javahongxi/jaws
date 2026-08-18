@@ -1,4 +1,4 @@
-package org.hongxi.jaws.protocol;
+package org.hongxi.jaws.filter;
 
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;

@@ -10,7 +10,7 @@ import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.protocol.ProtocolFilterWrapper;
+import org.hongxi.jaws.filter.ProtocolFilterWrapper;
 import org.hongxi.jaws.rpc.Protocol;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.URL;
