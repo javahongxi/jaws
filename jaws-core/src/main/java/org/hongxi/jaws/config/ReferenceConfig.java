@@ -3,7 +3,7 @@ package org.hongxi.jaws.config;
 import org.apache.commons.lang3.StringUtils;
 import java.io.Serial;
 import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.cluster.support.ClusterSupport;
+import org.hongxi.jaws.cluster.support.ConsumerCoordinator;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -41,10 +41,10 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
 
     /**
-     * ClusterSupport instances for each protocol, responsible for registry subscription,
-     * provider discovery and Reference lifecycle management. One ClusterSupport per protocol.
+     * ConsumerCoordinator instances for each protocol, responsible for registry subscription,
+     * provider discovery and Reference lifecycle management. One ConsumerCoordinator per protocol.
      */
-    private List<ClusterSupport<T>> clusterSupports;
+    private List<ConsumerCoordinator<T>> consumerCoordinators;
 
     /**
      * The URL for peer-to-peer invocation.
@@ -96,21 +96,21 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
         String localIp = getLocalHostAddress();
         String path = StringUtils.isBlank(serviceInterface) ? interfaceClass.getName() : serviceInterface;
 
-        clusterSupports = new ArrayList<>(protocols.size());
+        consumerCoordinators = new ArrayList<>(protocols.size());
         List<Cluster<T>> clusters = new ArrayList<>(protocols.size());
 
         for (ProtocolConfig protocol : protocols) {
             URL refUrl = buildRefUrl(protocol, localIp, path);
-            ClusterSupport<T> clusterSupport;
+            ConsumerCoordinator<T> consumerCoordinator;
             if (StringUtils.isNotBlank(directUrl)) {
-                clusterSupport = ClusterSupport.forDirectUrls(interfaceClass, refUrl, directUrl);
+                consumerCoordinator = ConsumerCoordinator.forDirectUrls(interfaceClass, refUrl, directUrl);
             } else {
                 List<URL> regUrls = resolveRegistryUrls(refUrl);
-                clusterSupport = ClusterSupport.forRegistry(interfaceClass, refUrl, regUrls);
+                consumerCoordinator = ConsumerCoordinator.forRegistry(interfaceClass, refUrl, regUrls);
             }
-            clusterSupport.init();
-            clusterSupports.add(clusterSupport);
-            clusters.add(clusterSupport.getCluster());
+            consumerCoordinator.init();
+            consumerCoordinators.add(consumerCoordinator);
+            clusters.add(consumerCoordinator.getCluster());
         }
 
         String proxyType = generic ? "generic" : URLParamType.proxy.value();
@@ -126,7 +126,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
      * A reference URL is a local URL that describes the consumer (reference) side rather than pointing to a remote address.
      * It carries the consumer's local IP, protocol, interface path and invocation preferences
      * (e.g. timeout, retries, load-balancing strategy). The reference URL is passed to
-     * {@link ClusterSupport} so that the cluster layer is aware of the consumer's identity
+     * {@link ConsumerCoordinator} so that the cluster layer is aware of the consumer's identity
      * and configuration, and it is also registered with the registry to let providers
      * observe consumer information for monitoring and routing purposes.
      */
@@ -154,9 +154,9 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
     }
 
     public synchronized void destroy() {
-        if (clusterSupports != null) {
-            for (ClusterSupport<T> clusterSupport : clusterSupports) {
-                clusterSupport.destroy();
+        if (consumerCoordinators != null) {
+            for (ConsumerCoordinator<T> consumerCoordinator : consumerCoordinators) {
+                consumerCoordinator.destroy();
             }
         }
         ref = null;
@@ -190,8 +190,8 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
         this.directUrl = directUrl;
     }
 
-    public List<ClusterSupport<T>> getClusterSupports() {
-        return clusterSupports;
+    public List<ConsumerCoordinator<T>> getConsumerCoordinators() {
+        return consumerCoordinators;
     }
 
     public AtomicBoolean getInitialized() {

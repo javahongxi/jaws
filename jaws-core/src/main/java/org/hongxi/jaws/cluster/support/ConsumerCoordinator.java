@@ -32,9 +32,9 @@ import java.util.List;
  *   <li>{@link #forDirectUrls} for direct peer-to-peer connections</li>
  * </ul>
  */
-public class ClusterSupport<T> {
+public class ConsumerCoordinator<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(ClusterSupport.class);
+    private static final Logger log = LoggerFactory.getLogger(ConsumerCoordinator.class);
 
     private final Class<T> interfaceClass;
     private final URL url;
@@ -43,40 +43,40 @@ public class ClusterSupport<T> {
     private Cluster<T> cluster;
     private DynamicConfigRouter<T> dynamicConfigRouter;
 
-    private ClusterSupport(Class<T> interfaceClass, URL url, Directory<T> directory) {
+    private ConsumerCoordinator(Class<T> interfaceClass, URL url, Directory<T> directory) {
         this.interfaceClass = interfaceClass;
         this.url = url;
         this.directory = directory;
     }
 
     /**
-     * Create a ClusterSupport backed by a {@link RegistryDirectory} for registry-based
+     * Create a ConsumerCoordinator backed by a {@link RegistryDirectory} for registry-based
      * service discovery.
      *
      * @param interfaceClass the service interface
      * @param refUrl         the consumer reference URL (nodeType=reference)
      * @param registryUrls   the list of registry URLs to subscribe to
-     * @return a new ClusterSupport instance (not yet initialized)
+     * @return a new ConsumerCoordinator instance (not yet initialized)
      */
-    public static <T> ClusterSupport<T> forRegistry(Class<T> interfaceClass, URL refUrl, List<URL> registryUrls) {
+    public static <T> ConsumerCoordinator<T> forRegistry(Class<T> interfaceClass, URL refUrl, List<URL> registryUrls) {
         Protocol protocol = new ProtocolFilterWrapper(
                 ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(refUrl.getProtocol()));
         URL consumerUrl = refUrl.createCopy();
         consumerUrl.addParameter(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_SERVICE);
         RegistryDirectory<T> directory = new RegistryDirectory<>(interfaceClass, refUrl, consumerUrl, registryUrls, protocol);
-        return new ClusterSupport<>(interfaceClass, refUrl, directory);
+        return new ConsumerCoordinator<>(interfaceClass, refUrl, directory);
     }
 
     /**
-     * Create a ClusterSupport backed by a {@link StaticDirectory} for direct
+     * Create a ConsumerCoordinator backed by a {@link StaticDirectory} for direct
      * peer-to-peer connections (no registry involved).
      *
      * @param interfaceClass the service interface
      * @param refUrl         the consumer reference URL (nodeType=reference)
      * @param directUrls     comma-separated list of direct provider addresses (host:port)
-     * @return a new ClusterSupport instance (not yet initialized)
+     * @return a new ConsumerCoordinator instance (not yet initialized)
      */
-    public static <T> ClusterSupport<T> forDirectUrls(Class<T> interfaceClass, URL refUrl, String directUrls) {
+    public static <T> ConsumerCoordinator<T> forDirectUrls(Class<T> interfaceClass, URL refUrl, String directUrls) {
         Protocol protocol = new ProtocolFilterWrapper(
                 ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(refUrl.getProtocol()));
         URL consumerUrl = refUrl.createCopy();
@@ -95,7 +95,7 @@ public class ClusterSupport<T> {
         }
 
         StaticDirectory<T> directory = new StaticDirectory<>(consumerUrl, references);
-        return new ClusterSupport<>(interfaceClass, refUrl, directory);
+        return new ConsumerCoordinator<>(interfaceClass, refUrl, directory);
     }
 
     /**
@@ -116,7 +116,7 @@ public class ClusterSupport<T> {
                 log.warn("No services found for refer {}/{}", url.getPath(), url.getVersion());
             } else {
                 throw new JawsFrameworkException(
-                        String.format("ClusterSupport No service urls for the refer:%s", url.getIdentity()),
+                        String.format("ConsumerCoordinator No service urls for the refer:%s", url.getIdentity()),
                         JawsErrorMsgConstants.SERVICE_NOT_FOUND);
             }
         }
