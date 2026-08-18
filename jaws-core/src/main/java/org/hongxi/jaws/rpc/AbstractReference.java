@@ -13,22 +13,14 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
 
     protected Class<T> interfaceClass;
     protected AtomicInteger activeReferenceCount = new AtomicInteger(0);
-    protected URL serviceUrl;
 
-    /* 成功调用的累计响应时间统计，用于最短响应负载均衡 */
+    /* Cumulative response time statistics for successful calls, used for shortest-response load balancing */
     private final AtomicLong succeededElapsed = new AtomicLong(0);
     private final AtomicLong succeededCount = new AtomicLong(0);
 
     public AbstractReference(Class<T> interfaceClass, URL url) {
         super(url);
         this.interfaceClass = interfaceClass;
-        this.serviceUrl = url;
-    }
-
-    public AbstractReference(Class<T> interfaceClass, URL url, URL serviceUrl) {
-        super(url);
-        this.interfaceClass = interfaceClass;
-        this.serviceUrl = serviceUrl;
     }
 
     @Override
@@ -81,7 +73,7 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
 
     @Override
     public URL getServiceUrl() {
-        return serviceUrl;
+        return url;
     }
 
     /*

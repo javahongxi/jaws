@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory;
  * @version V1.0 created at: 2013-5-22
  */
 @SpiMeta(name = "access")
-@Activation(sequence = 100)
+@Activation(order = 100)
 public class AccessLogFilter implements Filter {
 
     private static final Logger accessLog = LoggerFactory.getLogger("accessLog");

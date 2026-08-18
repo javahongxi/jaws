@@ -10,7 +10,6 @@ public class JawsConstants {
 
     public static final String FRAMEWORK_NAME = "jaws";
 
-    public static final String DEFAULT_CHARSET = "UTF-8";
     public static final String PROTOCOL_SEPARATOR = "://";
     public static final String PATH_SEPARATOR = File.separator;
 
@@ -33,7 +32,6 @@ public class JawsConstants {
     public static final String ASYNC_FLAG = "async";
 
     public static final String DEFAULT_VALUE = "default";
-    public static final int DEFAULT_INT_VALUE = 0;
 
     public static final String REGISTRY_PROTOCOL_LOCAL = "local";
     public static final String REGISTRY_PROTOCOL_ZOOKEEPER = "zookeeper";

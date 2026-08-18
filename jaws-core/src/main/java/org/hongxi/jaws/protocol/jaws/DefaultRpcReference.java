@@ -20,8 +20,8 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
     protected Client client;
     protected EndpointFactory endpointFactory;
 
-    public DefaultRpcReference(Class<T> interfaceClass, URL url, URL serviceUrl) {
-        super(interfaceClass, url, serviceUrl);
+    public DefaultRpcReference(Class<T> interfaceClass, URL url) {
+        super(interfaceClass, url);
 
         endpointFactory =
                 ExtensionLoader.getExtensionLoader(EndpointFactory.class).getExtension(
@@ -33,8 +33,8 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
     @Override
     protected Response doCall(Request request) {
         try {
-            // 为了能够实现跨group请求，需要使用server端的group。
-            request.setAttachment(URLParamType.group.getName(), serviceUrl.getGroup());
+            // Use server-side group to support cross-group invocation
+            request.setAttachment(URLParamType.group.getName(), url.getGroup());
             return client.request(request);
         } catch (TransportException exception) {
             throw new JawsServiceException("DefaultRpcReference call Error: url=" + url.getUri(), exception);

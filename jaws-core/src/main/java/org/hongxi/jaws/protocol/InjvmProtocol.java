@@ -25,13 +25,13 @@ public class InjvmProtocol extends AbstractProtocol {
     private static final Logger log = LoggerFactory.getLogger(InjvmProtocol.class);
 
     @Override
-    protected <T> Exporter<T> createExporter(Provider<T> provider, URL url) {
-        return new InJvmExporter<T>(provider, url);
+    protected <T> Exporter<T> createExporter(Provider<T> provider) {
+        return new InJvmExporter<>(provider);
     }
 
     @Override
-    protected <T> Reference<T> createReference(Class<T> clazz, URL url, URL serviceUrl) {
-        return new InjvmReference<T>(clazz, url, serviceUrl);
+    protected <T> Reference<T> createReference(Class<T> interfaceClass, URL url) {
+        return new InjvmReference<>(interfaceClass, url);
     }
 
     /**
@@ -40,8 +40,8 @@ public class InjvmProtocol extends AbstractProtocol {
      * @param <T>
      */
     class InJvmExporter<T> extends AbstractExporter<T> {
-        public InJvmExporter(Provider<T> provider, URL url) {
-            super(provider, url);
+        public InJvmExporter(Provider<T> provider) {
+            super(provider, provider.getUrl());
         }
 
         @Override
@@ -76,8 +76,8 @@ public class InjvmProtocol extends AbstractProtocol {
     class InjvmReference<T> extends AbstractReference<T> {
         private Exporter<T> exporter;
 
-        public InjvmReference(Class<T> clazz, URL url, URL serviceUrl) {
-            super(clazz, url, serviceUrl);
+        public InjvmReference(Class<T> interfaceClass, URL url) {
+            super(interfaceClass, url);
         }
 
         @Override

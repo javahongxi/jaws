@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit;
  * repeated builder allocation on the hot path.
  */
 @SpiMeta(name = "metrics")
-@Activation(key = {"service", "reference"}, sequence = 10)
+@Activation(value = {"service", "reference"}, order = 10)
 public class MetricsFilter implements Filter {
 
     private static final String METRIC_PREFIX = "jaws.rpc.";

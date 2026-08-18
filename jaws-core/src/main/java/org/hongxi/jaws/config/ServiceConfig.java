@@ -141,7 +141,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
             }
             if (localRegistryUrl == null) {
                 localRegistryUrl =
-                        new URL(JawsConstants.REGISTRY_PROTOCOL_LOCAL, hostAddress, JawsConstants.DEFAULT_INT_VALUE,
+                        new URL(JawsConstants.REGISTRY_PROTOCOL_LOCAL, hostAddress, 0,
                                 RegistryService.class.getName());
             }
 
@@ -154,13 +154,13 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
         ServiceDeployer serviceDeployer = ExtensionLoader.getExtensionLoader(ServiceDeployer.class).getExtension(JawsConstants.DEFAULT_VALUE);
 
-        exporters.add(serviceDeployer.export(interfaceClass, ref, registryUrls, serviceUrl));
+        exporters.add(serviceDeployer.export(interfaceClass, ref, serviceUrl, registryUrls));
     }
 
     private int resolvePort(ProtocolConfig protocolConfig, String protocolName) {
         Integer port = protocolConfig.getPort();
         if (JawsConstants.PROTOCOL_INJVM.equals(protocolName)) {
-            return JawsConstants.DEFAULT_INT_VALUE;
+            return 0;
         }
         if (port == null || port == -1) {
             if (Boolean.FALSE.equals(shareChannel)) {

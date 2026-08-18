@@ -3,7 +3,6 @@ package org.hongxi.jaws.protocol;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.ActivationComparator;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
@@ -23,12 +22,10 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- *
  * Decorate the protocol, to add more features.
  * <p>
  * Created by shenhongxi on 2021/3/6.
  */
-
 public class ProtocolFilterDecorator implements Protocol {
 
     private final Protocol protocol;
@@ -42,13 +39,14 @@ public class ProtocolFilterDecorator implements Protocol {
     }
 
     @Override
-    public <T> Exporter<T> export(Provider<T> provider, URL url) {
-        return protocol.export(decorateWithFilter(provider, url), url);
+    public <T> Exporter<T> export(Provider<T> provider) {
+        URL url = provider.getUrl();
+        return protocol.export(decorateWithFilter(provider, url));
     }
 
     @Override
-    public <T> Reference<T> refer(Class<T> interfaceClass, URL url, URL serviceUrl) {
-        return decorateWithFilter(protocol.refer(interfaceClass, url, serviceUrl), url);
+    public <T> Reference<T> refer(Class<T> interfaceClass, URL url) {
+        return decorateWithFilter(protocol.refer(interfaceClass, url), url);
     }
 
     @Override
@@ -134,10 +132,6 @@ public class ProtocolFilterDecorator implements Protocol {
             lastRef = new Reference<T>() {
                 @Override
                 public Response call(Request request) {
-                    Activation activation = f.getClass().getAnnotation(Activation.class);
-                    if (activation != null && !activation.retry() && request.getRetries() != 0) {
-                        return lf.call(request);
-                    }
                     // Check dynamic filter toggle: skip if explicitly disabled
                     if (isFilterDisabled(f, request.getInterfaceName())) {
                         return lf.call(request);

@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  * Provider side: propagator extracts trace context → creates child span under same trace.
  */
 @SpiMeta(name = "tracing")
-@Activation(key = {"service", "reference"}, sequence = 5)
+@Activation(value = {"service", "reference"}, order = 5)
 public class TracingFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(TracingFilter.class);

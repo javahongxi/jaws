@@ -29,7 +29,7 @@ public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
     public static final int DEFAULT_MAX_IDLE_TIME = 60 * 1000;
 
     protected AtomicInteger submittedTasksCount;
-    private int maxSubmittedTasks;
+    private final int maxSubmittedTasks;
 
     public StandardThreadPoolExecutor() {
         this(DEFAULT_MIN_THREADS, DEFAULT_MAX_THREADS);
@@ -64,14 +64,12 @@ public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
         ((ExecutorQueue) getQueue()).setThreadPoolExecutor(this);
 
         submittedTasksCount = new AtomicInteger(0);
-
         maxSubmittedTasks = maximumPoolSize + queueCapacity;
     }
 
     @Override
     public void execute(Runnable command) {
         int count = submittedTasksCount.incrementAndGet();
-
         if (count > maxSubmittedTasks) {
             submittedTasksCount.decrementAndGet();
             getRejectedExecutionHandler().rejectedExecution(command, this);
@@ -94,9 +92,5 @@ public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
 
     public int getSubmittedTasksCount() {
         return submittedTasksCount.get();
-    }
-
-    public int getMaxSubmittedTasks() {
-        return maxSubmittedTasks;
     }
 }

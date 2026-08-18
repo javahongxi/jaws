@@ -1,7 +1,6 @@
 package org.hongxi.jaws.common.extension;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,9 +10,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -23,13 +22,15 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class ExtensionLoader<T> {
     private static final Logger log = LoggerFactory.getLogger(ExtensionLoader.class);
+
     private static final String SERVICES_DIRECTORY = "META-INF/services/";
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> extensionLoaders = new ConcurrentHashMap<>();
+    private final Class<T> type;
+    private final Scope scope;
+    private final ClassLoader classLoader;
     private ConcurrentMap<String, Class<T>> extensionClasses;
     private ConcurrentMap<String, T> singletonInstances;
-    private Class<T> type;
     private volatile boolean init;
-    private ClassLoader classLoader;
 
     private ExtensionLoader(Class<T> type) {
         this(type, Thread.currentThread().getContextClassLoader());
@@ -38,6 +39,7 @@ public class ExtensionLoader<T> {
     private ExtensionLoader(Class<T> type, ClassLoader classLoader) {
         this.type = type;
         this.classLoader = classLoader;
+        this.scope = type.getAnnotation(Spi.class).scope();
     }
 
     public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
@@ -76,8 +78,7 @@ public class ExtensionLoader<T> {
         checkInit();
 
         try {
-            Spi spi = type.getAnnotation(Spi.class);
-            if (spi.scope() == Scope.SINGLETON) {
+            if (scope == Scope.SINGLETON) {
                 return getSingletonInstance(name);
             }
 
@@ -91,42 +92,20 @@ public class ExtensionLoader<T> {
         }
     }
 
-    private T getSingletonInstance(String name) throws
-            IllegalAccessException, InstantiationException, NoSuchMethodException, InvocationTargetException {
-        T obj = singletonInstances.get(name);
-
-        if (obj != null) {
-            return obj;
-        }
-
+    private T getSingletonInstance(String name) {
         Class<T> clazz = extensionClasses.get(name);
         if (clazz == null) {
             return null;
         }
-
-        synchronized (singletonInstances) {
-            obj = singletonInstances.get(name);
-            if (obj != null) {
-                return obj;
+        return singletonInstances.computeIfAbsent(name, k -> {
+            try {
+                return clazz.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new JawsFrameworkException(type.getName() + ": Error creating singleton extension " + name, e);
             }
-            obj = clazz.getDeclaredConstructor().newInstance();
-            singletonInstances.put(name, obj);
-        }
-
-        return obj;
+        });
     }
 
-    public List<T> getExtensions() {
-        return getExtensions(null);
-    }
-
-    /**
-     * 有些地方需要spi的所有激活的instances，所以需要能返回一个列表的方法
-     * 注意：1 SpiMeta 中的active 为true
-     * 2 按照spiMeta中的sequence进行排序
-     *
-     * @return
-     */
     public List<T> getExtensions(String key) {
         checkInit();
 
@@ -134,45 +113,37 @@ public class ExtensionLoader<T> {
             return Collections.emptyList();
         }
 
-        // 如果只有一个实现，直接返回
-        List<T> exts = new ArrayList<>(extensionClasses.size());
+        List<T> extensions = new ArrayList<>(extensionClasses.size());
 
-        // 多个实现，按优先级排序返回
         for (Map.Entry<String, Class<T>> entry : extensionClasses.entrySet()) {
             Activation activation = entry.getValue().getAnnotation(Activation.class);
             if (StringUtils.isBlank(key)) {
-                exts.add(getExtension(entry.getKey()));
-            } else if (activation != null && activation.key() != null) {
-                for (String k : activation.key()) {
+                extensions.add(getExtension(entry.getKey()));
+            } else if (activation != null && activation.value() != null) {
+                for (String k : activation.value()) {
                     if (key.equals(k)) {
-                        exts.add(getExtension(entry.getKey()));
+                        extensions.add(getExtension(entry.getKey()));
                         break;
                     }
                 }
             }
         }
-        Collections.sort(exts, new ActivationComparator<T>());
-        return exts;
+        extensions.sort(new ActivationComparator<>());
+        return extensions;
     }
 
-    private void checkInit() {
-        if (!init) {
-            loadExtensionClasses();
-        }
-    }
-
-    private synchronized void loadExtensionClasses() {
+    private synchronized void checkInit() {
         if (init) return;
 
-        extensionClasses = loadExtensionClasses(SERVICES_DIRECTORY);
+        extensionClasses = loadExtensionClasses();
         singletonInstances = new ConcurrentHashMap<>();
 
         init = true;
     }
 
-    private ConcurrentMap<String, Class<T>> loadExtensionClasses(String dir) {
-        String fullName = dir + type.getName();
-        List<String> classNames = new ArrayList<>();
+    private ConcurrentMap<String, Class<T>> loadExtensionClasses() {
+        String fullName = SERVICES_DIRECTORY + type.getName();
+        Set<String> classNames = new LinkedHashSet<>();
 
         try {
             Enumeration<URL> urls;
@@ -192,36 +163,26 @@ public class ExtensionLoader<T> {
             }
         } catch (Exception e) {
             throw new JawsFrameworkException(
-                    "ExtensionLoader loadExtensionClasses error, services dir: " + dir + ", type: " + type.getClass(), e);
+                    "ExtensionLoader loadExtensionClasses error, services dir: " + SERVICES_DIRECTORY + ", type: " + type, e);
         }
 
         return loadClasses(classNames);
     }
 
-    private void parseUrl(Class<T> type, URL url, List<String> classNames) {
-        InputStream inputStream = null;
-        BufferedReader reader = null;
-        try {
-            inputStream = url.openStream();
-            reader = new BufferedReader(new InputStreamReader(inputStream, JawsConstants.DEFAULT_CHARSET));
+    private void parseUrl(Class<T> type, URL url, Set<String> classNames) {
+        try (InputStream inputStream = url.openStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             String line;
             int lineNumber = 0;
             while ((line = reader.readLine()) != null) {
                 parseLine(type, url, line, ++lineNumber, classNames);
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             log.error("{}: Error reading spi configuration file", type.getName(), e);
-        } finally {
-            try {
-                if (reader != null) reader.close();
-                if (inputStream != null) inputStream.close();
-            } catch (IOException e) {
-                log.error("{}: Error closing spi configuration file", type.getName(), e);
-            }
         }
     }
 
-    private void parseLine(Class<T> type, URL url, String line, int lineNumber, List<String> classNames) {
+    private void parseLine(Class<T> type, URL url, String line, int lineNumber, Set<String> classNames) {
         int ci = line.indexOf('#');
         if (ci > 0) line = line.substring(0, ci);
         line = line.trim();
@@ -237,12 +198,10 @@ public class ExtensionLoader<T> {
             throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
         }
 
-        if (!classNames.contains(line)) {
-            classNames.add(line);
-        }
+        classNames.add(line);
     }
 
-    private ConcurrentMap<String, Class<T>> loadClasses(List<String> classNames) {
+    private ConcurrentMap<String, Class<T>> loadClasses(Set<String> classNames) {
         ConcurrentMap<String, Class<T>> classes = new ConcurrentHashMap<>();
         for (String className : classNames) {
             try {
@@ -264,7 +223,7 @@ public class ExtensionLoader<T> {
                     classes.put(spiName, clazz);
                 }
             } catch (Exception e) {
-                log.error(type.getName() + ": Error load spi class", e);
+                log.error("{}: Error load spi class", type.getName(), e);
             }
         }
 
@@ -285,12 +244,8 @@ public class ExtensionLoader<T> {
 
     private void checkConstructorPublic(Class<T> clazz) {
         Constructor<?>[] constructors = clazz.getConstructors();
-        if (constructors.length == 0) {
-            throw new JawsFrameworkException(clazz.getName() + " has no public no-args constructor");
-        }
-
         for (Constructor<?> constructor : constructors) {
-            if (Modifier.isPublic(constructor.getModifiers()) && constructor.getParameterTypes().length == 0) {
+            if (constructor.getParameterTypes().length == 0) {
                 return;
             }
         }
@@ -303,7 +258,7 @@ public class ExtensionLoader<T> {
         }
     }
 
-    public String getSpiName(Class<?> clazz) {
+    private String getSpiName(Class<?> clazz) {
         SpiMeta spiMeta = clazz.getAnnotation(SpiMeta.class);
         return (spiMeta != null && !"".equals(spiMeta.name())) ? spiMeta.name() : clazz.getSimpleName();
     }

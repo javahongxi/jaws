@@ -82,7 +82,7 @@ public class UrlUtils {
                 port = defaultPort;
             } else {
                 changed = true;
-                port = JawsConstants.DEFAULT_INT_VALUE;
+                port = 0;
             }
         }
         if (path == null || path.isEmpty()) {

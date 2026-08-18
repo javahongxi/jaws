@@ -16,9 +16,9 @@ public enum FutureState {
      **/
     DONE(1),
     /**
-     * ths task is cancelled
+     * the task is canceled
      **/
-    CANCELLED(2);
+    CANCELED(2);
 
     public final int value;
 
@@ -27,7 +27,7 @@ public enum FutureState {
     }
 
     public boolean isCancelledState() {
-        return this == CANCELLED;
+        return this == CANCELED;
     }
 
     public boolean isDoneState() {

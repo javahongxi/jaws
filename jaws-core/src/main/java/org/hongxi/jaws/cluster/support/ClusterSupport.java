@@ -31,7 +31,6 @@ import java.util.concurrent.*;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-
 public class ClusterSupport<T> implements NotifyListener {
 
     private static final Logger log = LoggerFactory.getLogger(ClusterSupport.class);
@@ -55,22 +54,22 @@ public class ClusterSupport<T> implements NotifyListener {
     }
 
     private Cluster<T> cluster;
-    private final List<URL> registryUrls;
-    private final URL url;
     private final Class<T> interfaceClass;
+    private final URL url;
+    private final List<URL> registryUrls;
     private final Protocol protocol;
-    private final ConcurrentHashMap<URL, List<Reference<T>>> registryReferences = new ConcurrentHashMap<>();
     private final int selectNodeCount;
-    private final ConcurrentHashMap<URL, Map<String, GroupUrlsSelector>> registryGroupUrlsSelectorMap = new ConcurrentHashMap<>();
+    private final ConcurrentMap<URL, List<Reference<T>>> registryReferences = new ConcurrentHashMap<>();
+    private final ConcurrentMap<URL, Map<String, GroupUrlsSelector>> registryGroupUrlsSelectorMap = new ConcurrentHashMap<>();
     private DynamicConfigRouter<T> dynamicConfigRouter;
 
-    public ClusterSupport(Class<T> interfaceClass, List<URL> registryUrls, URL refUrl) {
-        this.registryUrls = registryUrls;
+    public ClusterSupport(Class<T> interfaceClass, URL refUrl, List<URL> registryUrls) {
         this.interfaceClass = interfaceClass;
         this.url = refUrl;
+        this.registryUrls = registryUrls;
         protocol = getDecorateProtocol(url.getProtocol());
-        int maxConnectionCount = this.url.getParameter(URLParamType.maxConnectionsPerGroup.getName(), URLParamType.maxConnectionsPerGroup.intValue());
-        int maxClientConnection = this.url.getParameter(URLParamType.maxClientConnections.getName(), URLParamType.maxClientConnections.intValue());
+        int maxConnectionCount = this.url.getIntParameter(URLParamType.maxConnectionsPerGroup);
+        int maxClientConnection = this.url.getIntParameter(URLParamType.maxClientConnections);
         selectNodeCount = (int) Math.ceil(1.0 * maxConnectionCount / maxClientConnection);
     }
 
@@ -203,7 +202,7 @@ public class ClusterSupport<T> implements NotifyListener {
                 // careful u: serverURL, referenceURL的配置会被serverURL的配置覆盖
                 URL referenceURL = u.createCopy();
                 mergeClientConfigs(referenceURL);
-                reference = protocol.refer(interfaceClass, referenceURL, u);
+                reference = protocol.refer(interfaceClass, referenceURL);
             }
             if (reference != null) {
                 newReferences.add(reference);
@@ -307,7 +306,8 @@ public class ClusterSupport<T> implements NotifyListener {
                 if (newSize != selectSize) {
                     needRefresh = true;
                     selector.setSelectSize(newSize);
-                    log.info("ClusterSupport refreshReferences selectSize changed: registry={} service={} group={} newSize={} oldSize={}", registryUrl.getUri(), url.getIdentity(), group, newSize, selectSize);
+                    log.info("ClusterSupport refreshReferences selectSize changed: registry={} service={} group={} newSize={} oldSize={}",
+                            registryUrl.getUri(), url.getIdentity(), group, newSize, selectSize);
                 }
             }
             if (needRefresh) {

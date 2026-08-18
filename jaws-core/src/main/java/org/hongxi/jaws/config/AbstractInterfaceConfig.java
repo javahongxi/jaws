@@ -146,7 +146,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
             for (RegistryConfig config : registries) {
                 String address = config.getAddress();
                 if (StringUtils.isBlank(address)) {
-                    address = NetUtils.LOCALHOST + ":" + JawsConstants.DEFAULT_INT_VALUE;
+                    address = NetUtils.LOCALHOST + ":" + 0;
                 }
                 Map<String, String> map = new HashMap<>();
                 config.appendConfigParams(map);

@@ -14,8 +14,8 @@ public class DefaultThreadFactory implements ThreadFactory {
     private final ThreadGroup threadGroup;
     private final AtomicInteger currentThreadNumber = new AtomicInteger(1);
     private final String namePrefix;
-    private int priority = Thread.NORM_PRIORITY;
-    private boolean isDaemon = false;
+    private final int priority;
+    private final boolean isDaemon;
 
     public DefaultThreadFactory() {
         this(JawsConstants.FRAMEWORK_NAME);

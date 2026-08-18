@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Created by shenhongxi on 2021/4/21.
+ * Base implementation of {@link Protocol} that manages exporter lifecycle with a shared exporter map.
  */
 public abstract class AbstractProtocol implements Protocol {
 
@@ -21,14 +21,15 @@ public abstract class AbstractProtocol implements Protocol {
     protected final ConcurrentMap<String, Exporter<?>> exporterMap = new ConcurrentHashMap<>();
 
     @Override
-    public <T> Exporter<T> export(Provider<T> provider, URL url) {
-        if (url == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: url is null",
+    public <T> Exporter<T> export(Provider<T> provider) {
+        if (provider == null) {
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider is null",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
 
-        if (provider == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider is null, url=" + url,
+        URL url = provider.getUrl();
+        if (url == null) {
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider url is null",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
 
@@ -43,10 +44,10 @@ public abstract class AbstractProtocol implements Protocol {
                         JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
             }
 
-            exporter = createExporter(provider, url);
+            exporter = createExporter(provider);
             exporter.init();
 
-            // rebuild protocolKey，maybe port change when using random port
+            // rebuild protocolKey, maybe port change when using random port
             protocolKey = JawsFrameworkUtils.getProtocolKey(url);
             exporterMap.put(protocolKey, exporter);
 
@@ -56,43 +57,37 @@ public abstract class AbstractProtocol implements Protocol {
         }
     }
 
-    public <T> Reference<T> refer(Class<T> clazz, URL url) {
-        return refer(clazz, url, url);
-    }
-
     @Override
-    public <T> Reference<T> refer(Class<T> clazz, URL url, URL serviceUrl) {
+    public <T> Reference<T> refer(Class<T> interfaceClass, URL url) {
         if (url == null) {
             throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: url is null",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
 
-        if (clazz == null) {
+        if (interfaceClass == null) {
             throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: class is null, url=" + url,
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
         long start = System.currentTimeMillis();
-        Reference<T> reference = createReference(clazz, url, serviceUrl);
+        Reference<T> reference = createReference(interfaceClass, url);
         reference.init();
 
-        log.info("{} refer Success: url={}, cost:{}", this.getClass().getSimpleName(), url, System.currentTimeMillis() - start);
+        log.info("{} refer Success: url={}, cost:{}ms", this.getClass().getSimpleName(), url, System.currentTimeMillis() - start);
 
         return reference;
     }
 
-    protected abstract <T> Exporter<T> createExporter(Provider<T> provider, URL url);
+    protected abstract <T> Exporter<T> createExporter(Provider<T> provider);
 
-    protected abstract <T> Reference<T> createReference(Class<T> clazz, URL url, URL serviceUrl);
+    protected abstract <T> Reference<T> createReference(Class<T> interfaceClass, URL url);
 
     @Override
     public void destroy() {
         for (Map.Entry<String, Exporter<?>> entry : exporterMap.entrySet()) {
             Node node = entry.getValue();
-
             if (node != null) {
                 try {
                     node.destroy();
-
                     log.info("{} destroy node Success: {}", this.getClass().getSimpleName(), node);
                 } catch (Throwable t) {
                     log.error("{} destroy Error", this.getClass().getSimpleName(), t);

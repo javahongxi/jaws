@@ -25,18 +25,18 @@ import java.util.List;
  * and reference operations including registry integration and graceful shutdown.
  */
 @SpiMeta(name = JawsConstants.DEFAULT_VALUE)
-public class SimpleServiceDeployer implements ServiceDeployer {
+public class DefaultServiceDeployer implements ServiceDeployer {
 
-    private static final Logger log = LoggerFactory.getLogger(SimpleServiceDeployer.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultServiceDeployer.class);
 
     @Override
-    public <T> Exporter<T> export(Class<T> interfaceClass, T ref, List<URL> registryUrls, URL serviceUrl) {
+    public <T> Exporter<T> export(Class<T> interfaceClass, T ref, URL serviceUrl, List<URL> registryUrls) {
         // export service
         String protocolName = serviceUrl.getParameter(URLParamType.protocol);
         Protocol delegate = ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(protocolName);
         Protocol protocol = new ProtocolFilterDecorator(delegate);
-        Provider<T> provider = new DefaultProvider<>(ref, interfaceClass, serviceUrl);
-        Exporter<T> exporter = protocol.export(provider, serviceUrl);
+        Provider<T> provider = new DefaultProvider<>(interfaceClass, serviceUrl, ref);
+        Exporter<T> exporter = protocol.export(provider);
 
         // register service
         register(registryUrls, serviceUrl);
@@ -45,7 +45,7 @@ public class SimpleServiceDeployer implements ServiceDeployer {
     }
 
     @Override
-    public <T> void unexport(List<Exporter<T>> exporters, Collection<URL> registryUrls) {
+    public <T> void unexport(List<Exporter<T>> exporters, List<URL> registryUrls) {
         if (exporters == null || exporters.isEmpty()) {
             return;
         }
@@ -99,8 +99,8 @@ public class SimpleServiceDeployer implements ServiceDeployer {
     }
 
     @Override
-    public <T> ClusterSupport<T> buildClusterSupport(Class<T> interfaceClass, List<URL> registryUrls, URL refUrl) {
-        ClusterSupport<T> clusterSupport = new ClusterSupport<>(interfaceClass, registryUrls, refUrl);
+    public <T> ClusterSupport<T> buildClusterSupport(Class<T> interfaceClass, URL refUrl, List<URL> registryUrls) {
+        ClusterSupport<T> clusterSupport = new ClusterSupport<>(interfaceClass, refUrl, registryUrls);
         clusterSupport.init();
         return clusterSupport;
     }

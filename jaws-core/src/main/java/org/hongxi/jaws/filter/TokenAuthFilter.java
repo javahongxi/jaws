@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
  * If the provider has no token configured, authentication is skipped (backward compatible).
  */
 @SpiMeta(name = "tokenAuth")
-@Activation(key = {"service", "reference"}, sequence = 1)
+@Activation(value = {"service", "reference"}, order = 1)
 public class TokenAuthFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(TokenAuthFilter.class);

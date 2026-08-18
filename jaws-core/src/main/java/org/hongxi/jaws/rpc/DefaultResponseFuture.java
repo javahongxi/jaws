@@ -121,7 +121,7 @@ public class DefaultResponseFuture implements ResponseFuture {
                 return false;
             }
 
-            state = FutureState.CANCELLED;
+            state = FutureState.CANCELED;
             exception = e;
             lock.notifyAll();
         }
@@ -196,7 +196,7 @@ public class DefaultResponseFuture implements ResponseFuture {
                 return;
             }
 
-            state = FutureState.CANCELLED;
+            state = FutureState.CANCELED;
             exception = new JawsServiceException(
                     this.getClass().getName() +
                             " request timeout: serverPort=" + serverUrl.getServerPortStr()

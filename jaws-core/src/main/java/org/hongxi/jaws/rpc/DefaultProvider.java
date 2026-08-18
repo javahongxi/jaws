@@ -25,7 +25,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
 
     protected T ref;
 
-    public DefaultProvider(T ref, Class<T> interfaceClass, URL url) {
+    public DefaultProvider(Class<T> interfaceClass, URL url, T ref) {
         super(interfaceClass, url);
         this.ref = ref;
     }

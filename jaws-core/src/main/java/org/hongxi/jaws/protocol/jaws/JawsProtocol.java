@@ -15,15 +15,16 @@ public class JawsProtocol extends AbstractProtocol {
     public static final String DEFAULT_CODEC = "jaws";
 
     @Override
-    protected <T> Exporter<T> createExporter(Provider<T> provider, URL url) {
+    protected <T> Exporter<T> createExporter(Provider<T> provider) {
+        URL url = provider.getUrl();
         setDefaultCodec(url);
         return new DefaultRpcExporter<>(provider, url, this.exporterMap);
     }
 
     @Override
-    protected <T> Reference<T> createReference(Class<T> interfaceClass, URL url, URL serviceUrl) {
+    protected <T> Reference<T> createReference(Class<T> interfaceClass, URL url) {
         setDefaultCodec(url);
-        return new DefaultRpcReference<>(interfaceClass, url, serviceUrl);
+        return new DefaultRpcReference<>(interfaceClass, url);
     }
 
     private void setDefaultCodec(URL url) {

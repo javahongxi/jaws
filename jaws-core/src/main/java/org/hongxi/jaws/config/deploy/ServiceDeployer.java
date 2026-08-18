@@ -7,7 +7,6 @@ import org.hongxi.jaws.common.extension.Spi;
 import org.hongxi.jaws.rpc.Exporter;
 import org.hongxi.jaws.rpc.URL;
 
-import java.util.Collection;
 import java.util.List;
 
 /**
@@ -19,11 +18,11 @@ import java.util.List;
 @Spi(scope = Scope.SINGLETON)
 public interface ServiceDeployer {
 
-    <T> Exporter<T> export(Class<T> interfaceClass, T ref, List<URL> registryUrls, URL serviceUrl);
+    <T> Exporter<T> export(Class<T> interfaceClass, T ref, URL serviceUrl, List<URL> registryUrls);
 
-    <T> void unexport(List<Exporter<T>> exporters, Collection<URL> registryUrls);
+    <T> void unexport(List<Exporter<T>> exporters, List<URL> registryUrls);
 
-    <T> ClusterSupport<T> buildClusterSupport(Class<T> interfaceClass, List<URL> registryUrls, URL refUrl);
+    <T> ClusterSupport<T> buildClusterSupport(Class<T> interfaceClass, URL refUrl, List<URL> registryUrls);
 
     <T> T refer(Class<T> interfaceClass, List<Cluster<T>> clusters, String proxyType);
 }

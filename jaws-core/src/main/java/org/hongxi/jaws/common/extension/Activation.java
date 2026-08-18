@@ -3,7 +3,8 @@ package org.hongxi.jaws.common.extension;
 import java.lang.annotation.*;
 
 /**
- * Spi有多个实现时，可以根据条件进行过滤、排序后再返回。
+ * When an SPI has multiple implementations, this annotation allows filtering
+ * and sorting them based on activation conditions before returning the result.
  * <p>
  * Created by shenhongxi on 2020/7/25.
  */
@@ -13,17 +14,15 @@ import java.lang.annotation.*;
 public @interface Activation {
 
     /**
-     * seq号越小，在返回的list<Instance>中的位置越靠前，尽量使用 0-100以内的数字
+     * Sort order for this activation. Lower values come first in the returned list.
+     * Recommended range: 0-100.
      */
-    int sequence() default 20;
+    int order() default 20;
 
     /**
-     * spi 的key，获取spi列表时，根据key进行匹配，当key中存在待过滤的search-key时，匹配成功
+     * Activation match values, used to filter SPI implementations when calling getExtensions.
+     * The implementation is included only when this array contains the search key.
+     * Common values: "service" (provider side), "reference" (consumer side).
      */
-    String[] key() default "";
-
-    /**
-     * 是否支持重试的时候也调用
-     */
-    boolean retry() default true;
+    String[] value() default "";
 }

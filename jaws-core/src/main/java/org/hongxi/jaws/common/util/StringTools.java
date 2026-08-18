@@ -1,11 +1,10 @@
 package org.hongxi.jaws.common.util;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.JawsConstants;
 
-import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -13,12 +12,12 @@ public class StringTools {
 
     public static int parseInteger(String intStr) {
         if (intStr == null) {
-            return JawsConstants.DEFAULT_INT_VALUE;
+            return 0;
         }
         try {
             return Integer.parseInt(intStr);
         } catch (NumberFormatException e) {
-            return JawsConstants.DEFAULT_INT_VALUE;
+            return 0;
         }
     }
 
@@ -26,22 +25,14 @@ public class StringTools {
         if (StringUtils.isEmpty(value)) {
             return "";
         }
-        try {
-            return URLEncoder.encode(value, JawsConstants.DEFAULT_CHARSET);
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException(e.getMessage(), e);
-        }
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     public static String urlDecode(String value) {
         if (StringUtils.isBlank(value)) {
             return "";
         }
-        try {
-            return URLDecoder.decode(value, JawsConstants.DEFAULT_CHARSET);
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException(e.getMessage(), e);
-        }
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
     public static String toQueryString(Map<String, String> ps) {

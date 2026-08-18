@@ -8,5 +8,4 @@ import java.lang.annotation.*;
 public @interface Spi {
 
     Scope scope() default Scope.PROTOTYPE;
-
 }
