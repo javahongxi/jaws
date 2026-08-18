@@ -106,30 +106,34 @@ public class ExtensionLoader<T> {
         });
     }
 
-    public List<T> getExtensions(String key) {
+    /**
+     * Get SPI extension names matching the given activation key.
+     *
+     * @param key the activation key to match, blank means all extensions
+     * @return list of SPI extension names
+     */
+    public List<String> getExtensionNames(String key) {
         checkInit();
 
         if (extensionClasses.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<T> extensions = new ArrayList<>(extensionClasses.size());
-
+        List<String> names = new ArrayList<>(extensionClasses.size());
         for (Map.Entry<String, Class<T>> entry : extensionClasses.entrySet()) {
             Activation activation = entry.getValue().getAnnotation(Activation.class);
             if (StringUtils.isBlank(key)) {
-                extensions.add(getExtension(entry.getKey()));
+                names.add(entry.getKey());
             } else if (activation != null && activation.value() != null) {
                 for (String k : activation.value()) {
                     if (key.equals(k)) {
-                        extensions.add(getExtension(entry.getKey()));
+                        names.add(entry.getKey());
                         break;
                     }
                 }
             }
         }
-        extensions.sort(new ActivationComparator<>());
-        return extensions;
+        return names;
     }
 
     private synchronized void checkInit() {

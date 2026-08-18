@@ -13,7 +13,9 @@ import org.hongxi.jaws.rpc.*;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Builds filter chains for both {@link Provider} and {@link Reference}.
@@ -36,7 +38,7 @@ class FilterChainBuilder {
      * @return the provider wrapped with the filter chain
      */
     <T> Provider<T> buildProviderChain(Provider<T> provider, URL url) {
-        List<Filter> filters = getFilters(url, JawsConstants.NODE_TYPE_SERVICE);
+        List<Filter> filters = loadFilters(url, JawsConstants.NODE_TYPE_SERVICE);
         if (filters.isEmpty()) {
             return provider;
         }
@@ -59,7 +61,7 @@ class FilterChainBuilder {
      * @return the reference wrapped with the filter chain
      */
     <T> Reference<T> buildReferenceChain(Reference<T> reference, URL url) {
-        List<Filter> filters = getFilters(url, JawsConstants.NODE_TYPE_REFERENCE);
+        List<Filter> filters = loadFilters(url, JawsConstants.NODE_TYPE_REFERENCE);
         if (filters.isEmpty()) {
             return reference;
         }
@@ -76,49 +78,34 @@ class FilterChainBuilder {
     /**
      * Load filters from SPI defaults, URL "filter" parameter, and other config triggers.
      */
-    private List<Filter> getFilters(URL url, String key) {
-        List<Filter> filters = new ArrayList<>();
+    private List<Filter> loadFilters(URL url, String key) {
+        ExtensionLoader<Filter> loader = ExtensionLoader.getExtensionLoader(Filter.class);
+        Set<String> filterNames = new LinkedHashSet<>(loader.getExtensionNames(key));
 
-        // load default filters
-        List<Filter> defaultFilters = ExtensionLoader.getExtensionLoader(Filter.class).getExtensions(key);
-        if (!defaultFilters.isEmpty()) {
-            filters.addAll(defaultFilters);
-        }
-
-        // add filters via "filter" config
+        // add filter names via "filter" config
         String filterStr = url.getParameter(URLParamType.filter.getName());
         if (StringUtils.isNotBlank(filterStr)) {
-            String[] filterNames = JawsConstants.COMMA_SPLIT_PATTERN.split(filterStr);
-            for (String fn : filterNames) {
-                addIfAbsent(filters, fn);
-            }
+            String[] names = JawsConstants.COMMA_SPLIT_PATTERN.split(filterStr);
+            Collections.addAll(filterNames, names);
         }
 
-        // add filter via other configs, like accessLog and so on
+        // add filter names via other configs, like accessLog and so on
         if (url.getBoolParameter(URLParamType.accessLog)) {
-            addIfAbsent(filters, AccessLogFilter.class.getAnnotation(SpiMeta.class).name());
+            filterNames.add(AccessLogFilter.class.getAnnotation(SpiMeta.class).name());
+        }
+
+        // load all filters by name
+        List<Filter> filters = new ArrayList<>(filterNames.size());
+        for (String name : filterNames) {
+            Filter filter = loader.getExtension(name);
+            if (filter != null) {
+                filters.add(filter);
+            }
         }
 
         // sort the filters
         filters.sort(new ActivationComparator<>());
         Collections.reverse(filters);
         return filters;
-    }
-
-    private void addIfAbsent(List<Filter> filters, String extensionName) {
-        Filter extFilter = ExtensionLoader.getExtensionLoader(Filter.class).getExtension(extensionName);
-        if (extFilter == null) {
-            return;
-        }
-        boolean exists = false;
-        for (Filter f : filters) {
-            if (f.getClass() == extFilter.getClass()) {
-                exists = true;
-                break;
-            }
-        }
-        if (!exists) {
-            filters.add(extFilter);
-        }
     }
 }
