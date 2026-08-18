@@ -70,16 +70,6 @@ public class ProtocolConfig extends AbstractConfig {
      */
     protected Integer minClientConnections;
 
-    /**
-     * The maximum number of client connections.
-     */
-    protected Integer maxClientConnections;
-
-    /**
-     * The maximum number of connections per group.
-     */
-    protected Integer maxConnectionsPerGroup;
-
     // server & client side
 
     /**
@@ -180,22 +170,6 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setMinClientConnections(Integer minClientConnections) {
         this.minClientConnections = minClientConnections;
-    }
-
-    public Integer getMaxClientConnections() {
-        return maxClientConnections;
-    }
-
-    public void setMaxClientConnections(Integer maxClientConnections) {
-        this.maxClientConnections = maxClientConnections;
-    }
-
-    public Integer getMaxConnectionsPerGroup() {
-        return maxConnectionsPerGroup;
-    }
-
-    public void setMaxConnectionsPerGroup(Integer maxConnectionsPerGroup) {
-        this.maxConnectionsPerGroup = maxConnectionsPerGroup;
     }
 
     // --- server & client shared getter/setter ---
