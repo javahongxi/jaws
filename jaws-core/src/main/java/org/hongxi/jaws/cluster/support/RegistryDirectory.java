@@ -111,9 +111,9 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             }
             Reference<T> reference = findMatchingReference(serviceUrl, registryReferences.get(registryUrl));
             if (reference == null) {
-                URL referenceURL = serviceUrl.createCopy();
-                referenceURL.addParameters(this.url.getParameters());
-                reference = protocol.refer(interfaceClass, referenceURL);
+                URL referenceUrl = serviceUrl.createCopy();
+                referenceUrl.addParameters(this.url.getParameters());
+                reference = protocol.refer(interfaceClass, referenceUrl);
             }
             if (reference != null) {
                 newReferences.add(reference);
