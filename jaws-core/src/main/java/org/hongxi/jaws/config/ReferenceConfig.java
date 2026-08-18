@@ -10,9 +10,9 @@ import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.common.util.StringTools;
-import org.hongxi.jaws.config.deploy.ServiceDeployer;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.proxy.ProxyFactory;
 import org.hongxi.jaws.registry.RegistryService;
 import org.hongxi.jaws.rpc.GenericService;
 import org.hongxi.jaws.rpc.URL;
@@ -100,21 +100,21 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
         String localIp = getLocalHostAddress();
         String path = StringUtils.isBlank(serviceInterface) ? interfaceClass.getName() : serviceInterface;
 
-        ServiceDeployer serviceDeployer = ExtensionLoader.getExtensionLoader(ServiceDeployer.class)
-                .getExtension(JawsConstants.DEFAULT_VALUE);
         clusterSupports = new ArrayList<>(protocols.size());
         List<Cluster<T>> clusters = new ArrayList<>(protocols.size());
 
         for (ProtocolConfig protocol : protocols) {
             URL refUrl = buildRefUrl(protocol, localIp, path);
             List<URL> regUrls = resolveRegistryUrls(refUrl);
-            ClusterSupport<T> clusterSupport = serviceDeployer.buildClusterSupport(interfaceClass, refUrl, regUrls);
+            ClusterSupport<T> clusterSupport = new ClusterSupport<>(interfaceClass, refUrl, regUrls);
+            clusterSupport.init();
             clusterSupports.add(clusterSupport);
             clusters.add(clusterSupport.getCluster());
         }
 
         String proxyType = generic ? "generic" : URLParamType.proxy.value();
-        ref = serviceDeployer.refer(interfaceClass, clusters, proxyType);
+        ProxyFactory proxyFactory = ExtensionLoader.getExtensionLoader(ProxyFactory.class).getExtension(proxyType);
+        ref = proxyFactory.getProxy(interfaceClass, clusters);
 
         initialized.set(true);
     }

@@ -5,13 +5,19 @@ import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.common.util.NetUtils;
-import org.hongxi.jaws.config.deploy.ServiceDeployer;
+import org.hongxi.jaws.exception.JawsErrorMsg;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
+import org.hongxi.jaws.protocol.ProtocolFilterWrapper;
+import org.hongxi.jaws.registry.Registry;
+import org.hongxi.jaws.registry.RegistryFactory;
 import org.hongxi.jaws.registry.RegistryService;
+import org.hongxi.jaws.rpc.DefaultProvider;
 import org.hongxi.jaws.rpc.Exporter;
+import org.hongxi.jaws.rpc.Protocol;
+import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,10 +96,51 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         if (!exported.get()) {
             return;
         }
+        if (exporters.isEmpty()) {
+            return;
+        }
+
         try {
-            ServiceDeployer serviceDeployer =
-                    ExtensionLoader.getExtensionLoader(ServiceDeployer.class).getExtension(JawsConstants.DEFAULT_VALUE);
-            serviceDeployer.unexport(exporters, registryUrls);
+            // Determine graceful shutdown timeout from the first exporter's URL config
+            long gracefulTimeout = exporters.get(0).getUrl().getIntParameter(URLParamType.gracefulShutdownTimeout);
+
+            // Phase 1: Stop accepting new requests
+            log.info("[GracefulShutdown] Phase 1: Stop accepting new requests, exporters={}", exporters.size());
+            for (Exporter<T> exporter : exporters) {
+                try {
+                    exporter.stopAccept();
+                } catch (Exception e) {
+                    log.warn("[GracefulShutdown] Failed to stopAccept for exporter: {}", exporter.getUrl(), e);
+                }
+            }
+
+            // Phase 2: Wait for in-flight requests to complete
+            log.info("[GracefulShutdown] Phase 2: Waiting for in-flight requests to complete, timeout={}ms", gracefulTimeout);
+            for (Exporter<T> exporter : exporters) {
+                try {
+                    exporter.awaitInactiveRequests(gracefulTimeout);
+                } catch (Exception e) {
+                    log.warn("[GracefulShutdown] Failed to awaitInactiveRequests for exporter: {}", exporter.getUrl(), e);
+                }
+            }
+
+            // Phase 3: Unregister from registry
+            log.info("[GracefulShutdown] Phase 3: Unregister from registry");
+            for (Exporter<T> exporter : exporters) {
+                unRegister(registryUrls, exporter.getUrl());
+            }
+
+            // Phase 4: Close connections and release resources
+            log.info("[GracefulShutdown] Phase 4: Close connections and release resources");
+            for (Exporter<T> exporter : exporters) {
+                try {
+                    exporter.unexport();
+                } catch (Exception e) {
+                    log.warn("[GracefulShutdown] Failed to unexport: {}", exporter.getUrl(), e);
+                }
+            }
+
+            log.info("[GracefulShutdown] Graceful shutdown completed");
         } finally {
             afterUnexport();
         }
@@ -152,9 +199,43 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
             }
         }
 
-        ServiceDeployer serviceDeployer = ExtensionLoader.getExtensionLoader(ServiceDeployer.class).getExtension(JawsConstants.DEFAULT_VALUE);
+        // Export service via protocol
+        Protocol delegate = ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(protocolName);
+        Protocol protocol = new ProtocolFilterWrapper(delegate);
+        Provider<T> provider = new DefaultProvider<>(interfaceClass, serviceUrl, ref);
+        Exporter<T> exporter = protocol.export(provider);
 
-        exporters.add(serviceDeployer.export(interfaceClass, ref, serviceUrl, registryUrls));
+        // Register service to registries
+        register(registryUrls, serviceUrl);
+
+        exporters.add(exporter);
+    }
+
+    private void register(List<URL> registryUrls, URL serviceUrl) {
+        // Record startup timestamp for consumer-side warm-up calculation
+        serviceUrl.addParameter(URLParamType.timestamp.getName(), String.valueOf(System.currentTimeMillis()));
+        for (URL url : registryUrls) {
+            RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
+            if (registryFactory == null) {
+                throw new JawsFrameworkException(new JawsErrorMsg(500, JawsErrorMsgConstants.FRAMEWORK_REGISTER_ERROR_CODE,
+                        "register error! Could not find extension for registry protocol:" + url.getProtocol()
+                                + ", make sure registry module for " + url.getProtocol() + " is in classpath!"));
+            }
+            Registry registry = registryFactory.getRegistry(url);
+            registry.register(serviceUrl);
+        }
+    }
+
+    private void unRegister(Collection<URL> registryUrls, URL serviceUrl) {
+        for (URL url : registryUrls) {
+            try {
+                RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
+                Registry registry = registryFactory.getRegistry(url);
+                registry.unregister(serviceUrl);
+            } catch (Exception e) {
+                log.warn("unregister url false: {}", url, e);
+            }
+        }
     }
 
     private int resolvePort(ProtocolConfig protocolConfig, String protocolName) {
