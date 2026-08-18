@@ -1,7 +1,5 @@
 package org.hongxi.jaws.cluster.support;
 
-import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.registry.NotifyListener;
@@ -38,6 +36,12 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
 
     private final Protocol protocol;
 
+    /**
+     * Active references grouped by their source registry.
+     * <p>
+     * Key: registry URL identifying which registry center the references were discovered from.
+     * Value: list of {@link Reference} instances obtained from that registry.
+     */
     private final ConcurrentMap<URL, List<Reference<T>>> registryReferences = new ConcurrentHashMap<>();
 
     public RegistryDirectory(Class<T> interfaceClass, URL url, URL consumerUrl,
@@ -62,7 +66,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             log.info("[RegistryDirectory] init discover: consumerUrl={}, discoveredCount={}",
                     consumerUrl.toSimpleString(), discovered == null ? 0 : discovered.size());
             if (!CollectionUtils.isEmpty(discovered)) {
-                log.info("[RegistryDirectory] discovered urls: {}", getIdentities(discovered));
+                log.info("[RegistryDirectory] discovered urls: {}", formatIdentities(discovered));
                 notify(registryUrl, discovered);
             }
         }
@@ -74,11 +78,8 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             try {
                 Registry registry = getRegistry(registryUrl);
                 registry.unsubscribe(consumerUrl, this);
-                if (!JawsConstants.NODE_TYPE_REFERENCE.equals(url.getParameter(URLParamType.nodeType))) {
-                    registry.unregister(url);
-                }
             } catch (Exception e) {
-                log.warn("Failed to unregister or unsubscribe for url={}, registry={}", url, registryUrl.getIdentity(), e);
+                log.warn("Failed to unsubscribe for url={}, registry={}", url, registryUrl.getIdentity(), e);
             }
         }
     }
@@ -99,24 +100,19 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         }
 
         log.info("Service urls changed: registry={}, service={}, urls={}",
-                registryUrl.getUri(), url.getIdentity(), getIdentities(urls));
+                registryUrl.getUri(), url.getIdentity(), formatIdentities(urls));
 
-        refreshReferences(registryUrl, urls);
-    }
-
-    private void refreshReferences(URL registryUrl, List<URL> serviceUrls) {
         List<Reference<T>> newReferences = new ArrayList<>();
-        for (URL u : serviceUrls) {
-            if (!u.canServe(url)) {
+        for (URL serviceUrl : urls) {
+            if (!serviceUrl.canServe(url)) {
                 log.warn("[RegistryDirectory] discovered URL filtered by canServe: discovered={}, refUrl={}",
-                        u.toSimpleString(), url.toSimpleString());
+                        serviceUrl.toSimpleString(), url.toSimpleString());
                 continue;
             }
-            Reference<T> reference = getExistingReference(u, registryReferences.get(registryUrl));
+            Reference<T> reference = findMatchingReference(serviceUrl, registryReferences.get(registryUrl));
             if (reference == null) {
-                // Note: referenceURL params will be overridden by serverURL params
-                URL referenceURL = u.createCopy();
-                mergeClientConfigs(referenceURL);
+                URL referenceURL = serviceUrl.createCopy();
+                referenceURL.addParameters(this.url.getParameters());
                 reference = protocol.refer(interfaceClass, referenceURL);
             }
             if (reference != null) {
@@ -129,18 +125,18 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             return;
         }
 
-        // References are not destroyed here; cluster handles destruction
         registryReferences.put(registryUrl, newReferences);
         refreshReferences();
     }
 
-    private void onRegistryEmpty(URL excludeRegistryUrl) {
-        boolean noMoreOtherRefers = registryReferences.size() == 1 && registryReferences.containsKey(excludeRegistryUrl);
-        if (noMoreOtherRefers) {
-            log.warn("No more references in this cluster, registry={}, directory={}", excludeRegistryUrl, consumerUrl);
-        } else {
-            registryReferences.remove(excludeRegistryUrl);
+    private void onRegistryEmpty(URL emptyRegistryUrl) {
+        if (registryReferences.size() > 1 || !registryReferences.containsKey(emptyRegistryUrl)) {
+            // Other registries still have references, or this registry was already removed
+            registryReferences.remove(emptyRegistryUrl);
             refreshReferences();
+        } else {
+            // Last registry became empty; warn but don't clear stale references
+            log.warn("No more references in this cluster, registry={}, directory={}", emptyRegistryUrl, consumerUrl);
         }
     }
 
@@ -152,13 +148,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         setReferences(allReferences);
     }
 
-    private Registry getRegistry(URL url) {
-        return ExtensionLoader.getExtensionLoader(RegistryFactory.class)
-                .getExtension(url.getProtocol())
-                .getRegistry(url);
-    }
-
-    private Reference<T> getExistingReference(URL url, List<Reference<T>> references) {
+    private Reference<T> findMatchingReference(URL url, List<Reference<T>> references) {
         if (references == null) {
             return null;
         }
@@ -170,21 +160,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         return null;
     }
 
-    /**
-     * Merge client-side config into the reference URL.
-     * All parameters from the client URL override the server URL,
-     * except application and module which are preserved from the reference URL.
-     */
-    private void mergeClientConfigs(URL referenceURL) {
-        String application = referenceURL.getParameter(URLParamType.application);
-        String module = referenceURL.getParameter(URLParamType.module);
-        referenceURL.addParameters(this.url.getParameters());
-
-        referenceURL.addParameter(URLParamType.application.getName(), application);
-        referenceURL.addParameter(URLParamType.module.getName(), module);
-    }
-
-    private String getIdentities(List<URL> urls) {
+    private String formatIdentities(List<URL> urls) {
         if (urls == null || urls.isEmpty()) {
             return "[]";
         }
@@ -193,5 +169,11 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             sj.add(u.getIdentity());
         }
         return sj.toString();
+    }
+
+    private Registry getRegistry(URL url) {
+        return ExtensionLoader.getExtensionLoader(RegistryFactory.class)
+                .getExtension(url.getProtocol())
+                .getRegistry(url);
     }
 }
