@@ -9,7 +9,7 @@ import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.exception.JawsErrorMsg;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.protocol.ProtocolFilterDecorator;
+import org.hongxi.jaws.protocol.ProtocolFilterWrapper;
 import org.hongxi.jaws.proxy.ProxyFactory;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
@@ -34,7 +34,7 @@ public class DefaultServiceDeployer implements ServiceDeployer {
         // export service
         String protocolName = serviceUrl.getParameter(URLParamType.protocol);
         Protocol delegate = ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(protocolName);
-        Protocol protocol = new ProtocolFilterDecorator(delegate);
+        Protocol protocol = new ProtocolFilterWrapper(delegate);
         Provider<T> provider = new DefaultProvider<>(interfaceClass, serviceUrl, ref);
         Exporter<T> exporter = protocol.export(provider);
 

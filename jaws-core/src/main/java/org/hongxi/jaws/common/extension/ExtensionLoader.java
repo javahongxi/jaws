@@ -260,6 +260,6 @@ public class ExtensionLoader<T> {
 
     private String getSpiName(Class<?> clazz) {
         SpiMeta spiMeta = clazz.getAnnotation(SpiMeta.class);
-        return (spiMeta != null && !"".equals(spiMeta.name())) ? spiMeta.name() : clazz.getSimpleName();
+        return spiMeta != null ? spiMeta.name() : clazz.getSimpleName();
     }
 }

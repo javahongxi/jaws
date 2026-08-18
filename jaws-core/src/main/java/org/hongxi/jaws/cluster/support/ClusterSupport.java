@@ -13,7 +13,7 @@ import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.StringTools;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.protocol.ProtocolFilterDecorator;
+import org.hongxi.jaws.protocol.ProtocolFilterWrapper;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
@@ -350,7 +350,7 @@ public class ClusterSupport<T> implements NotifyListener {
     protected Protocol getDecorateProtocol(String protocolName) {
         Protocol decorateProtocol = protocols.get(protocolName);
         if (decorateProtocol == null) {
-            protocols.putIfAbsent(protocolName, new ProtocolFilterDecorator(ExtensionLoader.getExtensionLoader(Protocol.class)
+            protocols.putIfAbsent(protocolName, new ProtocolFilterWrapper(ExtensionLoader.getExtensionLoader(Protocol.class)
                     .getExtension(protocolName)));
             decorateProtocol = protocols.get(protocolName);
         }
