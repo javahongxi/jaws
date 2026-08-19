@@ -57,19 +57,10 @@ public class JawsCodec extends AbstractCodec {
     }
 
     /**
-     * decode data
-     *
-     * <pre>
-     * 		对于client端：主要是来自server端的response or exception
-     * 		对于server端: 主要是来自client端的request
-     * </pre>
-     *
-     * @param data
-     * @return
-     * @throws IOException
+     * Decode data from client request or server response.
      */
     @Override
-    public Object decode(Channel channel, String remoteIp, byte[] data) throws IOException {
+    public Object decode(Channel channel, byte[] data) throws IOException {
         if (data.length <= HEADER_LENGTH) {
             throw new JawsFrameworkException("decode error: format problem",
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);

@@ -3,7 +3,6 @@ package org.hongxi.jaws.transport.netty;
 import io.netty.channel.*;
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.codec.CodecUtils;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
@@ -21,9 +20,6 @@ import org.hongxi.jaws.transport.ProviderMessageRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -60,71 +56,52 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 try {
                     threadPoolExecutor.execute(() -> processMessage(ctx, nettyMsg));
                 } catch (RejectedExecutionException rejectException) {
-                    if (nettyMsg.isRequest()) {
-                        rejectMessage(ctx, nettyMsg);
-                    } else {
-                        log.warn("process thread pool is full, run in io thread, " +
-                                        "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
-                                threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
-                                threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
-                                threadPoolExecutor.getTaskCount(), nettyMsg.getRequestId());
-                        processMessage(ctx, nettyMsg);
-                    }
+                    // Only server-side requests go through the thread pool;
+                    // reject and return error response to client when pool is full.
+                    rejectMessage(ctx, nettyMsg);
                 }
             } else {
                 processMessage(ctx, nettyMsg);
             }
         } else {
-            log.error("messageReceived type not support: class={}", msg.getClass());
+            log.error("message type not support: class={}", msg.getClass());
             throw new JawsFrameworkException(
-                    "NettyChannelHandler messageReceived type not support: class=" + msg.getClass());
+                    "NettyChannelHandler message type not support: class=" + msg.getClass());
         }
     }
 
     private void rejectMessage(ChannelHandlerContext ctx, NettyMessage msg) {
-        if (msg.isRequest()) {
-            sendResponse(ctx,
-                    JawsFrameworkUtils.buildErrorResponse(
-                            (Request) msg,
-                            new JawsServiceException(
-                                    "process thread pool is full, reject by server: " + ctx.channel().localAddress(),
-                                    JawsErrorMsgConstants.SERVICE_REJECT
-                            )
-                    )
-            );
+        sendResponse(ctx, JawsFrameworkUtils.buildErrorResponse((Request) msg, new JawsServiceException(
+                "process thread pool is full, reject by server: " + ctx.channel().localAddress(),
+                                JawsErrorMsgConstants.SERVICE_REJECT)));
 
-            log.error("process thread pool is full, reject, " +
-                            "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
-                    threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
-                    threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
-                    threadPoolExecutor.getTaskCount(), msg.getRequestId());
-            if (channel instanceof NettyServer nettyServer) {
-                nettyServer.getRejectCounter().incrementAndGet();
-            }
+        log.error("process thread pool is full, reject, " +
+                        "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
+                threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
+                threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
+                threadPoolExecutor.getTaskCount(), msg.getRequestId());
+        if (channel instanceof NettyServer nettyServer) {
+            nettyServer.getRejectCounter().incrementAndGet();
         }
     }
 
     private void processMessage(ChannelHandlerContext ctx, NettyMessage msg) {
-        String remoteIp = getRemoteIp(ctx);
-        Object result;
         try {
-            result = codec.decode(channel, remoteIp, msg.getData());
+            Object decoded = codec.decode(channel, msg.getData());
+            if (decoded instanceof Request request) {
+                processRequest(ctx, request);
+            } else if (decoded instanceof Response response) {
+                messageHandler.handle(channel, response);
+            }
         } catch (Exception e) {
-            log.error("NettyDecoder decode fail! requestid: {}, size: {}, ip: {}",
-                    msg.getRequestId(), msg.getData().length, remoteIp, e);
+            log.error("decode failed! requestId: {}, size: {}, remote: {}",
+                    msg.getRequestId(), msg.getData().length, ctx.channel().remoteAddress(), e);
             Response response = JawsFrameworkUtils.buildErrorResponse(msg.getRequestId(), e);
             if (msg.isRequest()) {
                 sendResponse(ctx, response);
             } else {
-                processResponse(response);
+                messageHandler.handle(channel, response);
             }
-            return;
-        }
-
-        if (result instanceof Request request) {
-            processRequest(ctx, request);
-        } else if (result instanceof Response response) {
-            processResponse(response);
         }
     }
 
@@ -135,62 +112,21 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         if (channel instanceof NettyServer nettyServer) {
             nettyServer.getActiveRequests().incrementAndGet();
         }
-        try {
-            RpcContext.init(request);
-            Object result;
+        RpcContext.init(request);
+        ((ProviderMessageRouter) messageHandler).handleAsync(channel, request).whenComplete((res, throwable) -> {
             try {
-                // Server side: ProviderMessageRouter supports async handling,
-                // route request to provider and return CompletableFuture for non-blocking response.
-                // Client side: fallback to sync handle, which completes the ResponseFuture callback.
-                if (messageHandler instanceof ProviderMessageRouter router) {
-                    result = router.handleAsync(channel, request);
-                } else {
-                    result = messageHandler.handle(channel, request);
-                }
-            } catch (Exception e) {
-                log.error("processRequest fail! request: {}", JawsFrameworkUtils.toString(request), e);
-                result = JawsFrameworkUtils.buildErrorResponse(request,
-                        new JawsServiceException("process request fail. errmsg:" + e.getMessage()));
-            }
-
-            if (result instanceof CompletableFuture<?> future) {
-                // Async path: non-blocking, write response when future completes
-                future.whenComplete((res, throwable) -> {
-                    try {
-                        RpcContext.init(request);
-                        final DefaultResponse response;
-                        if (throwable != null) {
-                            log.error("processRequest async fail! request: {}", JawsFrameworkUtils.toString(request), throwable);
-                            response = JawsFrameworkUtils.buildErrorResponse(request,
-                                    new JawsServiceException("async process request fail. errmsg:" + throwable.getMessage()));
-                        } else if (res instanceof DefaultResponse dr) {
-                            response = dr;
-                        } else if (res instanceof Response r) {
-                            response = new DefaultResponse(r);
-                        } else {
-                            response = new DefaultResponse(res);
-                        }
-                        response.setRequestId(request.getRequestId());
-                        response.setProcessTime(System.currentTimeMillis() - processStartTime);
-
-                        ChannelFuture channelFuture = sendResponse(ctx, response);
-                        if (channelFuture != null) {
-                            channelFuture.addListener((ChannelFutureListener) f -> response.onFinish());
-                        }
-                    } finally {
-                        if (channel instanceof NettyServer nettyServer) {
-                            nettyServer.getActiveRequests().decrementAndGet();
-                        }
-                        RpcContext.destroy();
-                    }
-                });
-            } else {
-                // Sync path: write response immediately
+                RpcContext.init(request);
                 final DefaultResponse response;
-                if (result instanceof DefaultResponse defaultResponse) {
-                    response = defaultResponse;
+                if (throwable != null) {
+                    log.error("processRequest fail! request: {}", JawsFrameworkUtils.toString(request), throwable);
+                    response = JawsFrameworkUtils.buildErrorResponse(request,
+                            new JawsServiceException("process request fail. errmsg:" + throwable.getMessage()));
+                } else if (res instanceof DefaultResponse dr) {
+                    response = dr;
+                } else if (res instanceof Response r) {
+                    response = new DefaultResponse(r);
                 } else {
-                    response = new DefaultResponse(result);
+                    response = new DefaultResponse(res);
                 }
                 response.setRequestId(request.getRequestId());
                 response.setProcessTime(System.currentTimeMillis() - processStartTime);
@@ -199,19 +135,13 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 if (channelFuture != null) {
                     channelFuture.addListener((ChannelFutureListener) f -> response.onFinish());
                 }
+            } finally {
                 if (channel instanceof NettyServer nettyServer) {
                     nettyServer.getActiveRequests().decrementAndGet();
                 }
                 RpcContext.destroy();
             }
-        } catch (Exception e) {
-            // Unexpected error in async path setup
-            log.error("processRequest unexpected error! request: {}", JawsFrameworkUtils.toString(request), e);
-            if (channel instanceof NettyServer nettyServer) {
-                nettyServer.getActiveRequests().decrementAndGet();
-            }
-            RpcContext.destroy();
-        }
+        });
     }
 
     private ChannelFuture sendResponse(ChannelHandlerContext ctx, Response response) {
@@ -221,10 +151,6 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             return ctx.channel().writeAndFlush(msg);
         }
         return null;
-    }
-
-    private void processResponse(Object msg) {
-        messageHandler.handle(channel, msg);
     }
 
     @Override
@@ -244,18 +170,5 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         log.error("exceptionCaught: remote={} local={} event={}",
                 ctx.channel().remoteAddress(), ctx.channel().localAddress(), cause.getMessage(), cause);
         ctx.channel().close();
-    }
-
-    private String getRemoteIp(ChannelHandlerContext ctx) {
-        String ip = "";
-        SocketAddress remote = ctx.channel().remoteAddress();
-        if (remote instanceof InetSocketAddress inetAddr) {
-            try {
-                ip = inetAddr.getAddress().getHostAddress();
-            } catch (Exception e) {
-                log.warn("get remoteIp error! default will use. msg:{}, remote:{}", e.getMessage(), remote);
-            }
-        }
-        return ip;
     }
 }

@@ -14,5 +14,5 @@ public interface Codec {
 
     byte[] encode(Channel channel, Object message) throws IOException;
 
-    Object decode(Channel channel, String remoteIp, byte[] data) throws IOException;
+    Object decode(Channel channel, byte[] data) throws IOException;
 }
