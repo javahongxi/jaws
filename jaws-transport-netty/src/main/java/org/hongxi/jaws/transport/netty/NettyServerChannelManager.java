@@ -8,7 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -19,9 +18,9 @@ import java.util.concurrent.ConcurrentMap;
 public class NettyServerChannelManager extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(NettyServerChannelManager.class);
 
-    private ConcurrentMap<String, Channel> channels = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Channel> channels = new ConcurrentHashMap<>();
 
-    private int maxChannels;
+    private final int maxChannels;
 
     public NettyServerChannelManager(int maxChannels) {
         super();
@@ -49,10 +48,6 @@ public class NettyServerChannelManager extends ChannelInboundHandlerAdapter {
         String channelKey = getChannelKey((InetSocketAddress) channel.localAddress(), (InetSocketAddress) channel.remoteAddress());
         channels.remove(channelKey);
         ctx.fireChannelUnregistered();
-    }
-
-    public Map<String, Channel> getChannels() {
-        return channels;
     }
 
     private String getChannelKey(InetSocketAddress localAddress, InetSocketAddress remoteAddress) {

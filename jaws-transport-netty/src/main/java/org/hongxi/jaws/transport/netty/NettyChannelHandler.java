@@ -70,7 +70,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     }
 
     private void rejectMessage(ChannelHandlerContext ctx, NettyMessage msg) {
-        sendResponse(ctx, JawsFrameworkUtils.buildErrorResponse((Request) msg, new JawsServiceException(
+        sendResponse(ctx, JawsFrameworkUtils.buildErrorResponse(msg.requestId(), new JawsServiceException(
                 "process thread pool is full, reject by server: " + ctx.channel().localAddress(),
                                 JawsErrorMsgConstants.SERVICE_REJECT)));
 
@@ -78,7 +78,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                         "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
                 threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
                 threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
-                threadPoolExecutor.getTaskCount(), msg.getRequestId());
+                threadPoolExecutor.getTaskCount(), msg.requestId());
         if (channel instanceof NettyServer nettyServer) {
             nettyServer.getRejectCounter().incrementAndGet();
         }
@@ -86,7 +86,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     private void processMessage(ChannelHandlerContext ctx, NettyMessage msg) {
         try {
-            Object decoded = codec.decode(channel, msg.getData());
+            Object decoded = codec.decode(channel, msg.data());
             if (decoded instanceof Request request) {
                 processRequest(ctx, request);
             } else if (decoded instanceof Response response) {
@@ -94,8 +94,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             }
         } catch (Exception e) {
             log.error("decode failed! requestId: {}, size: {}, remote: {}",
-                    msg.getRequestId(), msg.getData().length, ctx.channel().remoteAddress(), e);
-            Response response = JawsFrameworkUtils.buildErrorResponse(msg.getRequestId(), e);
+                    msg.requestId(), msg.data().length, ctx.channel().remoteAddress(), e);
+            Response response = JawsFrameworkUtils.buildErrorResponse(msg.requestId(), e);
             if (msg.isRequest()) {
                 sendResponse(ctx, response);
             } else {

@@ -46,7 +46,6 @@ public class NettyDecoder extends ByteToMessageDecoder {
             throw new JawsFrameworkException("NettyDecoder transport header not support, type: " + type);
         }
 
-        long startTime = System.currentTimeMillis();
         in.resetReaderIndex();
         // skip magic num
         in.skipBytes(2);
@@ -80,6 +79,5 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
         NettyMessage message = new NettyMessage(isRequest, requestId, data);
         out.add(message);
-        message.setStartTime(startTime);
     }
 }

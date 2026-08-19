@@ -15,10 +15,6 @@ public class NettyEncoder extends MessageToByteEncoder<byte[]> {
 
     private final int maxContentLength;
 
-    public NettyEncoder() {
-        this(0);
-    }
-
     public NettyEncoder(int maxContentLength) {
         this.maxContentLength = maxContentLength;
     }
