@@ -24,7 +24,7 @@ public abstract class AbstractNode implements Node {
     @Override
     public synchronized void init() {
         if (init) {
-            log.warn(this.getClass().getSimpleName() + " node already init: " + desc());
+            log.warn("{} node already init: {}", this.getClass().getSimpleName(), desc());
             return;
         }
 

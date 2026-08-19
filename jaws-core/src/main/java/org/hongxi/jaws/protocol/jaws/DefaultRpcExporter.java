@@ -3,7 +3,6 @@ package org.hongxi.jaws.protocol.jaws;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
-import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.AbstractExporter;
 import org.hongxi.jaws.rpc.Exporter;
 import org.hongxi.jaws.rpc.Provider;
@@ -45,6 +44,11 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
     }
 
     @Override
+    protected boolean doInit() {
+        return server.open();
+    }
+
+    @Override
     public void unexport() {
         String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
         String ipPort = url.getServerPortStr();
@@ -61,21 +65,6 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
         }
 
         log.info("DefaultRpcExporter unexport Success: url={}", url);
-    }
-
-    @Override
-    protected boolean doInit() {
-        boolean result = server.open();
-        // use random port
-        if (result && getUrl().getPort() == 0) {
-            ProviderMessageRouter requestRouter = IP_PORT_TO_REQUEST_ROUTER.remove(getUrl().getServerPortStr());
-            if (requestRouter == null) {
-                throw new JawsFrameworkException("can not find message router. url:" + getUrl().getIdentity());
-            }
-            updateRealServerPort(server.getLocalAddress().getPort());
-            IP_PORT_TO_REQUEST_ROUTER.put(getUrl().getServerPortStr(), requestRouter);
-        }
-        return result;
     }
 
     @Override

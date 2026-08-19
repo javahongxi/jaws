@@ -115,7 +115,6 @@ public abstract class AbstractRegistry implements Registry {
         url.getParameters().remove(URLParamType.maxWorkerThreads.getName());
         url.getParameters().remove(URLParamType.workerQueueSize.getName());
         url.getParameters().remove(URLParamType.maxContentLength.getName());
-        url.getParameters().remove(URLParamType.shareChannel.getName());
         url.getParameters().remove(URLParamType.accessLog.getName());
 
         // Provider-local client connection settings

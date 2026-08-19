@@ -203,12 +203,6 @@ public class ServiceAnnotationPostProcessor
             builder.addPropertyValue("version", version);
         }
 
-        /* shareChannel */
-        String shareChannel = environment.getProperty("jaws.service.share-channel", "true");
-        if ("true".equalsIgnoreCase(shareChannel)) {
-            builder.addPropertyValue("shareChannel", true);
-        }
-
         /* token: annotation > global */
         String token = StringUtils.isNotBlank(jawsService.token())
                 ? jawsService.token() : environment.getProperty("jaws.service.token");

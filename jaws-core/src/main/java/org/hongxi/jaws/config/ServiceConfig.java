@@ -8,7 +8,6 @@ import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsErrorMsg;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.filter.ProtocolFilterWrapper;
 import org.hongxi.jaws.registry.Registry;
@@ -43,7 +42,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
     private static final ConcurrentHashSet<String> EXPORTED_SERVICES = new ConcurrentHashSet<>();
 
     /**
-     * Dynamic port counter for shareChannel mode with no explicit port configured
+     * Dynamic port counter for shared-channel mode with no explicit port configured
      */
     private static int dynamicPort = -1;
 
@@ -244,10 +243,6 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
             return 0;
         }
         if (port == null || port == -1) {
-            if (Boolean.FALSE.equals(shareChannel)) {
-                throw new JawsServiceException(
-                        "Dynamic port (-1) requires shareChannel=true, please set explicit port for shareChannel=false");
-            }
             return resolveDynamicPort();
         }
         return port;

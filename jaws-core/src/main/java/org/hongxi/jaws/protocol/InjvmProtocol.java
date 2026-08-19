@@ -9,11 +9,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * JVM 节点内部的调用
+ * Intra-JVM invocation within the same node.
  *
  * <pre>
- * 		1) provider 和 reference 相对应
- * 		2) provider 需要在被consumer refer 之前需要 export
+ *     1) Provider and reference correspond to each other
+ *     2) Provider must be exported before being referenced by consumer
  * </pre>
  * <p>
  * Created by shenhongxi on 2021/4/21.

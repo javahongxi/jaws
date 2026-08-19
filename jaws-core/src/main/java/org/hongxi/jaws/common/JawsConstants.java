@@ -21,10 +21,8 @@ public class JawsConstants {
     public static final String NODE_TYPE_REFERENCE = "reference";
 
     public static final short NETTY_MAGIC_TYPE = (short) 0xF1F1;
-    public static final int NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS = 40;
-    public static final int NETTY_SHARE_CHANNEL_MAX_WORKER_THREADS = 800;
-    public static final int NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS = 20;
-    public static final int NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS = 200;
+    public static final int NETTY_MIN_WORKER_THREADS = 40;
+    public static final int NETTY_MAX_WORKER_THREADS = 800;
     public static final int NETTY_TIMEOUT_TIMER_PERIOD = 100;
     public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
 

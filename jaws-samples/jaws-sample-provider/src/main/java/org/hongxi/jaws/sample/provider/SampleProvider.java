@@ -16,7 +16,7 @@ import org.hongxi.jaws.sample.provider.service.OrderServiceImpl;
  * 演示场景：
  * 1. jaws 协议 + ZooKeeper 注册中心
  * 2. 多服务发布 - DemoService + OrderService
- * 3. group/version/shareChannel 配置
+ * 3. group/version configuration
  * </pre>
  *
  * 启动前请确保 ZooKeeper 已在 127.0.0.1:2181 运行

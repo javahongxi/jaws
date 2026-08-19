@@ -73,8 +73,6 @@ public class NettyServer extends AbstractServer {
         }
 
         log.info("server channel start open, url={}", url);
-        boolean shareChannel = url.getParameter(
-                URLParamType.shareChannel.getName(), URLParamType.shareChannel.boolValue());
         int maxContentLength = url.getParameter(
                 URLParamType.maxContentLength.getName(), URLParamType.maxContentLength.intValue());
         int maxServerConnections = url.getParameter(
@@ -82,19 +80,10 @@ public class NettyServer extends AbstractServer {
         int maxQueueSize = url.getParameter(
                 URLParamType.workerQueueSize.getName(), URLParamType.workerQueueSize.intValue());
 
-        int minWorkerThreads;
-        int maxWorkerThreads;
-        if (shareChannel) {
-            minWorkerThreads = url.getParameter(URLParamType.minWorkerThreads.getName(),
-                    JawsConstants.NETTY_SHARE_CHANNEL_MIN_WORKER_THREADS);
-            maxWorkerThreads = url.getParameter(URLParamType.maxWorkerThreads.getName(),
-                    JawsConstants.NETTY_SHARE_CHANNEL_MAX_WORKER_THREADS);
-        } else {
-            minWorkerThreads = url.getParameter(URLParamType.minWorkerThreads.getName(),
-                    JawsConstants.NETTY_NOT_SHARE_CHANNEL_MIN_WORKER_THREADS);
-            maxWorkerThreads = url.getParameter(URLParamType.maxWorkerThreads.getName(),
-                    JawsConstants.NETTY_NOT_SHARE_CHANNEL_MAX_WORKER_THREADS);
-        }
+        int minWorkerThreads = url.getParameter(URLParamType.minWorkerThreads.getName(),
+                JawsConstants.NETTY_MIN_WORKER_THREADS);
+        int maxWorkerThreads = url.getParameter(URLParamType.maxWorkerThreads.getName(),
+                JawsConstants.NETTY_MAX_WORKER_THREADS);
 
         if (threadPoolExecutor == null || threadPoolExecutor.isShutdown()) {
             threadPoolExecutor = new StandardThreadPoolExecutor(minWorkerThreads, maxWorkerThreads,

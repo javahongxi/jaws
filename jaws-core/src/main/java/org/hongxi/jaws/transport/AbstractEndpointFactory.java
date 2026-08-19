@@ -1,6 +1,5 @@
 package org.hongxi.jaws.transport;
 
-import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -16,28 +15,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * abstract endpoint factory
- *
- * <pre>
- * 		一些约定：
- *
- * 		1） service :
- * 			1.1） not share channel :  某个service暴露服务的时候，不期望和别的service共享服务，明哲自保，比如你说：我很重要，我很重要。
- *
- * 			1.2） share channel ： 某个service 暴露服务的时候，如果有某个模块，但是拆成10个接口，可以使用这种方式，不过有一些约束条件：接口的几个serviceConfig配置需要保持一致。
- *
- * 				不允许差异化的配置如下：
- * 					protocol, codec , serialization, maxContentLength , maxServerConnections , maxWorkerThreads, workerQueueSize, heartbeatFactory
- *
- * 		2）心跳机制：
- *
- * 			不同的protocol的心跳包格式可能不一样，无法进行强制，那么通过可扩展的方式，依赖heartbeatFactory进行heartbeat包的创建，
- * 			同时对于service的messageHandler进行wrap heartbeat包的处理。
- *
- * 			对于service来说，把心跳包当成普通的request处理，因为这种heartbeat才能够探测到整个service处理的关键路径的可用状况
- *
- * </pre>
+ * Base implementation of {@link EndpointFactory} that manages shared server lifecycle.
  * <p>
+ * All services on the same ip:port share a single server (channel),
+ * similar to Dubbo's design. Compatibility of transport-level parameters is
+ * validated by {@link JawsFrameworkUtils#checkIfCanShareServiceChannel(URL, URL)}.
  * <p>
  * Created by shenhongxi on 2020/7/31.
  */
@@ -45,34 +27,20 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
     private static final Logger log = LoggerFactory.getLogger(AbstractEndpointFactory.class);
 
     /**
-     * 维持share channel 的service列表
+     * Maintains the service list for shared channels.
      **/
-    protected Map<String, Server> ipPort2ServerShareChannel = new HashMap<>();
-    protected ConcurrentMap<Server, Set<String>> server2UrlsShareChannel = new ConcurrentHashMap<>();
+    protected Map<String, Server> ipPort2Server = new HashMap<>();
+    protected ConcurrentMap<Server, Set<String>> server2Urls = new ConcurrentHashMap<>();
 
     @Override
     public Server createServer(URL url, MessageHandler messageHandler) {
-        synchronized (ipPort2ServerShareChannel) {
+        synchronized (ipPort2Server) {
             String ipPort = url.getServerPortStr();
             String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
 
-            boolean shareChannel = url.getParameter(URLParamType.shareChannel.getName(),
-                    URLParamType.shareChannel.boolValue());
-
-            // 独享一个端口
-            if (!shareChannel) {
-                log.info(this.getClass().getSimpleName() + " create no_share_channel server: url={}", url);
-
-                // 如果端口已经被使用了，使用该server bind 会有异常
-                return innerCreateServer(url, messageHandler);
-            }
-
-            log.info(this.getClass().getSimpleName() + " create share_channel server: url={}", url);
-
-            Server server = ipPort2ServerShareChannel.get(ipPort);
+            Server server = ipPort2Server.get(ipPort);
 
             if (server != null) {
-                // can't share service channel
                 if (!JawsFrameworkUtils.checkIfCanShareServiceChannel(server.getUrl(), url)) {
                     throw new JawsFrameworkException(
                             "Service export Error: share channel but some config param is different, " +
@@ -81,19 +49,21 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
                                     + server.getUrl() + " target=" + url, JawsErrorMsgConstants.FRAMEWORK_EXPORT_ERROR);
                 }
 
-                saveEndpoint2Urls(server2UrlsShareChannel, server, protocolKey);
+                saveEndpoint2Urls(server2Urls, server, protocolKey);
 
                 return server;
             }
 
+            log.info("{} create shared server: url={}", this.getClass().getSimpleName(), url);
+
             url = url.createCopy();
-            // 共享server端口，由于有多个interfaces存在，所以把path设置为空
+            // Shared server port: clear path since multiple interfaces exist
             url.setPath("");
 
             server = innerCreateServer(url, messageHandler);
 
-            ipPort2ServerShareChannel.put(ipPort, server);
-            saveEndpoint2Urls(server2UrlsShareChannel, server, protocolKey);
+            ipPort2Server.put(ipPort, server);
+            saveEndpoint2Urls(server2Urls, server, protocolKey);
 
             return server;
         }
@@ -107,30 +77,22 @@ public abstract class AbstractEndpointFactory implements EndpointFactory {
 
     @Override
     public void safeReleaseResource(Server server, URL url) {
-        boolean shareChannel = url.getParameter(URLParamType.shareChannel.getName(),
-                URLParamType.shareChannel.boolValue());
-
-        if (!shareChannel) {
-            destroy(server);
-            return;
-        }
-
-        synchronized (ipPort2ServerShareChannel) {
+        synchronized (ipPort2Server) {
             String ipPort = url.getServerPortStr();
             String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
 
-            if (server != ipPort2ServerShareChannel.get(ipPort)) {
+            if (server != ipPort2Server.get(ipPort)) {
                 destroy(server);
                 return;
             }
 
-            Set<String> urls = server2UrlsShareChannel.get(server);
+            Set<String> urls = server2Urls.get(server);
             urls.remove(protocolKey);
 
             if (urls.isEmpty()) {
                 destroy(server);
-                ipPort2ServerShareChannel.remove(ipPort);
-                server2UrlsShareChannel.remove(server);
+                ipPort2Server.remove(ipPort);
+                server2Urls.remove(server);
             }
         }
     }

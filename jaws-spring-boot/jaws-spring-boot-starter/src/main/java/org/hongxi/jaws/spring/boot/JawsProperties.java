@@ -22,7 +22,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     username: nacos
  *     password: nacos
  *   service:
- *     share-channel: true
+ *     token: ""
  *   reference:
  *     request-timeout: 2000
  *     check: false
@@ -320,16 +320,16 @@ public class JawsProperties {
     public static class Service {
 
         /**
-         * Whether to share a single channel for all services on the same port.
+         * Service auth token, empty means no auth.
          */
-        private Boolean shareChannel = true;
+        private String token;
 
-        public Boolean getShareChannel() {
-            return shareChannel;
+        public String getToken() {
+            return token;
         }
 
-        public void setShareChannel(Boolean shareChannel) {
-            this.shareChannel = shareChannel;
+        public void setToken(String token) {
+            this.token = token;
         }
     }
 

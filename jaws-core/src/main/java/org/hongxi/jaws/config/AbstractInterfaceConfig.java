@@ -86,11 +86,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     // ========== Server-only configuration ==========
 
     /**
-     * Whether to share the channel.
-     */
-    protected Boolean shareChannel;
-
-    /**
      * Whether to log access records; true = log, false = do not log.
      */
     protected String accessLog;
@@ -315,14 +310,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     }
 
     // ========== Server-only configuration getter/setter ==========
-
-    public Boolean getShareChannel() {
-        return shareChannel;
-    }
-
-    public void setShareChannel(Boolean shareChannel) {
-        this.shareChannel = shareChannel;
-    }
 
     public String getAccessLog() {
         return accessLog;

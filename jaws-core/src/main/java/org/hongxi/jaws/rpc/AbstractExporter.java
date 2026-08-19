@@ -19,13 +19,4 @@ public abstract class AbstractExporter<T> extends AbstractNode implements Export
     public String desc() {
         return "[" + this.getClass().getSimpleName() + "] url=" + url;
     }
-
-    /**
-     * update real listened port
-     *
-     * @param port
-     */
-    protected void updateRealServerPort(int port) {
-        getUrl().setPort(port);
-    }
 }

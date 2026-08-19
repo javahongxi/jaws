@@ -47,7 +47,6 @@ public abstract class AbstractProtocol implements Protocol {
             exporter = createExporter(provider);
             exporter.init();
 
-            // rebuild protocolKey, maybe port change when using random port
             protocolKey = JawsFrameworkUtils.getProtocolKey(url);
             exporterMap.put(protocolKey, exporter);
 

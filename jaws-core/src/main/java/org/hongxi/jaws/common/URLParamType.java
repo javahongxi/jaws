@@ -68,9 +68,6 @@ public enum URLParamType {
 
     workerQueueSize("workerQueueSize", 0),
 
-    /** multi services share the same channel (port) */
-    shareChannel("shareChannel", true),
-
     accessLog("accessLog", false),
 
     /** Graceful shutdown timeout in milliseconds. During this period, the server stops accepting
