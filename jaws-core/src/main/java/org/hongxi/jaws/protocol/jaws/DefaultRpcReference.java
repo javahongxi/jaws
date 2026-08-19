@@ -19,7 +19,6 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
 
     public DefaultRpcReference(Class<T> interfaceClass, URL url) {
         super(interfaceClass, url);
-
         client = ExtensionLoader.getExtensionLoader(TransportFactory.class)
                 .getExtension(url.getParameter(URLParamType.transportFactory))
                 .createClient(url);
@@ -27,33 +26,23 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
 
     @Override
     protected Response doCall(Request request) {
-        // Use server-side group to support cross-group invocation
         request.setAttachment(URLParamType.group.getName(), url.getGroup());
         return client.request(request);
     }
 
     @Override
     protected void decrActiveCount(Request request, Response response) {
-        if (!(response instanceof Future)) {
+        if (!(response instanceof Future future)) {
             activeReferenceCount.decrementAndGet();
             return;
         }
 
-        Future future = (Future) response;
-
-        future.addListener(new FutureListener() {
-            @Override
-            public void operationComplete(Future future) throws Exception {
-                activeReferenceCount.decrementAndGet();
-            }
-        });
+        future.addListener(future1 -> activeReferenceCount.decrementAndGet());
     }
 
     @Override
     protected boolean doInit() {
-        boolean result = client.open();
-
-        return result;
+        return client.open();
     }
 
     @Override
@@ -64,6 +53,6 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
     @Override
     public void destroy() {
         client.close();
-        log.info("DefaultRpcReference destroy client: url={}", url);
+        log.info("DefaultRpcReference destroy: url={}", url);
     }
 }
