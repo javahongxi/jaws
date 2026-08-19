@@ -28,24 +28,24 @@ import java.util.concurrent.TimeUnit;
 public class NettyChannel implements Channel {
     private static final Logger log = LoggerFactory.getLogger(NettyChannel.class);
 
-    private volatile ChannelState state = ChannelState.UNINIT;
     private final NettyClient nettyClient;
-    private io.netty.channel.Channel channel = null;
     private final InetSocketAddress remoteAddress;
-    private InetSocketAddress localAddress;
     private final Codec codec;
+
+    private io.netty.channel.Channel channel;
+    private InetSocketAddress localAddress;
+
+    private volatile ChannelState state = ChannelState.UNINIT;
 
     public NettyChannel(NettyClient nettyClient) {
         this.nettyClient = nettyClient;
-        this.remoteAddress = new InetSocketAddress(nettyClient.getUrl().getHost(), nettyClient.getUrl().getPort());
-        codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                nettyClient.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
+        this.remoteAddress = new InetSocketAddress(getUrl().getHost(), getUrl().getPort());
+        this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
+                getUrl().getParameter(URLParamType.codec));
     }
 
     @Override
     public Response request(Request request) {
-        // Resolve timeout with dynamic configuration priority:
-        // method-level dynamic > service-level dynamic > global dynamic > URL config
         int urlTimeout = nettyClient.getUrl().getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),
                 URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
@@ -55,23 +55,21 @@ public class NettyChannel implements Channel {
                     "NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
-        ResponseFuture response = new DefaultResponseFuture(request, timeout, this.nettyClient.getUrl());
+
+        ResponseFuture response = new DefaultResponseFuture(request, timeout, getUrl());
         this.nettyClient.registerCallback(request.getRequestId(), response);
         byte[] msg = CodecUtils.encodeObjectToBytes(this, codec, request);
         ChannelFuture writeFuture = this.channel.writeAndFlush(msg);
-        boolean result = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
+        boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
 
-        if (result && writeFuture.isSuccess()) {
-            response.addListener(new FutureListener() {
-                @Override
-                public void operationComplete(Future future) throws Exception {
-                    if (future.isSuccess() || (future.isDone() && ExceptionUtils.isBizException(future.getException()))) {
-                        // Successful invocation
-                        nettyClient.resetErrorCount();
-                    } else {
-                        // Failed invocation
-                        nettyClient.incrErrorCount();
-                    }
+        if (completed && writeFuture.isSuccess()) {
+            response.addListener(future -> {
+                if (future.isSuccess() || (future.isDone() && ExceptionUtils.isBizException(future.getException()))) {
+                    // Successful invocation
+                    nettyClient.resetErrorCount();
+                } else {
+                    // Failed invocation
+                    nettyClient.incrErrorCount();
                 }
             });
             return response;
@@ -87,11 +85,11 @@ public class NettyChannel implements Channel {
 
         if (writeFuture.cause() != null) {
             throw new JawsServiceException("NettyChannel send request to server Error: url="
-                    + nettyClient.getUrl().getUri() + " local=" + localAddress + " "
+                    + getUrl().getUri() + " local=" + localAddress + " "
                     + JawsFrameworkUtils.toString(request), writeFuture.cause());
         } else {
             throw new JawsServiceException("NettyChannel send request to server Timeout: url="
-                    + nettyClient.getUrl().getUri() + " local=" + localAddress + " "
+                    + getUrl().getUri() + " local=" + localAddress + " "
                     + JawsFrameworkUtils.toString(request));
         }
     }
@@ -106,7 +104,7 @@ public class NettyChannel implements Channel {
 
         int timeout = nettyClient.getUrl().getIntParameter(URLParamType.connectTimeout);
         if (timeout <= 0) {
-            throw new JawsFrameworkException("NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
+            throw new JawsFrameworkException("NettyChannel init Error: timeout(" + timeout + ") <= 0 is forbid.",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
 
@@ -153,7 +151,7 @@ public class NettyChannel implements Channel {
                 channelFuture.channel().close();
             }
             throw new JawsServiceException("NettyChannel failed to connect to server, url: " +
-                    nettyClient.getUrl().getUri(), e);
+                    getUrl().getUri(), e);
         } finally {
             if (!state.isAliveState()) {
                 nettyClient.incrErrorCount();
@@ -175,14 +173,18 @@ public class NettyChannel implements Channel {
                 channel.close();
             }
         } catch (Exception e) {
-            log.error("channel close Error: {} local={}",
-                    nettyClient.getUrl().getUri(), localAddress, e);
+            log.error("channel close Error: {} local={}", getUrl().getUri(), localAddress, e);
         }
     }
 
     @Override
     public boolean isAvailable() {
         return state.isAliveState() && channel != null && channel.isActive();
+    }
+
+    @Override
+    public URL getUrl() {
+        return nettyClient.getUrl();
     }
 
     /**
@@ -195,11 +197,6 @@ public class NettyChannel implements Channel {
         } catch (Exception e) {
             log.error("reconnect error: url={}", getUrl(), e);
         }
-    }
-
-    @Override
-    public URL getUrl() {
-        return nettyClient.getUrl();
     }
 
     /**

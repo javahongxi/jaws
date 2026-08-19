@@ -7,6 +7,8 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
@@ -20,7 +22,6 @@ import org.hongxi.jaws.transport.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -31,32 +32,34 @@ public class NettyClient extends AbstractClient {
     private static final Logger log = LoggerFactory.getLogger(NettyClient.class);
 
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
-    /**
-     * Recycle expired tasks.
-     */
-    private static final ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
-    /**
-     * Async requests need to register a callback future.
-     * Removal triggers: 1) response received from server  2) timeout monitor cancels it.
-     */
-    protected ConcurrentMap<Long, ResponseFuture> callbackMap = new ConcurrentHashMap<>();
-    private final ScheduledFuture<?> timeMonitorFuture;
+
     private Bootstrap bootstrap;
+    private NettyChannel channel;
+
     private final int fusingThreshold;
     /**
-     * Consecutive error count.
+     * consecutive error count
      */
     private final AtomicLong errorCount = new AtomicLong(0);
-    private NettyChannel channel;
+
+    /**
+     * Per-request timeout scheduler using HashedWheelTimer.
+     * Each callback registers a one-shot timeout task at registration time.
+     */
+    private static final HashedWheelTimer timeoutTimer = new HashedWheelTimer(
+            new io.netty.util.concurrent.DefaultThreadFactory("jaws-client-timeout", true),
+            30, TimeUnit.MILLISECONDS);
+
+    /**
+     * Async requests need to register a callback future.
+     * Removal triggers: 1) response received from server  2) timeout task cancels it.
+     */
+    protected ConcurrentMap<Long, ResponseFuture> callbackMap = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, Timeout> timeoutMap = new ConcurrentHashMap<>();
 
     public NettyClient(URL url) {
         super(url);
-        fusingThreshold = url.getParameter(URLParamType.fusingThreshold.getName(),
-                URLParamType.fusingThreshold.intValue());
-        timeMonitorFuture = scheduledExecutor.scheduleWithFixedDelay(
-                new TimeoutMonitor("timeout_monitor_" + url.getHost() + "_" + url.getPort()),
-                JawsConstants.NETTY_TIMEOUT_TIMER_PERIOD, JawsConstants.NETTY_TIMEOUT_TIMER_PERIOD,
-                TimeUnit.MILLISECONDS);
+        fusingThreshold = url.getIntParameter(URLParamType.fusingThreshold);
     }
 
     public Bootstrap getBootstrap() {
@@ -69,15 +72,13 @@ public class NettyClient extends AbstractClient {
             throw new JawsServiceException("NettyChannel is unavailable: url="
                     + url.getUri() + JawsFrameworkUtils.toString(request));
         }
-        boolean isAsync = false;
-        Object async = RpcContext.getContext().getAttribute(JawsConstants.ASYNC_FLAG);
-        if (async instanceof Boolean b) {
-            isAsync = b;
-        }
-        return request(request, isAsync);
-    }
 
-    private Response request(Request request, boolean async) {
+        boolean async = false;
+        Object asyncFlag = RpcContext.getContext().getAttribute(JawsConstants.ASYNC_FLAG);
+        if (asyncFlag instanceof Boolean b) {
+            async = b;
+        }
+
         Response response;
         try {
             if (!channel.isAvailable()) {
@@ -87,7 +88,6 @@ public class NettyClient extends AbstractClient {
                 throw new JawsServiceException("NettyChannel is not available: url="
                         + url.getUri() + JawsFrameworkUtils.toString(request));
             }
-            // async request
             response = channel.request(request);
         } catch (Exception e) {
             log.error("request Error: url={} {}, {}", url.getUri(),
@@ -101,24 +101,7 @@ public class NettyClient extends AbstractClient {
             }
         }
 
-        // async or sync result
-        response = asyncResponse(response, async);
-
-        return response;
-    }
-
-    /**
-     * If async is false, block and wait for the response data.
-     *
-     * @param response the response future
-     * @param async    whether the call is asynchronous
-     * @return the resolved response
-     */
-    private Response asyncResponse(Response response, boolean async) {
-        if (async || !(response instanceof ResponseFuture)) {
-            return response;
-        }
-        return new DefaultResponse(response);
+        return async ? response : new DefaultResponse(response);
     }
 
     @Override
@@ -127,8 +110,7 @@ public class NettyClient extends AbstractClient {
             return true;
         }
 
-        int timeout = getUrl().getParameter(URLParamType.connectTimeout.getName(),
-                URLParamType.connectTimeout.intValue());
+        int timeout = getUrl().getIntParameter(URLParamType.connectTimeout);
         if (timeout <= 0) {
             throw new JawsFrameworkException("NettyClient init Error: timeout(" +
                     timeout + ") <= 0 is forbid.",
@@ -205,9 +187,10 @@ public class NettyClient extends AbstractClient {
         }
     }
 
-    public void cleanup() {
-        // Cancel the timeout monitor
-        timeMonitorFuture.cancel(true);
+    private void cleanup() {
+        // Cancel all pending timeout tasks
+        timeoutMap.values().forEach(Timeout::cancel);
+        timeoutMap.clear();
         // Clear callbacks
         callbackMap.clear();
         // Close the channel
@@ -226,22 +209,15 @@ public class NettyClient extends AbstractClient {
         return url;
     }
 
-    public ResponseFuture removeCallback(long requestId) {
-        return callbackMap.remove(requestId);
-    }
-
     /**
      * Increment the consecutive error count.
      * If the count reaches the fusing threshold, mark this client as unavailable.
      */
     void incrErrorCount() {
         long count = errorCount.incrementAndGet();
-
-        // If the node is available and consecutive failures exceed the fusing threshold, mark it as unavailable.
         if (count >= fusingThreshold && state.isAliveState()) {
             synchronized (this) {
                 count = errorCount.longValue();
-
                 if (count >= fusingThreshold && state.isAliveState()) {
                     log.error("NettyClient unavailable Error: url={} {}",
                             url.getIdentity(), url.getHostPort());
@@ -266,11 +242,8 @@ public class NettyClient extends AbstractClient {
                 return;
             }
 
-            // If the node is unalive, attempt to recover; ignore if close or uninit.
             if (state.isUnAliveState()) {
                 long count = errorCount.longValue();
-
-                // Double-check after concurrent errorCount update
                 if (count < fusingThreshold) {
                     state = ChannelState.ALIVE;
                     log.info("NettyClient recover available: url={} {}",
@@ -281,7 +254,7 @@ public class NettyClient extends AbstractClient {
     }
 
     /**
-     * Register a callback for an async request.
+     * Register a callback for an async request and schedule a per-request timeout.
      * Rejects the request if the concurrent count exceeds the limit to prevent OOM.
      *
      * @param requestId      the request ID
@@ -295,35 +268,31 @@ public class NettyClient extends AbstractClient {
         }
 
         this.callbackMap.put(requestId, responseFuture);
+
+        // Schedule a one-shot timeout task for this request
+        int timeout = responseFuture.getTimeout();
+        if (timeout > 0) {
+            Timeout timerTimeout = timeoutTimer.newTimeout(t -> {
+                ResponseFuture future = callbackMap.remove(requestId);
+                if (future != null) {
+                    timeoutMap.remove(requestId);
+                    try {
+                        future.cancel();
+                    } catch (Exception e) {
+                        log.error("timeout cancel error: uri={} requestId={}", url.getUri(), requestId, e);
+                    }
+                }
+            }, timeout, TimeUnit.MILLISECONDS);
+            timeoutMap.put(requestId, timerTimeout);
+        }
     }
 
-    /**
-     * Cancel timed-out tasks.
-     */
-    class TimeoutMonitor implements Runnable {
-        private String name;
-
-        public TimeoutMonitor(String name) {
-            this.name = name;
+    public ResponseFuture removeCallback(long requestId) {
+        // Cancel the timeout task if still pending
+        Timeout timeout = timeoutMap.remove(requestId);
+        if (timeout != null) {
+            timeout.cancel();
         }
-
-        @Override
-        public void run() {
-            long currentTime = System.currentTimeMillis();
-            for (Map.Entry<Long, ResponseFuture> entry : callbackMap.entrySet()) {
-                try {
-                    ResponseFuture future = entry.getValue();
-
-                    if (future.getCreateTime() + future.getTimeout() < currentTime) {
-                        // timeout: remove from callback list, and then cancel
-                        removeCallback(entry.getKey());
-                        future.cancel();
-                    }
-                } catch (Exception e) {
-                    log.error("{} clear timeout future Error: uri={} requestId={}",
-                            name, url.getUri(), entry.getKey(), e);
-                }
-            }
-        }
+        return callbackMap.remove(requestId);
     }
 }

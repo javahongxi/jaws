@@ -21,7 +21,6 @@ public class JawsConstants {
     public static final String NODE_TYPE_REFERENCE = "reference";
 
     public static final short NETTY_MAGIC_TYPE = (short) 0xF1F1;
-    public static final int NETTY_TIMEOUT_TIMER_PERIOD = 100;
     public static final int NETTY_CLIENT_MAX_REQUEST = 20000;
 
     // RpcContext attribute key for async call flag.
