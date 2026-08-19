@@ -63,13 +63,6 @@ public class ProtocolConfig extends AbstractConfig {
      */
     protected Integer workerQueueSize;
 
-    // client side
-
-    /**
-     * The minimum number of client connections.
-     */
-    protected Integer minClientConnections;
-
     // server & client side
 
     /**
@@ -160,16 +153,6 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setWorkerQueueSize(Integer workerQueueSize) {
         this.workerQueueSize = workerQueueSize;
-    }
-
-    // --- client-only getter/setter ---
-
-    public Integer getMinClientConnections() {
-        return minClientConnections;
-    }
-
-    public void setMinClientConnections(Integer minClientConnections) {
-        this.minClientConnections = minClientConnections;
     }
 
     // --- server & client shared getter/setter ---

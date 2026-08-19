@@ -20,9 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Created by shenhongxi on 2020/7/30.
@@ -36,7 +34,6 @@ public class NettyChannel implements Channel {
     private final InetSocketAddress remoteAddress;
     private InetSocketAddress localAddress;
     private final Codec codec;
-    private final ReentrantLock lock = new ReentrantLock();
 
     public NettyChannel(NettyClient nettyClient) {
         this.nettyClient = nettyClient;
@@ -69,10 +66,10 @@ public class NettyChannel implements Channel {
                 @Override
                 public void operationComplete(Future future) throws Exception {
                     if (future.isSuccess() || (future.isDone() && ExceptionUtils.isBizException(future.getException()))) {
-                        // 成功的调用
+                        // Successful invocation
                         nettyClient.resetErrorCount();
                     } else {
-                        // 失败的调用
+                        // Failed invocation
                         nettyClient.incrErrorCount();
                     }
                 }
@@ -85,7 +82,7 @@ public class NettyChannel implements Channel {
         if (response != null) {
             response.cancel();
         }
-        // 失败的调用
+        // Failed invocation
         nettyClient.incrErrorCount();
 
         if (writeFuture.cause() != null) {
@@ -107,21 +104,20 @@ public class NettyChannel implements Channel {
             return true;
         }
 
+        int timeout = nettyClient.getUrl().getIntParameter(URLParamType.connectTimeout);
+        if (timeout <= 0) {
+            throw new JawsFrameworkException("NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
+                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+        }
+
         ChannelFuture channelFuture = null;
         try {
             long start = System.currentTimeMillis();
             channelFuture = nettyClient.getBootstrap().connect(remoteAddress);
-            int timeout = nettyClient.getUrl().getParameter(
-                    URLParamType.connectTimeout.getName(), URLParamType.connectTimeout.intValue());
-            if (timeout <= 0) {
-                throw new JawsFrameworkException("NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
-                        JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
-            }
-            // 不去依赖于connectTimeout
-            boolean result = channelFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
+            boolean completed = channelFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
             boolean success = channelFuture.isSuccess();
 
-            if (result && success) {
+            if (completed && success) {
                 channel = channelFuture.channel();
                 if (channel.localAddress() instanceof InetSocketAddress inetAddr) {
                     localAddress = inetAddr;
@@ -129,24 +125,24 @@ public class NettyChannel implements Channel {
                 state = ChannelState.ALIVE;
                 return true;
             }
+
             boolean connected = false;
             if (channelFuture.channel() != null) {
                 connected = channelFuture.channel().isActive();
             }
 
+            channelFuture.cancel(true);
             if (channelFuture.cause() != null) {
-                channelFuture.cancel(true);
                 throw new JawsServiceException(
                         "NettyChannel failed to connect to server, url: " +
-                                nettyClient.getUrl().getUri() + ", result: " + result +
+                                nettyClient.getUrl().getUri() + ", completed: " + completed +
                                 ", success: " + success +
                                 ", connected: " + connected, channelFuture.cause());
             } else {
-                channelFuture.cancel(true);
-                throw new JawsServiceException("NettyChannel connect to server timeout url: " +
+                throw new JawsServiceException("NettyChannel connect to server timeout, url: " +
                         nettyClient.getUrl().getUri() +
                         ", cost: " + (System.currentTimeMillis() - start) +
-                        ", result: " + result +
+                        ", completed: " + completed +
                         ", success: " + success +
                         ", connected: " + connected);
             }
@@ -189,55 +185,21 @@ public class NettyChannel implements Channel {
         return state.isAliveState() && channel != null && channel.isActive();
     }
 
-    public void reconnect() {
-        state = ChannelState.INIT;
-    }
-
-    public boolean isReconnect() {
-        return state.isInitState();
+    /**
+     * Reconnect this channel by closing and re-opening the underlying connection.
+     */
+    public synchronized void reconnect() {
+        try {
+            close();
+            open();
+        } catch (Exception e) {
+            log.error("reconnect error: url={}", getUrl(), e);
+        }
     }
 
     @Override
     public URL getUrl() {
         return nettyClient.getUrl();
-    }
-
-    /**
-     * Attempt to reconnect this channel.
-     * Uses an internal lock to ensure only one reconnect runs at a time.
-     *
-     * @param async    if true, the actual close+open runs on the given executor
-     * @param executor the executor for async reconnect
-     * @return true if a reconnect was initiated, false if the lock was busy or reconnect not needed
-     */
-    public boolean reconnect(boolean async, ExecutorService executor) {
-        if (!lock.tryLock()) {
-            return false;
-        }
-        try {
-            if (!isAvailable() && !isReconnect()) {
-                reconnect();
-                if (async) {
-                    executor.submit(() -> {
-                        lock.lock();
-                        try {
-                            close();
-                            open();
-                        } finally {
-                            lock.unlock();
-                        }
-                    });
-                } else {
-                    close();
-                    open();
-                }
-            }
-        } catch (Exception e) {
-            log.error("reconnect error: url={}", getUrl(), e);
-        } finally {
-            lock.unlock();
-        }
-        return true;
     }
 
     /**

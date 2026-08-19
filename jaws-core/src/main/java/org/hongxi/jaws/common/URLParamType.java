@@ -75,8 +75,6 @@ public enum URLParamType {
 
     connectTimeout("connectTimeout", 1000),
 
-    minClientConnections("minClientConnections", 2),
-
     registryRetryPeriod("registryRetryPeriod", 30 * 1000L),
 
     registrySessionTimeout("registrySessionTimeout", 60 * 1000),

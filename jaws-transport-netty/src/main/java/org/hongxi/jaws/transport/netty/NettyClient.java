@@ -27,26 +27,27 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Created by shenhongxi on 2020/7/28.
  */
-public class NettyClient extends AbstractSharedPoolClient {
+public class NettyClient extends AbstractClient {
     private static final Logger log = LoggerFactory.getLogger(NettyClient.class);
 
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
     /**
-     * 回收过期任务
+     * Recycle expired tasks.
      */
     private static final ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
     /**
-     * 异步的request，需要注册callback future
-     * 触发remove的操作有： 1) service的返回结果处理。 2) timeout thread cancel
+     * Async requests need to register a callback future.
+     * Removal triggers: 1) response received from server  2) timeout monitor cancels it.
      */
     protected ConcurrentMap<Long, ResponseFuture> callbackMap = new ConcurrentHashMap<>();
     private final ScheduledFuture<?> timeMonitorFuture;
     private Bootstrap bootstrap;
     private final int fusingThreshold;
     /**
-     * 连续失败次数
+     * Consecutive error count.
      */
     private final AtomicLong errorCount = new AtomicLong(0);
+    private NettyChannel channel;
 
     public NettyClient(URL url) {
         super(url);
@@ -60,11 +61,6 @@ public class NettyClient extends AbstractSharedPoolClient {
 
     public Bootstrap getBootstrap() {
         return bootstrap;
-    }
-
-    @Override
-    protected SharedObjectFactory<Channel> createChannelFactory() {
-        return new NettyChannelFactory(this);
     }
 
     @Override
@@ -82,18 +78,15 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     private Response request(Request request, boolean async) {
-        Channel channel;
         Response response;
         try {
-            // return channel or throw exception(timeout or connection_fail)
-            channel = getChannel();
-
-            if (channel == null) {
-                log.error("borrowObject null: url={} {}", url.getUri(),
-                        JawsFrameworkUtils.toString(request));
-                return null;
+            if (!channel.isAvailable()) {
+                channel.reconnect();
             }
-
+            if (!channel.isAvailable()) {
+                throw new JawsServiceException("NettyChannel is not available: url="
+                        + url.getUri() + JawsFrameworkUtils.toString(request));
+            }
             // async request
             response = channel.request(request);
         } catch (Exception e) {
@@ -108,18 +101,18 @@ public class NettyClient extends AbstractSharedPoolClient {
             }
         }
 
-        // aysnc or sync result
+        // async or sync result
         response = asyncResponse(response, async);
 
         return response;
     }
 
     /**
-     * 如果async是false，那么同步获取response的数据
+     * If async is false, block and wait for the response data.
      *
-     * @param response
-     * @param async
-     * @return
+     * @param response the response future
+     * @param async    whether the call is asynchronous
+     * @return the resolved response
      */
     private Response asyncResponse(Response response, boolean async) {
         if (async || !(response instanceof ResponseFuture)) {
@@ -175,12 +168,13 @@ public class NettyClient extends AbstractSharedPoolClient {
                     }
                 });
 
-        // 初始化连接池
-        initPool();
+        // Create single connection
+        channel = new NettyChannel(this);
+        channel.open();
 
         log.info("NettyClient finished open: url={}", url);
 
-        // 设置可用状态
+        // Set available state
         state = ChannelState.ALIVE;
         return true;
     }
@@ -203,7 +197,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                 return;
             }
 
-            // 设置close状态
+            // Set close state
             state = ChannelState.CLOSE;
             log.info("NettyClient close Success: url={}", url.getUri());
         } catch (Exception e) {
@@ -212,12 +206,14 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     public void cleanup() {
-        // 取消定期的回收任务
+        // Cancel the timeout monitor
         timeMonitorFuture.cancel(true);
-        // 清空callback
+        // Clear callbacks
         callbackMap.clear();
-        // 关闭client持有的channel
-        closeAllChannels();
+        // Close the channel
+        if (channel != null) {
+            channel.close();
+        }
     }
 
     @Override
@@ -235,16 +231,13 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     /**
-     * 增加调用失败的次数：
-     * <p>
-     * <pre>
-     * 	 	如果连续失败的次数 >= maxClientConnection, 那么把client设置成不可用状态
-     * </pre>
+     * Increment the consecutive error count.
+     * If the count reaches the fusing threshold, mark this client as unavailable.
      */
     void incrErrorCount() {
         long count = errorCount.incrementAndGet();
 
-        // 如果节点是可用状态，同时当前连续失败的次数超过熔断阈值，那么把该节点标示为不可用
+        // If the node is available and consecutive failures exceed the fusing threshold, mark it as unavailable.
         if (count >= fusingThreshold && state.isAliveState()) {
             synchronized (this) {
                 count = errorCount.longValue();
@@ -259,10 +252,7 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     /**
-     * 重置调用失败的计数 ：
-     * <pre>
-     * 把节点设置成可用
-     * </pre>
+     * Reset the consecutive error count and recover to available state if applicable.
      */
     void resetErrorCount() {
         errorCount.set(0);
@@ -276,11 +266,11 @@ public class NettyClient extends AbstractSharedPoolClient {
                 return;
             }
 
-            // 如果节点是unalive才进行设置，而如果是 close 或者 uninit，那么直接忽略
+            // If the node is unalive, attempt to recover; ignore if close or uninit.
             if (state.isUnAliveState()) {
                 long count = errorCount.longValue();
 
-                // 过程中有其他并发更新errorCount的，因此这里需要进行一次判断
+                // Double-check after concurrent errorCount update
                 if (count < fusingThreshold) {
                     state = ChannelState.ALIVE;
                     log.info("NettyClient recover available: url={} {}",
@@ -291,14 +281,11 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     /**
-     * 注册回调的resposne
-     * <pre>
-     * 进行最大的请求并发数的控制，如果超过NETTY_CLIENT_MAX_REQUEST的话，那么throw reject exception
-     * </pre>
+     * Register a callback for an async request.
+     * Rejects the request if the concurrent count exceeds the limit to prevent OOM.
      *
-     * @param requestId
-     * @param responseFuture
-     * @throws JawsServiceException
+     * @param requestId      the request ID
+     * @param responseFuture the future to complete when the response arrives
      */
     public void registerCallback(long requestId, ResponseFuture responseFuture) {
         if (this.callbackMap.size() >= JawsConstants.NETTY_CLIENT_MAX_REQUEST) {
@@ -311,7 +298,7 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     /**
-     * 回收超时任务
+     * Cancel timed-out tasks.
      */
     class TimeoutMonitor implements Runnable {
         private String name;
