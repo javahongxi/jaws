@@ -26,7 +26,6 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
     private static final ConcurrentMap<String, ProviderMessageRouter> IP_PORT_TO_REQUEST_ROUTER = new ConcurrentHashMap<>();
 
     protected final ConcurrentMap<String, Exporter<?>> exporterMap;
-    protected EndpointFactory endpointFactory;
     protected Server server;
 
     public DefaultRpcExporter(Provider<T> provider, URL url,
@@ -38,9 +37,9 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
                 url.getServerPortStr(), key -> new ProviderMessageRouter(url));
         requestRouter.addProvider(provider);
 
-        endpointFactory = ExtensionLoader.getExtensionLoader(EndpointFactory.class)
-                .getExtension(url.getParameter(URLParamType.endpointFactory));
-        server = endpointFactory.createServer(url, requestRouter);
+        server = ExtensionLoader.getExtensionLoader(EndpointFactory.class)
+                .getExtension(url.getParameter(URLParamType.endpointFactory))
+                .createServer(url, requestRouter);
     }
 
     @Override
@@ -74,7 +73,6 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
 
     @Override
     public void destroy() {
-        endpointFactory.safeReleaseResource(server, url);
         log.info("DefaultRpcExporter destroy Success: url={}", url);
     }
 

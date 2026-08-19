@@ -18,16 +18,13 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
     private static final Logger log = LoggerFactory.getLogger(DefaultRpcReference.class);
 
     protected Client client;
-    protected EndpointFactory endpointFactory;
 
     public DefaultRpcReference(Class<T> interfaceClass, URL url) {
         super(interfaceClass, url);
 
-        endpointFactory =
-                ExtensionLoader.getExtensionLoader(EndpointFactory.class).getExtension(
-                        url.getParameter(URLParamType.endpointFactory.getName(), URLParamType.endpointFactory.value()));
-
-        client = endpointFactory.createClient(url);
+        client = ExtensionLoader.getExtensionLoader(EndpointFactory.class)
+                .getExtension(url.getParameter(URLParamType.endpointFactory))
+                .createClient(url);
     }
 
     @Override
@@ -72,7 +69,7 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
 
     @Override
     public void destroy() {
-        endpointFactory.safeReleaseResource(client, url);
+        client.close();
         log.info("DefaultRpcReference destroy client: url={}", url);
     }
 }

@@ -1,6 +1,5 @@
 package org.hongxi.jaws.common.util;
 
-import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -68,61 +67,6 @@ public class JawsFrameworkUtils {
         key.append(JawsConstants.PATH_SEPARATOR);
         key.append(url.getVersion());
         return key.toString();
-    }
-
-    /**
-     * Check whether url:source and url:target can share the same service channel (port)
-     * to provide external services.
-     * <p>
-     * <pre>
-     * 		The following parameters must be consistent:
-     * 		1) protocol
-     * 		2) codec
-     * 		3) serialize
-     * 		4) maxContentLength
-     * 		5) maxServerConnection
-     * 		6) maxWorkerThread
-     * 		7) workerQueueSize
-     * 		8) heartbeatFactory
-     * </pre>
-     */
-    public static boolean checkIfCanShareServiceChannel(URL source, URL target) {
-        if (!StringUtils.equals(source.getProtocol(), target.getProtocol())) {
-            return false;
-        }
-
-        if (!StringUtils.equals(source.getParameter(URLParamType.codec.getName()),
-                target.getParameter(URLParamType.codec.getName()))) {
-            return false;
-        }
-
-        if (!StringUtils.equals(source.getParameter(URLParamType.serialization.getName()),
-                target.getParameter(URLParamType.serialization.getName()))) {
-            return false;
-        }
-
-        if (!StringUtils.equals(source.getParameter(URLParamType.maxContentLength.getName()),
-                target.getParameter(URLParamType.maxContentLength.getName()))) {
-            return false;
-        }
-
-        if (!StringUtils.equals(source.getParameter(URLParamType.maxServerConnections.getName()),
-                target.getParameter(URLParamType.maxServerConnections.getName()))) {
-            return false;
-        }
-
-        if (!StringUtils.equals(source.getParameter(URLParamType.maxWorkerThreads.getName()),
-                target.getParameter(URLParamType.maxWorkerThreads.getName()))) {
-            return false;
-        }
-
-        if (!StringUtils.equals(source.getParameter(URLParamType.workerQueueSize.getName()),
-                target.getParameter(URLParamType.workerQueueSize.getName()))) {
-            return false;
-        }
-
-        return StringUtils.equals(source.getParameter(URLParamType.heartbeatFactory.getName()),
-                target.getParameter(URLParamType.heartbeatFactory.getName()));
     }
 
     /**

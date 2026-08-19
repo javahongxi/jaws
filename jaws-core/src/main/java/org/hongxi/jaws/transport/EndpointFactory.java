@@ -26,20 +26,4 @@ public interface EndpointFactory {
      * @return
      */
     Client createClient(URL url);
-
-    /**
-     * safe release server
-     *
-     * @param server
-     * @param url
-     */
-    void safeReleaseResource(Server server, URL url);
-
-    /**
-     * safe release client
-     *
-     * @param client
-     * @param url
-     */
-    void safeReleaseResource(Client client, URL url);
 }
