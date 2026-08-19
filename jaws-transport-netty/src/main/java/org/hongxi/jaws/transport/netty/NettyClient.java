@@ -163,14 +163,14 @@ public class NettyClient extends AbstractSharedPoolClient {
                             if (responseFuture == null) {
                                 log.warn("has response from server, but responseFuture not exist, requestId={}",
                                         response.getRequestId());
-                                return null;
+                                return CompletableFuture.completedFuture(null);
                             }
                             if (response.getException() != null) {
                                 responseFuture.onFailure(response);
                             } else {
                                 responseFuture.onSuccess(response);
                             }
-                            return null;
+                            return CompletableFuture.completedFuture(null);
                         }));
                     }
                 });

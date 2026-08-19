@@ -16,7 +16,6 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
-import org.hongxi.jaws.transport.ProviderMessageRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +49,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     }
 
     @Override
-    public void channelRead(final ChannelHandlerContext ctx, final Object msg) {
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (msg instanceof NettyMessage nettyMsg) {
             if (threadPoolExecutor != null) {
                 try {
@@ -91,7 +90,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             if (decoded instanceof Request request) {
                 processRequest(ctx, request);
             } else if (decoded instanceof Response response) {
-                messageHandler.handle(channel, response);
+                messageHandler.handleAsync(channel, response);
             }
         } catch (Exception e) {
             log.error("decode failed! requestId: {}, size: {}, remote: {}",
@@ -100,12 +99,12 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             if (msg.isRequest()) {
                 sendResponse(ctx, response);
             } else {
-                messageHandler.handle(channel, response);
+                messageHandler.handleAsync(channel, response);
             }
         }
     }
 
-    private void processRequest(final ChannelHandlerContext ctx, final Request request) {
+    private void processRequest(ChannelHandlerContext ctx, Request request) {
         request.setAttachment(URLParamType.host.getName(), NetUtils.getHostName(ctx.channel().remoteAddress()));
         final long processStartTime = System.currentTimeMillis();
         // Track active request for graceful shutdown
@@ -113,14 +112,14 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             nettyServer.getActiveRequests().incrementAndGet();
         }
         RpcContext.init(request);
-        ((ProviderMessageRouter) messageHandler).handleAsync(channel, request).whenComplete((res, throwable) -> {
+        messageHandler.handleAsync(channel, request).whenComplete((res, throwable) -> {
             try {
                 RpcContext.init(request);
-                final DefaultResponse response;
+                DefaultResponse response;
                 if (throwable != null) {
-                    log.error("processRequest fail! request: {}", JawsFrameworkUtils.toString(request), throwable);
+                    log.error("processRequest failed! request: {}", JawsFrameworkUtils.toString(request), throwable);
                     response = JawsFrameworkUtils.buildErrorResponse(request,
-                            new JawsServiceException("process request fail. errmsg:" + throwable.getMessage()));
+                            new JawsServiceException("process request failed. errmsg:" + throwable.getMessage()));
                 } else if (res instanceof DefaultResponse dr) {
                     response = dr;
                 } else if (res instanceof Response r) {

@@ -40,9 +40,6 @@ public enum URLParamType {
 
     transExceptionStack("transExceptionStack", true),
 
-    /** message processing dispatch strategy */
-    providerProtectedStrategy("providerProtectedStrategy", "jaws"),
-
     /** interval in milliseconds between failback retry attempts */
     failbackPeriod("failbackPeriod", 5000),
 

@@ -71,21 +71,6 @@ public final class DynamicConfigurationKeys {
         return "jaws.retries." + interfaceName + "." + methodName;
     }
 
-    // ==================== Provider Protection ====================
-
-    /** Global default max worker threads for provider protection */
-    public static final String GLOBAL_MAX_WORKER_THREADS = "jaws.maxWorkerThreads";
-
-    /**
-     * Build service-level max worker threads key.
-     *
-     * @param interfaceName the service interface name
-     * @return key like "jaws.maxWorkerThreads.com.example.DemoService"
-     */
-    public static String maxWorkerThreads(String interfaceName) {
-        return "jaws.maxWorkerThreads." + interfaceName;
-    }
-
     // ==================== Filter Toggle ====================
 
     /**
