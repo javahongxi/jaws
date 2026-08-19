@@ -23,7 +23,7 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultRpcExporter.class);
 
-    private static final ConcurrentMap<String, ProviderMessageRouter> IP_PORT_TO_REQUEST_ROUTER = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, ProviderMessageRouter> messageRouterMap = new ConcurrentHashMap<>();
 
     protected final ConcurrentMap<String, Exporter<?>> exporterMap;
     protected Server server;
@@ -33,13 +33,13 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
         super(provider, url);
         this.exporterMap = exporterMap;
 
-        ProviderMessageRouter requestRouter = IP_PORT_TO_REQUEST_ROUTER.computeIfAbsent(
+        ProviderMessageRouter messageRouter = messageRouterMap.computeIfAbsent(
                 url.getServerPortStr(), key -> new ProviderMessageRouter(url));
-        requestRouter.addProvider(provider);
+        messageRouter.addProvider(provider);
 
         server = ExtensionLoader.getExtensionLoader(TransportFactory.class)
                 .getExtension(url.getParameter(URLParamType.transportFactory))
-                .createServer(url, requestRouter);
+                .createServer(url, messageRouter);
     }
 
     @Override
@@ -50,15 +50,13 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
     @Override
     public void unexport() {
         String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
-        String ipPort = url.getServerPortStr();
-
         // noinspection unchecked
         Exporter<T> exporter = (Exporter<T>) exporterMap.remove(protocolKey);
         if (exporter != null) {
             exporter.destroy();
         }
 
-        ProviderMessageRouter requestRouter = IP_PORT_TO_REQUEST_ROUTER.get(ipPort);
+        ProviderMessageRouter requestRouter = messageRouterMap.get(url.getServerPortStr());
         if (requestRouter != null) {
             requestRouter.removeProvider(provider);
         }

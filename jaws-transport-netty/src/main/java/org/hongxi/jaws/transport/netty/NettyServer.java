@@ -30,24 +30,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class NettyServer extends AbstractServer {
     private static final Logger log = LoggerFactory.getLogger(NettyServer.class);
 
-    protected NettyServerChannelManager channelManager;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
-    private MessageHandler messageHandler;
+    protected NettyServerChannelManager channelManager;
+    private final MessageHandler messageHandler;
     private ThreadPoolExecutor threadPoolExecutor;
 
-    private AtomicInteger rejectCounter = new AtomicInteger(0);
     private final AtomicInteger activeRequests = new AtomicInteger(0);
-    private volatile boolean accepting = true;
+    private final AtomicInteger rejectCounter = new AtomicInteger(0);
 
     public NettyServer(URL url, MessageHandler messageHandler) {
         super(url);
         this.messageHandler = messageHandler;
-    }
-
-    public AtomicInteger getRejectCounter() {
-        return rejectCounter;
     }
 
     @Override
@@ -73,25 +68,21 @@ public class NettyServer extends AbstractServer {
         }
 
         log.info("server channel start open, url={}", url);
-        int maxContentLength = url.getParameter(
-                URLParamType.maxContentLength.getName(), URLParamType.maxContentLength.intValue());
-        int maxServerConnections = url.getParameter(
-                URLParamType.maxServerConnections.getName(), URLParamType.maxServerConnections.intValue());
-        int maxQueueSize = url.getParameter(
-                URLParamType.workerQueueSize.getName(), URLParamType.workerQueueSize.intValue());
+        int maxServerConnections = url.getIntParameter(URLParamType.maxServerConnections);
+        channelManager = new NettyServerChannelManager(maxServerConnections);
 
-        int minWorkerThreads = url.getParameter(URLParamType.minWorkerThreads.getName(),
-                JawsConstants.NETTY_MIN_WORKER_THREADS);
-        int maxWorkerThreads = url.getParameter(URLParamType.maxWorkerThreads.getName(),
-                JawsConstants.NETTY_MAX_WORKER_THREADS);
+        int maxContentLength = url.getIntParameter(URLParamType.maxContentLength);
 
         if (threadPoolExecutor == null || threadPoolExecutor.isShutdown()) {
-            threadPoolExecutor = new StandardThreadPoolExecutor(minWorkerThreads, maxWorkerThreads,
-                    maxQueueSize, new DefaultThreadFactory("NettyServer-" + url.getServerPortStr(), true));
+            threadPoolExecutor = new StandardThreadPoolExecutor(
+                    url.getIntParameter(URLParamType.minWorkerThreads),
+                    url.getIntParameter(URLParamType.maxWorkerThreads),
+                    url.getIntParameter(URLParamType.workerQueueSize),
+                    new DefaultThreadFactory("NettyServer-" + url.getServerPortStr(), true));
         }
         threadPoolExecutor.prestartAllCoreThreads();
-
-        channelManager = new NettyServerChannelManager(maxServerConnections);
+        NettyChannelHandler channelHandler = new NettyChannelHandler(
+                NettyServer.this, messageHandler, threadPoolExecutor);
 
         ServerBootstrap serverBootstrap = new ServerBootstrap();
         serverBootstrap.group(bossGroup, workerGroup)
@@ -103,7 +94,7 @@ public class NettyServer extends AbstractServer {
                         pipeline.addLast("channel_manager", channelManager);
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyServer.this, maxContentLength));
                         pipeline.addLast("encoder", new NettyEncoder());
-                        pipeline.addLast("handler", new NettyChannelHandler(NettyServer.this, messageHandler, threadPoolExecutor));
+                        pipeline.addLast("handler", channelHandler);
                     }
                 });
         serverBootstrap.childOption(ChannelOption.TCP_NODELAY, true);
@@ -173,7 +164,6 @@ public class NettyServer extends AbstractServer {
     public void stopAccept() {
         if (serverChannel != null && serverChannel.isOpen()) {
             serverChannel.close();
-            accepting = false;
             log.info("Server stopAccept: no longer accepting new connections, uri={}", url.getUri());
         }
     }
@@ -187,8 +177,8 @@ public class NettyServer extends AbstractServer {
         return activeRequests;
     }
 
-    public boolean isAccepting() {
-        return accepting;
+    public AtomicInteger getRejectCounter() {
+        return rejectCounter;
     }
 
     /**

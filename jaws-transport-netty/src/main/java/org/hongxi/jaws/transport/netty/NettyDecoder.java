@@ -23,9 +23,9 @@ import java.util.List;
 public class NettyDecoder extends ByteToMessageDecoder {
     private static final Logger log = LoggerFactory.getLogger(NettyDecoder.class);
 
-    private Codec codec;
-    private Channel channel;
-    private int maxContentLength;
+    private final Codec codec;
+    private final Channel channel;
+    private final int maxContentLength;
 
     public NettyDecoder(Codec codec, Channel channel, int maxContentLength) {
         this.codec = codec;

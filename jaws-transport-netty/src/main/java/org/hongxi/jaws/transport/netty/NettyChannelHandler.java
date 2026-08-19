@@ -1,9 +1,6 @@
 package org.hongxi.jaws.transport.netty;
 
-import io.netty.channel.ChannelDuplexHandler;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.*;
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.codec.CodecUtils;
 import org.hongxi.jaws.common.JawsConstants;
@@ -33,15 +30,16 @@ import java.util.concurrent.ThreadPoolExecutor;
 /**
  * Created by shenhongxi on 2020/7/7.
  */
+@ChannelHandler.Sharable
 public class NettyChannelHandler extends ChannelDuplexHandler {
     private static final Logger log = LoggerFactory.getLogger(NettyChannelHandler.class);
 
     private static final String CONTENT_LENGTH = "Content-Length";
 
+    private final Channel channel;
+    private final MessageHandler messageHandler;
+    private final Codec codec;
     private ThreadPoolExecutor threadPoolExecutor;
-    private MessageHandler messageHandler;
-    private Channel channel;
-    private Codec codec;
 
     public NettyChannelHandler(Channel channel, MessageHandler messageHandler) {
         this.channel = channel;
@@ -89,8 +87,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                     JawsFrameworkUtils.buildErrorResponse(
                             (Request) msg,
                             new JawsServiceException(
-                                    "process thread pool is full, reject by server: "
-                                            + ctx.channel().localAddress(),
+                                    "process thread pool is full, reject by server: " + ctx.channel().localAddress(),
                                     JawsErrorMsgConstants.SERVICE_REJECT
                             )
                     )
@@ -142,7 +139,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             RpcContext.init(request);
             Object result;
             try {
-                // Use async path when handler supports it (ProviderMessageRouter)
+                // Server side: ProviderMessageRouter supports async handling,
+                // route request to provider and return CompletableFuture for non-blocking response.
+                // Client side: fallback to sync handle, which completes the ResponseFuture callback.
                 if (messageHandler instanceof ProviderMessageRouter router) {
                     result = router.handleAsync(channel, request);
                 } else {
@@ -162,9 +161,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                         final DefaultResponse response;
                         if (throwable != null) {
                             log.error("processRequest async fail! request: {}", JawsFrameworkUtils.toString(request), throwable);
-                            Response errResp = JawsFrameworkUtils.buildErrorResponse(request,
+                            response = JawsFrameworkUtils.buildErrorResponse(request,
                                     new JawsServiceException("async process request fail. errmsg:" + throwable.getMessage()));
-                            response = (errResp instanceof DefaultResponse dr) ? dr : new DefaultResponse(errResp);
                         } else if (res instanceof DefaultResponse dr) {
                             response = dr;
                         } else if (res instanceof Response r) {
