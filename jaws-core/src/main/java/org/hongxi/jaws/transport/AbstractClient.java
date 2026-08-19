@@ -11,16 +11,11 @@ import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetSocketAddress;
-
 /**
  * Created by shenhongxi on 2020/7/28.
  */
 public abstract class AbstractClient implements Client {
     private static final Logger log = LoggerFactory.getLogger(AbstractClient.class);
-
-    protected InetSocketAddress localAddress;
-    protected InetSocketAddress remoteAddress;
 
     protected URL url;
     protected Codec codec;
@@ -33,24 +28,6 @@ public abstract class AbstractClient implements Client {
                 ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
                         url.getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
         log.info("init netty client. url: " + url.getHost() + "-" + url.getPath() + ", use codec: " + codec.getClass().getSimpleName());
-    }
-
-    @Override
-    public InetSocketAddress getLocalAddress() {
-        return localAddress;
-    }
-
-    public void setLocalAddress(InetSocketAddress localAddress) {
-        this.localAddress = localAddress;
-    }
-
-    @Override
-    public InetSocketAddress getRemoteAddress() {
-        return remoteAddress;
-    }
-
-    public void setRemoteAddress(InetSocketAddress remoteAddress) {
-        this.remoteAddress = remoteAddress;
     }
 
     @Override

@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -30,28 +31,18 @@ public class NettyChannel implements Channel {
     private static final Logger log = LoggerFactory.getLogger(NettyChannel.class);
 
     private volatile ChannelState state = ChannelState.UNINIT;
-    private NettyClient nettyClient;
+    private final NettyClient nettyClient;
     private io.netty.channel.Channel channel = null;
-    private InetSocketAddress remoteAddress = null;
-    private InetSocketAddress localAddress = null;
-    private ReentrantLock lock = new ReentrantLock();
-    private Codec codec;
+    private final InetSocketAddress remoteAddress;
+    private InetSocketAddress localAddress;
+    private final Codec codec;
+    private final ReentrantLock lock = new ReentrantLock();
 
     public NettyChannel(NettyClient nettyClient) {
         this.nettyClient = nettyClient;
         this.remoteAddress = new InetSocketAddress(nettyClient.getUrl().getHost(), nettyClient.getUrl().getPort());
         codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
                 nettyClient.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
-    }
-
-    @Override
-    public InetSocketAddress getLocalAddress() {
-        return localAddress;
-    }
-
-    @Override
-    public InetSocketAddress getRemoteAddress() {
-        return remoteAddress;
     }
 
     @Override
@@ -194,11 +185,6 @@ public class NettyChannel implements Channel {
     }
 
     @Override
-    public boolean isClosed() {
-        return state.isCloseState();
-    }
-
-    @Override
     public boolean isAvailable() {
         return state.isAliveState() && channel != null && channel.isActive();
     }
@@ -216,8 +202,42 @@ public class NettyChannel implements Channel {
         return nettyClient.getUrl();
     }
 
-    public ReentrantLock getLock() {
-        return lock;
+    /**
+     * Attempt to reconnect this channel.
+     * Uses an internal lock to ensure only one reconnect runs at a time.
+     *
+     * @param async    if true, the actual close+open runs on the given executor
+     * @param executor the executor for async reconnect
+     * @return true if a reconnect was initiated, false if the lock was busy or reconnect not needed
+     */
+    public boolean reconnect(boolean async, ExecutorService executor) {
+        if (!lock.tryLock()) {
+            return false;
+        }
+        try {
+            if (!isAvailable() && !isReconnect()) {
+                reconnect();
+                if (async) {
+                    executor.submit(() -> {
+                        lock.lock();
+                        try {
+                            close();
+                            open();
+                        } finally {
+                            lock.unlock();
+                        }
+                    });
+                } else {
+                    close();
+                    open();
+                }
+            }
+        } catch (Exception e) {
+            log.error("reconnect error: url={}", getUrl(), e);
+        } finally {
+            lock.unlock();
+        }
+        return true;
     }
 
     /**

@@ -149,11 +149,6 @@ public class NettyServer extends AbstractServer {
     }
 
     @Override
-    public boolean isClosed() {
-        return state.isCloseState();
-    }
-
-    @Override
     public boolean isAvailable() {
         return state.isAliveState();
     }

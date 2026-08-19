@@ -4,33 +4,17 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 
-import java.net.InetSocketAddress;
-
 /**
  * Represents a network communication channel between two endpoints.
  * <p>
- * A channel provides the ability to send requests, manage the connection
- * lifecycle (open/close), and query address information. Both {@link Server}
+ * A channel provides the ability to send requests and manage the connection
+ * lifecycle (open/close). Both {@link Server}
  * and {@link Client} extend this interface.
  *
  * @see Server
  * @see Client
  */
 public interface Channel {
-
-    /**
-     * Get the local address of this channel.
-     *
-     * @return the local socket address
-     */
-    InetSocketAddress getLocalAddress();
-
-    /**
-     * Get the remote address of this channel.
-     *
-     * @return the remote socket address
-     */
-    InetSocketAddress getRemoteAddress();
 
     /**
      * Send a request through this channel and return the response.
@@ -58,13 +42,6 @@ public interface Channel {
      * @param timeout the maximum time in milliseconds to wait for a graceful close
      */
     void close(int timeout);
-
-    /**
-     * Check whether this channel has been closed.
-     *
-     * @return true if the channel is closed
-     */
-    boolean isClosed();
 
     /**
      * Check whether this channel is available for sending requests.

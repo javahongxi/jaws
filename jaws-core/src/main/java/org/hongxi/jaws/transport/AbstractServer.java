@@ -14,8 +14,6 @@ import java.util.Collection;
  * Created by shenhongxi on 2020/6/25.
  */
 public abstract class AbstractServer implements Server {
-    protected InetSocketAddress localAddress;
-    protected InetSocketAddress remoteAddress;
 
     protected URL url;
     protected Codec codec;
@@ -39,24 +37,6 @@ public abstract class AbstractServer implements Server {
     @Override
     public Channel getChannel(InetSocketAddress remoteAddress) {
         throw new JawsFrameworkException(this.getClass().getName() + " getChannels(InetSocketAddress) method not support " + url);
-    }
-
-    @Override
-    public InetSocketAddress getLocalAddress() {
-        return localAddress;
-    }
-
-    public void setLocalAddress(InetSocketAddress localAddress) {
-        this.localAddress = localAddress;
-    }
-
-    @Override
-    public InetSocketAddress getRemoteAddress() {
-        return remoteAddress;
-    }
-
-    public void setRemoteAddress(InetSocketAddress remoteAddress) {
-        this.remoteAddress = remoteAddress;
     }
 
     public void setUrl(URL url) {

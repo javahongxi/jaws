@@ -221,11 +221,6 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     @Override
-    public boolean isClosed() {
-        return state.isCloseState();
-    }
-
-    @Override
     public boolean isAvailable() {
         return state.isAliveState();
     }
