@@ -27,7 +27,7 @@ public enum URLParamType {
 
     serialization("serialization", "hessian2"),
     codec("codec", "jaws"),
-    endpointFactory("endpointFactory", "netty"),
+    transportFactory("transportFactory", "netty"),
 
     group("group", "default_rpc"),
 

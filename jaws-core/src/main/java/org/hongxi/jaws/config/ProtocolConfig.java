@@ -37,9 +37,9 @@ public class ProtocolConfig extends AbstractConfig {
     private String codec;
 
     /**
-     * The endpoint factory.
+     * The transport factory.
      */
-    protected String endpointFactory;
+    protected String transportFactory;
 
     // server side
 
@@ -120,12 +120,12 @@ public class ProtocolConfig extends AbstractConfig {
         this.codec = codec;
     }
 
-    public String getEndpointFactory() {
-        return endpointFactory;
+    public String getTransportFactory() {
+        return transportFactory;
     }
 
-    public void setEndpointFactory(String endpointFactory) {
-        this.endpointFactory = endpointFactory;
+    public void setTransportFactory(String transportFactory) {
+        this.transportFactory = transportFactory;
     }
 
     // --- server-only getter/setter ---

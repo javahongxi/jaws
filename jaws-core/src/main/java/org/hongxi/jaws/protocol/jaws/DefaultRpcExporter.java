@@ -7,7 +7,7 @@ import org.hongxi.jaws.rpc.AbstractExporter;
 import org.hongxi.jaws.rpc.Exporter;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.EndpointFactory;
+import org.hongxi.jaws.transport.TransportFactory;
 import org.hongxi.jaws.transport.ProviderMessageRouter;
 import org.hongxi.jaws.transport.Server;
 import org.slf4j.Logger;
@@ -37,8 +37,8 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
                 url.getServerPortStr(), key -> new ProviderMessageRouter(url));
         requestRouter.addProvider(provider);
 
-        server = ExtensionLoader.getExtensionLoader(EndpointFactory.class)
-                .getExtension(url.getParameter(URLParamType.endpointFactory))
+        server = ExtensionLoader.getExtensionLoader(TransportFactory.class)
+                .getExtension(url.getParameter(URLParamType.transportFactory))
                 .createServer(url, requestRouter);
     }
 

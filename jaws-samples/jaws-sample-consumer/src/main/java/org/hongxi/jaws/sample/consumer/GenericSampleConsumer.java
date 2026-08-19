@@ -74,7 +74,7 @@ public class GenericSampleConsumer {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName(JawsConstants.PROTOCOL_JAWS);
         protocolConfig.setId(protocolConfig.getName());
-        protocolConfig.setEndpointFactory("netty");
+        protocolConfig.setTransportFactory("netty");
         protocolConfig.setSerialization("fastjson2");
         return protocolConfig;
     }

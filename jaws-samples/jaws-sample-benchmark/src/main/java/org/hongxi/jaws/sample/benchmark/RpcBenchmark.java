@@ -137,7 +137,7 @@ public class RpcBenchmark {
         protocol.setName(PROTOCOL);
         protocol.setId(PROTOCOL);
         if ("jaws".equals(PROTOCOL)) {
-            protocol.setEndpointFactory("netty");
+            protocol.setTransportFactory("netty");
             protocol.setSerialization(SERIALIZATION);
             protocol.setPort(PORT);
         }

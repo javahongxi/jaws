@@ -61,7 +61,7 @@ public class SampleProvider {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName(protocolName);
         protocolConfig.setId(protocolConfig.getName());
-        protocolConfig.setEndpointFactory("netty");
+        protocolConfig.setTransportFactory("netty");
         protocolConfig.setSerialization("fastjson2");
         protocolConfig.setPort(PORT);
         return protocolConfig;

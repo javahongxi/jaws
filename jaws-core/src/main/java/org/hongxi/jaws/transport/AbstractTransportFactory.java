@@ -8,15 +8,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Base implementation of {@link EndpointFactory} that manages shared server lifecycle.
+ * Base implementation of {@link TransportFactory} that manages shared server lifecycle.
  * <p>
  * All services on the same ip:port share a single server (channel),
  * similar to Dubbo's design.
  * <p>
  * Created by shenhongxi on 2020/7/31.
  */
-public abstract class AbstractEndpointFactory implements EndpointFactory {
-    private static final Logger log = LoggerFactory.getLogger(AbstractEndpointFactory.class);
+public abstract class AbstractTransportFactory implements TransportFactory {
+    private static final Logger log = LoggerFactory.getLogger(AbstractTransportFactory.class);
 
     /**
      * Shared server pool keyed by ip:port. Once created, a server lives

@@ -171,9 +171,9 @@ public class JawsProperties {
         private String serialization = "fastjson2";
 
         /**
-         * Endpoint factory SPI name (e.g., netty).
+         * Transport factory SPI name (e.g., netty).
          */
-        private String endpointFactory = "netty";
+        private String transportFactory = "netty";
 
         /**
          * Codec type.
@@ -212,12 +212,12 @@ public class JawsProperties {
             this.serialization = serialization;
         }
 
-        public String getEndpointFactory() {
-            return endpointFactory;
+        public String getTransportFactory() {
+            return transportFactory;
         }
 
-        public void setEndpointFactory(String endpointFactory) {
-            this.endpointFactory = endpointFactory;
+        public void setTransportFactory(String transportFactory) {
+            this.transportFactory = transportFactory;
         }
 
         public String getCodec() {

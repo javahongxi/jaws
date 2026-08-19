@@ -8,7 +8,7 @@ import org.hongxi.jaws.rpc.URL;
  * Created by shenhongxi on 2020/7/31.
  */
 @Spi(scope = Scope.SINGLETON)
-public interface EndpointFactory {
+public interface TransportFactory {
 
     /**
      * create remote server

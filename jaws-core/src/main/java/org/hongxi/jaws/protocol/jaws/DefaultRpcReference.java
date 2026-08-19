@@ -5,7 +5,7 @@ import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.Client;
-import org.hongxi.jaws.transport.EndpointFactory;
+import org.hongxi.jaws.transport.TransportFactory;
 import org.hongxi.jaws.transport.TransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,8 +22,8 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
     public DefaultRpcReference(Class<T> interfaceClass, URL url) {
         super(interfaceClass, url);
 
-        client = ExtensionLoader.getExtensionLoader(EndpointFactory.class)
-                .getExtension(url.getParameter(URLParamType.endpointFactory))
+        client = ExtensionLoader.getExtensionLoader(TransportFactory.class)
+                .getExtension(url.getParameter(URLParamType.transportFactory))
                 .createClient(url);
     }
 
