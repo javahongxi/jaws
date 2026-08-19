@@ -256,7 +256,7 @@ public class NettyClient extends AbstractSharedPoolClient {
 
                 if (count >= fusingThreshold && state.isAliveState()) {
                     log.error("NettyClient unavailable Error: url={} {}",
-                            url.getIdentity(), url.getServerPortStr());
+                            url.getIdentity(), url.getHostPort());
                     state = ChannelState.UNALIVE;
                 }
             }
@@ -289,7 +289,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                 if (count < fusingThreshold) {
                     state = ChannelState.ALIVE;
                     log.info("NettyClient recover available: url={} {}",
-                            url.getIdentity(), url.getServerPortStr());
+                            url.getIdentity(), url.getHostPort());
                 }
             }
         }

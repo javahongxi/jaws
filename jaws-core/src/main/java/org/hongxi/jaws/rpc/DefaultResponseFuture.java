@@ -109,7 +109,7 @@ public class DefaultResponseFuture implements ResponseFuture {
     @Override
     public boolean cancel() {
         Exception e = new JawsServiceException(this.getClass().getName() +
-                " task cancel: serverPort=" + serverUrl.getServerPortStr() + " "
+                " task cancel: serverPort=" + serverUrl.getHostPort() + " "
                 + JawsFrameworkUtils.toString(request) +
                 " cost=" + (System.currentTimeMillis() - createTime));
         return cancel(e);
@@ -199,7 +199,7 @@ public class DefaultResponseFuture implements ResponseFuture {
             state = FutureState.CANCELED;
             exception = new JawsServiceException(
                     this.getClass().getName() +
-                            " request timeout: serverPort=" + serverUrl.getServerPortStr()
+                            " request timeout: serverPort=" + serverUrl.getHostPort()
                             + " " + JawsFrameworkUtils.toString(request) +
                             " cost=" + (System.currentTimeMillis() - createTime),
                     JawsErrorMsgConstants.SERVICE_TIMEOUT);

@@ -54,7 +54,7 @@ public class ReferenceSupport {
         StringBuilder builder = new StringBuilder();
         builder.append("[");
         for (Reference<T> reference : references) {
-            builder.append(reference.getUrl().getServerPortStr()).append(",");
+            builder.append(reference.getUrl().getHostPort()).append(",");
         }
         builder.setLength(builder.length() - 1);
         builder.append("]");

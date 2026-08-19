@@ -59,7 +59,7 @@ public class JawsFrameworkUtils {
         StringBuilder key = new StringBuilder();
         key.append(url.getProtocol());
         key.append(JawsConstants.PROTOCOL_SEPARATOR);
-        key.append(url.getServerPortStr());
+        key.append(url.getHostPort());
         key.append(JawsConstants.PATH_SEPARATOR);
         key.append(url.getGroup());
         key.append(JawsConstants.PATH_SEPARATOR);

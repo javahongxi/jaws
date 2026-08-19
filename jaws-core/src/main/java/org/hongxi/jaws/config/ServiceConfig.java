@@ -67,6 +67,11 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
     private final List<Exporter<T>> exporters = new CopyOnWriteArrayList<>();
 
     /**
+     * Protocols corresponding to each exporter, used for unexport by URL
+     */
+    private final List<Protocol> exportProtocols = new CopyOnWriteArrayList<>();
+
+    /**
      * Service auth token, empty means no auth
      */
     private String token;
@@ -131,11 +136,11 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
             // Phase 4: Close connections and release resources
             log.info("[GracefulShutdown] Phase 4: Close connections and release resources");
-            for (Exporter<T> exporter : exporters) {
+            for (int i = 0; i < exporters.size(); i++) {
                 try {
-                    exporter.unexport();
+                    exportProtocols.get(i).unexport(exporters.get(i).getUrl());
                 } catch (Exception e) {
-                    log.warn("[GracefulShutdown] Failed to unexport: {}", exporter.getUrl(), e);
+                    log.warn("[GracefulShutdown] Failed to unexport: {}", exporters.get(i).getUrl(), e);
                 }
             }
 
@@ -208,6 +213,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         register(registryUrls, serviceUrl);
 
         exporters.add(exporter);
+        exportProtocols.add(protocol);
     }
 
     private void register(List<URL> registryUrls, URL serviceUrl) {
@@ -275,6 +281,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
             EXPORTED_SERVICES.remove(ep.getProvider().getUrl().getIdentity());
         }
         exporters.clear();
+        exportProtocols.clear();
     }
 
     public Class<?> getInterface() {

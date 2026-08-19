@@ -2,14 +2,12 @@ package org.hongxi.jaws.protocol.jaws;
 
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.rpc.AbstractExporter;
-import org.hongxi.jaws.rpc.Exporter;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.TransportFactory;
 import org.hongxi.jaws.transport.ProviderMessageRouter;
 import org.hongxi.jaws.transport.Server;
+import org.hongxi.jaws.transport.TransportFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,16 +23,13 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
 
     private static final ConcurrentMap<String, ProviderMessageRouter> messageRouterMap = new ConcurrentHashMap<>();
 
-    protected final ConcurrentMap<String, Exporter<?>> exporterMap;
     protected Server server;
 
-    public DefaultRpcExporter(Provider<T> provider, URL url,
-                              ConcurrentMap<String, Exporter<?>> exporterMap) {
+    public DefaultRpcExporter(Provider<T> provider, URL url) {
         super(provider, url);
-        this.exporterMap = exporterMap;
 
         ProviderMessageRouter messageRouter = messageRouterMap.computeIfAbsent(
-                url.getServerPortStr(), key -> new ProviderMessageRouter(url));
+                url.getHostPort(), key -> new ProviderMessageRouter(url));
         messageRouter.addProvider(provider);
 
         server = ExtensionLoader.getExtensionLoader(TransportFactory.class)
@@ -48,29 +43,16 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
     }
 
     @Override
-    public void unexport() {
-        String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
-        // noinspection unchecked
-        Exporter<T> exporter = (Exporter<T>) exporterMap.remove(protocolKey);
-        if (exporter != null) {
-            exporter.destroy();
-        }
-
-        ProviderMessageRouter requestRouter = messageRouterMap.get(url.getServerPortStr());
-        if (requestRouter != null) {
-            requestRouter.removeProvider(provider);
-        }
-
-        log.info("DefaultRpcExporter unexport Success: url={}", url);
-    }
-
-    @Override
     public boolean isAvailable() {
         return server.isAvailable();
     }
 
     @Override
     public void destroy() {
+        ProviderMessageRouter requestRouter = messageRouterMap.get(url.getHostPort());
+        if (requestRouter != null) {
+            requestRouter.removeProvider(provider);
+        }
         log.info("DefaultRpcExporter destroy Success: url={}", url);
     }
 

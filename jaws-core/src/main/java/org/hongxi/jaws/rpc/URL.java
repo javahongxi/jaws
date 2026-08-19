@@ -182,7 +182,7 @@ public class URL {
         return value;
     }
 
-    public String getServerPortStr() {
+    public String getHostPort() {
         if (this.port <= 0) {
             return host;
         }

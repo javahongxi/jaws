@@ -40,5 +40,13 @@ public interface Protocol {
      */
     <T> Reference<T> refer(Class<T> interfaceClass, URL url);
 
+    /**
+     * Unexport a service by its URL: remove the exporter from the internal map
+     * and release associated resources.
+     *
+     * @param url the service URL used to compute the protocol key
+     */
+    void unexport(URL url);
+
     void destroy();
 }

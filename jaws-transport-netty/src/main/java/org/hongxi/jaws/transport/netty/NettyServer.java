@@ -6,7 +6,6 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import org.hongxi.jaws.common.ChannelState;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.StandardThreadPoolExecutor;
@@ -75,7 +74,7 @@ public class NettyServer extends AbstractServer {
                     url.getIntParameter(URLParamType.minWorkerThreads),
                     url.getIntParameter(URLParamType.maxWorkerThreads),
                     url.getIntParameter(URLParamType.workerQueueSize),
-                    new DefaultThreadFactory("NettyServer-" + url.getServerPortStr(), true));
+                    new DefaultThreadFactory("NettyServer-" + url.getHostPort(), true));
         }
         threadPoolExecutor.prestartAllCoreThreads();
         NettyChannelHandler channelHandler = new NettyChannelHandler(

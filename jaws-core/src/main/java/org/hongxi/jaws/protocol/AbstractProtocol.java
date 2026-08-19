@@ -38,7 +38,6 @@ public abstract class AbstractProtocol implements Protocol {
         synchronized (exporterMap) {
             // noinspection unchecked
             Exporter<T> exporter = (Exporter<T>) exporterMap.get(protocolKey);
-
             if (exporter != null) {
                 throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: service already exists, url=" + url,
                         JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
@@ -46,12 +45,8 @@ public abstract class AbstractProtocol implements Protocol {
 
             exporter = createExporter(provider);
             exporter.init();
-
-            protocolKey = JawsFrameworkUtils.getProtocolKey(url);
             exporterMap.put(protocolKey, exporter);
-
             log.info("{} export Success: url={}", this.getClass().getSimpleName(), url);
-
             return exporter;
         }
     }
@@ -74,6 +69,15 @@ public abstract class AbstractProtocol implements Protocol {
         log.info("{} refer Success: url={}, cost:{}ms", this.getClass().getSimpleName(), url, System.currentTimeMillis() - start);
 
         return reference;
+    }
+
+    @Override
+    public void unexport(URL url) {
+        String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
+        Exporter<?> exporter = exporterMap.remove(protocolKey);
+        if (exporter != null) {
+            exporter.destroy();
+        }
     }
 
     protected abstract <T> Exporter<T> createExporter(Provider<T> provider);

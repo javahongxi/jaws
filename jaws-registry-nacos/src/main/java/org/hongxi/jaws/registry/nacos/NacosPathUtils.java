@@ -37,6 +37,6 @@ public class NacosPathUtils {
      * Build the instance identifier (host:port) from Jaws URL.
      */
     public static String toInstanceId(URL url) {
-        return url.getServerPortStr();
+        return url.getHostPort();
     }
 }

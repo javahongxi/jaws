@@ -45,20 +45,6 @@ public class InjvmProtocol extends AbstractProtocol {
         }
 
         @Override
-        public void unexport() {
-            String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
-
-            // noinspection unchecked
-            Exporter<T> exporter = (Exporter<T>) exporterMap.remove(protocolKey);
-
-            if (exporter != null) {
-                exporter.destroy();
-            }
-
-            log.info("InJvmExporter unexport Success: url={}", url);
-        }
-
-        @Override
         protected boolean doInit() {
             return true;
         }

@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * Base implementation of {@link TransportFactory} that manages shared server lifecycle.
  * <p>
- * All services on the same ip:port share a single server (channel),
+ * All services on the same host:port share a single server (channel),
  * similar to Dubbo's design.
  * <p>
  * Created by shenhongxi on 2020/7/31.
@@ -19,17 +19,15 @@ public abstract class AbstractTransportFactory implements TransportFactory {
     private static final Logger log = LoggerFactory.getLogger(AbstractTransportFactory.class);
 
     /**
-     * Shared server pool keyed by ip:port. Once created, a server lives
-     * for the application lifetime (same as Dubbo's design).
+     * Shared server pool keyed by host:port.
      */
-    protected final Map<String, Server> ipPort2Server = new HashMap<>();
+    protected final Map<String, Server> serverMap = new HashMap<>();
 
     @Override
     public Server createServer(URL url, MessageHandler messageHandler) {
-        synchronized (ipPort2Server) {
-            String ipPort = url.getServerPortStr();
-
-            Server server = ipPort2Server.get(ipPort);
+        synchronized (serverMap) {
+            String hostPort = url.getHostPort();
+            Server server = serverMap.get(hostPort);
             if (server != null) {
                 return server;
             }
@@ -37,12 +35,9 @@ public abstract class AbstractTransportFactory implements TransportFactory {
             log.info("{} create shared server: url={}", this.getClass().getSimpleName(), url);
 
             url = url.createCopy();
-            // Shared server port: clear path since multiple interfaces exist
             url.setPath("");
-
             server = innerCreateServer(url, messageHandler);
-            ipPort2Server.put(ipPort, server);
-
+            serverMap.put(hostPort, server);
             return server;
         }
     }

@@ -21,6 +21,6 @@ public class ZkUtils {
     }
 
     public static String toNodePath(URL url, ZkNodeType nodeType) {
-        return toNodeTypePath(url, nodeType) + JawsConstants.PATH_SEPARATOR + url.getServerPortStr();
+        return toNodeTypePath(url, nodeType) + JawsConstants.PATH_SEPARATOR + url.getHostPort();
     }
 }

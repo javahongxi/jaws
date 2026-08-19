@@ -40,6 +40,11 @@ public class ProtocolFilterWrapper implements Protocol {
     }
 
     @Override
+    public void unexport(URL url) {
+        protocol.unexport(url);
+    }
+
+    @Override
     public void destroy() {
         protocol.destroy();
     }
