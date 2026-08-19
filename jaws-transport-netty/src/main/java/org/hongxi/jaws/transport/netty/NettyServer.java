@@ -71,8 +71,6 @@ public class NettyServer extends AbstractServer {
         int maxServerConnections = url.getIntParameter(URLParamType.maxServerConnections);
         channelManager = new NettyServerChannelManager(maxServerConnections);
 
-        int maxContentLength = url.getIntParameter(URLParamType.maxContentLength);
-
         if (threadPoolExecutor == null || threadPoolExecutor.isShutdown()) {
             threadPoolExecutor = new StandardThreadPoolExecutor(
                     url.getIntParameter(URLParamType.minWorkerThreads),
@@ -84,6 +82,8 @@ public class NettyServer extends AbstractServer {
         NettyChannelHandler channelHandler = new NettyChannelHandler(
                 NettyServer.this, messageHandler, threadPoolExecutor);
 
+        int maxContentLength = url.getIntParameter(URLParamType.maxContentLength);
+
         ServerBootstrap serverBootstrap = new ServerBootstrap();
         serverBootstrap.group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)
@@ -93,7 +93,7 @@ public class NettyServer extends AbstractServer {
                         ChannelPipeline pipeline = socketChannel.pipeline();
                         pipeline.addLast("channel_manager", channelManager);
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyServer.this, maxContentLength));
-                        pipeline.addLast("encoder", new NettyEncoder());
+                        pipeline.addLast("encoder", new NettyEncoder(maxContentLength));
                         pipeline.addLast("handler", channelHandler);
                     }
                 });

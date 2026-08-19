@@ -45,12 +45,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
             in.resetReaderIndex();
             throw new JawsFrameworkException("NettyDecoder transport header not support, type: " + type);
         }
-        in.skipBytes(1);
-        int rpcVersion = (in.readByte() & 0xff) >>> 3;
-        decodeV1(ctx, in, out);
-    }
 
-    private void decodeV1(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         long startTime = System.currentTimeMillis();
         in.resetReaderIndex();
         // skip magic num
@@ -61,7 +56,21 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
         boolean isRequest = messageType == JawsConstants.FLAG_REQUEST;
 
-        checkMaxContent(dataLength, ctx, in, isRequest, requestId);
+        // Reject oversized messages to prevent OOM, without closing the connection
+        if (maxContentLength > 0 && dataLength > maxContentLength) {
+            log.warn("transport data content length over of limit, size: {} > {}. remote={} local={}",
+                    dataLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
+            // skip all readable bytes so ByteToMessageDecoder won't re-invoke decode()
+            in.skipBytes(in.readableBytes());
+            if (isRequest) {
+                Exception e = new JawsServiceException(
+                        "NettyDecoder transport data content length over of limit, size: " + dataLength + " > " + maxContentLength);
+                Response response = JawsFrameworkUtils.buildErrorResponse(requestId, e);
+                byte[] msg = CodecUtils.encodeObjectToBytes(channel, codec, response);
+                ctx.channel().writeAndFlush(msg);
+            }
+            return;
+        }
         if (in.readableBytes() < dataLength) {
             in.resetReaderIndex();
             return;
@@ -72,22 +81,5 @@ public class NettyDecoder extends ByteToMessageDecoder {
         NettyMessage message = new NettyMessage(isRequest, requestId, data);
         out.add(message);
         message.setStartTime(startTime);
-    }
-
-    private void checkMaxContent(int dataLength, ChannelHandlerContext ctx, ByteBuf byteBuf, boolean isRequest, long requestId) throws Exception {
-        if (maxContentLength > 0 && dataLength > maxContentLength) {
-            log.warn("transport data content length over of limit, size: {}  > {}. remote={} local={}",
-                    dataLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
-            // skip all readable Bytes in order to release this no-readable bytebuf in super.channelRead()
-            // that avoid this.decode() being invoked again after channel.close()
-            byteBuf.skipBytes(byteBuf.readableBytes());
-            Exception e = new JawsServiceException("NettyDecoder transport data content length over of limit, size: " + dataLength + " > " + maxContentLength);
-            if (isRequest) {
-                Response response = JawsFrameworkUtils.buildErrorResponse(requestId, e);
-                byte[] msg = CodecUtils.encodeObjectToBytes(channel, codec, response);
-                ctx.channel().writeAndFlush(msg);
-            }
-            throw e;
-        }
     }
 }

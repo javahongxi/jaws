@@ -40,13 +40,13 @@ public class NettyClient extends AbstractSharedPoolClient {
      * 触发remove的操作有： 1) service的返回结果处理。 2) timeout thread cancel
      */
     protected ConcurrentMap<Long, ResponseFuture> callbackMap = new ConcurrentHashMap<>();
-    private ScheduledFuture<?> timeMonitorFuture;
+    private final ScheduledFuture<?> timeMonitorFuture;
     private Bootstrap bootstrap;
-    private int fusingThreshold;
+    private final int fusingThreshold;
     /**
      * 连续失败次数
      */
-    private AtomicLong errorCount = new AtomicLong(0);
+    private final AtomicLong errorCount = new AtomicLong(0);
 
     public NettyClient(URL url) {
         super(url);
@@ -134,7 +134,6 @@ public class NettyClient extends AbstractSharedPoolClient {
             return true;
         }
 
-        bootstrap = new Bootstrap();
         int timeout = getUrl().getParameter(URLParamType.connectTimeout.getName(),
                 URLParamType.connectTimeout.intValue());
         if (timeout <= 0) {
@@ -142,12 +141,13 @@ public class NettyClient extends AbstractSharedPoolClient {
                     timeout + ") <= 0 is forbid.",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
+
+        final int maxContentLength = url.getIntParameter(URLParamType.maxContentLength);
+
+        bootstrap = new Bootstrap();
         bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout);
         bootstrap.option(ChannelOption.TCP_NODELAY, true);
         bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
-        // 最大响应包限制
-        final int maxContentLength = url.getParameter(URLParamType.maxContentLength.getName(),
-                URLParamType.maxContentLength.intValue());
         bootstrap.group(nioEventLoopGroup)
                 .channel(NioSocketChannel.class)
                 .handler(new ChannelInitializer<SocketChannel>() {
@@ -155,7 +155,7 @@ public class NettyClient extends AbstractSharedPoolClient {
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline pipeline = ch.pipeline();
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyClient.this, maxContentLength));
-                        pipeline.addLast("encoder", new NettyEncoder());
+                        pipeline.addLast("encoder", new NettyEncoder(maxContentLength));
                         pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (Channel channel, Object message) -> {
                             Response response = (Response) message;
                             ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
