@@ -4,14 +4,37 @@ import java.net.InetSocketAddress;
 import java.util.Collection;
 
 /**
- * Created by shenhongxi on 2020/6/25.
+ * A server-side channel that accepts incoming connections from clients.
+ * <p>
+ * In addition to the base {@link Channel} capabilities, a server can manage
+ * multiple client channels, control request acceptance, and participate in
+ * graceful shutdown.
+ *
+ * @see Channel
+ * @see Client
  */
-public interface Server extends Endpoint {
+public interface Server extends Channel {
 
+    /**
+     * Check whether this server is bound to a local address and listening.
+     *
+     * @return true if the server is bound
+     */
     boolean isBound();
 
+    /**
+     * Get all active client channels connected to this server.
+     *
+     * @return an unmodifiable collection of connected channels
+     */
     Collection<Channel> getChannels();
 
+    /**
+     * Get the channel associated with the given remote address.
+     *
+     * @param remoteAddress the remote address of the client
+     * @return the corresponding channel, or null if not found
+     */
     Channel getChannel(InetSocketAddress remoteAddress);
 
     /**

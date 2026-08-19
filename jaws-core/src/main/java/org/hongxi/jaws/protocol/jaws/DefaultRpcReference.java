@@ -2,11 +2,9 @@ package org.hongxi.jaws.protocol.jaws;
 
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.Client;
 import org.hongxi.jaws.transport.TransportFactory;
-import org.hongxi.jaws.transport.TransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,13 +27,9 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
 
     @Override
     protected Response doCall(Request request) {
-        try {
-            // Use server-side group to support cross-group invocation
-            request.setAttachment(URLParamType.group.getName(), url.getGroup());
-            return client.request(request);
-        } catch (TransportException exception) {
-            throw new JawsServiceException("DefaultRpcReference call Error: url=" + url.getUri(), exception);
-        }
+        // Use server-side group to support cross-group invocation
+        request.setAttachment(URLParamType.group.getName(), url.getGroup());
+        return client.request(request);
     }
 
     @Override

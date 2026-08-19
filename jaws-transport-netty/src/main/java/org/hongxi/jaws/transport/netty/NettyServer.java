@@ -16,7 +16,6 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractServer;
 import org.hongxi.jaws.transport.MessageHandler;
-import org.hongxi.jaws.transport.TransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,7 +50,7 @@ public class NettyServer extends AbstractServer {
     }
 
     @Override
-    public Response request(Request request) throws TransportException {
+    public Response request(Request request) {
         throw new JawsFrameworkException("NettyServer request(Request) method not support, url: " + url);
     }
 

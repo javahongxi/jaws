@@ -68,7 +68,7 @@ public class NettyClient extends AbstractSharedPoolClient {
     }
 
     @Override
-    public Response request(Request request) throws TransportException {
+    public Response request(Request request) {
         if (!isAvailable()) {
             throw new JawsServiceException("NettyChannel is unavailable: url="
                     + url.getUri() + JawsFrameworkUtils.toString(request));
@@ -81,7 +81,7 @@ public class NettyClient extends AbstractSharedPoolClient {
         return request(request, isAsync);
     }
 
-    private Response request(Request request, boolean async) throws TransportException {
+    private Response request(Request request, boolean async) {
         Channel channel;
         Response response;
         try {

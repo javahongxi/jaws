@@ -16,7 +16,6 @@ import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.Channel;
-import org.hongxi.jaws.transport.TransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +55,7 @@ public class NettyChannel implements Channel {
     }
 
     @Override
-    public Response request(Request request) throws TransportException {
+    public Response request(Request request) {
         // Resolve timeout with dynamic configuration priority:
         // method-level dynamic > service-level dynamic > global dynamic > URL config
         int urlTimeout = nettyClient.getUrl().getMethodParameter(
