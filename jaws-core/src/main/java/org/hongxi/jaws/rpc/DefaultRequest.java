@@ -61,7 +61,7 @@ public class DefaultRequest implements Request, Serializable {
 
     @Override
     public Map<String, String> getAttachments() {
-        return attachments != null ? attachments : Collections.<String, String>emptyMap();
+        return attachments != null ? attachments : Collections.emptyMap();
     }
 
     public void setAttachments(Map<String, String> attachments) {

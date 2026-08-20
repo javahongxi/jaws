@@ -1,57 +1,56 @@
 package org.hongxi.jaws.rpc;
 
 /**
- * Created by shenhongxi on 2020/7/30.
+ * Represents the result of an asynchronous RPC invocation.
+ * <p>
+ * Provides methods to check completion status, retrieve the result or exception,
+ * cancel the task, and register listeners for completion notification.
+ *
+ * @see ResponseFuture
+ * @see FutureListener
  */
 public interface Future {
 
     /**
-     * cancel the task
-     *
-     * @return
+     * Cancels the asynchronous task if it has not yet completed.
      */
-    boolean cancel();
+    void cancel();
 
     /**
-     * task cancelled
+     * Returns whether the task has completed, either normally or with an exception.
      *
-     * @return
-     */
-    boolean isCancelled();
-
-    /**
-     * task is complete : normal or exception
-     *
-     * @return
+     * @return true if the task is done (success, failure, or cancelled)
      */
     boolean isDone();
 
     /**
-     * isDone() & normal
+     * Returns whether the task completed successfully without exception.
      *
-     * @return
+     * @return true if the task completed and no exception was thrown
      */
     boolean isSuccess();
 
     /**
-     * if task is success, return the result.
+     * Returns the result value if the task completed successfully.
+     * Blocks until the task completes if it is still in progress.
      *
-     * @return
-     * @throws Exception when timeout, cancel, onFailure
+     * @return the result value of the successful invocation
      */
     Object getValue();
 
     /**
-     * if task is done or cancel, return the exception
+     * Returns the exception if the task completed with a failure or was cancelled.
      *
-     * @return
+     * @return the exception, or null if the task succeeded or has not yet completed
      */
     Exception getException();
 
     /**
-     * add future listener , when task is success，failure, timeout, cancel, it will be called
+     * Registers a listener to be notified when the task completes (success, failure,
+     * timeout, or cancellation). If the task is already done, the listener is invoked
+     * immediately.
      *
-     * @param listener
+     * @param listener the listener to register
      */
     void addListener(FutureListener listener);
 }

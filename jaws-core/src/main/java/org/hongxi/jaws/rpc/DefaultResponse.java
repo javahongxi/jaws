@@ -18,7 +18,7 @@ public class DefaultResponse implements Response, Serializable {
     private long requestId;
     private long processTime;
     private int timeout;
-    // rpc协议版本兼容时可以回传一些额外的信息
+    // Framework-level attachments carried by the response; reserved for protocol extension
     private Map<String, String> attachments;
     // default serialization is hessian2
     private int serializationNumber = 0;
@@ -41,10 +41,6 @@ public class DefaultResponse implements Response, Serializable {
     }
 
     public DefaultResponse(Object value) {
-        this.value = value;
-    }
-
-    public DefaultResponse(Object value, long requestId) {
         this.value = value;
     }
 

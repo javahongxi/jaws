@@ -12,9 +12,9 @@ import java.util.concurrent.TimeUnit;
 /**
  * Created by shenhongxi on 2021/3/7.
  */
-public class ReferenceSupport {
+public class ReferenceDestroyer {
 
-    private static final Logger log = LoggerFactory.getLogger(ReferenceSupport.class);
+    private static final Logger log = LoggerFactory.getLogger(ReferenceDestroyer.class);
 
     private static final int DELAY_TIME = 1000;
     private static final ScheduledExecutorService scheduledExecutor = Executors.newScheduledThreadPool(10);

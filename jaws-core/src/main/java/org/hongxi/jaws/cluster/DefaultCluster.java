@@ -51,7 +51,7 @@ public class DefaultCluster<T> implements Cluster<T> {
             return;
         }
 
-        ReferenceSupport.delayDestroy(
+        ReferenceDestroyer.delayDestroy(
                 oldReferences.stream().filter(r -> !references.contains(r)).toList()
         );
     }

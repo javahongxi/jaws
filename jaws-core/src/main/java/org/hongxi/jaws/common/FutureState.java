@@ -26,10 +26,6 @@ public enum FutureState {
         this.value = value;
     }
 
-    public boolean isCancelledState() {
-        return this == CANCELED;
-    }
-
     public boolean isDoneState() {
         return this == DONE;
     }

@@ -107,18 +107,18 @@ public class DefaultResponseFuture implements ResponseFuture {
     }
 
     @Override
-    public boolean cancel() {
+    public void cancel() {
         Exception e = new JawsServiceException(this.getClass().getName() +
                 " task cancel: serverPort=" + serverUrl.getHostPort() + " "
                 + JawsFrameworkUtils.toString(request) +
                 " cost=" + (System.currentTimeMillis() - createTime));
-        return cancel(e);
+        cancel(e);
     }
 
-    protected boolean cancel(Exception e) {
+    protected void cancel(Exception e) {
         synchronized (lock) {
             if (!isDoing()) {
-                return false;
+                return;
             }
 
             state = FutureState.CANCELED;
@@ -127,12 +127,6 @@ public class DefaultResponseFuture implements ResponseFuture {
         }
 
         notifyListeners();
-        return true;
-    }
-
-    @Override
-    public boolean isCancelled() {
-        return state.isCancelledState();
     }
 
     @Override
@@ -167,11 +161,6 @@ public class DefaultResponseFuture implements ResponseFuture {
         if (notifyNow) {
             notifyListener(listener);
         }
-    }
-
-    @Override
-    public long getCreateTime() {
-        return createTime;
     }
 
     @Override

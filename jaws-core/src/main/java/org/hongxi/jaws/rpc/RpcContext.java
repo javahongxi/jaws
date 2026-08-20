@@ -6,15 +6,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Created by shenhongxi on 2020/6/26.
+ * Thread-local context that holds per-request state for an RPC invocation,
+ * including request, response, attachments, and the resolved server URL.
  */
 public class RpcContext {
-    private static final ThreadLocal<RpcContext> LOCAL_CONTEXT = ThreadLocal.withInitial(() -> new RpcContext());
-    private Map<Object, Object> attributes = new HashMap<>();
-    private Map<String, String> attachments = new HashMap<>();
+    private static final ThreadLocal<RpcContext> LOCAL_CONTEXT = ThreadLocal.withInitial(RpcContext::new);
+    private final Map<Object, Object> attributes = new HashMap<>();
+    private final Map<String, String> attachments = new HashMap<>();
     private Request request;
     private Response response;
-    /* 消费端调用后记录实际服务的地址 */
+    // The actual service address recorded after the consumer-side invocation
     private URL serverUrl;
 
     public static RpcContext getContext() {
@@ -25,12 +26,6 @@ public class RpcContext {
         LOCAL_CONTEXT.remove();
     }
 
-    /**
-     * init new rpcContext with request
-     *
-     * @param request
-     * @return
-     */
     public static RpcContext init(Request request) {
         RpcContext context = new RpcContext();
         if (request != null) {
@@ -41,7 +36,9 @@ public class RpcContext {
     }
 
     public String getRequestId() {
-        if (request != null) return String.valueOf(request.getRequestId());
+        if (request != null) {
+            return String.valueOf(request.getRequestId());
+        }
         return null;
     }
 
@@ -65,12 +62,6 @@ public class RpcContext {
         attachments.put(key, value);
     }
 
-    /**
-     * get attachments from rpccontext only. not from request or response
-     *
-     * @param key
-     * @return
-     */
     public String getRpcAttachment(String key) {
         return attachments.get(key);
     }
@@ -108,9 +99,9 @@ public class RpcContext {
     }
 
     /**
-     * 获取调用方 IP（仅 Provider 端可用）
+     * Returns the caller's IP address (available only on the Provider side).
      *
-     * @return 调用方 IP 地址，如果不可用则返回 null
+     * @return the caller IP address, or null if not available
      */
     public String getCallerIp() {
         if (request != null) {

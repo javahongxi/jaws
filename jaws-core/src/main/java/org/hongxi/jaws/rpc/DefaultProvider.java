@@ -57,12 +57,10 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                 long timeout = this.url.getMethodParameter(
                         request.getMethodName(), request.getParamDesc(),
                         URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
-                // noinspection unchecked
-                CompletableFuture<Object> typedFuture = (CompletableFuture<Object>) (CompletableFuture) future;
                 if (timeout > 0) {
-                    typedFuture = typedFuture.orTimeout(timeout, TimeUnit.MILLISECONDS);
+                    future = future.orTimeout(timeout, TimeUnit.MILLISECONDS);
                 }
-                return typedFuture.handle((result, throwable) -> {
+                return future.handle((result, throwable) -> {
                     DefaultResponse asyncResponse = new DefaultResponse();
                     asyncResponse.setAttachments(request.getAttachments());
                     if (throwable != null) {

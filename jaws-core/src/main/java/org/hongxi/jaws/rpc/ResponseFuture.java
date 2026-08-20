@@ -9,7 +9,5 @@ public interface ResponseFuture extends Future, Response {
 
     void onFailure(Response response);
 
-    long getCreateTime();
-
     void setReturnType(Class<?> clazz);
 }

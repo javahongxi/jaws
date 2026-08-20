@@ -1,36 +1,19 @@
 package org.hongxi.jaws.rpc;
 
 /**
- * 用于监听Future的success和fail事件
+ * Listener for receiving completion notifications of an asynchronous {@link Future}.
  * <p>
- * Created by shenhongxi on 2020/7/30.
+ * Callbacks should be lightweight and non-blocking.
+ *
+ * @see Future#addListener(FutureListener)
  */
 public interface FutureListener {
 
     /**
-     * <pre>
-     * 		建议做一些比较简单的低功耗的操作
+     * Invoked when the {@link Future} completes (success, exception, or cancellation).
      *
-     * 		注意一些反模式：
-     *
-     * 		1) 死循环：
-     * 			operationComplete(Future future) {
-     * 					......
-     * 				future.addListener(this);  // 类似于这种操作，后果你懂的
-     * 					......
-     *            }
-     *
-     * 		2）耗资源操作或者慢操作：
-     * 			operationComplete(Future future) {
-     * 					......
-     * 				Thread.sleep(500);
-     * 					......
-     *            }
-     *
-     * </pre>
-     *
-     * @param future
-     * @throws Exception
+     * @param future the completed future
+     * @throws Exception if an error occurs during notification handling
      */
     void operationComplete(Future future) throws Exception;
 }
