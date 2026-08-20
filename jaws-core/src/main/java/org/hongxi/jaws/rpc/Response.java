@@ -3,65 +3,93 @@ package org.hongxi.jaws.rpc;
 import java.util.Map;
 
 /**
- * Created by shenhongxi on 2020/6/14.
+ * Represents an RPC response returned from provider to consumer.
+ * <p>
+ * Carries the invocation result value (or exception), processing time,
+ * and framework-level attachments corresponding to the originating {@link Request}.
+ *
+ * @author shenhongxi
  */
 public interface Response {
 
     /**
-     * <pre>
-     * 		如果 request 正常处理，那么会返回 Object value，而如果 request 处理有异常，那么 getValue 会抛出异常
-     * </pre>
+     * Returns the invocation result value.
+     * <p>
+     * If the request was processed successfully, the return value is provided.
+     * If an exception occurred during processing, this method throws it.
      *
-     * @return
-     * @throws RuntimeException
+     * @return result value
+     * @throws RuntimeException if the remote invocation failed
      */
     Object getValue();
 
     /**
-     * 如果request处理有异常，那么调用该方法return exception 如果request还没处理完或者request处理正常，那么return null
+     * Returns the exception thrown during request processing, or {@code null} if
+     * the request has completed normally or has not yet been processed.
      * <p>
-     * <pre>
-     * 		该方法不会阻塞，无论该request是处理中还是处理完成
-     * </pre>
+     * This method is non-blocking regardless of whether the request has completed.
      *
-     * @return
+     * @return exception instance, or {@code null}
      */
     Exception getException();
 
     /**
-     * 与 Request 的 requestId 相对应
+     * Returns the request id that this response corresponds to.
      *
-     * @return
+     * @return request id
      */
     long getRequestId();
 
     /**
-     * 业务处理时间
+     * Returns the server-side business processing time in milliseconds.
      *
-     * @return
+     * @return process time in milliseconds
      */
     long getProcessTime();
 
     /**
-     * 业务处理时间
+     * Sets the server-side business processing time.
      *
-     * @param time
+     * @param time process time in milliseconds
      */
     void setProcessTime(long time);
 
+    /**
+     * Returns the request timeout in milliseconds.
+     *
+     * @return timeout in milliseconds
+     */
     int getTimeout();
 
+    /**
+     * Returns all framework-level attachments carried by this response.
+     *
+     * @return map of attachments
+     */
     Map<String, String> getAttachments();
 
+    /**
+     * Sets a framework-level attachment on this response.
+     *
+     * @param key   attachment key
+     * @param value attachment value
+     */
     void setAttachment(String key, String value);
 
+    /**
+     * Returns the serialization protocol identifier used for encoding this response.
+     *
+     * @return serialization number
+     */
     int getSerializationNumber();
 
     /**
-     * set the serialization number.
-     * same to the protocol version, this value only used in server end for compatible.
+     * Sets the serialization protocol identifier.
+     * <p>
+     * This value acts as a protocol version marker, primarily used on the server side
+     * for backward-compatible deserialization.
      *
-     * @param number
+     * @param number serialization number
      */
     void setSerializationNumber(int number);
 }

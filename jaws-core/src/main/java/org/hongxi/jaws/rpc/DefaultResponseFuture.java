@@ -27,7 +27,7 @@ public class DefaultResponseFuture implements ResponseFuture {
     protected List<FutureListener> listeners;
     protected URL serverUrl;
     protected Class<?> returnType;
-    // rpc协议版本兼容时可以回传一些额外的信息
+    // Framework-level attachments carried by the response; reserved for protocol extension
     private Map<String, String> attachments;
 
     public DefaultResponseFuture(Request requestObj, int timeout, URL serverUrl) {
@@ -180,14 +180,6 @@ public class DefaultResponseFuture implements ResponseFuture {
     }
 
 
-    public Object getRequestObj() {
-        return request;
-    }
-
-    public FutureState getState() {
-        return state;
-    }
-
     private void timeoutSoCancel() {
         this.processTime = System.currentTimeMillis() - createTime;
 
@@ -222,7 +214,8 @@ public class DefaultResponseFuture implements ResponseFuture {
         try {
             listener.operationComplete(this);
         } catch (Throwable t) {
-            log.error(this.getClass().getName() + " notifyListener Error: " + listener.getClass().getSimpleName(), t);
+            log.error("{} notifyListener Error: {}",
+                    this.getClass().getName(), listener.getClass().getSimpleName(), t);
         }
     }
 
@@ -230,10 +223,10 @@ public class DefaultResponseFuture implements ResponseFuture {
         return state.isDoingState();
     }
 
-    protected boolean done() {
+    protected void done() {
         synchronized (lock) {
             if (!isDoing()) {
-                return false;
+                return;
             }
 
             state = FutureState.DONE;
@@ -241,7 +234,6 @@ public class DefaultResponseFuture implements ResponseFuture {
         }
 
         notifyListeners();
-        return true;
     }
 
     @Override
@@ -292,6 +284,5 @@ public class DefaultResponseFuture implements ResponseFuture {
 
     @Override
     public void setSerializationNumber(int number) {
-
     }
 }

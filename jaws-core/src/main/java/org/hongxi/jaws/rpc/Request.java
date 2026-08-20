@@ -3,78 +3,98 @@ package org.hongxi.jaws.rpc;
 import java.util.Map;
 
 /**
- * Created by shenhongxi on 2020/6/14.
+ * Represents an RPC request sent from consumer to provider.
+ * <p>
+ * Carries the target service interface, method name, parameter descriptor,
+ * arguments, and framework-level attachments propagated through the invocation chain.
+ *
+ * @author shenhongxi
  */
 public interface Request {
 
     /**
-     * service interface
+     * Returns the fully-qualified name of the target service interface.
      *
-     * @return
+     * @return service interface name
      */
     String getInterfaceName();
 
     /**
-     * service method name
+     * Returns the name of the target method to invoke.
      *
-     * @return
+     * @return method name
      */
     String getMethodName();
 
     /**
-     * service method param desc (sign)
+     * Returns the parameter descriptor (type signature) used for method overload resolution.
+     * <p>
+     * For example, a method {@code void hello(String, int)} yields {@code "java.lang.String,int"}.
      *
-     * @return
+     * @return parameter type descriptor
      */
     String getParamDesc();
 
     /**
-     * service method param
+     * Returns the actual arguments to pass to the target method.
      *
-     * @return
+     * @return argument array, or {@code null} if the method has no parameters
      */
     Object[] getArguments();
 
     /**
-     * get framework param
+     * Returns all framework-level attachments (key-value pairs) carried by this request.
+     * <p>
+     * Attachments are transparently propagated from consumer to provider
+     * and are not part of the business method signature.
      *
-     * @return
+     * @return immutable or mutable map of attachments
      */
     Map<String, String> getAttachments();
 
     /**
-     * set framework param
+     * Sets a framework-level attachment on this request.
      *
-     * @return
+     * @param name  attachment key
+     * @param value attachment value
      */
     void setAttachment(String name, String value);
 
     /**
-     * request id
+     * Returns the unique request id, used to correlate request and response.
      *
-     * @return
+     * @return request id
      */
     long getRequestId();
 
     /**
-     * retries
+     * Returns the number of retries remaining for this request.
      *
-     * @return
+     * @return retries left; 0 means no more retries
      */
     int getRetries();
 
     /**
-     * set retries
+     * Sets the number of retries for this request.
+     *
+     * @param retries retry count
      */
     void setRetries(int retries);
 
+    /**
+     * Returns the serialization protocol identifier used for encoding this request.
+     *
+     * @return serialization number
+     */
     int getSerializationNumber();
 
     /**
-     * set the serialization number.
-     * same to the protocol version, this value only used in server end for compatible.
+     * Sets the serialization protocol identifier.
+     * <p>
+     * This value acts as a protocol version marker, primarily used on the server side
+     * for backward-compatible deserialization.
      *
-     * @param number
+     * @param number serialization number
      */
     void setSerializationNumber(int number);
 }

@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import org.hongxi.jaws.codec.Codec;
-import org.hongxi.jaws.codec.CodecUtils;
+import org.hongxi.jaws.transport.FrameEncoder;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -65,7 +65,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
                 Exception e = new JawsServiceException(
                         "NettyDecoder transport data content length over of limit, size: " + dataLength + " > " + maxContentLength);
                 Response response = JawsFrameworkUtils.buildErrorResponse(requestId, e);
-                byte[] msg = CodecUtils.encodeObjectToBytes(channel, codec, response);
+                byte[] msg = FrameEncoder.encodeFrame(channel, codec, response);
                 ctx.channel().writeAndFlush(msg);
             }
             return;

@@ -25,24 +25,23 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
     }
 
     @Override
+    protected boolean doInit() {
+        return client.open();
+    }
+
+    @Override
     protected Response doCall(Request request) {
         request.setAttachment(URLParamType.group.getName(), url.getGroup());
         return client.request(request);
     }
 
     @Override
-    protected void decrActiveCount(Request request, Response response) {
-        if (!(response instanceof Future future)) {
+    protected void decrActiveCount(Response response) {
+        if (response instanceof Future future) {
+            future.addListener(future1 -> activeReferenceCount.decrementAndGet());
+        } else {
             activeReferenceCount.decrementAndGet();
-            return;
         }
-
-        future.addListener(future1 -> activeReferenceCount.decrementAndGet());
-    }
-
-    @Override
-    protected boolean doInit() {
-        return client.open();
     }
 
     @Override

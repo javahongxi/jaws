@@ -1,5 +1,6 @@
-package org.hongxi.jaws.codec;
+package org.hongxi.jaws.transport;
 
+import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.util.ByteUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
@@ -8,7 +9,6 @@ import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
-import org.hongxi.jaws.transport.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,15 +17,22 @@ import java.io.IOException;
 /**
  * Created by shenhongxi on 2020/7/25.
  */
-public class CodecUtils {
-    private static final Logger log = LoggerFactory.getLogger(CodecUtils.class);
+public class FrameEncoder {
+    private static final Logger log = LoggerFactory.getLogger(FrameEncoder.class);
 
-    public static byte[] encodeObjectToBytes(Channel channel, Codec codec, Object msg) {
+    public static byte[] encodeFrame(Channel channel, Codec codec, Object msg) {
         try {
             byte[] data = encodeMessage(channel, codec, msg);
             short type = ByteUtils.bytes2short(data, 0);
             if (type == JawsCodec.MAGIC) {
-                return encodeV1(msg, data);
+                long requestId = getRequestId(msg);
+                byte[] result = new byte[JawsCodec.HEADER_LENGTH + data.length];
+                ByteUtils.short2bytes(JawsConstants.NETTY_MAGIC_TYPE, result, 0);
+                result[3] = getType(msg);
+                ByteUtils.long2bytes(requestId, result, 4);
+                ByteUtils.int2bytes(data.length, result, 12);
+                System.arraycopy(data, 0, result, JawsCodec.HEADER_LENGTH, data.length);
+                return result;
             } else {
                 throw new JawsFrameworkException("can not encode message, unknown magic:" + type);
             }
@@ -35,24 +42,13 @@ public class CodecUtils {
         }
     }
 
-    private static byte[] encodeV1(Object msg, byte[] data) throws IOException {
-        long requestId = getRequestId(msg);
-        byte[] result = new byte[JawsCodec.HEADER_LENGTH + data.length];
-        ByteUtils.short2bytes(JawsConstants.NETTY_MAGIC_TYPE, result, 0);
-        result[3] = getType(msg);
-        ByteUtils.long2bytes(requestId, result, 4);
-        ByteUtils.int2bytes(data.length, result, 12);
-        System.arraycopy(data, 0, result, JawsCodec.HEADER_LENGTH, data.length);
-        return result;
-    }
-
     private static byte[] encodeMessage(Channel channel, Codec codec, Object msg) throws IOException {
         byte[] data;
         if (msg instanceof Response response) {
             try {
                 data = codec.encode(channel, msg);
             } catch (Exception e) {
-                log.error("NettyEncoder encode error, identity=" + channel.getUrl().getIdentity(), e);
+                log.error("encode message error, identity={}", channel.getUrl().getIdentity(), e);
                 Response errorResponse = JawsFrameworkUtils.buildErrorResponse(response.getRequestId(), e);
                 data = codec.encode(channel, errorResponse);
             }

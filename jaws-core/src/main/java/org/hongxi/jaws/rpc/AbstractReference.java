@@ -12,9 +12,18 @@ import java.util.concurrent.atomic.AtomicLong;
 public abstract class AbstractReference<T> extends AbstractNode implements Reference<T> {
 
     protected Class<T> interfaceClass;
+
+    /**
+     * Current number of in-flight RPC calls on this reference (nodeType=reference).
+     * Incremented before each invocation and decremented after the response is received
+     * (or after the async future completes). Consumed by load-balancing strategies
+     * such as leastActive and shortestResponse to estimate real-time node load.
+     */
     protected AtomicInteger activeReferenceCount = new AtomicInteger(0);
 
-    /* Cumulative response time statistics for successful calls, used for shortest-response load balancing */
+    /**
+     * Cumulative response time statistics for successful calls, used for shortest-response load balancing
+     */
     private final AtomicLong succeededElapsed = new AtomicLong(0);
     private final AtomicLong succeededCount = new AtomicLong(0);
 
@@ -35,14 +44,14 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
                     + " " + JawsFrameworkUtils.toString(request));
         }
 
-        incrActiveCount(request);
+        incrActiveCount();
         Response response = null;
         long startTime = System.nanoTime();
         try {
             response = doCall(request);
             return response;
         } finally {
-            decrActiveCount(request, response);
+            decrActiveCount(response);
             if (response != null && response.getException() == null) {
                 long elapsed = System.nanoTime() - startTime;
                 succeededElapsed.addAndGet(elapsed);
@@ -56,11 +65,11 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
         return activeReferenceCount.get();
     }
 
-    protected void incrActiveCount(Request request) {
+    protected void incrActiveCount() {
         activeReferenceCount.incrementAndGet();
     }
 
-    protected void decrActiveCount(Request request, Response response) {
+    protected void decrActiveCount(Response response) {
         activeReferenceCount.decrementAndGet();
     }
 
@@ -76,18 +85,11 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
         return url;
     }
 
-    /*
-     * 获取成功调用的累计响应时间（纳秒）
-     */
     public long getSucceededElapsed() {
         return succeededElapsed.get();
     }
 
-    /*
-     * 获取成功调用次数
-     */
     public long getSucceededCount() {
         return succeededCount.get();
     }
-
 }

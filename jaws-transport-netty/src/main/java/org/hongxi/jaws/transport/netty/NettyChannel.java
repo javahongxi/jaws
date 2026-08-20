@@ -2,7 +2,7 @@ package org.hongxi.jaws.transport.netty;
 
 import io.netty.channel.ChannelFuture;
 import org.hongxi.jaws.codec.Codec;
-import org.hongxi.jaws.codec.CodecUtils;
+import org.hongxi.jaws.transport.FrameEncoder;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -57,11 +57,12 @@ public class NettyChannel implements Channel {
         }
 
         ResponseFuture response = new DefaultResponseFuture(request, timeout, getUrl());
-        this.nettyClient.registerCallback(request.getRequestId(), response);
-        byte[] msg = CodecUtils.encodeObjectToBytes(this, codec, request);
-        ChannelFuture writeFuture = this.channel.writeAndFlush(msg);
-        boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
+        nettyClient.registerCallback(request.getRequestId(), response);
 
+        byte[] msg = FrameEncoder.encodeFrame(this, codec, request);
+        ChannelFuture writeFuture = channel.writeAndFlush(msg);
+
+        boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
         if (completed && writeFuture.isSuccess()) {
             response.addListener(future -> {
                 if (future.isSuccess() || (future.isDone() && ExceptionUtils.isBizException(future.getException()))) {
@@ -76,7 +77,7 @@ public class NettyChannel implements Channel {
         }
 
         writeFuture.cancel(true);
-        response = this.nettyClient.removeCallback(request.getRequestId());
+        response = nettyClient.removeCallback(request.getRequestId());
         if (response != null) {
             response.cancel();
         }
