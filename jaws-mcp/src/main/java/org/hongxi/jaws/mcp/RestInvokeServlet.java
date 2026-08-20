@@ -1,4 +1,4 @@
-package org.hongxi.jaws.rest;
+package org.hongxi.jaws.mcp;
 
 import com.alibaba.fastjson2.JSON;
 import jakarta.servlet.http.HttpServlet;

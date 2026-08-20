@@ -10,7 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>jaws-mcp-spring-boot-starter</artifactId>
-    <description>Spring Boot starter for exposing Jaws RPC services as MCP tools</description>
+    <description>Spring Boot starter for exposing Jaws RPC services via MCP and REST APIs</description>
 
     <dependencies>
         <dependency>

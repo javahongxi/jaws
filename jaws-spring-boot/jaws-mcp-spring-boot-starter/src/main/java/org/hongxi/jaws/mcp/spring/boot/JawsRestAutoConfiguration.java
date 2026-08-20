@@ -1,7 +1,7 @@
-package org.hongxi.jaws.rest.spring.boot;
+package org.hongxi.jaws.mcp.spring.boot;
 
 import jakarta.servlet.http.HttpServlet;
-import org.hongxi.jaws.rest.RestInvokeServlet;
+import org.hongxi.jaws.mcp.RestInvokeServlet;
 import org.hongxi.jaws.rpc.Exporter;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.spring.boot.JawsAutoConfiguration;

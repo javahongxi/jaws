@@ -2,10 +2,12 @@
 
 将 Jaws RPC 服务通过 REST API 对外暴露，传统 HTTP 客户端无需理解 MCP 协议即可直接调用后端 RPC 服务。
 
+> **注意：** REST 桥接已合并至 `jaws-mcp` 模块，与 MCP 桥接共享同一模块和 Spring Boot Starter。
+
 ## 工作原理
 
 ```
-HTTP 客户端  ──REST (JSON)──▶  jaws-rest Servlet  ──Jaws RPC──▶  Provider
+HTTP 客户端  ──REST (JSON)──▶  jaws-mcp RestInvokeServlet  ──Jaws RPC──▶  Provider
 ```
 
 - 轻量 Servlet 实现，无 Spring MVC 依赖
@@ -18,12 +20,12 @@ HTTP 客户端  ──REST (JSON)──▶  jaws-rest Servlet  ──Jaws RPC─
 ```xml
 <dependency>
     <groupId>org.hongxi</groupId>
-    <artifactId>jaws-rest-spring-boot-starter</artifactId>
+    <artifactId>jaws-mcp-spring-boot-starter</artifactId>
     <version>${jaws.version}</version>
 </dependency>
 ```
 
-该 starter 会自动引入 `jaws-rest` 核心模块和 Spring Web 依赖。
+该 starter 同时包含 MCP 和 REST 桥接能力，均基于 HTTP 协议。
 
 ## 配置
 
@@ -182,7 +184,7 @@ curl -s -X POST http://localhost:8083/rest/invoke/org.hongxi.jaws.sample.api.Not
 | 会话管理 | 需要 initialize → tools/call | 无状态，直接调用 |
 | 适用场景 | AI Agent / MCP 客户端 | 传统 HTTP 客户端 / 调试 |
 | 依赖 | MCP Java SDK | 无额外依赖 |
-| Starter | `jaws-mcp-spring-boot-starter` | `jaws-rest-spring-boot-starter` |
+| Starter | `jaws-mcp-spring-boot-starter` | 同左（已合并） |
 | 共享组件 | `ServiceMethodSpec`、`ArgumentConverter`、`JsonSchemaGenerator` | 同左 |
 
-两个桥接可以同时启用，分别在不同端口提供服务。
+两个桥接可以同时启用，分别在不同端口提供服务。REST 和 MCP 均已合并至 `jaws-mcp` 模块。

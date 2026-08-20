@@ -1,4 +1,4 @@
-package org.hongxi.jaws.rest.spring.boot;
+package org.hongxi.jaws.mcp.spring.boot;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
