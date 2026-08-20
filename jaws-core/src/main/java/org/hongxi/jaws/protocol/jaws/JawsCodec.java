@@ -47,8 +47,8 @@ public class JawsCodec extends AbstractCodec {
             if (ExceptionUtils.isJawsException(e)) {
                 throw (RuntimeException) e;
             } else {
-                throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response), e,
-                        JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
+                throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response),
+                        e, JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
             }
         }
 
@@ -95,11 +95,9 @@ public class JawsCodec extends AbstractCodec {
 
         long requestId = ByteUtils.bytes2long(data, 4);
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
-                .getExtension(channel.getUrl().getParameter(URLParamType.serialization.getName(),
-                        URLParamType.serialization.value()));
+                .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
 
         try {
-            // response
             if (isResponse) {
                 return decodeResponse(body, dataType, requestId, serialization);
             } else {
@@ -107,8 +105,7 @@ public class JawsCodec extends AbstractCodec {
             }
         } catch (ClassNotFoundException e) {
             throw new JawsFrameworkException("decode " + (isResponse ? "response" : "request") +
-                    " error: class not found", e,
-                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+                    " error: class not found", e, JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         } catch (Exception e) {
             if (ExceptionUtils.isJawsException(e)) {
                 throw (RuntimeException) e;
@@ -149,19 +146,16 @@ public class JawsCodec extends AbstractCodec {
         output.writeUTF(request.getMethodName());
         output.writeUTF(request.getParamDesc());
 
-        Serialization serialization =
-                ExtensionLoader.getExtensionLoader(Serialization.class).getExtension(
-                        channel.getUrl().getParameter(URLParamType.serialization.getName(),
-                                URLParamType.serialization.value()));
+        Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
+                .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
 
-        if (request.getArguments() != null && request.getArguments().length > 0) {
+        if (request.getArguments() != null) {
             for (Object obj : request.getArguments()) {
                 serialize(output, obj, serialization);
             }
         }
 
         if (request.getAttachments() == null || request.getAttachments().isEmpty()) {
-            // empty attachments
             output.writeInt(0);
         } else {
             output.writeInt(request.getAttachments().size());
@@ -200,13 +194,10 @@ public class JawsCodec extends AbstractCodec {
     private byte[] encodeResponse(Channel channel, Response value) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         ObjectOutput output = createOutput(outputStream);
-        Serialization serialization =
-                ExtensionLoader.getExtensionLoader(Serialization.class).getExtension(
-                        channel.getUrl().getParameter(URLParamType.serialization.getName(),
-                                URLParamType.serialization.value()));
+        Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
+                .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
 
-        byte flag = 0;
-
+        byte flag;
         output.writeLong(value.getProcessTime());
 
         if (value.getException() != null) {
@@ -249,9 +240,8 @@ public class JawsCodec extends AbstractCodec {
      * @param flag
      * @param requestId
      * @return
-     * @throws IOException
      */
-    private byte[] encode(byte[] body, byte flag, long requestId) throws IOException {
+    private byte[] encode(byte[] body, byte flag, long requestId) {
         byte[] header = new byte[HEADER_LENGTH];
         int offset = 0;
 
@@ -280,7 +270,8 @@ public class JawsCodec extends AbstractCodec {
         return data;
     }
 
-    private Object decodeRequest(byte[] body, long requestId, Serialization serialization) throws IOException, ClassNotFoundException {
+    private Object decodeRequest(byte[] body, long requestId, Serialization serialization)
+            throws IOException, ClassNotFoundException {
         ByteArrayInputStream inputStream = new ByteArrayInputStream(body);
         ObjectInput input = createInput(inputStream);
 
@@ -301,9 +292,9 @@ public class JawsCodec extends AbstractCodec {
         return rpcRequest;
     }
 
-    private Object[] decodeRequestParameter(ObjectInput input, String parameterDesc, Serialization serialization) throws IOException,
-            ClassNotFoundException {
-        if (parameterDesc == null || parameterDesc.equals("")) {
+    private Object[] decodeRequestParameter(ObjectInput input, String parameterDesc, Serialization serialization)
+            throws IOException, ClassNotFoundException {
+        if (parameterDesc == null || parameterDesc.isEmpty()) {
             return null;
         }
 
@@ -318,7 +309,7 @@ public class JawsCodec extends AbstractCodec {
         return paramObjs;
     }
 
-    private Map<String, String> decodeRequestAttachments(ObjectInput input) throws IOException, ClassNotFoundException {
+    private Map<String, String> decodeRequestAttachments(ObjectInput input) throws IOException {
         int size = input.readInt();
 
         if (size <= 0) {
@@ -334,9 +325,8 @@ public class JawsCodec extends AbstractCodec {
         return attachments;
     }
 
-    private Object decodeResponse(byte[] body, byte dataType, long requestId, Serialization serialization) throws IOException,
-            ClassNotFoundException {
-
+    private Object decodeResponse(byte[] body, byte dataType, long requestId, Serialization serialization)
+            throws IOException, ClassNotFoundException {
         ByteArrayInputStream inputStream = new ByteArrayInputStream(body);
         ObjectInput input = createInput(inputStream);
 
