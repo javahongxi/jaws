@@ -1,7 +1,6 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.common.util.MathUtils;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 
@@ -70,6 +69,6 @@ public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
         } else {
             hashcode = Arrays.hashCode(request.getArguments());
         }
-        return MathUtils.getNonNegative(hashcode);
+        return 0x7fffffff & hashcode;
     }
 }

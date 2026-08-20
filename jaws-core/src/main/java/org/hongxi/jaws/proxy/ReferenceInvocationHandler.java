@@ -50,7 +50,7 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
     }
 
     /**
-     * toString,equals,hashCode 等接口未声明的方法不进行远程调用
+     * Methods not declared in the interface (toString, equals, hashCode, etc.) are not invoked remotely
      */
     private boolean isLocalMethod(Method method) {
         if (method.getDeclaringClass().equals(Object.class)) {

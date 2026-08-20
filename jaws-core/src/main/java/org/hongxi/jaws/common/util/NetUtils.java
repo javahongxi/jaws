@@ -10,23 +10,23 @@ import java.util.regex.Pattern;
 
 /**
  *
- * 网络工具类
+ * Network utility class
  * <p>
  * Created by shenhongxi on 2020/8/22.
  */
-
 public class NetUtils {
+    private static final Logger log = LoggerFactory.getLogger(NetUtils.class);
 
     public static final String LOCALHOST = "127.0.0.1";
-    public static final String ANYHOST = "0.0.0.0";
-    private static final Logger log = LoggerFactory.getLogger(NetUtils.class);
+    public static final String ANY_HOST = "0.0.0.0";
     private static final Pattern LOCAL_IP_PATTERN = Pattern.compile("127(\\.\\d{1,3}){3}$");
-    private static final Pattern ADDRESS_PATTERN = Pattern.compile("^\\d{1,3}(\\.\\d{1,3}){3}\\:\\d{1,5}$");
     private static final Pattern IP_PATTERN = Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3,5}$");
     private static volatile InetAddress LOCAL_ADDRESS = null;
 
     public static boolean isInvalidLocalHost(String host) {
-        return host == null || host.isEmpty() || host.equalsIgnoreCase("localhost") || host.equals("0.0.0.0")
+        return host == null || host.isEmpty()
+                || host.equalsIgnoreCase("localhost")
+                || host.equals(ANY_HOST)
                 || (LOCAL_IP_PATTERN.matcher(host).matches());
     }
 
@@ -35,17 +35,8 @@ public class NetUtils {
     }
 
     /**
-     * {@link #getLocalAddress(Map)}
-     *
-     * @return
-     */
-    public static InetAddress getLocalAddress() {
-        return getLocalAddress(null);
-    }
-
-    /**
      * <pre>
-     * 查找策略：首先看是否已经查到ip --> hostname对应的ip --> 根据连接目标端口得到的本地ip --> 轮询网卡
+     * Lookup strategy: cached ip -> hostname-resolved ip -> socket-connected local ip -> network interface scan
      * </pre>
      *
      * @return loca ip
@@ -78,7 +69,7 @@ public class NetUtils {
                 return localAddress;
             }
         } catch (Throwable e) {
-            log.warn("Failed to retrieve local address by hostname:" + e);
+            log.warn("Failed to retrieve local address by hostname", e);
         }
         return null;
     }
@@ -92,16 +83,12 @@ public class NetUtils {
             String host = entry.getKey();
             int port = entry.getValue();
             try {
-                Socket socket = new Socket();
-                try {
+                try (Socket socket = new Socket()) {
                     SocketAddress addr = new InetSocketAddress(host, port);
                     socket.connect(addr, 1000);
                     return socket.getLocalAddress();
-                } finally {
-                    try {
-                        socket.close();
-                    } catch (Throwable e) {
-                    }
+                } catch (Throwable e) {
+                    // ignore
                 }
             } catch (Exception e) {
                 log.warn("Failed to retrieve local address by connecting to dest host:port({}:{}) failed",
@@ -114,24 +101,22 @@ public class NetUtils {
     private static InetAddress getLocalAddressByNetworkInterface() {
         try {
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            if (interfaces != null) {
-                while (interfaces.hasMoreElements()) {
-                    try {
-                        NetworkInterface network = interfaces.nextElement();
-                        Enumeration<InetAddress> addresses = network.getInetAddresses();
-                        while (addresses.hasMoreElements()) {
-                            try {
-                                InetAddress address = addresses.nextElement();
-                                if (isValidAddress(address)) {
-                                    return address;
-                                }
-                            } catch (Throwable e) {
-                                log.warn("Failed to retrieve ip address", e);
+            while (interfaces.hasMoreElements()) {
+                try {
+                    NetworkInterface network = interfaces.nextElement();
+                    Enumeration<InetAddress> addresses = network.getInetAddresses();
+                    while (addresses.hasMoreElements()) {
+                        try {
+                            InetAddress address = addresses.nextElement();
+                            if (isValidAddress(address)) {
+                                return address;
                             }
+                        } catch (Throwable e) {
+                            log.warn("Failed to retrieve ip address", e);
                         }
-                    } catch (Throwable e) {
-                        log.warn("Failed to retrieve ip address", e);
                     }
+                } catch (Throwable e) {
+                    log.warn("Failed to retrieve ip address", e);
                 }
             }
         } catch (Throwable e) {
@@ -140,19 +125,12 @@ public class NetUtils {
         return null;
     }
 
-    public static boolean isValidAddress(String address) {
-        return ADDRESS_PATTERN.matcher(address).matches();
-    }
-
     public static boolean isValidAddress(InetAddress address) {
         if (address == null || address.isLoopbackAddress()) return false;
         String name = address.getHostAddress();
-        return (name != null && !ANYHOST.equals(name) && !LOCALHOST.equals(name) && IP_PATTERN.matcher(name).matches());
+        return (name != null && !ANY_HOST.equals(name) && !LOCALHOST.equals(name) && IP_PATTERN.matcher(name).matches());
     }
 
-    /*
-     * return ip to avoid lookup dns
-     */
     public static String getHostName(SocketAddress socketAddress) {
         if (socketAddress == null) {
             return null;
@@ -168,9 +146,6 @@ public class NetUtils {
         return null;
     }
 
-    /*
-     * Check if a port is available on localhost.
-     */
     public static boolean isPortAvailable(int port) {
         if (port < 1 || port > 65535) {
             return false;

@@ -1,18 +1,16 @@
 package org.hongxi.jaws.common.util;
 
 import java.lang.reflect.Array;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * 反射相关的辅助类
+ * Reflection utility class
  *
  * @author maijunsheng
- * @version 创建时间：2013-5-23
+ * @version Created: 2013-5-23
  *
  */
 public class ReflectUtils {
@@ -23,19 +21,18 @@ public class ReflectUtils {
     private static final ConcurrentMap<String, Class<?>> name2ClassCache = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, String> class2NameCache = new ConcurrentHashMap<>();
 
-    private static final String[] PRIMITIVE_NAMES = new String[]{"boolean", "byte", "char", "double", "float", "int", "long", "short",
-            "void"};
+    private static final String[] PRIMITIVE_NAMES = new String[]{
+            "boolean", "byte", "char", "double", "float", "int", "long", "short", "void"};
 
-    private static final Class<?>[] PRIMITIVE_CLASSES = new Class<?>[]{boolean.class, byte.class, char.class, double.class, float.class,
+    private static final Class<?>[] PRIMITIVE_CLASSES = new Class<?>[]{
+            boolean.class, byte.class, char.class, double.class, float.class,
             int.class, long.class, short.class, Void.TYPE};
 
     private static final int PRIMITIVE_CLASS_NAME_MAX_LENGTH = 7;
 
     /**
-     * 获取method方式的接口参数，以逗号分割，拼接clazz列表。 如果没有参数，那么void表示
-     *
-     * @param method
-     * @return
+     * Get method parameter types as comma-separated class name string.
+     * Returns "void" if the method has no parameters.
      */
     public static String getMethodParamDesc(Method method) {
         if (method.getParameterTypes().length == 0) {
@@ -55,10 +52,7 @@ public class ReflectUtils {
     }
 
     /**
-     * 获取方法的标识 : method_name + "(" + paramDesc + ")"
-     *
-     * @param method
-     * @return
+     * Get method descriptor: method_name + "(" + paramDesc + ")"
      */
     public static String getMethodDesc(Method method) {
         String methodParamDesc = getMethodParamDesc(method);
@@ -66,10 +60,7 @@ public class ReflectUtils {
     }
 
     /**
-     * 获取方法的标识 : method_name + "(" + paramDesc + ")"
-     *
-     * @param
-     * @return
+     * Get method descriptor: method_name + "(" + paramDesc + ")"
      */
     public static String getMethodDesc(String methodName, String paramDesc) {
         if (paramDesc == null) {
@@ -80,7 +71,7 @@ public class ReflectUtils {
     }
 
     public static Class<?>[] forNames(String classList) throws ClassNotFoundException {
-        if (classList == null || "".equals(classList) || EMPTY_PARAM.equals(classList)) {
+        if (classList == null || classList.isEmpty() || EMPTY_PARAM.equals(classList)) {
             return EMPTY_CLASS_ARRAY;
         }
 
@@ -96,7 +87,7 @@ public class ReflectUtils {
     }
 
     public static Class<?> forName(String className) throws ClassNotFoundException {
-        if (null == className || "".equals(className)) {
+        if (null == className || className.isEmpty()) {
             return null;
         }
 
@@ -108,25 +99,25 @@ public class ReflectUtils {
 
         clazz = forNameWithoutCache(className);
 
-        // 应该没有内存消耗过多的可能，除非有些代码很恶心，创建特别多的类
+        // Memory consumption should be minimal unless an excessive number of classes are created
         name2ClassCache.putIfAbsent(className, clazz);
 
         return clazz;
     }
 
     private static Class<?> forNameWithoutCache(String className) throws ClassNotFoundException {
-        if (!className.endsWith("[]")) { // not array
+        if (!className.endsWith("[]")) {
             Class<?> clazz = getPrimitiveClass(className);
-
-            clazz = (clazz != null) ? clazz : Class.forName(className, true, Thread.currentThread().getContextClassLoader());
-            return clazz;
+            if (clazz != null) {
+                return clazz;
+            }
+            return Class.forName(className, true, Thread.currentThread().getContextClassLoader());
         }
 
         int dimensionSize = 0;
 
         while (className.endsWith("[]")) {
             dimensionSize++;
-
             className = className.substring(0, className.length() - 2);
         }
 
@@ -142,10 +133,7 @@ public class ReflectUtils {
     }
 
     /**
-     * 需要支持一维数组、二维数组等
-     *
-     * @param
-     * @return
+     * Supports 1D arrays, 2D arrays, etc.
      */
     public static String getName(Class<?> clazz) {
         if (clazz == null) {
@@ -160,7 +148,7 @@ public class ReflectUtils {
 
         className = getNameWithoutCache(clazz);
 
-        // 与name2ClassCache同样道理，如果没有恶心的代码，这块内存大小应该可控
+        // Same logic as name2ClassCache: memory size should be controllable unless unusual code is present
         class2NameCache.putIfAbsent(clazz, className);
 
         return className;
@@ -177,7 +165,7 @@ public class ReflectUtils {
             clazz = clazz.getComponentType();
         }
 
-        return clazz.getName() + sb.toString();
+        return clazz.getName() + sb;
     }
 
     public static Class<?> getPrimitiveClass(String name) {
@@ -190,101 +178,4 @@ public class ReflectUtils {
         }
         return null;
     }
-
-    /**
-     * 获取clazz public method
-     *
-     * <pre>
-     *      1）不包含构造函数
-     *      2）不包含Object.class
-     *      3）包含该clazz的父类的所有public方法
-     * </pre>
-     *
-     * @param clazz
-     * @return
-     */
-    public static List<Method> getPublicMethod(Class<?> clazz) {
-        Method[] methods = clazz.getMethods();
-        List<Method> ret = new ArrayList<>();
-
-        for (Method method : methods) {
-
-            boolean isPublic = Modifier.isPublic(method.getModifiers());
-            boolean isNotObjectClass = method.getDeclaringClass() != Object.class;
-
-            if (isPublic && isNotObjectClass) {
-                ret.add(method);
-            }
-        }
-
-        return ret;
-    }
-
-    public static Object getEmptyObject(Class<?> returnType) {
-        return getEmptyObject(returnType, new HashMap<Class<?>, Object>(), 0);
-    }
-
-    private static Object getEmptyObject(Class<?> returnType, Map<Class<?>, Object> emptyInstances, int level) {
-        if (level > 2) return null;
-        if (returnType == null) {
-            return null;
-        } else if (returnType == boolean.class || returnType == Boolean.class) {
-            return false;
-        } else if (returnType == char.class || returnType == Character.class) {
-            return '\0';
-        } else if (returnType == byte.class || returnType == Byte.class) {
-            return (byte) 0;
-        } else if (returnType == short.class || returnType == Short.class) {
-            return (short) 0;
-        } else if (returnType == int.class || returnType == Integer.class) {
-            return 0;
-        } else if (returnType == long.class || returnType == Long.class) {
-            return 0L;
-        } else if (returnType == float.class || returnType == Float.class) {
-            return 0F;
-        } else if (returnType == double.class || returnType == Double.class) {
-            return 0D;
-        } else if (returnType.isArray()) {
-            return Array.newInstance(returnType.getComponentType(), 0);
-        } else if (returnType.isAssignableFrom(ArrayList.class)) {
-            return new ArrayList<>(0);
-        } else if (returnType.isAssignableFrom(HashSet.class)) {
-            return new HashSet<>(0);
-        } else if (returnType.isAssignableFrom(HashMap.class)) {
-            return new HashMap<>(0);
-        } else if (String.class.equals(returnType)) {
-            return "";
-        } else if (!returnType.isInterface()) {
-            try {
-                Object value = emptyInstances.get(returnType);
-                if (value == null) {
-                    value = returnType.getDeclaredConstructor().newInstance();
-                    emptyInstances.put(returnType, value);
-                }
-                Class<?> cls = value.getClass();
-                while (cls != null && cls != Object.class) {
-                    Field[] fields = cls.getDeclaredFields();
-                    for (Field field : fields) {
-                        Object property = getEmptyObject(field.getType(), emptyInstances, level + 1);
-                        if (property != null) {
-                            try {
-                                if (!field.canAccess(value)) {
-                                    field.setAccessible(true);
-                                }
-                                field.set(value, property);
-                            } catch (Throwable e) {
-                            }
-                        }
-                    }
-                    cls = cls.getSuperclass();
-                }
-                return value;
-            } catch (Throwable e) {
-                return null;
-            }
-        } else {
-            return null;
-        }
-    }
-
 }

@@ -1,7 +1,6 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.common.util.MathUtils;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 
@@ -72,6 +71,6 @@ public class RoundRobinLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     private int getNextNonNegative() {
-        return MathUtils.getNonNegative(idx.incrementAndGet());
+        return 0x7fffffff & idx.incrementAndGet();
     }
 }

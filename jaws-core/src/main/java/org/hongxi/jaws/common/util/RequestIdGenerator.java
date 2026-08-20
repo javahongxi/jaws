@@ -3,28 +3,21 @@ package org.hongxi.jaws.common.util;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 通过requestId能够知道大致请求的时间
+ * Request ID generator that encodes approximate request time.
  *
  * <pre>
- * 		目前是 currentTimeMillis * (2^20) + offset.incrementAndGet()
+ *     Currently: currentTimeMillis * (2^20) + offset.incrementAndGet()
  *
- * 		通过 requestId / (2^20 * 1000) 能够得到秒
- *
+ *     To get seconds: requestId / (2^20 * 1000)
  * </pre>
  * <p>
  * Created by shenhongxi on 2020/8/22.
- *
  */
 public class RequestIdGenerator {
     protected static final AtomicLong offset = new AtomicLong(0);
     protected static final int BITS = 20;
     protected static final long MAX_COUNT_PER_MILLIS = 1 << BITS;
 
-    /**
-     * 获取 requestId
-     *
-     * @return
-     */
     public static long getRequestId() {
         long currentTime = System.currentTimeMillis();
         long count = offset.incrementAndGet();
@@ -38,5 +31,4 @@ public class RequestIdGenerator {
         }
         return (currentTime << BITS) + count;
     }
-
 }

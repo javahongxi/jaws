@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
 
 /**
  * Created by shenhongxi on 2021/3/5.
@@ -20,7 +21,6 @@ public class UrlUtils {
         }
         String[] addresses = JawsConstants.REGISTRY_SPLIT_PATTERN.split(address);
         if (addresses == null || addresses.length == 0) {
-            // here won't be empty
             return null;
         }
         List<URL> registries = new ArrayList<>();
@@ -37,14 +37,11 @@ public class UrlUtils {
 
         String[] addresses = JawsConstants.COMMA_SPLIT_PATTERN.split(address);
         String url = addresses[0];
-        // 将逗号分隔的后续地址编码为 backup 参数，保留多节点信息
+        // Encode comma-separated backup addresses into the backup parameter to preserve multi-node info
         if (addresses.length > 1) {
-            StringBuilder backup = new StringBuilder();
+            StringJoiner backup = new StringJoiner(",");
             for (int i = 1; i < addresses.length; i++) {
-                if (i > 1) {
-                    backup.append(',');
-                }
-                backup.append(addresses[i]);
+                backup.add(addresses[i]);
             }
             url += "?" + URL.BACKUP_KEY + "=" + backup;
         }
@@ -56,54 +53,54 @@ public class UrlUtils {
 
         int defaultPort = StringTools.parseInteger(defaults == null ? null : defaults.get("port"));
         String defaultPath = defaults == null ? null : defaults.get("path");
-        Map<String, String> defaultParameters = defaults == null ? null : new HashMap<>(defaults);
-        if (defaultParameters != null) {
-            defaultParameters.remove("protocol");
-            defaultParameters.remove("host");
-            defaultParameters.remove("port");
-            defaultParameters.remove("path");
+
+        // Extract default parameters excluding reserved keys
+        Map<String, String> defaultParameters = new HashMap<>();
+        if (defaults != null) {
+            for (Map.Entry<String, String> entry : defaults.entrySet()) {
+                String key = entry.getKey();
+                if (!"protocol".equals(key) && !"host".equals(key)
+                        && !"port".equals(key) && !"path".equals(key)) {
+                    defaultParameters.put(key, entry.getValue());
+                }
+            }
         }
+
         URL u = URL.valueOf(url);
-        u.addParameters(defaults);
         boolean changed = false;
         String protocol = u.getProtocol();
         String host = u.getHost();
         int port = u.getPort();
         String path = u.getPath();
         Map<String, String> parameters = new HashMap<>(u.getParameters());
-        if ((protocol == null || protocol.isEmpty()) && defaultProtocol != null && !defaultProtocol.isEmpty()) {
+
+        if (protocol == null || protocol.isEmpty()) {
             changed = true;
             protocol = defaultProtocol;
         }
 
         if (port <= 0) {
-            if (defaultPort > 0) {
-                changed = true;
-                port = defaultPort;
-            } else {
-                changed = true;
-                port = 0;
-            }
+            changed = true;
+            port = Math.max(defaultPort, 0);
         }
-        if (path == null || path.isEmpty()) {
-            if (defaultPath != null && !defaultPath.isEmpty()) {
-                changed = true;
-                path = defaultPath;
-            }
+
+        if ((path == null || path.isEmpty()) && defaultPath != null && !defaultPath.isEmpty()) {
+            changed = true;
+            path = defaultPath;
         }
-        if (defaultParameters != null && !defaultParameters.isEmpty()) {
+
+        // Merge default parameters (only fill in missing keys)
+        if (!defaultParameters.isEmpty()) {
             for (Map.Entry<String, String> entry : defaultParameters.entrySet()) {
                 String key = entry.getKey();
                 String defaultValue = entry.getValue();
-                if (defaultValue != null && !defaultValue.isEmpty()) {
-                    String value = parameters.get(key);
-                    if (value == null || value.isEmpty()) {
-                        changed = true;
-                        parameters.put(key, defaultValue);
-                    }
+                if (defaultValue != null && !defaultValue.isEmpty() && !parameters.containsKey(key)) {
+                    changed = true;
+                    parameters.put(key, defaultValue);
                 }
             }
         }
+
         if (changed) {
             u = new URL(protocol, host, port, path, parameters);
         }

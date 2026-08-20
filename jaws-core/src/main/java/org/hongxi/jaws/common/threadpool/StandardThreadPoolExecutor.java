@@ -6,17 +6,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * <pre>
  *
- * 代码和思路主要来自于：
+ * Code and ideas mainly inspired by:
  *
  * tomcat :
  * 		org.apache.catalina.core.StandardThreadExecutor
  *
  * java.util.concurrent
- * threadPoolExecutor execute执行策略： 		优先offer到queue，queue满后再扩充线程到maxThread，如果已经到了maxThread就reject
- * 						   		比较适合于CPU密集型应用（比如runnable内部执行的操作都在JVM内部，memory copy, or compute等等）
+ * ThreadPoolExecutor execute strategy:
+ *     Priority offer to queue, then expand threads to maxThread when queue is full,
+ * 	   reject if already at maxThread.
+ * 	   Suitable for CPU-intensive applications (e.g., operations within JVM like memory copy, compute, etc.)
  *
- * StandardThreadExecutor execute执行策略：	优先扩充线程到maxThread，再offer到queue，如果满了就reject
- * 						      	比较适合于业务处理需要远程资源的场景
+ * StandardThreadExecutor execute strategy:
+ *     Priority expand threads to maxThread, then offer to queue,
+ * 	   reject if queue is full.
+ * 	   Suitable for scenarios where business processing requires remote resources
  *
  * </pre>
  * <p>
@@ -25,7 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
     public static final int DEFAULT_MIN_THREADS = 20;
     public static final int DEFAULT_MAX_THREADS = 200;
-    // 1 min
+
     public static final int DEFAULT_MAX_IDLE_TIME = 60 * 1000;
 
     protected AtomicInteger submittedTasksCount;
@@ -55,11 +59,13 @@ public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
         this(corePoolSize, maximumPoolSize, keepAliveTime, unit, queueCapacity, Executors.defaultThreadFactory());
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueCapacity, ThreadFactory threadFactory) {
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
+                                      int queueCapacity, ThreadFactory threadFactory) {
         this(corePoolSize, maximumPoolSize, keepAliveTime, unit, queueCapacity, threadFactory, new AbortPolicy());
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueCapacity, ThreadFactory threadFactory, RejectedExecutionHandler handler) {
+    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
+                                      int queueCapacity, ThreadFactory threadFactory, RejectedExecutionHandler handler) {
         super(corePoolSize, maximumPoolSize, keepAliveTime, unit, new ExecutorQueue(), threadFactory, handler);
         ((ExecutorQueue) getQueue()).setThreadPoolExecutor(this);
 
