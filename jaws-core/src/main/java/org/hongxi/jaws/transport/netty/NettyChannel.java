@@ -1,5 +1,6 @@
 package org.hongxi.jaws.transport.netty;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.ChannelState;
@@ -59,13 +60,14 @@ public class NettyChannel implements Channel {
         ResponseFuture response = new DefaultResponseFuture(request, timeout, getUrl());
         nettyClient.registerCallback(request.getRequestId(), response);
 
-        byte[] msg;
+        ByteBuf buf = channel.alloc().buffer();
         try {
-            msg = codec.encode(this, request);
+            codec.encode(this, request, buf);
         } catch (IOException e) {
+            buf.release();
             throw new JawsServiceException("encode request error: url=" + getUrl().getUri(), e);
         }
-        ChannelFuture writeFuture = channel.writeAndFlush(msg);
+        ChannelFuture writeFuture = channel.writeAndFlush(buf);
 
         boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
         if (completed && writeFuture.isSuccess()) {

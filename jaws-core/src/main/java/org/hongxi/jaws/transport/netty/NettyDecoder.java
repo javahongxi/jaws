@@ -66,7 +66,8 @@ public class NettyDecoder extends ByteToMessageDecoder {
                 Exception e = new JawsServiceException(
                         "NettyDecoder transport data content length over of limit, size: " + bodyLength + " > " + maxContentLength);
                 Response response = JawsFrameworkUtils.buildErrorResponse(requestId, e);
-                byte[] msg = codec.encode(channel, response);
+                ByteBuf msg = ctx.alloc().buffer();
+                codec.encode(channel, response, msg);
                 ctx.channel().writeAndFlush(msg);
             }
             return;
@@ -77,10 +78,11 @@ public class NettyDecoder extends ByteToMessageDecoder {
             return;
         }
 
-        // Read full frame (header + body) for JawsCodec.decode
+        // Pass ByteBuf directly to JawsCodec.decode (zero-copy, no frame byte[] allocation)
         in.resetReaderIndex();
-        byte[] frame = new byte[JawsCodec.HEADER_LENGTH + bodyLength];
-        in.readBytes(frame);
+        // Retain the buffer since the caller (ByteToMessageDecoder pipeline) may release it;
+        // NettyChannelHandler is responsible for releasing after processing.
+        ByteBuf frame = in.readRetainedSlice(JawsCodec.HEADER_LENGTH + bodyLength);
 
         NettyMessage message = new NettyMessage(isRequest, requestId, frame);
         out.add(message);

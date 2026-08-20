@@ -91,7 +91,6 @@ public class NettyServer extends AbstractServer {
                         ChannelPipeline pipeline = socketChannel.pipeline();
                         pipeline.addLast("channel_manager", channelManager);
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyServer.this, maxContentLength));
-                        pipeline.addLast("encoder", new NettyEncoder(maxContentLength));
                         pipeline.addLast("handler", channelHandler);
                     }
                 });

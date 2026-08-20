@@ -1,11 +1,12 @@
 package org.hongxi.jaws.protocol.jaws;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufOutputStream;
 import org.hongxi.jaws.codec.AbstractCodec;
 import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.codec.Bytes;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -27,7 +28,7 @@ import java.util.Map;
  * <pre>
  * Bytes 0-1   : magic (0xF0F0)
  * Byte  2     : version
- * Byte  3     : flag (request/response type)
+ * Byte  3     : flag (low 3 bits = data type, high 5 bits = serializationId)
  * Bytes 4-11  : request id
  * Bytes 12-15 : body content length
  * </pre>
@@ -39,6 +40,7 @@ public class JawsCodec extends AbstractCodec {
     public static final byte VERSION = 1;
     public static final short MAGIC = (short) 0xF0F0;
     public static final byte MASK = 0x07;
+    public static final byte SERIALIZATION_MASK = (byte) 0xF8;
 
     public static final byte FLAG_REQUEST = 0x00;
     public static final byte FLAG_RESPONSE = 0x01;
@@ -46,12 +48,15 @@ public class JawsCodec extends AbstractCodec {
     public static final byte FLAG_RESPONSE_EXCEPTION = 0x05;
 
     @Override
-    public byte[] encode(Channel channel, Object message) throws IOException {
+    public void encode(Channel channel, Object message, ByteBuf out) throws IOException {
         try {
             if (message instanceof Request request) {
-                return encodeRequest(channel, request);
+                encodeRequest(channel, request, out);
             } else if (message instanceof Response response) {
-                return encodeResponse(channel, response);
+                encodeResponse(channel, response, out);
+            } else {
+                throw new JawsFrameworkException("encode error: message type not support, " + message.getClass(),
+                        JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
             }
         } catch (JawsAbstractException e) {
             throw e;
@@ -59,49 +64,54 @@ public class JawsCodec extends AbstractCodec {
             throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response),
                     e, JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
         }
-
-        throw new JawsFrameworkException("encode error: message type not support, " + message.getClass(),
-                JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
     }
 
     /**
      * Decode data from client request or server response.
      */
     @Override
-    public Object decode(Channel channel, byte[] data) throws IOException {
-        if (data.length <= HEADER_LENGTH) {
+    public Object decode(Channel channel, ByteBuf in) throws IOException {
+        if (in.readableBytes() <= HEADER_LENGTH) {
             throw new JawsFrameworkException("decode error: format problem",
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
-        short type = Bytes.bytes2short(data, 0);
+        int startIndex = in.readerIndex();
 
+        // bytes 0-1: magic
+        short type = in.readShort();
         if (type != MAGIC) {
             throw new JawsFrameworkException("decode error: magic error",
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
-        if (data[2] != VERSION) {
+        // byte 2: version
+        byte version = in.readByte();
+        if (version != VERSION) {
             throw new JawsFrameworkException("decode error: version error",
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
-        int bodyLength = Bytes.bytes2int(data, 12);
+        // byte 3: flag (low 3 bits = data type, high 5 bits = serializationId)
+        byte flag = in.readByte();
+        byte dataType = (byte) (flag & MASK);
+        boolean isResponse = (dataType != FLAG_REQUEST);
 
-        if (HEADER_LENGTH + bodyLength != data.length) {
+        // bytes 4-11: requestId
+        long requestId = in.readLong();
+
+        // bytes 12-15: body length
+        int bodyLength = in.readInt();
+
+        if (HEADER_LENGTH + bodyLength != in.readableBytes() + (in.readerIndex() - startIndex)) {
             throw new JawsFrameworkException("decode error: content length error",
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
-        byte flag = data[3];
-        byte dataType = (byte) (flag & MASK);
-        boolean isResponse = (dataType != FLAG_REQUEST);
-
+        // Read body bytes (body still uses byte[] for ByteArrayInputStream-based deserialization)
         byte[] body = new byte[bodyLength];
+        in.readBytes(body);
 
-        System.arraycopy(data, HEADER_LENGTH, body, 0, bodyLength);
-
-        long requestId = Bytes.bytes2long(data, 4);
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
 
@@ -127,15 +137,20 @@ public class JawsCodec extends AbstractCodec {
      * <p>
      * Body layout: interface_name, method_name, param_desc, serialized param values, attachments.
      */
-    private byte[] encodeRequest(Channel channel, Request request) throws IOException {
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        ObjectOutput output = createOutput(outputStream);
+    private void encodeRequest(Channel channel, Request request, ByteBuf out) throws IOException {
+        Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
+                .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
+
+        // Reserve header space
+        int headerStart = out.writerIndex();
+        out.writerIndex(headerStart + HEADER_LENGTH);
+
+        // Write body directly to ByteBuf
+        ByteBufOutputStream bodyOut = new ByteBufOutputStream(out);
+        ObjectOutput output = createOutput(bodyOut);
         output.writeUTF(request.getInterfaceName());
         output.writeUTF(request.getMethodName());
         output.writeUTF(request.getParamDesc());
-
-        Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
-                .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
 
         if (request.getArguments() != null) {
             for (Object obj : request.getArguments()) {
@@ -154,11 +169,13 @@ public class JawsCodec extends AbstractCodec {
         }
 
         output.flush();
-        byte[] body = outputStream.toByteArray();
-
         output.close();
 
-        return encode(body, FLAG_REQUEST, request.getRequestId());
+        int bodyLength = out.writerIndex() - headerStart - HEADER_LENGTH;
+
+        // Backfill header with serializationId embedded in flag
+        byte flag = (byte) (FLAG_REQUEST | ((serialization.getSerializationNumber() << 3) & SERIALIZATION_MASK));
+        writeHeader(out, headerStart, flag, request.getRequestId(), bodyLength);
     }
 
     /**
@@ -166,65 +183,61 @@ public class JawsCodec extends AbstractCodec {
      * <p>
      * Body layout: process_time, class_name, serialized result or exception.
      */
-    private byte[] encodeResponse(Channel channel, Response response) throws IOException {
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        ObjectOutput output = createOutput(outputStream);
+    private void encodeResponse(Channel channel, Response response, ByteBuf out) throws IOException {
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
 
-        byte flag;
+        // Reserve header space
+        int headerStart = out.writerIndex();
+        out.writerIndex(headerStart + HEADER_LENGTH);
+
+        // Write body directly to ByteBuf
+        ByteBufOutputStream bodyOut = new ByteBufOutputStream(out);
+        ObjectOutput output = createOutput(bodyOut);
         output.writeLong(response.getProcessTime());
 
+        byte dataType;
         if (response.getException() != null) {
             output.writeUTF(response.getException().getClass().getName());
             serialize(output, response.getException(), serialization);
-            flag = FLAG_RESPONSE_EXCEPTION;
+            dataType = FLAG_RESPONSE_EXCEPTION;
         } else if (response.getValue() == null) {
-            flag = FLAG_RESPONSE_VOID;
+            dataType = FLAG_RESPONSE_VOID;
         } else {
             output.writeUTF(response.getValue().getClass().getName());
             serialize(output, response.getValue(), serialization);
-            flag = FLAG_RESPONSE;
+            dataType = FLAG_RESPONSE;
         }
 
         output.flush();
-        byte[] body = outputStream.toByteArray();
-
         output.close();
 
-        return encode(body, flag, response.getRequestId());
+        int bodyLength = out.writerIndex() - headerStart - HEADER_LENGTH;
+
+        // Backfill header with serializationId embedded in flag
+        byte flag = (byte) (dataType | ((serialization.getSerializationNumber() << 3) & SERIALIZATION_MASK));
+        writeHeader(out, headerStart, flag, response.getRequestId(), bodyLength);
     }
 
     /**
-     * Encode the 16-byte protocol header and prepend it to the given body.
+     * Write the 16-byte protocol header at the reserved position in the ByteBuf.
      */
-    private byte[] encode(byte[] body, byte flag, long requestId) {
-        byte[] header = new byte[HEADER_LENGTH];
-        int offset = 0;
+    private void writeHeader(ByteBuf out, int headerStart, byte flag, long requestId, int bodyLength) {
+        int currentIndex = out.writerIndex();
+        out.writerIndex(headerStart);
 
         // bytes 0-1: magic
-        Bytes.short2bytes(MAGIC, header, offset);
-        offset += 2;
-
+        out.writeShort(MAGIC);
         // byte 2: version
-        header[offset++] = VERSION;
-
-        // byte 3: flag
-        header[offset++] = flag;
-
+        out.writeByte(VERSION);
+        // byte 3: flag (data type + serializationId)
+        out.writeByte(flag);
         // bytes 4-11: requestId
-        Bytes.long2bytes(requestId, header, offset);
-        offset += 8;
-
+        out.writeLong(requestId);
         // bytes 12-15: body content length
-        Bytes.int2bytes(body.length, header, offset);
+        out.writeInt(bodyLength);
 
-        byte[] data = new byte[header.length + body.length];
-
-        System.arraycopy(header, 0, data, 0, header.length);
-        System.arraycopy(body, 0, data, header.length, body.length);
-
-        return data;
+        out.writerIndex(currentIndex);
     }
 
     private Object decodeRequest(byte[] body, long requestId, Serialization serialization)

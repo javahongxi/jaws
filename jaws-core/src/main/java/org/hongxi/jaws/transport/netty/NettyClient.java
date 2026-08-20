@@ -132,7 +132,6 @@ public class NettyClient extends AbstractClient {
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline pipeline = ch.pipeline();
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyClient.this, maxContentLength));
-                        pipeline.addLast("encoder", new NettyEncoder(maxContentLength));
                         pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (Channel channel, Object message) -> {
                             Response response = (Response) message;
                             ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());

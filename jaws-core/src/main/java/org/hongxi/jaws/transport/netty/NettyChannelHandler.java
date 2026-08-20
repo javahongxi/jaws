@@ -1,5 +1,6 @@
 package org.hongxi.jaws.transport.netty;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.URLParamType;
@@ -50,16 +51,29 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (msg instanceof NettyMessage nettyMsg) {
-            if (threadPoolExecutor != null) {
-                try {
-                    threadPoolExecutor.execute(() -> processMessage(ctx, nettyMsg));
-                } catch (RejectedExecutionException rejectException) {
-                    // Only server-side requests go through the thread pool;
-                    // reject and return error response to client when pool is full.
-                    rejectMessage(ctx, nettyMsg);
+            try {
+                if (threadPoolExecutor != null) {
+                    try {
+                        // Retain the ByteBuf for async processing (pipeline may release after this method returns)
+                        nettyMsg.data().retain();
+                        threadPoolExecutor.execute(() -> {
+                            try {
+                                processMessage(ctx, nettyMsg);
+                            } finally {
+                                nettyMsg.data().release();
+                            }
+                        });
+                    } catch (RejectedExecutionException rejectException) {
+                        // Only server-side requests go through the thread pool;
+                        // reject and return error response to client when pool is full.
+                        rejectMessage(ctx, nettyMsg);
+                    }
+                } else {
+                    processMessage(ctx, nettyMsg);
                 }
-            } else {
-                processMessage(ctx, nettyMsg);
+            } finally {
+                // Release the ByteBuf retained by the decoder (readRetainedSlice)
+                nettyMsg.data().release();
             }
         } else {
             log.error("message type not support: class={}", msg.getClass());
@@ -93,7 +107,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             }
         } catch (Exception e) {
             log.error("decode failed! requestId: {}, size: {}, remote: {}",
-                    msg.requestId(), msg.data().length, ctx.channel().remoteAddress(), e);
+                    msg.requestId(), msg.data().readableBytes(), ctx.channel().remoteAddress(), e);
             Response response = JawsFrameworkUtils.buildErrorResponse(msg.requestId(), e);
             if (msg.isRequest()) {
                 sendResponse(ctx, response);
@@ -140,16 +154,19 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     }
 
     private void sendResponse(ChannelHandlerContext ctx, Response response) {
-        byte[] msg;
+        ByteBuf buf = ctx.alloc().buffer();
         try {
-            msg = codec.encode(channel, response);
+            codec.encode(channel, response, buf);
         } catch (Exception e) {
+            buf.release();
             log.error("encode response error: requestId={}", response.getRequestId(), e);
             return;
         }
-        response.setAttachment(CONTENT_LENGTH, String.valueOf(msg.length));
+        response.setAttachment(CONTENT_LENGTH, String.valueOf(buf.readableBytes()));
         if (ctx.channel().isActive()) {
-            ctx.channel().writeAndFlush(msg);
+            ctx.channel().writeAndFlush(buf);
+        } else {
+            buf.release();
         }
     }
 
