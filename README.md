@@ -4,7 +4,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 
 ## 特性
 
-- **自定义协议** — 基于 Netty 的 jaws 二进制协议，支持 fastjson2 / hessian2 序列化
+- **自定义协议** — 基于 Netty 的 jaws 二进制协议，编解码全链路零拷贝（零额外 byte[] 分配）
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
 - **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
 - **高可用容错** — failover（失败切换）、failfast（快速失败）、failback（异步重试）
@@ -167,6 +167,7 @@ public class MyRunner implements CommandLineRunner {
 | [动态配置](doc/dynamic-config.md)     | 全局/服务级/方法级三层热更新             |
 | [MCP 桥接](doc/mcp-bridge.md)         | 将 RPC 服务自动暴露为 MCP Tools          |
 | [REST 桥接](doc/rest-bridge.md)       | 将 RPC 服务通过 REST API 对外暴露        |
+| [编解码设计](doc/codec-comparison.md) | Jaws 与 Dubbo 编解码架构对比分析         |
 | [性能测试](doc/benchmark.md)          | Benchmark 环境变量与参数选择建议         |
 
 ## 技术栈
