@@ -95,7 +95,7 @@ public class JawsCodec extends AbstractCodec {
 
         byte flag = data[3];
         byte dataType = (byte) (flag & MASK);
-        boolean isResponse = (dataType == FLAG_RESPONSE);
+        boolean isResponse = (dataType != FLAG_REQUEST);
 
         byte[] body = new byte[bodyLength];
 

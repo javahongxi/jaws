@@ -19,11 +19,6 @@
         </dependency>
         <dependency>
             <groupId>org.hongxi</groupId>
-            <artifactId>jaws-transport-netty</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.hongxi</groupId>
             <artifactId>jaws-sample-api</artifactId>
             <version>${project.version}</version>
         </dependency>

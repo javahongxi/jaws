@@ -10,7 +10,6 @@
 
     <modules>
         <module>jaws-core</module>
-        <module>jaws-transport-netty</module>
         <module>jaws-registry-zookeeper</module>
         <module>jaws-registry-nacos</module>
         <module>jaws-mcp</module>
