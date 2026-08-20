@@ -10,10 +10,9 @@ import org.hongxi.jaws.rpc.Caller;
 @Spi(scope = Scope.PROTOTYPE)
 public interface InitializableFilter extends Filter {
     /**
-     * init with caller eg. reference or provider be careful when using SINGLETON scope
+     * Initialize the filter with the associated caller (e.g. reference or provider).
      *
-     * @param caller
+     * @param caller the caller that owns this filter instance
      */
     void init(Caller<?> caller);
-
 }
