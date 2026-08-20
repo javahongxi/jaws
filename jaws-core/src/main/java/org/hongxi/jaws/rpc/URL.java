@@ -320,12 +320,6 @@ public class URL {
         if (!version.equals(refVersion)) {
             return false;
         }
-        // check serialize
-        String serialize = getParameter(URLParamType.serialization.getName(), URLParamType.serialization.value());
-        String refSerialize = refUrl.getParameter(URLParamType.serialization.getName(), URLParamType.serialization.value());
-        if (!serialize.equals(refSerialize)) {
-            return false;
-        }
         // check group
         String group = getParameter(URLParamType.group.getName(), URLParamType.group.value());
         String refGroup = refUrl.getParameter(URLParamType.group.getName(), URLParamType.group.value());
