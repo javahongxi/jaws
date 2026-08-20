@@ -10,6 +10,7 @@ import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -21,7 +22,7 @@ public class DefaultCluster<T> implements Cluster<T> {
 
     private URL url;
 
-    private List<Reference<T>> references;
+    private List<Reference<T>> references = new ArrayList<>();
 
     private HaStrategy<T> haStrategy;
 

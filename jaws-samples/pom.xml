@@ -22,6 +22,8 @@
         <module>jaws-sample-consumer-boot</module>
         <module>jaws-sample-provider-mcp</module>
         <module>jaws-sample-provider-rest</module>
+        <module>jaws-sample-provider-direct</module>
+        <module>jaws-sample-consumer-direct</module>
     </modules>
 
     <build>

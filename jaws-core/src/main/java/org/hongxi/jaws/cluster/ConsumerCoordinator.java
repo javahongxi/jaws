@@ -108,6 +108,14 @@ public class ConsumerCoordinator<T> {
         // discovery results are propagated to the cluster via the listener callback.
         subscribeDirectory();
         directory.init();
+
+        // For StaticDirectory (directUrl mode), references are set in the constructor
+        // before the change listener is registered, so the cluster never receives
+        // the initial onRefresh callback. Trigger it explicitly here.
+        if (CollectionUtils.isEmpty(cluster.getReferences()) && !CollectionUtils.isEmpty(directory.getReferences())) {
+            cluster.onRefresh(directory.getReferences());
+        }
+
         cluster.init();
 
         if (CollectionUtils.isEmpty(cluster.getReferences())) {
