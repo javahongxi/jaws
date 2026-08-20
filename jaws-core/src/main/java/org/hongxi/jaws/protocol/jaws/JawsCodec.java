@@ -7,7 +7,7 @@ import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
 import org.hongxi.jaws.common.util.ByteUtils;
-import org.hongxi.jaws.common.util.ExceptionUtils;
+import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -22,7 +22,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Created by shenhongxi on 2020/7/25.
+ * Codec implementation for the Jaws protocol.
+ * <p>
+ * Protocol header layout (16 bytes):
+ * <pre>
+ * Bytes 0-1   : magic (0xF0F0)
+ * Byte  2     : version
+ * Byte  3     : flag (request/response type)
+ * Bytes 4-11  : request id
+ * Bytes 12-15 : body content length
+ * </pre>
  */
 @SpiMeta(name = "jaws")
 public class JawsCodec extends AbstractCodec {
@@ -43,13 +52,11 @@ public class JawsCodec extends AbstractCodec {
             } else if (message instanceof Response response) {
                 return encodeResponse(channel, response);
             }
+        } catch (JawsAbstractException e) {
+            throw e;
         } catch (Exception e) {
-            if (ExceptionUtils.isJawsException(e)) {
-                throw (RuntimeException) e;
-            } else {
-                throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response),
-                        e, JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
-            }
+            throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response),
+                    e, JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
         }
 
         throw new JawsFrameworkException("encode error: message type not support, " + message.getClass(),
@@ -106,38 +113,18 @@ public class JawsCodec extends AbstractCodec {
         } catch (ClassNotFoundException e) {
             throw new JawsFrameworkException("decode " + (isResponse ? "response" : "request") +
                     " error: class not found", e, JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+        } catch (JawsAbstractException e) {
+            throw e;
         } catch (Exception e) {
-            if (ExceptionUtils.isJawsException(e)) {
-                throw (RuntimeException) e;
-            } else {
-                throw new JawsFrameworkException("decode error: isResponse=" + isResponse,
-                        e, JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
-            }
+            throw new JawsFrameworkException("decode error: isResponse=" + isResponse,
+                    e, JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
     }
 
     /**
-     * request body 数据：
-     *
-     * <pre>
-     *
-     * 	 body:
-     *
-     * 	 byte[] data :
-     *
-     * 			serialize(interface_name, method_name, method_param_desc, method_param_value, attachments_size, attachments_value)
-     *
-     *   method_param_desc:  for_each (string.append(method_param_interface_name))
-     *
-     *   method_param_value: for_each (method_param_name, method_param_value)
-     *
-     * 	 attachments_value:  for_each (attachment_name, attachment_value)
-     *
-     * </pre>
-     *
-     * @param request
-     * @return
-     * @throws IOException
+     * Encode an RPC request.
+     * <p>
+     * Body layout: interface_name, method_name, param_desc, serialized param values, attachments.
      */
     private byte[] encodeRequest(Channel channel, Request request) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -176,20 +163,9 @@ public class JawsCodec extends AbstractCodec {
     }
 
     /**
-     * response body 数据：
-     *
-     * <pre>
-     *
-     * body:
-     *
-     * 	 byte[] :  serialize (result) or serialize (exception)
-     *
-     * </pre>
-     *
-     * @param channel
-     * @param value
-     * @return
-     * @throws IOException
+     * Encode an RPC response.
+     * <p>
+     * Body layout: process_time, class_name, serialized result or exception.
      */
     private byte[] encodeResponse(Channel channel, Response value) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -222,44 +198,27 @@ public class JawsCodec extends AbstractCodec {
     }
 
     /**
-     * 数据协议：
-     *
-     * <pre>
-     *
-     * header:  16个字节
-     *
-     * 0-15 bit 	:  magic
-     * 16-23 bit	:  version
-     * 24-31 bit	:  extend flag , 其中： 29-30 bit: event 可支持4种event，比如normal, exception等,  31 bit : 0 is request , 1 is response
-     * 32-95 bit 	:  request id
-     * 96-127 bit 	:  body content length
-     *
-     * </pre>
-     *
-     * @param body
-     * @param flag
-     * @param requestId
-     * @return
+     * Encode the 16-byte protocol header and prepend it to the given body.
      */
     private byte[] encode(byte[] body, byte flag, long requestId) {
         byte[] header = new byte[HEADER_LENGTH];
         int offset = 0;
 
-        // 0 - 15 bit : magic
+        // bytes 0-1: magic
         ByteUtils.short2bytes(MAGIC, header, offset);
         offset += 2;
 
-        // 16 - 23 bit : version
+        // byte 2: version
         header[offset++] = VERSION;
 
-        // 24 - 31 bit : extend flag
+        // byte 3: flag
         header[offset++] = flag;
 
-        // 32 - 95 bit : requestId
+        // bytes 4-11: requestId
         ByteUtils.long2bytes(requestId, header, offset);
         offset += 8;
 
-        // 96 - 127 bit : body content length
+        // bytes 12-15: body content length
         ByteUtils.int2bytes(body.length, header, offset);
 
         byte[] data = new byte[header.length + body.length];
