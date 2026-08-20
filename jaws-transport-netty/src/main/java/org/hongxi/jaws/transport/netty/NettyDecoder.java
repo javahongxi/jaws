@@ -4,8 +4,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import org.hongxi.jaws.codec.Codec;
-import org.hongxi.jaws.transport.FrameEncoder;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -35,49 +33,56 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-        if (in.readableBytes() <= JawsCodec.HEADER_LENGTH) {
+        if (in.readableBytes() < JawsCodec.HEADER_LENGTH) {
             return;
         }
 
         in.markReaderIndex();
-        short type = in.readShort();
-        if (type != JawsConstants.NETTY_MAGIC_TYPE) {
+
+        // bytes 0-1: magic
+        short magic = in.readShort();
+        if (magic != JawsCodec.MAGIC) {
             in.resetReaderIndex();
-            throw new JawsFrameworkException("NettyDecoder transport header not support, type: " + type);
+            throw new JawsFrameworkException("NettyDecoder magic not match: " + magic);
         }
 
-        in.resetReaderIndex();
-        // skip magic num
-        in.skipBytes(2);
-        byte messageType = (byte) in.readShort();
+        // byte 2: version (skip, validated by JawsCodec.decode)
+        in.skipBytes(1);
+        // byte 3: flag
+        byte flag = in.readByte();
+        // bytes 4-11: requestId
         long requestId = in.readLong();
-        int dataLength = in.readInt();
+        // bytes 12-15: body length
+        int bodyLength = in.readInt();
 
-        boolean isRequest = messageType == JawsConstants.FLAG_REQUEST;
+        boolean isRequest = (flag & JawsCodec.MASK) == JawsCodec.FLAG_REQUEST;
 
         // Reject oversized messages to prevent OOM, without closing the connection
-        if (maxContentLength > 0 && dataLength > maxContentLength) {
+        if (maxContentLength > 0 && bodyLength > maxContentLength) {
             log.warn("transport data content length over of limit, size: {} > {}. remote={} local={}",
-                    dataLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
-            // skip all readable bytes so ByteToMessageDecoder won't re-invoke decode()
+                    bodyLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
             in.skipBytes(in.readableBytes());
             if (isRequest) {
                 Exception e = new JawsServiceException(
-                        "NettyDecoder transport data content length over of limit, size: " + dataLength + " > " + maxContentLength);
+                        "NettyDecoder transport data content length over of limit, size: " + bodyLength + " > " + maxContentLength);
                 Response response = JawsFrameworkUtils.buildErrorResponse(requestId, e);
-                byte[] msg = FrameEncoder.encodeFrame(channel, codec, response);
+                byte[] msg = codec.encode(channel, response);
                 ctx.channel().writeAndFlush(msg);
             }
             return;
         }
-        if (in.readableBytes() < dataLength) {
+
+        if (in.readableBytes() < bodyLength) {
             in.resetReaderIndex();
             return;
         }
-        byte[] data = new byte[dataLength];
-        in.readBytes(data);
 
-        NettyMessage message = new NettyMessage(isRequest, requestId, data);
+        // Read full frame (header + body) for JawsCodec.decode
+        in.resetReaderIndex();
+        byte[] frame = new byte[JawsCodec.HEADER_LENGTH + bodyLength];
+        in.readBytes(frame);
+
+        NettyMessage message = new NettyMessage(isRequest, requestId, frame);
         out.add(message);
     }
 }

@@ -13,7 +13,7 @@ public enum URLParamType {
 
     maxContentLength("maxContentLength", 10 * 1024 * 1024),
 
-    cluster("cluster", JawsConstants.DEFAULT_VALUE),
+    cluster("cluster", "default"),
     loadBalance("loadBalance", "leastActive"),
     haStrategy("haStrategy", "failover"),
     protocol("protocol", JawsConstants.PROTOCOL_JAWS),

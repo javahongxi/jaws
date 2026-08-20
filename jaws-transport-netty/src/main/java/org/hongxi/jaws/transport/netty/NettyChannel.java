@@ -2,7 +2,6 @@ package org.hongxi.jaws.transport.netty;
 
 import io.netty.channel.ChannelFuture;
 import org.hongxi.jaws.codec.Codec;
-import org.hongxi.jaws.transport.FrameEncoder;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -19,6 +18,7 @@ import org.hongxi.jaws.transport.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 
@@ -59,7 +59,12 @@ public class NettyChannel implements Channel {
         ResponseFuture response = new DefaultResponseFuture(request, timeout, getUrl());
         nettyClient.registerCallback(request.getRequestId(), response);
 
-        byte[] msg = FrameEncoder.encodeFrame(this, codec, request);
+        byte[] msg;
+        try {
+            msg = codec.encode(this, request);
+        } catch (IOException e) {
+            throw new JawsServiceException("encode request error: url=" + getUrl().getUri(), e);
+        }
         ChannelFuture writeFuture = channel.writeAndFlush(msg);
 
         boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);

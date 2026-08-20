@@ -2,7 +2,6 @@ package org.hongxi.jaws.transport.netty;
 
 import io.netty.channel.*;
 import org.hongxi.jaws.codec.Codec;
-import org.hongxi.jaws.transport.FrameEncoder;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
@@ -141,7 +140,13 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     }
 
     private void sendResponse(ChannelHandlerContext ctx, Response response) {
-        byte[] msg = FrameEncoder.encodeFrame(channel, codec, response);
+        byte[] msg;
+        try {
+            msg = codec.encode(channel, response);
+        } catch (Exception e) {
+            log.error("encode response error: requestId={}", response.getRequestId(), e);
+            return;
+        }
         response.setAttachment(CONTENT_LENGTH, String.valueOf(msg.length));
         if (ctx.channel().isActive()) {
             ctx.channel().writeAndFlush(msg);

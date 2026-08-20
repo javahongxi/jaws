@@ -2,11 +2,10 @@ package org.hongxi.jaws.protocol.jaws;
 
 import org.hongxi.jaws.codec.AbstractCodec;
 import org.hongxi.jaws.serialization.Serialization;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.SpiMeta;
-import org.hongxi.jaws.common.util.ByteUtils;
+import org.hongxi.jaws.codec.Bytes;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -36,13 +35,15 @@ import java.util.Map;
 @SpiMeta(name = "jaws")
 public class JawsCodec extends AbstractCodec {
 
+    public static final int HEADER_LENGTH = 16;
+    public static final byte VERSION = 1;
     public static final short MAGIC = (short) 0xF0F0;
-
     public static final byte MASK = 0x07;
 
-    public static final int HEADER_LENGTH = 16;
-
-    public static final byte VERSION = 1;
+    public static final byte FLAG_REQUEST = 0x00;
+    public static final byte FLAG_RESPONSE = 0x01;
+    public static final byte FLAG_RESPONSE_VOID = 0x03;
+    public static final byte FLAG_RESPONSE_EXCEPTION = 0x05;
 
     @Override
     public byte[] encode(Channel channel, Object message) throws IOException {
@@ -73,7 +74,7 @@ public class JawsCodec extends AbstractCodec {
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
-        short type = ByteUtils.bytes2short(data, 0);
+        short type = Bytes.bytes2short(data, 0);
 
         if (type != MAGIC) {
             throw new JawsFrameworkException("decode error: magic error",
@@ -85,7 +86,7 @@ public class JawsCodec extends AbstractCodec {
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
-        int bodyLength = ByteUtils.bytes2int(data, 12);
+        int bodyLength = Bytes.bytes2int(data, 12);
 
         if (HEADER_LENGTH + bodyLength != data.length) {
             throw new JawsFrameworkException("decode error: content length error",
@@ -94,13 +95,13 @@ public class JawsCodec extends AbstractCodec {
 
         byte flag = data[3];
         byte dataType = (byte) (flag & MASK);
-        boolean isResponse = (dataType != JawsConstants.FLAG_REQUEST);
+        boolean isResponse = (dataType == FLAG_RESPONSE);
 
         byte[] body = new byte[bodyLength];
 
         System.arraycopy(data, HEADER_LENGTH, body, 0, bodyLength);
 
-        long requestId = ByteUtils.bytes2long(data, 4);
+        long requestId = Bytes.bytes2long(data, 4);
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
 
@@ -155,11 +156,9 @@ public class JawsCodec extends AbstractCodec {
         output.flush();
         byte[] body = outputStream.toByteArray();
 
-        byte flag = JawsConstants.FLAG_REQUEST;
-
         output.close();
 
-        return encode(body, flag, request.getRequestId());
+        return encode(body, FLAG_REQUEST, request.getRequestId());
     }
 
     /**
@@ -167,34 +166,33 @@ public class JawsCodec extends AbstractCodec {
      * <p>
      * Body layout: process_time, class_name, serialized result or exception.
      */
-    private byte[] encodeResponse(Channel channel, Response value) throws IOException {
+    private byte[] encodeResponse(Channel channel, Response response) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         ObjectOutput output = createOutput(outputStream);
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
 
         byte flag;
-        output.writeLong(value.getProcessTime());
+        output.writeLong(response.getProcessTime());
 
-        if (value.getException() != null) {
-            output.writeUTF(value.getException().getClass().getName());
-            serialize(output, value.getException(), serialization);
-            flag = JawsConstants.FLAG_RESPONSE_EXCEPTION;
-        } else if (value.getValue() == null) {
-            flag = JawsConstants.FLAG_RESPONSE_VOID;
+        if (response.getException() != null) {
+            output.writeUTF(response.getException().getClass().getName());
+            serialize(output, response.getException(), serialization);
+            flag = FLAG_RESPONSE_EXCEPTION;
+        } else if (response.getValue() == null) {
+            flag = FLAG_RESPONSE_VOID;
         } else {
-            output.writeUTF(value.getValue().getClass().getName());
-            serialize(output, value.getValue(), serialization);
-            flag = JawsConstants.FLAG_RESPONSE;
+            output.writeUTF(response.getValue().getClass().getName());
+            serialize(output, response.getValue(), serialization);
+            flag = FLAG_RESPONSE;
         }
 
         output.flush();
-
         byte[] body = outputStream.toByteArray();
 
         output.close();
 
-        return encode(body, flag, value.getRequestId());
+        return encode(body, flag, response.getRequestId());
     }
 
     /**
@@ -205,7 +203,7 @@ public class JawsCodec extends AbstractCodec {
         int offset = 0;
 
         // bytes 0-1: magic
-        ByteUtils.short2bytes(MAGIC, header, offset);
+        Bytes.short2bytes(MAGIC, header, offset);
         offset += 2;
 
         // byte 2: version
@@ -215,11 +213,11 @@ public class JawsCodec extends AbstractCodec {
         header[offset++] = flag;
 
         // bytes 4-11: requestId
-        ByteUtils.long2bytes(requestId, header, offset);
+        Bytes.long2bytes(requestId, header, offset);
         offset += 8;
 
         // bytes 12-15: body content length
-        ByteUtils.int2bytes(body.length, header, offset);
+        Bytes.int2bytes(body.length, header, offset);
 
         byte[] data = new byte[header.length + body.length];
 
@@ -295,7 +293,7 @@ public class JawsCodec extends AbstractCodec {
         response.setRequestId(requestId);
         response.setProcessTime(processTime);
 
-        if (dataType == JawsConstants.FLAG_RESPONSE_VOID) {
+        if (dataType == FLAG_RESPONSE_VOID) {
             return response;
         }
 
@@ -304,9 +302,9 @@ public class JawsCodec extends AbstractCodec {
 
         Object result = deserialize((byte[]) input.readObject(), clazz, serialization);
 
-        if (dataType == JawsConstants.FLAG_RESPONSE) {
+        if (dataType == FLAG_RESPONSE) {
             response.setValue(result);
-        } else if (dataType == JawsConstants.FLAG_RESPONSE_EXCEPTION) {
+        } else if (dataType == FLAG_RESPONSE_EXCEPTION) {
             response.setException((Exception) result);
         } else {
             throw new JawsFrameworkException("decode error: response dataType not support " + dataType,

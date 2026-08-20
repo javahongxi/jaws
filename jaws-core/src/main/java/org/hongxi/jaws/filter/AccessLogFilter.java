@@ -23,6 +23,8 @@ public class AccessLogFilter implements Filter {
 
     private static final Logger accessLog = LoggerFactory.getLogger("accessLog");
 
+    private static final String ACCESS_LOG_SEPARATOR = "|";
+
     @Override
     public Response filter(Caller<?> caller, Request request) {
         boolean needLog = caller.getUrl().getBoolParameter(URLParamType.accessLog);
@@ -71,6 +73,6 @@ public class AccessLogFilter implements Filter {
         if (field != null) {
             builder.append(StringTools.urlEncode(field.toString()));
         }
-        builder.append(JawsConstants.ACCESS_LOG_SEPARATOR);
+        builder.append(ACCESS_LOG_SEPARATOR);
     }
 }

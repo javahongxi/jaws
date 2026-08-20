@@ -31,6 +31,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class NettyClient extends AbstractClient {
     private static final Logger log = LoggerFactory.getLogger(NettyClient.class);
 
+    private static final int NETTY_CLIENT_MAX_REQUEST = 20000;
+
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
 
     private Bootstrap bootstrap;
@@ -261,7 +263,7 @@ public class NettyClient extends AbstractClient {
      * @param responseFuture the future to complete when the response arrives
      */
     public void registerCallback(long requestId, ResponseFuture responseFuture) {
-        if (this.callbackMap.size() >= JawsConstants.NETTY_CLIENT_MAX_REQUEST) {
+        if (this.callbackMap.size() >= NETTY_CLIENT_MAX_REQUEST) {
             // reject request, prevent from OutOfMemoryError
             throw new JawsServiceException("NettyClient over of max concurrent request, drop request, url: "
                     + url.getUri() + " requestId=" + requestId, JawsErrorMsgConstants.SERVICE_REJECT);
