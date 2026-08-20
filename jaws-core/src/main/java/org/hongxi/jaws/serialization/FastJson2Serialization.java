@@ -8,7 +8,7 @@ import org.hongxi.jaws.common.extension.SpiMeta;
 import java.io.IOException;
 
 /**
- * fastjson2 序列化
+ * Fastjson2-based serialization implementation.
  * <p>
  * Created by shenhongxi on 2020/7/28.
  */
@@ -45,16 +45,17 @@ public class FastJson2Serialization implements Serialization {
     }
 
     /**
-     * 获取安全过滤器，可用于配置白名单/黑名单或切换检查模式。
+     * Returns the security filter, which can be used to configure allow/deny lists
+     * or switch the check mode.
      *
-     * @return 安全过滤器实例
+     * @return the security filter instance
      */
     public Fastjson2SecurityFilter getSecurityFilter() {
         return securityFilter;
     }
 
     @Override
-    public int getSerializationNumber() {
+    public byte getSerializationNumber() {
         return 1;
     }
 }

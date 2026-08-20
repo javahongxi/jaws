@@ -49,8 +49,8 @@ class FailoverHaStrategyTest {
         @Override public int getTimeout() { return 0; }
         @Override public Map<String, String> getAttachments() { return new HashMap<>(); }
         @Override public void setAttachment(String key, String value) {}
-        @Override public int getSerializationNumber() { return 0; }
-        @Override public void setSerializationNumber(int number) {}
+        @Override public byte getSerializationNumber() { return 0; }
+        @Override public void setSerializationNumber(byte number) {}
     }
 
     private static class StubRequest implements Request {
@@ -65,8 +65,8 @@ class FailoverHaStrategyTest {
         @Override public long getRequestId() { return 1L; }
         @Override public int getRetries() { return retries; }
         @Override public void setRetries(int retries) { this.retries = retries; }
-        @Override public int getSerializationNumber() { return 0; }
-        @Override public void setSerializationNumber(int number) {}
+        @Override public byte getSerializationNumber() { return 0; }
+        @Override public void setSerializationNumber(byte number) {}
     }
 
     /**

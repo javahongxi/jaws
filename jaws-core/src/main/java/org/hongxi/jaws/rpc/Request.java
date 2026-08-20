@@ -86,7 +86,7 @@ public interface Request {
      *
      * @return serialization number
      */
-    int getSerializationNumber();
+    byte getSerializationNumber();
 
     /**
      * Sets the serialization protocol identifier.
@@ -96,5 +96,5 @@ public interface Request {
      *
      * @param number serialization number
      */
-    void setSerializationNumber(int number);
+    void setSerializationNumber(byte number);
 }

@@ -9,10 +9,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 /**
- * hessian2 序列化，要求序列化的对象实现 java.io.Serializable 接口
+ * Hessian2-based serialization implementation.
+ * Objects to be serialized must implement the {@link java.io.Serializable} interface.
  * <p>
  * Created by shenhongxi on 2020/7/28.
- *
  */
 @SpiMeta(name = "hessian2")
 public class Hessian2Serialization implements Serialization {
@@ -37,7 +37,7 @@ public class Hessian2Serialization implements Serialization {
     }
 
     @Override
-    public int getSerializationNumber() {
+    public byte getSerializationNumber() {
         return 0;
     }
 }

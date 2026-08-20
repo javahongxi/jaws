@@ -16,9 +16,13 @@ public interface Serialization {
     <T> T deserialize(byte[] bytes, Class<T> clazz) throws IOException;
 
     /**
-     * serialization的唯一编号，用于传输协议中指定序列化方式。每种序列化的编号必须唯一。
+     * Returns the unique identifier for this serialization, used in the protocol header
+     * to specify the serialization method per message.
+     * <p>
+     * The identifier is stored in the high 5 bits of the flag byte in the Jaws protocol header,
+     * so the value must be in the range 0-31 (max 32 serialization types).
      *
-     * @return 由于编码规范限制，序列化方式最大支持32种，因此返回值必须在0-31之间。
+     * @return serialization number (0-31)
      */
-    int getSerializationNumber();
+    byte getSerializationNumber();
 }

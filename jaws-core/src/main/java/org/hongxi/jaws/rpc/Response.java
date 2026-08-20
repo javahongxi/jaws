@@ -81,7 +81,7 @@ public interface Response {
      *
      * @return serialization number
      */
-    int getSerializationNumber();
+    byte getSerializationNumber();
 
     /**
      * Sets the serialization protocol identifier.
@@ -91,5 +91,5 @@ public interface Response {
      *
      * @param number serialization number
      */
-    void setSerializationNumber(int number);
+    void setSerializationNumber(byte number);
 }

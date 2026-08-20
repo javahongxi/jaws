@@ -267,11 +267,11 @@ public class DefaultResponseFuture implements ResponseFuture {
     }
 
     @Override
-    public int getSerializationNumber() {
+    public byte getSerializationNumber() {
         return 0;
     }
 
     @Override
-    public void setSerializationNumber(int number) {
+    public void setSerializationNumber(byte number) {
     }
 }

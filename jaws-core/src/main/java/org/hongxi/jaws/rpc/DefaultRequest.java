@@ -21,7 +21,7 @@ public class DefaultRequest implements Request, Serializable {
     private int retries = 0;
     private long requestId;
     // default serialization is hessian2
-    private int serializationNumber = 0;
+    private byte serializationNumber = 0;
 
     @Override
     public String getInterfaceName() {
@@ -96,12 +96,12 @@ public class DefaultRequest implements Request, Serializable {
     }
 
     @Override
-    public int getSerializationNumber() {
+    public byte getSerializationNumber() {
         return serializationNumber;
     }
 
     @Override
-    public void setSerializationNumber(int number) {
+    public void setSerializationNumber(byte number) {
         this.serializationNumber = number;
     }
 

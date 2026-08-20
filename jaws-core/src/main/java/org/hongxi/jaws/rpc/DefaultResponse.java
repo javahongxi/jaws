@@ -21,7 +21,7 @@ public class DefaultResponse implements Response, Serializable {
     // Framework-level attachments carried by the response; reserved for protocol extension
     private Map<String, String> attachments;
     // default serialization is hessian2
-    private int serializationNumber = 0;
+    private byte serializationNumber = 0;
 
     public DefaultResponse() {
     }
@@ -109,12 +109,12 @@ public class DefaultResponse implements Response, Serializable {
     }
 
     @Override
-    public int getSerializationNumber() {
+    public byte getSerializationNumber() {
         return serializationNumber;
     }
 
     @Override
-    public void setSerializationNumber(int number) {
+    public void setSerializationNumber(byte number) {
         this.serializationNumber = number;
     }
 }

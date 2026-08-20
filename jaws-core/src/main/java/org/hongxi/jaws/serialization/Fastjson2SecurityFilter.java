@@ -14,15 +14,15 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import static com.alibaba.fastjson2.util.TypeUtils.loadClass;
 
 /**
- * Fastjson2 反序列化安全过滤器。
+ * Fastjson2 deserialization security filter.
  * <p>
- * 参考 Dubbo 的 Fastjson2SecurityManager，通过白名单/黑名单机制控制反序列化时的
- * AutoType 类加载，防止恶意类注入攻击。
+ * Inspired by Dubbo's Fastjson2SecurityManager, this filter controls AutoType class loading
+ * during deserialization through allow/deny list mechanisms to prevent malicious class injection attacks.
  * <p>
- * 支持两种检查模式：
+ * Two check modes are supported:
  * <ul>
- *   <li>{@link CheckStatus#STRICT} - 严格模式，不在白名单中的类直接拒绝反序列化</li>
- *   <li>{@link CheckStatus#WARN} - 警告模式，不在白名单中的类允许反序列化但记录警告日志</li>
+ *   <li>{@link CheckStatus#STRICT} - Strict mode: classes not in the allow list are rejected immediately</li>
+ *   <li>{@link CheckStatus#WARN} - Warn mode: classes not in the allow list are allowed but a warning is logged</li>
  * </ul>
  */
 public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
@@ -30,21 +30,21 @@ public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
     private static final Logger log = LoggerFactory.getLogger(Fastjson2SecurityFilter.class);
 
     /**
-     * 安全检查模式
+     * Security check mode.
      */
     public enum CheckStatus {
         /**
-         * 严格模式：不在白名单中的类直接拒绝反序列化
+         * Strict mode: classes not in the allow list are rejected immediately.
          */
         STRICT,
         /**
-         * 警告模式：不在白名单中的类允许反序列化，但记录警告日志
+         * Warn mode: classes not in the allow list are allowed but a warning is logged.
          */
         WARN
     }
 
     /**
-     * 内置黑名单前缀，这些类永远不允许反序列化
+     * Built-in deny list prefixes. These classes are never allowed to be deserialized.
      */
     private static final String[] DEFAULT_DENY_PREFIXES = {
             "java.lang.Runtime",
@@ -71,7 +71,7 @@ public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
     };
 
     /**
-     * 内置白名单前缀，这些类始终允许反序列化
+     * Built-in allow list prefixes. These classes are always allowed to be deserialized.
      */
     private static final String[] DEFAULT_ALLOW_PREFIXES = {
             "org.hongxi.jaws.",
@@ -106,13 +106,13 @@ public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
 
     @Override
     public Class<?> apply(String typeName, Class<?> expectClass, long features) {
-        // 1. 先调用父类检查白名单（acceptNames），命中则直接返回
+        // 1. Call parent to check allow list (acceptNames), return if matched
         Class<?> tryLoad = super.apply(typeName, expectClass, features);
         if (tryLoad != null) {
             return tryLoad;
         }
 
-        // 2. 检查是否在黑名单中
+        // 2. Check if the class is in the deny list
         if (isDenied(typeName)) {
             String msg = "[Fastjson2 Security] Deserialized class " + typeName
                     + " is in deny list, deserialization is not allowed.";
@@ -120,7 +120,7 @@ public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
             throw new IllegalArgumentException(msg);
         }
 
-        // 3. 严格模式下，不在白名单中的类直接拒绝
+        // 3. In STRICT mode, classes not in the allow list are rejected directly
         if (checkStatus == CheckStatus.STRICT) {
             String msg = "[Fastjson2 Security] Serialized class " + typeName
                     + " is not in allow list. Current mode is STRICT, deserialization is denied by default. "
@@ -131,7 +131,7 @@ public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
             throw new IllegalArgumentException(msg);
         }
 
-        // 4. WARN 模式：尝试加载类
+        // 4. WARN mode: try to load the class
         Class<?> localClass = loadClassDirectly(typeName);
         if (localClass != null) {
             if (warnedClasses.add(typeName)) {
@@ -143,12 +143,12 @@ public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
             return localClass;
         }
 
-        // 5. 类未找到
+        // 5. Class not found
         return null;
     }
 
     /**
-     * 检查类名是否匹配黑名单中的任一前缀
+     * Checks whether the given class name matches any prefix in the deny list.
      */
     private boolean isDenied(String typeName) {
         for (String denyPrefix : denyPrefixes) {
@@ -160,7 +160,7 @@ public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
     }
 
     /**
-     * 直接加载类，优先从缓存获取
+     * Loads a class directly, preferring the cache.
      */
     private Class<?> loadClassDirectly(String typeName) {
         Class<?> clazz = classCache.get(typeName);
@@ -180,28 +180,28 @@ public class Fastjson2SecurityFilter extends ContextAutoTypeBeforeHandler {
     }
 
     /**
-     * 添加白名单前缀
+     * Adds a prefix to the allow list.
      */
     public void addAllowPrefix(String prefix) {
         allowPrefixes.add(prefix);
     }
 
     /**
-     * 添加黑名单前缀
+     * Adds a prefix to the deny list.
      */
     public void addDenyPrefix(String prefix) {
         denyPrefixes.add(prefix);
     }
 
     /**
-     * 获取当前检查模式
+     * Returns the current check mode.
      */
     public CheckStatus getCheckStatus() {
         return checkStatus;
     }
 
     /**
-     * 设置检查模式
+     * Sets the check mode.
      */
     public void setCheckStatus(CheckStatus checkStatus) {
         this.checkStatus = checkStatus;
