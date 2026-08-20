@@ -112,17 +112,19 @@ public class JawsCodec extends AbstractCodec {
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
 
-        // Slice body region from ByteBuf (zero-copy, no body byte[] allocation)
-        ByteBuf bodyBuf = in.retainedSlice(in.readerIndex(), bodyLength);
-        in.skipBytes(bodyLength);
-
         // Resolve serialization from the id embedded in the protocol header
+        // (must happen before the retainedSlice below, otherwise an unknown id
+        // would throw and leak the sliced body buffer)
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtensionByNumber(serializationId);
         if (serialization == null) {
             throw new JawsFrameworkException("decode error: unknown serializationId " + serializationId,
                     JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
         }
+
+        // Slice body region from ByteBuf (zero-copy, no body byte[] allocation)
+        ByteBuf bodyBuf = in.retainedSlice(in.readerIndex(), bodyLength);
+        in.skipBytes(bodyLength);
 
         try (ByteBufInputStream bodyIn = new ByteBufInputStream(bodyBuf)) {
             ObjectInput input = createInput(bodyIn);

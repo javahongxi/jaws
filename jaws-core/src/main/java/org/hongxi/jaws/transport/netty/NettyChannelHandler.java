@@ -64,6 +64,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                             }
                         });
                     } catch (RejectedExecutionException rejectException) {
+                        // Release the ByteBuf retained above; the finally block below only releases
+                        // the reference acquired by the decoder (readRetainedSlice).
+                        nettyMsg.data().release();
                         // Only server-side requests go through the thread pool;
                         // reject and return error response to client when pool is full.
                         rejectMessage(ctx, nettyMsg);
