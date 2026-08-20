@@ -56,7 +56,7 @@ public class JawsCodec extends AbstractCodec {
             if (message instanceof Request request) {
                 encodeRequest(channel, request, out);
             } else if (message instanceof Response response) {
-                encodeResponse(channel, response, out);
+                encodeResponse(response, out);
             } else {
                 throw new JawsFrameworkException("encode error: message type not support, " + message.getClass(),
                         JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
@@ -98,6 +98,7 @@ public class JawsCodec extends AbstractCodec {
         // byte 3: flag (low 3 bits = data type, high 5 bits = serializationId)
         byte flag = in.readByte();
         byte dataType = (byte) (flag & MASK);
+        byte serializationId = (byte) ((flag & SERIALIZATION_MASK) >> 3);
         boolean isResponse = (dataType != FLAG_REQUEST);
 
         // bytes 4-11: requestId
@@ -115,15 +116,20 @@ public class JawsCodec extends AbstractCodec {
         ByteBuf bodyBuf = in.retainedSlice(in.readerIndex(), bodyLength);
         in.skipBytes(bodyLength);
 
+        // Resolve serialization from the id embedded in the protocol header
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
-                .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
+                .getExtensionByNumber(serializationId);
+        if (serialization == null) {
+            throw new JawsFrameworkException("decode error: unknown serializationId " + serializationId,
+                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+        }
 
         try (ByteBufInputStream bodyIn = new ByteBufInputStream(bodyBuf)) {
             ObjectInput input = createInput(bodyIn);
             if (isResponse) {
-                return decodeResponse(input, dataType, requestId, serialization);
+                return decodeResponse(input, dataType, requestId, serializationId, serialization);
             } else {
-                return decodeRequest(input, requestId, serialization);
+                return decodeRequest(input, requestId, serializationId, serialization);
             }
         } catch (ClassNotFoundException e) {
             throw new JawsFrameworkException("decode " + (isResponse ? "response" : "request") +
@@ -189,9 +195,15 @@ public class JawsCodec extends AbstractCodec {
      * <p>
      * Body layout: process_time, class_name, serialized result or exception.
      */
-    private void encodeResponse(Channel channel, Response response, ByteBuf out) throws IOException {
+    private void encodeResponse(Response response, ByteBuf out) throws IOException {
+        // Use the serialization carried on the response (copied from request by handler),
+        // so the response is encoded with the same serialization the client used.
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
-                .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
+                .getExtensionByNumber(response.getSerializationNumber());
+        if (serialization == null) {
+            throw new JawsFrameworkException("encode error: unknown serializationNumber " + response.getSerializationNumber(),
+                    JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
+        }
 
         // Reserve header space
         int headerStart = out.writerIndex();
@@ -246,7 +258,7 @@ public class JawsCodec extends AbstractCodec {
         out.writerIndex(currentIndex);
     }
 
-    private Object decodeRequest(ObjectInput input, long requestId, Serialization serialization)
+    private Object decodeRequest(ObjectInput input, long requestId, byte serializationId, Serialization serialization)
             throws IOException, ClassNotFoundException {
         String interfaceName = input.readUTF();
         String methodName = input.readUTF();
@@ -254,6 +266,7 @@ public class JawsCodec extends AbstractCodec {
 
         DefaultRequest rpcRequest = new DefaultRequest();
         rpcRequest.setRequestId(requestId);
+        rpcRequest.setSerializationNumber(serializationId);
         rpcRequest.setInterfaceName(interfaceName);
         rpcRequest.setMethodName(methodName);
         rpcRequest.setParamDesc(paramDesc);
@@ -296,12 +309,14 @@ public class JawsCodec extends AbstractCodec {
         return attachments;
     }
 
-    private Object decodeResponse(ObjectInput input, byte dataType, long requestId, Serialization serialization)
+    private Object decodeResponse(ObjectInput input, byte dataType, long requestId, byte serializationId,
+                                      Serialization serialization)
             throws IOException, ClassNotFoundException {
         long processTime = input.readLong();
 
         DefaultResponse response = new DefaultResponse();
         response.setRequestId(requestId);
+        response.setSerializationNumber(serializationId);
         response.setProcessTime(processTime);
 
         if (dataType == FLAG_RESPONSE_VOID) {

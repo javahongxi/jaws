@@ -30,6 +30,7 @@ public class ExtensionLoader<T> {
     private final ClassLoader classLoader;
     private ConcurrentMap<String, Class<T>> extensionClasses;
     private ConcurrentMap<String, T> singletonInstances;
+    private Map<Integer, String> numberToName = Collections.emptyMap();
     private volatile boolean init;
 
     private ExtensionLoader(Class<T> type) {
@@ -207,6 +208,7 @@ public class ExtensionLoader<T> {
 
     private ConcurrentMap<String, Class<T>> loadClasses(Set<String> classNames) {
         ConcurrentMap<String, Class<T>> classes = new ConcurrentHashMap<>();
+        Map<Integer, String> numberMap = new HashMap<>();
         for (String className : classNames) {
             try {
                 Class<T> clazz;
@@ -226,9 +228,18 @@ public class ExtensionLoader<T> {
                 } else {
                     classes.put(spiName, clazz);
                 }
+
+                // Build number → name mapping for SPIs that declare a number
+                SpiMeta spiMeta = clazz.getAnnotation(SpiMeta.class);
+                if (spiMeta != null && spiMeta.number() >= 0) {
+                    numberMap.put((int) spiMeta.number(), spiName);
+                }
             } catch (Exception e) {
                 log.error("{}: Error load spi class", type.getName(), e);
             }
+        }
+        if (!numberMap.isEmpty()) {
+            this.numberToName = numberMap;
         }
 
         return classes;
@@ -260,6 +271,18 @@ public class ExtensionLoader<T> {
         if (!type.isAssignableFrom(clazz)) {
             throw new JawsFrameworkException(clazz.getName() + "is not instanceof " + type.getName());
         }
+    }
+
+    /**
+     * Get SPI extension by its numeric identifier declared in {@link SpiMeta#number()}.
+     *
+     * @param number the numeric identifier (0-31)
+     * @return the extension instance, or null if not found
+     */
+    public T getExtensionByNumber(int number) {
+        checkInit();
+        String name = numberToName.get(number);
+        return name != null ? getExtension(name) : null;
     }
 
     private String getSpiName(Class<?> clazz) {

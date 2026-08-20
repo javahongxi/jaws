@@ -14,7 +14,7 @@ import java.io.IOException;
  * <p>
  * Created by shenhongxi on 2020/7/28.
  */
-@SpiMeta(name = "hessian2")
+@SpiMeta(name = "hessian2", number = 0)
 public class Hessian2Serialization implements Serialization {
 
     @Override

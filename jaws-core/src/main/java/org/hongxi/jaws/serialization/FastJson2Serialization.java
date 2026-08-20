@@ -12,7 +12,7 @@ import java.io.IOException;
  * <p>
  * Created by shenhongxi on 2020/7/28.
  */
-@SpiMeta(name = "fastjson2")
+@SpiMeta(name = "fastjson2", number = 1)
 public class FastJson2Serialization implements Serialization {
 
     private final Fastjson2SecurityFilter securityFilter = new Fastjson2SecurityFilter();
