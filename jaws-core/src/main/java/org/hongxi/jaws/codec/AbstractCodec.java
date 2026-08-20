@@ -2,6 +2,7 @@ package org.hongxi.jaws.codec;
 
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.serialization.Serialization;
 
 import java.io.*;
 

@@ -1,7 +1,7 @@
 package org.hongxi.jaws.protocol.jaws;
 
 import org.hongxi.jaws.codec.AbstractCodec;
-import org.hongxi.jaws.codec.Serialization;
+import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;

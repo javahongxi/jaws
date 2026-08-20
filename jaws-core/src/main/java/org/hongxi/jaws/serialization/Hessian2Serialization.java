@@ -2,7 +2,6 @@ package org.hongxi.jaws.serialization;
 
 import com.alibaba.com.caucho.hessian.io.Hessian2Input;
 import com.alibaba.com.caucho.hessian.io.Hessian2Output;
-import org.hongxi.jaws.codec.Serialization;
 import org.hongxi.jaws.common.extension.SpiMeta;
 
 import java.io.ByteArrayInputStream;

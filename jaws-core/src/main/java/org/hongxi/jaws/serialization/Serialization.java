@@ -1,4 +1,4 @@
-package org.hongxi.jaws.codec;
+package org.hongxi.jaws.serialization;
 
 import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;

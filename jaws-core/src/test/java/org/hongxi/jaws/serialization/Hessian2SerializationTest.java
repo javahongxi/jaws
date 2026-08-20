@@ -1,6 +1,5 @@
 package org.hongxi.jaws.serialization;
 
-import org.hongxi.jaws.codec.Serialization;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

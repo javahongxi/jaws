@@ -3,7 +3,6 @@ package org.hongxi.jaws.serialization;
 import com.alibaba.fastjson2.JSONB;
 import com.alibaba.fastjson2.JSONReader;
 import com.alibaba.fastjson2.JSONWriter;
-import org.hongxi.jaws.codec.Serialization;
 import org.hongxi.jaws.common.extension.SpiMeta;
 
 import java.io.IOException;

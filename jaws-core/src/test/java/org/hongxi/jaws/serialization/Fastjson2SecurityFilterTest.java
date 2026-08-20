@@ -44,7 +44,7 @@ class Fastjson2SecurityFilterTest {
     @Test
     void defaultAllowPrefixShouldAllowJawsPackage() {
         /* org.hongxi.jaws. 在默认白名单中 */
-        Class<?> clazz = filter.apply("org.hongxi.jaws.codec.Serialization", null, 0);
+        Class<?> clazz = filter.apply("org.hongxi.jaws.serialization.Serialization", null, 0);
         assertNotNull(clazz);
     }
 
