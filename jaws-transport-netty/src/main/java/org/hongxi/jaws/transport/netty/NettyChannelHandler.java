@@ -130,10 +130,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 response.setRequestId(request.getRequestId());
                 response.setProcessTime(System.currentTimeMillis() - processStartTime);
 
-                ChannelFuture channelFuture = sendResponse(ctx, response);
-                if (channelFuture != null) {
-                    channelFuture.addListener((ChannelFutureListener) f -> response.onFinish());
-                }
+                sendResponse(ctx, response);
             } finally {
                 if (channel instanceof NettyServer nettyServer) {
                     nettyServer.getActiveRequests().decrementAndGet();
@@ -143,13 +140,12 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         });
     }
 
-    private ChannelFuture sendResponse(ChannelHandlerContext ctx, Response response) {
+    private void sendResponse(ChannelHandlerContext ctx, Response response) {
         byte[] msg = FrameEncoder.encodeFrame(channel, codec, response);
         response.setAttachment(CONTENT_LENGTH, String.valueOf(msg.length));
         if (ctx.channel().isActive()) {
-            return ctx.channel().writeAndFlush(msg);
+            ctx.channel().writeAndFlush(msg);
         }
-        return null;
     }
 
     @Override

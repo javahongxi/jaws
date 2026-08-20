@@ -1,24 +1,17 @@
 package org.hongxi.jaws.rpc;
 
-import org.apache.commons.lang3.tuple.Pair;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.*;
-import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Created by shenhongxi on 2020/7/25.
  */
-public class DefaultResponse implements Response, Callbackable, Serializable {
+public class DefaultResponse implements Response, Serializable {
     @Serial
     private static final long serialVersionUID = -46598719225168485L;
-
-    private static final Logger log = LoggerFactory.getLogger(DefaultResponse.class);
 
     private Object value;
     private Exception exception;
@@ -29,8 +22,6 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
     private Map<String, String> attachments;
     // default serialization is hessian2
     private int serializationNumber = 0;
-    private List<Pair<Runnable, Executor>> taskList = new ArrayList<>();
-    private AtomicBoolean isFinished = new AtomicBoolean();
 
     public DefaultResponse() {
     }
@@ -129,32 +120,5 @@ public class DefaultResponse implements Response, Callbackable, Serializable {
     @Override
     public void setSerializationNumber(int number) {
         this.serializationNumber = number;
-    }
-
-    @Override
-    public void addFinishCallback(Runnable runnable, Executor executor) {
-        if (!isFinished.get()) {
-            taskList.add(Pair.of(runnable, executor));
-        }
-    }
-
-    @Override
-    public void onFinish() {
-        if (!isFinished.compareAndSet(false, true)) {
-            return;
-        }
-        for (Pair<Runnable, Executor> pair : taskList) {
-            Runnable runnable = pair.getKey();
-            Executor executor = pair.getValue();
-            if (executor == null) {
-                runnable.run();
-            } else {
-                try {
-                    executor.execute(runnable);
-                } catch (Exception e) {
-                    log.error("Callbackable response exec callback task error", e);
-                }
-            }
-        }
     }
 }
