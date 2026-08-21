@@ -18,7 +18,6 @@ import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.*;
 import org.slf4j.Logger;
@@ -133,12 +132,11 @@ public class NettyClient extends AbstractClient {
                     @Override
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline pipeline = ch.pipeline();
-                        int heartbeat = url.getIntParameter(URLParamType.heartbeat);
+                        long heartbeat = url.getLongParameter(URLParamType.heartbeat);
                         if (heartbeat > 0) {
                             pipeline.addLast("idle_state",
                                     new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
-                            pipeline.addLast("heartbeat",
-                                    new HeartbeatHandler(NettyClient.this, (JawsCodec) codec));
+                            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
                         }
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyClient.this, maxContentLength));
                         pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (Channel channel, Object message) -> {

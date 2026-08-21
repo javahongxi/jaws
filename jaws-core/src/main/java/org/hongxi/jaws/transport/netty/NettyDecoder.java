@@ -7,7 +7,6 @@ import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.transport.Channel;
 import org.slf4j.Logger;
@@ -33,7 +32,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-        if (in.readableBytes() < JawsCodec.HEADER_LENGTH) {
+        if (in.readableBytes() < Codec.HEADER_LENGTH) {
             return;
         }
 
@@ -41,7 +40,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
         // bytes 0-1: magic
         short magic = in.readShort();
-        if (magic != JawsCodec.MAGIC) {
+        if (magic != Codec.MAGIC) {
             in.resetReaderIndex();
             throw new JawsFrameworkException("NettyDecoder magic not match: " + magic);
         }
@@ -52,7 +51,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         byte flag = in.readByte();
 
         // Heartbeat frame: event bit set — consume and skip, do not pass to business layer
-        if ((flag & JawsCodec.FLAG_EVENT) != 0) {
+        if ((flag & Codec.FLAG_EVENT) != 0) {
             int bodyLen = in.readInt(); // bytes 12-15
             in.skipBytes(Math.max(0, bodyLen));
             return;
@@ -63,7 +62,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         // bytes 12-15: body length
         int bodyLength = in.readInt();
 
-        boolean isRequest = (flag & JawsCodec.MASK) == JawsCodec.FLAG_REQUEST;
+        boolean isRequest = (flag & Codec.MASK) == Codec.FLAG_REQUEST;
 
         // Reject oversized messages to prevent OOM, without closing the connection
         if (maxContentLength > 0 && bodyLength > maxContentLength) {
@@ -90,7 +89,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         in.resetReaderIndex();
         // Retain the buffer since the caller (ByteToMessageDecoder pipeline) may release it;
         // NettyChannelHandler is responsible for releasing after processing.
-        ByteBuf frame = in.readRetainedSlice(JawsCodec.HEADER_LENGTH + bodyLength);
+        ByteBuf frame = in.readRetainedSlice(Codec.HEADER_LENGTH + bodyLength);
 
         NettyMessage message = new NettyMessage(isRequest, requestId, frame);
         out.add(message);

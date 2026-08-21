@@ -11,7 +11,6 @@ import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.StandardThreadPoolExecutor;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractServer;
@@ -82,12 +81,11 @@ public class NettyServer extends AbstractServer {
                     protected void initChannel(SocketChannel socketChannel) throws Exception {
                         ChannelPipeline pipeline = socketChannel.pipeline();
                         pipeline.addLast("channel_manager", channelManager);
-                        int heartbeat = url.getIntParameter(URLParamType.heartbeat);
+                        long heartbeat = url.getLongParameter(URLParamType.heartbeat);
                         if (heartbeat > 0) {
                             pipeline.addLast("idle_state",
                                     new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
-                            pipeline.addLast("heartbeat",
-                                    new HeartbeatHandler(NettyServer.this, (JawsCodec) codec));
+                            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
                         }
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyServer.this, maxContentLength));
                         pipeline.addLast("handler", channelHandler);

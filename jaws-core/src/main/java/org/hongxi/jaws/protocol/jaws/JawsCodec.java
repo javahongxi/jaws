@@ -44,19 +44,12 @@ import java.util.Map;
 @SpiMeta(name = "jaws")
 public class JawsCodec implements Codec {
 
-    public static final int HEADER_LENGTH = 16;
     public static final byte VERSION = 1;
-    public static final short MAGIC = (short) 0xF0F0;
-    public static final byte MASK = 0x07;
     public static final byte SERIALIZATION_MASK = (byte) 0xF8;
 
-    public static final byte FLAG_REQUEST = 0x00;
     public static final byte FLAG_RESPONSE = 0x01;
     public static final byte FLAG_RESPONSE_VOID = 0x03;
     public static final byte FLAG_RESPONSE_EXCEPTION = 0x05;
-
-    /** Bit mask for the event flag in the flag byte (bit 2). */
-    public static final byte FLAG_EVENT = 0x04;
 
     @Override
     public void encode(Channel channel, Object message, ByteBuf out) throws IOException {
@@ -250,6 +243,7 @@ public class JawsCodec implements Codec {
      * <p>
      * Called by {@code HeartbeatHandler} when an idle event is detected.
      */
+    @Override
     public void encodeHeartbeat(ByteBuf out) {
         out.writeShort(MAGIC);
         out.writeByte(VERSION);

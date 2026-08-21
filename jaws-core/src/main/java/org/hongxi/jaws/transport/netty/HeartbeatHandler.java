@@ -4,8 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.timeout.IdleStateEvent;
-import org.hongxi.jaws.protocol.jaws.JawsCodec;
-import org.hongxi.jaws.transport.Channel;
+import org.hongxi.jaws.codec.Codec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,20 +19,18 @@ import org.slf4j.LoggerFactory;
  * </ul>
  * <p>
  * Heartbeat frames are 16-byte headers with {@code FLAG_EVENT} set and zero-length body.
- * They are encoded via {@link JawsCodec#encodeHeartbeat(ByteBuf)} and consumed silently
+ * They are encoded via {@link Codec#encodeHeartbeat(ByteBuf)} and consumed silently
  * by {@link NettyDecoder} without entering the business thread pool.
  *
- * @see JawsCodec#encodeHeartbeat(ByteBuf)
+ * @see Codec#encodeHeartbeat(ByteBuf)
  * @see NettyDecoder
  */
 public class HeartbeatHandler extends ChannelDuplexHandler {
     private static final Logger log = LoggerFactory.getLogger(HeartbeatHandler.class);
 
-    private final Channel channel;
-    private final JawsCodec codec;
+    private final Codec codec;
 
-    public HeartbeatHandler(Channel channel, JawsCodec codec) {
-        this.channel = channel;
+    public HeartbeatHandler(Codec codec) {
         this.codec = codec;
     }
 
@@ -60,7 +57,7 @@ public class HeartbeatHandler extends ChannelDuplexHandler {
         if (!ctx.channel().isActive()) {
             return;
         }
-        ByteBuf buf = ctx.alloc().buffer(JawsCodec.HEADER_LENGTH);
+        ByteBuf buf = ctx.alloc().buffer(Codec.HEADER_LENGTH);
         codec.encodeHeartbeat(buf);
         ctx.writeAndFlush(buf);
         log.debug("heartbeat sent. remote={} local={}",

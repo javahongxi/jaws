@@ -37,6 +37,21 @@ import java.io.IOException;
 @Spi(scope = Scope.PROTOTYPE)
 public interface Codec {
 
+    /** Protocol header length in bytes. */
+    int HEADER_LENGTH = 16;
+
+    /** Magic number written at the beginning of every protocol frame. */
+    short MAGIC = (short) 0xF0F0;
+
+    /** Bit mask for the data-type portion of the flag byte (low 3 bits). */
+    byte MASK = 0x07;
+
+    /** Flag value indicating a request frame. */
+    byte FLAG_REQUEST = 0x00;
+
+    /** Bit flag indicating an event frame (e.g. heartbeat). */
+    byte FLAG_EVENT = 0x04;
+
     /**
      * Encodes the given message object directly into the provided {@link ByteBuf}.
      *
@@ -70,4 +85,18 @@ public interface Codec {
      * @throws IOException if deserialization fails
      */
     Object decode(Channel channel, ByteBuf in) throws IOException;
+
+    /**
+     * Encodes a heartbeat frame (protocol-level keep-alive) directly into
+     * the provided {@link ByteBuf}.
+     *
+     * <p>Called by {@code HeartbeatHandler} when an idle event is detected.
+     * The default implementation throws {@link UnsupportedOperationException};
+     * protocol-specific codecs should override this method.
+     *
+     * @param out the target {@link ByteBuf} to write the heartbeat frame into
+     */
+    default void encodeHeartbeat(ByteBuf out) {
+        throw new UnsupportedOperationException("heartbeat is not supported by this codec");
+    }
 }

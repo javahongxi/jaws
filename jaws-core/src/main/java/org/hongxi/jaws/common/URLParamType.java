@@ -24,7 +24,7 @@ public enum URLParamType {
     filter("filter", ""),
 
     /** Heartbeat interval in milliseconds. 0 means disabled. */
-    heartbeat("heartbeat", 0),
+    heartbeat("heartbeat", 0L),
 
     serialization("serialization", "hessian2"),
     codec("codec", "jaws"),
