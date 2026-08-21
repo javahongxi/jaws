@@ -23,6 +23,7 @@ import java.util.regex.Pattern;
  * <pre>
  *   host=192.168.1.*        -- match provider host by glob pattern (* = any)
  *   group=groupA,groupB      -- only route to providers in these groups
+ *   tag=gray                 -- only route to providers with tag=gray
  *   enabled=false            -- disable this router entirely
  * </pre>
  * <p>
@@ -111,6 +112,12 @@ public class DynamicConfigRouter<T> implements Router<T>, ConfigurationListener 
                 return false;
             }
         }
+        if (rule.tag != null) {
+            String providerTag = serviceUrl.getParameter("tag");
+            if (!rule.tag.equals(providerTag)) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -149,6 +156,9 @@ public class DynamicConfigRouter<T> implements Router<T>, ConfigurationListener 
                         }
                     }
                     break;
+                case "tag":
+                    rule.tag = value;
+                    break;
                 default:
                     log.warn("DynamicConfigRouter unknown rule key: {}", key);
             }
@@ -160,6 +170,7 @@ public class DynamicConfigRouter<T> implements Router<T>, ConfigurationListener 
         boolean enabled = true;
         Pattern hostPattern;
         List<String> groups;
+        String tag;
 
         @Override
         public String toString() {
@@ -169,6 +180,9 @@ public class DynamicConfigRouter<T> implements Router<T>, ConfigurationListener 
             }
             if (groups != null) {
                 sb.append(", groups=").append(groups);
+            }
+            if (tag != null) {
+                sb.append(", tag=").append(tag);
             }
             sb.append('}');
             return sb.toString();

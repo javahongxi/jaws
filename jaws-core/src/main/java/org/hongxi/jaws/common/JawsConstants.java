@@ -20,6 +20,9 @@ public class JawsConstants {
 
     public static final String ASYNC_FLAG = "async";
 
+    /** Attachment key for tag-based routing (gray release). */
+    public static final String TAG_ATTACHMENT = "tag";
+
     public static final String REGISTRY_PROTOCOL_LOCAL = "local";
     public static final String REGISTRY_PROTOCOL_ZOOKEEPER = "zookeeper";
 

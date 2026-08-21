@@ -56,6 +56,11 @@ public enum URLParamType {
      *  attaches to request. Provider validates the token on each invocation. */
     token("token", ""),
 
+    /** Service tag for gray release / tag-based routing.
+     *  Provider declares its tag (e.g. "gray", "stable"); consumer specifies target tag
+     *  via RpcContext attachment "tag" to route to matching providers. */
+    tag("tag", ""),
+
     // ==================== Server Only ====================
 
     maxServerConnections("maxServerConnections", 100000),

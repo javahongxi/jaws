@@ -61,4 +61,18 @@ public @interface JawsService {
      * Service token, default value is empty string
      */
     String token() default "";
+
+    /**
+     * Service tag for gray release / tag-based routing.
+     * <p>
+     * Providers with a tag are only reachable by consumers that request the same tag
+     * via {@code RpcContext.getContext().setRpcAttachment("tag", "gray")}.
+     * <p>
+     * Example:
+     * <pre>
+     * &#64;JawsService(tag = "gray")
+     * public class DemoServiceImpl implements DemoService { ... }
+     * </pre>
+     */
+    String tag() default "";
 }

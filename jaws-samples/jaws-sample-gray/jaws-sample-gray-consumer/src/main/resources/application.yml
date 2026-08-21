@@ -1,0 +1,18 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: sample-gray-consumer
+
+jaws:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: jaws
+    serialization: fastjson2
+  registry:
+    address: nacos://127.0.0.1:8848
+
+logging:
+  level:
+    org.hongxi.jaws: INFO

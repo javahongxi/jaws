@@ -4,6 +4,7 @@ import org.hongxi.jaws.cluster.directory.RegistryDirectory;
 import org.hongxi.jaws.cluster.directory.StaticDirectory;
 import org.hongxi.jaws.cluster.loadbalance.AbstractLoadBalance;
 import org.hongxi.jaws.cluster.router.DynamicConfigRouter;
+import org.hongxi.jaws.cluster.router.TagRouter;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -162,8 +163,13 @@ public class ConsumerCoordinator<T> {
         cluster.setHaStrategy(ha);
         cluster.setUrl(url);
 
-        // Register DynamicConfigRouter for dynamic routing rule support
+        // Register routers for traffic control
         if (loadBalance instanceof AbstractLoadBalance) {
+            // TagRouter: filters providers by tag for gray release
+            TagRouter<T> tagRouter = new TagRouter<>();
+            ((AbstractLoadBalance<T>) loadBalance).addRouter(tagRouter);
+
+            // DynamicConfigRouter: dynamic routing rules from configuration center
             dynamicConfigRouter = new DynamicConfigRouter<>(interfaceClass.getName());
             ((AbstractLoadBalance<T>) loadBalance).addRouter(dynamicConfigRouter);
         }

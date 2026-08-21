@@ -23,6 +23,8 @@
         <module>jaws-sample-provider-mcp</module>
         <module>jaws-sample-provider-direct</module>
         <module>jaws-sample-consumer-direct</module>
+        <module>jaws-sample-gray</module>
+        <module>jaws-sample-multi-registry</module>
     </modules>
 
     <build>

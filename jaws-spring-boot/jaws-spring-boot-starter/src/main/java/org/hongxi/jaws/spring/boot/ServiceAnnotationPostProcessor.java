@@ -210,6 +210,13 @@ public class ServiceAnnotationPostProcessor
             builder.addPropertyValue("token", token);
         }
 
+        /* tag: annotation > global */
+        String tag = StringUtils.isNotBlank(jawsService.tag())
+                ? jawsService.tag() : environment.getProperty("jaws.service.tag");
+        if (StringUtils.isNotBlank(tag)) {
+            builder.addPropertyValue("tag", tag);
+        }
+
         /* reference to ProtocolConfig and RegistryConfig beans */
         builder.addPropertyReference("protocol", "protocolConfig");
         builder.addPropertyReference("registry", "registryConfig");

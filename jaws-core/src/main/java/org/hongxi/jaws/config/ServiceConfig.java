@@ -76,6 +76,12 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
      */
     private String token;
 
+    /**
+     * Service tag for gray release / tag-based routing.
+     * Providers with a tag are only reachable by consumers that request the same tag.
+     */
+    private String tag;
+
     public synchronized void export() {
         if (exported.get()) {
             log.warn("{} has already been exported, so ignore the export request!", interfaceClass.getName());
@@ -319,5 +325,13 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
     public void setToken(String token) {
         this.token = token;
+    }
+
+    public String getTag() {
+        return tag;
+    }
+
+    public void setTag(String tag) {
+        this.tag = tag;
     }
 }
