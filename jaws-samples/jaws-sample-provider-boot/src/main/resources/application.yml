@@ -9,6 +9,7 @@ jaws:
     name: jaws
     port: 10000
     serialization: fastjson2
+    heartbeat: 30000
   registry:
     address: nacos://127.0.0.1:8848
 
@@ -20,3 +21,7 @@ management:
   tracing:
     sampling:
       probability: 1.0
+
+logging:
+  level:
+    org.hongxi.jaws.transport.netty.HeartbeatHandler: DEBUG
