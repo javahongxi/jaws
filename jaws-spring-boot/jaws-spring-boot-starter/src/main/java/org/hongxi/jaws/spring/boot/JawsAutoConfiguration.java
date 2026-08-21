@@ -61,6 +61,9 @@ public class JawsAutoConfiguration {
         if (protocolProps.getCodec() != null) {
             protocolConfig.setCodec(protocolProps.getCodec());
         }
+        if (protocolProps.getHeartbeat() != null) {
+            protocolConfig.setHeartbeat(protocolProps.getHeartbeat());
+        }
         return protocolConfig;
     }
 

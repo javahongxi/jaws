@@ -70,6 +70,11 @@ public class ProtocolConfig extends AbstractConfig {
      */
     protected Integer maxContentLength;
 
+    /**
+     * Heartbeat interval in milliseconds. 0 means disabled.
+     */
+    protected Long heartbeat;
+
     @ConfigDesc(key = "protocol", required = true)
     public String getName() {
         return name;
@@ -163,5 +168,13 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setMaxContentLength(Integer maxContentLength) {
         this.maxContentLength = maxContentLength;
+    }
+
+    public Long getHeartbeat() {
+        return heartbeat;
+    }
+
+    public void setHeartbeat(Long heartbeat) {
+        this.heartbeat = heartbeat;
     }
 }

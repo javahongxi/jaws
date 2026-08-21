@@ -180,6 +180,11 @@ public class JawsProperties {
          */
         private String codec;
 
+        /**
+         * Heartbeat interval in milliseconds. 0 means disabled.
+         */
+        private Long heartbeat;
+
         public String getName() {
             return name;
         }
@@ -226,6 +231,14 @@ public class JawsProperties {
 
         public void setCodec(String codec) {
             this.codec = codec;
+        }
+
+        public Long getHeartbeat() {
+            return heartbeat;
+        }
+
+        public void setHeartbeat(Long heartbeat) {
+            this.heartbeat = heartbeat;
         }
     }
 
