@@ -252,15 +252,26 @@ class JawsCodecTest {
         assertThrows(JawsFrameworkException.class, () -> codec.encode(channel, "not-a-message", buf));
     }
 
+    // ---------- heartbeat ----------
+
+    @Test
+    void encodeHeartbeatProducesValidFrame() {
+        ByteBuf buf = Unpooled.buffer();
+        codec.encodeHeartbeat(buf);
+
+        assertEquals(JawsCodec.HEADER_LENGTH, buf.readableBytes());
+        assertEquals(JawsCodec.MAGIC, buf.readShort());
+        assertEquals(JawsCodec.VERSION, buf.readByte());
+        assertEquals(JawsCodec.FLAG_EVENT, buf.readByte());
+        assertEquals(0L, buf.readLong());   // requestId
+        assertEquals(0, buf.readInt());     // body length
+        buf.release();
+    }
+
     // ---------- helpers ----------
 
     /** Minimal fake transport channel backed by a URL with serialization params. */
     private record FakeChannel(URL url) implements Channel {
-
-        @Override
-        public org.hongxi.jaws.rpc.Response request(org.hongxi.jaws.rpc.Request request) {
-            throw new UnsupportedOperationException("not needed in codec tests");
-        }
 
         @Override
         public boolean open() {

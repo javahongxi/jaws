@@ -5,12 +5,13 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.StandardThreadPoolExecutor;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.rpc.Request;
+import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractServer;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -41,16 +43,6 @@ public class NettyServer extends AbstractServer {
     public NettyServer(URL url, MessageHandler messageHandler) {
         super(url);
         this.messageHandler = messageHandler;
-    }
-
-    @Override
-    public boolean isBound() {
-        return serverChannel != null && serverChannel.isActive();
-    }
-
-    @Override
-    public Response request(Request request) {
-        throw new JawsFrameworkException("NettyServer request(Request) method not support, url: " + url);
     }
 
     @Override
@@ -90,6 +82,13 @@ public class NettyServer extends AbstractServer {
                     protected void initChannel(SocketChannel socketChannel) throws Exception {
                         ChannelPipeline pipeline = socketChannel.pipeline();
                         pipeline.addLast("channel_manager", channelManager);
+                        int heartbeat = url.getIntParameter(URLParamType.heartbeat);
+                        if (heartbeat > 0) {
+                            pipeline.addLast("idle_state",
+                                    new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
+                            pipeline.addLast("heartbeat",
+                                    new HeartbeatHandler(NettyServer.this, (JawsCodec) codec));
+                        }
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyServer.this, maxContentLength));
                         pipeline.addLast("handler", channelHandler);
                     }
@@ -158,11 +157,6 @@ public class NettyServer extends AbstractServer {
             serverChannel.close();
             log.info("Server stopAccept: no longer accepting new connections, uri={}", url.getUri());
         }
-    }
-
-    @Override
-    public int getActiveRequestCount() {
-        return activeRequests.get();
     }
 
     public AtomicInteger getActiveRequests() {

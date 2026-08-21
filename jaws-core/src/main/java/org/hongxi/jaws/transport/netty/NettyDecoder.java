@@ -50,6 +50,14 @@ public class NettyDecoder extends ByteToMessageDecoder {
         in.skipBytes(1);
         // byte 3: flag
         byte flag = in.readByte();
+
+        // Heartbeat frame: event bit set — consume and skip, do not pass to business layer
+        if ((flag & JawsCodec.FLAG_EVENT) != 0) {
+            int bodyLen = in.readInt(); // bytes 12-15
+            in.skipBytes(Math.max(0, bodyLen));
+            return;
+        }
+
         // bytes 4-11: requestId
         long requestId = in.readLong();
         // bytes 12-15: body length

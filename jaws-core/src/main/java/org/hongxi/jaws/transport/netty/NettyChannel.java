@@ -41,11 +41,10 @@ public class NettyChannel implements Channel {
     public NettyChannel(NettyClient nettyClient) {
         this.nettyClient = nettyClient;
         this.remoteAddress = new InetSocketAddress(getUrl().getHost(), getUrl().getPort());
-        this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                getUrl().getParameter(URLParamType.codec));
+        this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
+                .getExtension(getUrl().getParameter(URLParamType.codec));
     }
 
-    @Override
     public Response request(Request request) {
         int urlTimeout = nettyClient.getUrl().getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),

@@ -31,7 +31,7 @@ import java.util.Map;
  * <pre>
  * Bytes 0-1   : magic (0xF0F0)
  * Byte  2     : version
- * Byte  3     : flag (low 3 bits = data type, high 5 bits = serializationId)
+ * Byte  3     : flag (low 3 bits = data type, bit 2 = event, high 5 bits = serializationId)
  * Bytes 4-11  : request id
  * Bytes 12-15 : body content length
  * </pre>
@@ -54,6 +54,9 @@ public class JawsCodec implements Codec {
     public static final byte FLAG_RESPONSE = 0x01;
     public static final byte FLAG_RESPONSE_VOID = 0x03;
     public static final byte FLAG_RESPONSE_EXCEPTION = 0x05;
+
+    /** Bit mask for the event flag in the flag byte (bit 2). */
+    public static final byte FLAG_EVENT = 0x04;
 
     @Override
     public void encode(Channel channel, Object message, ByteBuf out) throws IOException {
@@ -240,6 +243,19 @@ public class JawsCodec implements Codec {
         // Backfill header with serializationId embedded in flag
         byte flag = (byte) (dataType | ((serialization.getSerializationNumber() << 3) & SERIALIZATION_MASK));
         writeHeader(out, headerStart, flag, response.getRequestId(), bodyLength);
+    }
+
+    /**
+     * Encode a heartbeat frame (16-byte header, zero-length body).
+     * <p>
+     * Called by {@code HeartbeatHandler} when an idle event is detected.
+     */
+    public void encodeHeartbeat(ByteBuf out) {
+        out.writeShort(MAGIC);
+        out.writeByte(VERSION);
+        out.writeByte(FLAG_EVENT);
+        out.writeLong(0L);
+        out.writeInt(0);
     }
 
     /**

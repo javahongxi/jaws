@@ -23,7 +23,8 @@ public enum URLParamType {
     proxy("proxy", "jdk"),
     filter("filter", ""),
 
-    heartbeatFactory("heartbeatFactory", "jaws"),
+    /** Heartbeat interval in milliseconds. 0 means disabled. */
+    heartbeat("heartbeat", 0),
 
     serialization("serialization", "hessian2"),
     codec("codec", "jaws"),

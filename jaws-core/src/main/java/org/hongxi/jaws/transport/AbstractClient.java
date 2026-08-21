@@ -4,9 +4,6 @@ import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
-import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,14 +21,9 @@ public abstract class AbstractClient implements Client {
 
     public AbstractClient(URL url) {
         this.url = url;
-        this.codec =
-                ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                        url.getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
-        log.info("init netty client. url: " + url.getHost() + "-" + url.getPath() + ", use codec: " + codec.getClass().getSimpleName());
-    }
-
-    @Override
-    public void heartbeat(Request request) {
-        throw new JawsFrameworkException("heartbeat not support: " + JawsFrameworkUtils.toString(request));
+        this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
+                        .getExtension(url.getParameter(URLParamType.codec));
+        log.info("init netty client. url: {}-{}, use codec: {}", 
+                url.getHost(), url.getPath(), codec.getClass().getSimpleName());
     }
 }

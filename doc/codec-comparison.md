@@ -51,7 +51,7 @@ DubboCodec (RPC 层 - 覆盖 body 编解码逻辑)
 Bytes 0-1   : magic 0xF0F0
 Byte  2     : version (当前 = 1)
 Byte  3     : flag (低 3 位 = dataType: 0x00=request, 0x01=response, 0x03=void, 0x05=exception;
-                    高 5 位 = serializationId，最多 32 种序列化协议)
+                    bit 2 = event (心跳); 高 5 位 = serializationId，最多 32 种序列化协议)
 Bytes 4-11  : requestId
 Bytes 12-15 : body length
 ```
@@ -73,7 +73,7 @@ Bytes 12-15 : body length
 | 版本号 | header 有独立 version 字节 | 无 header 版字段，版本在 body 内 writeUTF 传递 | **Jaws 更优**：header 层即可完成版本校验，无需解析 body |
 | 序列化方式 | 嵌入 flag 高 5 位，通过 `@SpiMeta(number)` + `ExtensionLoader.getExtensionByNumber()` 查找 | 嵌入 flag 低 5 位 | **持平**：双方均支持每消息独立序列化方式 |
 | 响应状态 | flag 低 3 位区分 void/exception/normal | status 字节支持多种状态码 | **各有优势**：Jaws 在 header 即可判断响应类型；Dubbo 状态粒度更细 |
-| 心跳/事件 | 无 | FLAG_EVENT 位原生支持 | **Dubbo 更优** |
+| 心跳/事件 | `FLAG_EVENT` (bit 2) 原生支持 | FLAG_EVENT 位原生支持 | **持平** |
 | 双向标记 | 无 | FLAG_TWOWAY 位 | **Dubbo 更优**：支持单向调用 |
 | 帧结构 | 单层，简洁直接 | 单层 | **持平** |
 
@@ -142,7 +142,8 @@ Jaws 编解码路径已与 Dubbo **完全持平**：编码路径采用「预留 
 6. **序列化链路闭环** — 编码从 URL 配置取序列化方式写入 flag → 解码从 flag 提取 serializationId → handler 拷贝到 response → encodeResponse 使用 response 上的 serializationNumber，全链路一致
 7. **OOM 保护** — NettyDecoder 有 `maxContentLength` 检查，超大消息跳过并对 request 返回错误响应；NettyChannelHandler 有线程池拒绝策略
 8. **编码降级** — NettyDecoder 在 OOM 拦截时，若消息为 request，会调用 `codec.encode()` 构造错误响应返回对端，避免对端超时等待
-9. **代码简洁** — JawsCodec 整体约 340 行，逻辑直白易读，没有复杂的继承体系
+9. **代码简洁** — JawsCodec 整体约 360 行，逻辑直白易读，没有复杂的继承体系
+10. **心跳/事件支持** — flag bit 2 作为 event 标记，`NettyDecoder` 识别后直接消费不进业务线程池；`HeartbeatHandler` + `IdleStateHandler` 实现双向心跳检测，可选配置启用
 
 ## 六、可改进空间
 
@@ -165,9 +166,9 @@ flag 字节高 5 位存储 serializationId（最多 32 种），通过 `@SpiMeta
 - JawsCodec 编解码路径不再依赖 Java ObjectOutputStream/ObjectInputStream，协议元数据和业务对象通过同一个 ObjectOutput/ObjectInput 流式读写
 - 消除了每个参数/返回值的 per-field byte[] 拷贝
 
-### 4. 增加心跳/事件消息
+### ~~4. 增加心跳/事件消息~~ (已完成)
 
-在 flag 中增加 event 位，codec 层支持 heartbeat。
+flag 字节 bit 2 作为 event 标记（`FLAG_EVENT = 0x04`）。`JawsCodec.encodeHeartbeat()` 编码 16 字节心跳帧（零长度 body），`NettyDecoder` 识别 event 位后直接消费，不进入业务线程池。`HeartbeatHandler` 配合 `IdleStateHandler` 实现双向心跳检测：WRITER_IDLE 发送心跳保持连接活跃，READER_IDLE 关闭死连接。通过 URL 参数 `heartbeat`（毫秒）控制启用，默认 0 禁用。
 
 ### ~~4. 懒反序列化~~ (评估后不实现)
 
@@ -177,4 +178,4 @@ flag 字节高 5 位存储 serializationId（最多 32 种），通过 `@SpiMeta
 
 Jaws 的编解码设计**分层合理、代码简洁、健壮性好**。单层帧结构简洁直接；NettyDecoder 专注帧检测、JawsCodec 专注协议语义的分层使职责明确；NettyMessage record 解耦了帧检测与业务处理；独立 version 字段和 flag 区分响应类型是合理的设计选择；flag 高 5 位嵌入 serializationId 实现了每消息独立序列化且全链路闭环；NettyDecoder/NettyChannelHandler 的双向 OOM 保护和编码降级体现了工程上的细致考量。
 
-与 Dubbo 的差距仅剩**协议完备性**（缺少心跳/事件支持），编解码效率和序列化接口设计已完全对齐。
+与 Dubbo 的编解码设计已**完全持平**，无显著差距。

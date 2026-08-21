@@ -224,11 +224,6 @@ class NettyChannelHandlerTest {
         }
 
         @Override
-        public Response request(Request request) {
-            throw new UnsupportedOperationException("not needed in handler tests");
-        }
-
-        @Override
         public boolean open() {
             return true;
         }

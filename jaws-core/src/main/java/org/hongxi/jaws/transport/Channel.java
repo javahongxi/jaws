@@ -1,28 +1,18 @@
 package org.hongxi.jaws.transport;
 
-import org.hongxi.jaws.rpc.Request;
-import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 
 /**
  * Represents a network communication channel between two endpoints.
  * <p>
- * A channel provides the ability to send requests and manage the connection
- * lifecycle (open/close). Both {@link Server}
+ * A channel provides the ability to manage the connection lifecycle
+ * (open/close) and access transport-level metadata. Both {@link Server}
  * and {@link Client} extend this interface.
  *
  * @see Server
  * @see Client
  */
 public interface Channel {
-
-    /**
-     * Send a request through this channel and return the response.
-     *
-     * @param request the RPC request to send
-     * @return the response from the remote side
-     */
-    Response request(Request request);
 
     /**
      * Open this channel, establishing the underlying network connection.

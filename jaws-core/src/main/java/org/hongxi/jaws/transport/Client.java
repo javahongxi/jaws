@@ -1,12 +1,13 @@
 package org.hongxi.jaws.transport;
 
 import org.hongxi.jaws.rpc.Request;
+import org.hongxi.jaws.rpc.Response;
 
 /**
  * A client-side channel that connects to a remote {@link Server}.
  * <p>
  * In addition to the base {@link Channel} capabilities, a client supports
- * sending heartbeat requests to keep the connection alive.
+ * sending RPC requests to the remote server.
  *
  * @see Channel
  * @see Server
@@ -14,9 +15,10 @@ import org.hongxi.jaws.rpc.Request;
 public interface Client extends Channel {
 
     /**
-     * Send a heartbeat request to the remote server to keep the connection alive.
+     * Send an RPC request to the remote server and return the response.
      *
-     * @param request the heartbeat request
+     * @param request the RPC request to send
+     * @return the response from the remote side
      */
-    void heartbeat(Request request);
+    Response request(Request request);
 }
