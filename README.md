@@ -19,7 +19,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **动态端口** — 端口设为 -1 时自动从 10000 递增分配，避免冲突
 - **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
 - **服务鉴权 / Token** — 基于 Token 的服务认证，防止未授权调用，通过 Filter 自动生效
-- **路由链 / Router** — 可扩展的调用时路由过滤链，内置 IP 路由规则，通过 Router SPI 灵活定制流量策略
+- **路由链 / Router** — 可扩展的调用时路由过滤链，内置标签路由（灰度发布）与动态配置路由
 - **动态配置** — 支持全局/服务级/方法级三层热更新（超时、重试、路由规则、Filter 开关等）
 - **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 - **MCP 桥接** — 将 Jaws RPC 服务自动暴露为 MCP Tools，AI Agent 可直接调用后端服务

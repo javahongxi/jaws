@@ -39,21 +39,22 @@ public class RouterChain<T> {
      * @return filtered reference list
      */
     public List<Reference<T>> route(List<Reference<T>> references, Request request) {
-        List<Reference<T>> result = references;
+        List<Reference<T>> current = references;
         for (Router<T> router : routers) {
             try {
-                result = router.route(result, request);
-                if (result == null || result.isEmpty()) {
+                List<Reference<T>> filtered = router.route(current, request);
+                if (filtered == null || filtered.isEmpty()) {
                     log.warn("Router {} filtered all references for request {}, falling back to previous list",
                             router.getClass().getSimpleName(), request.getMethodName());
-                    // fall back to unfiltered list to avoid empty result
-                    return references;
+                    // fall back to the list before this router
+                    return current;
                 }
+                current = filtered;
             } catch (Exception e) {
                 log.warn("Router {} threw exception, skipping: {}", router.getClass().getSimpleName(), e.getMessage());
             }
         }
-        return result;
+        return current;
     }
 
     public boolean hasRouters() {
