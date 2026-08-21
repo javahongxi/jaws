@@ -3,7 +3,9 @@ package org.hongxi.jaws.protocol.jaws;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
-import org.hongxi.jaws.codec.AbstractCodec;
+import org.hongxi.jaws.codec.Codec;
+import org.hongxi.jaws.serialization.ObjectInput;
+import org.hongxi.jaws.serialization.ObjectOutput;
 import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -19,8 +21,6 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.transport.Channel;
 
 import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -35,9 +35,14 @@ import java.util.Map;
  * Bytes 4-11  : request id
  * Bytes 12-15 : body content length
  * </pre>
+ * <p>
+ * The body is written using the streaming {@link ObjectOutput} / {@link ObjectInput}
+ * obtained from the {@link Serialization} implementation, so all protocol metadata
+ * and business objects are written to / read from the same stream without
+ * per-field byte[] allocation.
  */
 @SpiMeta(name = "jaws")
-public class JawsCodec extends AbstractCodec {
+public class JawsCodec implements Codec {
 
     public static final int HEADER_LENGTH = 16;
     public static final byte VERSION = 1;
@@ -127,11 +132,11 @@ public class JawsCodec extends AbstractCodec {
         in.skipBytes(bodyLength);
 
         try (ByteBufInputStream bodyIn = new ByteBufInputStream(bodyBuf)) {
-            ObjectInput input = createInput(bodyIn);
+            ObjectInput input = serialization.deserialize(bodyIn);
             if (isResponse) {
-                return decodeResponse(input, dataType, requestId, serializationId, serialization);
+                return decodeResponse(input, dataType, requestId, serializationId);
             } else {
-                return decodeRequest(input, requestId, serializationId, serialization);
+                return decodeRequest(input, requestId, serializationId);
             }
         } catch (ClassNotFoundException e) {
             throw new JawsFrameworkException("decode " + (isResponse ? "response" : "request") +
@@ -159,31 +164,30 @@ public class JawsCodec extends AbstractCodec {
         int headerStart = out.writerIndex();
         out.writerIndex(headerStart + HEADER_LENGTH);
 
-        // Write body directly to ByteBuf
-        ByteBufOutputStream bodyOut = new ByteBufOutputStream(out);
-        ObjectOutput output = createOutput(bodyOut);
-        output.writeUTF(request.getInterfaceName());
-        output.writeUTF(request.getMethodName());
-        output.writeUTF(request.getParamDesc());
+        // Get streaming ObjectOutput from the serialization implementation
+        try (ObjectOutput output = serialization.serialize(new ByteBufOutputStream(out))) {
+            output.writeUTF(request.getInterfaceName());
+            output.writeUTF(request.getMethodName());
+            output.writeUTF(request.getParamDesc());
 
-        if (request.getArguments() != null) {
-            for (Object obj : request.getArguments()) {
-                serialize(output, obj, serialization);
+            if (request.getArguments() != null) {
+                for (Object obj : request.getArguments()) {
+                    output.writeObject(obj);
+                }
             }
-        }
 
-        if (request.getAttachments() == null || request.getAttachments().isEmpty()) {
-            output.writeInt(0);
-        } else {
-            output.writeInt(request.getAttachments().size());
-            for (Map.Entry<String, String> entry : request.getAttachments().entrySet()) {
-                output.writeUTF(entry.getKey());
-                output.writeUTF(entry.getValue());
+            if (request.getAttachments() == null || request.getAttachments().isEmpty()) {
+                output.writeInt(0);
+            } else {
+                output.writeInt(request.getAttachments().size());
+                for (Map.Entry<String, String> entry : request.getAttachments().entrySet()) {
+                    output.writeUTF(entry.getKey());
+                    output.writeUTF(entry.getValue());
+                }
             }
-        }
 
-        output.flush();
-        output.close();
+            output.flush();
+        }
 
         int bodyLength = out.writerIndex() - headerStart - HEADER_LENGTH;
 
@@ -211,26 +215,25 @@ public class JawsCodec extends AbstractCodec {
         int headerStart = out.writerIndex();
         out.writerIndex(headerStart + HEADER_LENGTH);
 
-        // Write body directly to ByteBuf
-        ByteBufOutputStream bodyOut = new ByteBufOutputStream(out);
-        ObjectOutput output = createOutput(bodyOut);
-        output.writeLong(response.getProcessTime());
-
+        // Get streaming ObjectOutput from the serialization implementation
         byte dataType;
-        if (response.getException() != null) {
-            output.writeUTF(response.getException().getClass().getName());
-            serialize(output, response.getException(), serialization);
-            dataType = FLAG_RESPONSE_EXCEPTION;
-        } else if (response.getValue() == null) {
-            dataType = FLAG_RESPONSE_VOID;
-        } else {
-            output.writeUTF(response.getValue().getClass().getName());
-            serialize(output, response.getValue(), serialization);
-            dataType = FLAG_RESPONSE;
-        }
+        try (ObjectOutput output = serialization.serialize(new ByteBufOutputStream(out))) {
+            output.writeLong(response.getProcessTime());
 
-        output.flush();
-        output.close();
+            if (response.getException() != null) {
+                output.writeUTF(response.getException().getClass().getName());
+                output.writeObject(response.getException());
+                dataType = FLAG_RESPONSE_EXCEPTION;
+            } else if (response.getValue() == null) {
+                dataType = FLAG_RESPONSE_VOID;
+            } else {
+                output.writeUTF(response.getValue().getClass().getName());
+                output.writeObject(response.getValue());
+                dataType = FLAG_RESPONSE;
+            }
+
+            output.flush();
+        }
 
         int bodyLength = out.writerIndex() - headerStart - HEADER_LENGTH;
 
@@ -260,7 +263,7 @@ public class JawsCodec extends AbstractCodec {
         out.writerIndex(currentIndex);
     }
 
-    private Object decodeRequest(ObjectInput input, long requestId, byte serializationId, Serialization serialization)
+    private Object decodeRequest(ObjectInput input, long requestId, byte serializationId)
             throws IOException, ClassNotFoundException {
         String interfaceName = input.readUTF();
         String methodName = input.readUTF();
@@ -272,13 +275,13 @@ public class JawsCodec extends AbstractCodec {
         rpcRequest.setInterfaceName(interfaceName);
         rpcRequest.setMethodName(methodName);
         rpcRequest.setParamDesc(paramDesc);
-        rpcRequest.setArguments(decodeRequestParameter(input, paramDesc, serialization));
+        rpcRequest.setArguments(decodeRequestParameter(input, paramDesc));
         rpcRequest.setAttachments(decodeRequestAttachments(input));
 
         return rpcRequest;
     }
 
-    private Object[] decodeRequestParameter(ObjectInput input, String parameterDesc, Serialization serialization)
+    private Object[] decodeRequestParameter(ObjectInput input, String parameterDesc)
             throws IOException, ClassNotFoundException {
         if (parameterDesc == null || parameterDesc.isEmpty()) {
             return null;
@@ -289,7 +292,7 @@ public class JawsCodec extends AbstractCodec {
         Object[] paramObjs = new Object[classTypes.length];
 
         for (int i = 0; i < classTypes.length; i++) {
-            paramObjs[i] = deserialize((byte[]) input.readObject(), classTypes[i], serialization);
+            paramObjs[i] = input.readObject(classTypes[i]);
         }
 
         return paramObjs;
@@ -311,8 +314,7 @@ public class JawsCodec extends AbstractCodec {
         return attachments;
     }
 
-    private Object decodeResponse(ObjectInput input, byte dataType, long requestId, byte serializationId,
-                                      Serialization serialization)
+    private Object decodeResponse(ObjectInput input, byte dataType, long requestId, byte serializationId)
             throws IOException, ClassNotFoundException {
         long processTime = input.readLong();
 
@@ -328,7 +330,7 @@ public class JawsCodec extends AbstractCodec {
         String className = input.readUTF();
         Class<?> clazz = ReflectUtils.forName(className);
 
-        Object result = deserialize((byte[]) input.readObject(), clazz, serialization);
+        Object result = input.readObject(clazz);
 
         if (dataType == FLAG_RESPONSE) {
             response.setValue(result);

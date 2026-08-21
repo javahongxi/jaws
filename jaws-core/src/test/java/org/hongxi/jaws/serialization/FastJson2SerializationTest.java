@@ -3,6 +3,8 @@ package org.hongxi.jaws.serialization;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.List;
@@ -10,7 +12,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * FastJson2Serialization 单元测试
+ * FastJson2Serialization streaming API unit tests.
  */
 class FastJson2SerializationTest {
 
@@ -21,54 +23,68 @@ class FastJson2SerializationTest {
         serialization = new FastJson2Serialization();
     }
 
+    private byte[] toBytes(Object obj) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        ObjectOutput out = serialization.serialize(bos);
+        out.writeObject(obj);
+        out.flush();
+        return bos.toByteArray();
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T fromBytes(byte[] bytes, Class<T> clazz) throws Exception {
+        ObjectInput in = serialization.deserialize(new ByteArrayInputStream(bytes));
+        return in.readObject(clazz);
+    }
+
     @Test
     void serializeNumberShouldReturnNonNullBytes() throws IOException {
-        byte[] bytes = serialization.serialize(42);
+        byte[] bytes = toBytes(42);
         assertNotNull(bytes);
         assertTrue(bytes.length > 0);
     }
 
     @Test
-    void deserializeNumberShouldReturnOriginalValue() throws IOException {
-        byte[] bytes = serialization.serialize(42);
-        Integer result = serialization.deserialize(bytes, Integer.class);
+    void deserializeNumberShouldReturnOriginalValue() throws Exception {
+        byte[] bytes = toBytes(42);
+        Integer result = fromBytes(bytes, Integer.class);
         assertEquals(42, result);
     }
 
     @Test
-    void serializeStringRoundtrip() throws IOException {
+    void serializeStringRoundtrip() throws Exception {
         String original = "hello jaws";
-        byte[] bytes = serialization.serialize(original);
-        String result = serialization.deserialize(bytes, String.class);
+        byte[] bytes = toBytes(original);
+        String result = fromBytes(bytes, String.class);
         assertEquals(original, result);
     }
 
     @Test
-    void serializePojoRoundtrip() throws IOException {
+    void serializePojoRoundtrip() throws Exception {
         TestPojo original = new TestPojo("test", 100, List.of("a", "b", "c"));
-        byte[] bytes = serialization.serialize(original);
-        TestPojo result = serialization.deserialize(bytes, TestPojo.class);
+        byte[] bytes = toBytes(original);
+        TestPojo result = fromBytes(bytes, TestPojo.class);
         assertEquals(original, result);
     }
 
     @Test
-    void serializePojoWithNullFieldsRoundtrip() throws IOException {
+    void serializePojoWithNullFieldsRoundtrip() throws Exception {
         TestPojo original = new TestPojo(null, 0, null);
-        byte[] bytes = serialization.serialize(original);
-        TestPojo result = serialization.deserialize(bytes, TestPojo.class);
+        byte[] bytes = toBytes(original);
+        TestPojo result = fromBytes(bytes, TestPojo.class);
         assertEquals(original, result);
     }
 
     @Test
     void serializeNullShouldReturnBytes() throws IOException {
-        byte[] bytes = serialization.serialize(null);
+        byte[] bytes = toBytes(null);
         assertNotNull(bytes);
     }
 
     @Test
-    void serializeEmptyStringRoundtrip() throws IOException {
-        byte[] bytes = serialization.serialize("");
-        String result = serialization.deserialize(bytes, String.class);
+    void serializeEmptyStringRoundtrip() throws Exception {
+        byte[] bytes = toBytes("");
+        String result = fromBytes(bytes, String.class);
         assertEquals("", result);
     }
 
@@ -78,35 +94,35 @@ class FastJson2SerializationTest {
     }
 
     @Test
-    void serializeRecordRoundtrip() throws IOException {
+    void serializeRecordRoundtrip() throws Exception {
         /* fastjson2 JSONB 与 record + List 字段存在兼容性问题，此处使用不含集合字段的 record */
         record SimpleRecord(String name, int value) implements Serializable {}
 
         SimpleRecord original = new SimpleRecord("record-test", 200);
-        byte[] bytes = serialization.serialize(original);
-        SimpleRecord result = serialization.deserialize(bytes, SimpleRecord.class);
+        byte[] bytes = toBytes(original);
+        SimpleRecord result = fromBytes(bytes, SimpleRecord.class);
         assertEquals(original, result);
     }
 
     @Test
-    void serializeRecordWithNullFieldRoundtrip() throws IOException {
+    void serializeRecordWithNullFieldRoundtrip() throws Exception {
         record SimpleRecord(String name, int value) implements Serializable {}
 
         SimpleRecord original = new SimpleRecord(null, 0);
-        byte[] bytes = serialization.serialize(original);
-        SimpleRecord result = serialization.deserialize(bytes, SimpleRecord.class);
+        byte[] bytes = toBytes(original);
+        SimpleRecord result = fromBytes(bytes, SimpleRecord.class);
         assertEquals(original, result);
     }
 
     @Test
-    void serializeNestedRecordRoundtrip() throws IOException {
+    void serializeNestedRecordRoundtrip() throws Exception {
         /* record 嵌套 record */
         record Inner(String msg) implements Serializable {}
         record Outer(String id, Inner inner) implements Serializable {}
 
         Outer original = new Outer("outer-1", new Inner("hello"));
-        byte[] bytes = serialization.serialize(original);
-        Outer result = serialization.deserialize(bytes, Outer.class);
+        byte[] bytes = toBytes(original);
+        Outer result = fromBytes(bytes, Outer.class);
         assertEquals(original, result);
     }
 
@@ -114,5 +130,23 @@ class FastJson2SerializationTest {
     void securityFilterShouldBeAccessible() {
         FastJson2Serialization fjs = (FastJson2Serialization) serialization;
         assertNotNull(fjs.getSecurityFilter());
+    }
+
+    @Test
+    void streamingMultipleFieldsRoundtrip() throws Exception {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        ObjectOutput out = serialization.serialize(bos);
+        out.writeUTF("methodName");
+        out.writeInt(42);
+        out.writeLong(999L);
+        out.writeObject("arg1");
+        out.flush();
+        out.close();
+
+        ObjectInput in = serialization.deserialize(new ByteArrayInputStream(bos.toByteArray()));
+        assertEquals("methodName", in.readUTF());
+        assertEquals(42, in.readInt());
+        assertEquals(999L, in.readLong());
+        assertEquals("arg1", in.readObject());
     }
 }

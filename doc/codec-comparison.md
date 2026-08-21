@@ -110,12 +110,12 @@ NettyDecoder.decode()
   ① readRetainedSlice(frame) → ByteBuf slice                       [零拷贝]
 JawsCodec.decode()
   ② retainedSlice → ByteBufInputStream 包装 body 区域               [零拷贝]
-  ③ ObjectInputStream 直接从 ByteBuf 读取并反序列化
+  ③ Serialization.deserialize(InputStream) → ObjectInput 流式读取
 ```
 
-共 **0 次额外 byte[] 分配 + 0 次 body 拷贝**。
+共 **0 次额外 byte[] 分配 + 0 次 body 拷贝 + 0 次 per-field byte[] 拷贝**。
 
-> 注：每个参数/返回值经 `Serialization.deserialize(byte[], Class)` 仍有一次 byte[] 拷贝（per-field 级别），这是 Serialization 接口设计决定，与 Codec 层无关。
+> 注：Serialization 接口已升级为流式 API（`serialize(OutputStream) → ObjectOutput` / `deserialize(InputStream) → ObjectInput`），所有协议元数据和业务对象通过同一个流顺序读写，Hessian2 实现零中间 byte[] 拷贝。Fastjson2 因 JSONB 不支持原生流式传输，内部仍使用 length-prefixed byte[] 适配，但接口层面已与 Dubbo 对齐。
 
 ### Dubbo 解码路径
 
@@ -130,7 +130,7 @@ ExchangeCodec.decode()
 
 ### 效率小结
 
-Jaws 编解码路径已与 Dubbo **完全持平**：编码路径采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式（0 次额外分配），解码路径通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化（0 次额外分配）。高吞吐场景下 GC 压力与 Dubbo 相当。
+Jaws 编解码路径已与 Dubbo **完全持平**：编码路径采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式（0 次额外分配），解码路径通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化（0 次额外分配）。Serialization 接口已升级为流式 API（`ObjectOutput`/`ObjectInput`），消除了 per-field byte[] 拷贝，与 Dubbo 的 `ObjectOutput`/`ObjectInput` 设计对齐。高吞吐场景下 GC 压力与 Dubbo 相当。
 
 ## 五、Jaws 设计的优点
 
@@ -156,7 +156,16 @@ flag 字节高 5 位存储 serializationId（最多 32 种），通过 `@SpiMeta
 - 编码采用「预留 header + body 直写 ByteBuf + 回填 header」模式，0 次额外分配
 - 解码通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化
 
-### 3. 增加心跳/事件消息
+### ~~3. Serialization 接口升级为流式 API~~ (已完成)
+
+- 新增 `ObjectOutput` / `ObjectInput` 接口（类比 Dubbo 的同名接口）
+- `Serialization` 接口从 `byte[] serialize(Object)` / `T deserialize(byte[], Class)` 改为 `ObjectOutput serialize(OutputStream)` / `ObjectInput deserialize(InputStream)`
+- Hessian2 实现真正的零中间 byte[] 流式序列化（直接委托 Hessian2Output/Hessian2Input）
+- Fastjson2 因 JSONB 不支持原生流式传输，使用 DataOutputStream + length-prefixed JSONB 适配
+- JawsCodec 编解码路径不再依赖 Java ObjectOutputStream/ObjectInputStream，协议元数据和业务对象通过同一个 ObjectOutput/ObjectInput 流式读写
+- 消除了每个参数/返回值的 per-field byte[] 拷贝
+
+### 4. 增加心跳/事件消息
 
 在 flag 中增加 event 位，codec 层支持 heartbeat。
 
@@ -168,4 +177,4 @@ flag 字节高 5 位存储 serializationId（最多 32 种），通过 `@SpiMeta
 
 Jaws 的编解码设计**分层合理、代码简洁、健壮性好**。单层帧结构简洁直接；NettyDecoder 专注帧检测、JawsCodec 专注协议语义的分层使职责明确；NettyMessage record 解耦了帧检测与业务处理；独立 version 字段和 flag 区分响应类型是合理的设计选择；flag 高 5 位嵌入 serializationId 实现了每消息独立序列化且全链路闭环；NettyDecoder/NettyChannelHandler 的双向 OOM 保护和编码降级体现了工程上的细致考量。
 
-与 Dubbo 的差距仅剩**协议完备性**（缺少心跳/事件支持），编解码效率已完全对齐。
+与 Dubbo 的差距仅剩**协议完备性**（缺少心跳/事件支持），编解码效率和序列化接口设计已完全对齐。
