@@ -6,6 +6,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，编解码全链路零拷贝（零额外 byte[] 分配）
 - **多种序列化** — 内置 fastjson2 / hessian2，消费端指定序列化方式，协议头携带序列化标识透传至服务端
+- **连接心跳** — 双向心跳检测，Provider 与 Consumer 自动对齐心跳间隔，防止 NAT / LB 超时断连
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
 - **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
 - **高可用容错** — failover（失败切换）、failfast（快速失败）、failback（异步重试）
