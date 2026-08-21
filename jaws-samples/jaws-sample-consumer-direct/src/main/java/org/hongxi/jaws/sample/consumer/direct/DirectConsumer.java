@@ -4,7 +4,6 @@ import com.google.common.collect.Lists;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ReferenceConfig;
-import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.sample.api.DemoService;
@@ -37,7 +36,6 @@ public class DirectConsumer {
 
     public static void main(String[] args) throws Exception {
         ProtocolConfig protocolConfig = createProtocolConfig();
-        RegistryConfig registryConfig = createLocalRegistryConfig();
 
         /* Reference DemoService with directUrl */
         ReferenceConfig<DemoService> demoRef = new ReferenceConfig<>();
@@ -49,7 +47,6 @@ public class DirectConsumer {
         demoRef.setVersion("2.0");
         demoRef.setCheck(false);
         demoRef.setProtocol(protocolConfig);
-        demoRef.setRegistry(registryConfig);
         demoRef.setDirectUrl(DIRECT_URL);
 
         DemoService demoService = demoRef.getRef();
@@ -107,7 +104,6 @@ public class DirectConsumer {
         orderRef.setVersion("2.0");
         orderRef.setCheck(false);
         orderRef.setProtocol(protocolConfig);
-        orderRef.setRegistry(registryConfig);
         orderRef.setDirectUrl(DIRECT_URL);
 
         OrderService orderService = orderRef.getRef();
@@ -148,14 +144,5 @@ public class DirectConsumer {
         protocolConfig.setTransportFactory("netty");
         protocolConfig.setSerialization("fastjson2");
         return protocolConfig;
-    }
-
-    private static RegistryConfig createLocalRegistryConfig() {
-        RegistryConfig registryConfig = new RegistryConfig();
-        registryConfig.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
-        registryConfig.setId("localRegistry");
-        registryConfig.setAddress("127.0.0.1");
-        registryConfig.setPort(0);
-        return registryConfig;
     }
 }

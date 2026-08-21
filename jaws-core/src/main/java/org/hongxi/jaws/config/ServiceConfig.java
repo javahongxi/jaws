@@ -86,7 +86,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
         loadRegistryUrls();
         if (registryUrls == null || registryUrls.isEmpty()) {
-            throw new IllegalStateException("Should set registry config for service:" + interfaceClass.getName());
+            log.info("No registry configured for service [{}], will export without registering.", interfaceClass.getName());
         }
 
         for (ProtocolConfig protocolConfig : protocols) {
@@ -209,8 +209,10 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         Provider<T> provider = new DefaultProvider<>(interfaceClass, serviceUrl, ref);
         Exporter<T> exporter = protocol.export(provider);
 
-        // Register service to registries
-        register(registryUrls, serviceUrl);
+        // Register service to registries (skip if no registry configured)
+        if (!registryUrls.isEmpty()) {
+            register(registryUrls, serviceUrl);
+        }
 
         exporters.add(exporter);
         exportProtocols.add(protocol);

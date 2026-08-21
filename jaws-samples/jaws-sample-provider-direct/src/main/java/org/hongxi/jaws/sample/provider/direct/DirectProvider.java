@@ -2,7 +2,6 @@ package org.hongxi.jaws.sample.provider.direct;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
-import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.OrderService;
@@ -10,11 +9,11 @@ import org.hongxi.jaws.sample.provider.direct.service.DemoServiceImpl;
 import org.hongxi.jaws.sample.provider.direct.service.OrderServiceImpl;
 
 /**
- * Direct-mode provider - no external registry dependency.
+ * Direct-mode provider - no registry dependency.
  *
  * <pre>
  * Demo scenario:
- * 1. jaws protocol + local registry (in-memory, no ZooKeeper/Nacos needed)
+ * 1. jaws protocol, no registry (export only, skip registration)
  * 2. Multi-Service publishing - DemoService + OrderService
  * 3. group/version configuration
  * </pre>
@@ -27,7 +26,6 @@ public class DirectProvider {
 
     public static void main(String[] args) throws Exception {
         ProtocolConfig protocolConfig = createProtocolConfig();
-        RegistryConfig registryConfig = createLocalRegistryConfig();
 
         /* Export DemoService */
         ServiceConfig<DemoService> demoServiceConfig = new ServiceConfig<>();
@@ -39,7 +37,6 @@ public class DirectProvider {
         demoServiceConfig.setGroup("test");
         demoServiceConfig.setVersion("2.0");
         demoServiceConfig.setProtocol(protocolConfig);
-        demoServiceConfig.setRegistry(registryConfig);
         demoServiceConfig.export();
         System.out.println("DemoService exported (direct mode, no registry).");
 
@@ -52,7 +49,6 @@ public class DirectProvider {
         orderServiceConfig.setGroup("test");
         orderServiceConfig.setVersion("2.0");
         orderServiceConfig.setProtocol(protocolConfig);
-        orderServiceConfig.setRegistry(registryConfig);
         orderServiceConfig.export();
         System.out.println("OrderService exported (direct mode, no registry).");
 
@@ -67,14 +63,5 @@ public class DirectProvider {
         protocolConfig.setSerialization("fastjson2");
         protocolConfig.setPort(PORT);
         return protocolConfig;
-    }
-
-    private static RegistryConfig createLocalRegistryConfig() {
-        RegistryConfig registryConfig = new RegistryConfig();
-        registryConfig.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
-        registryConfig.setId("localRegistry");
-        registryConfig.setAddress("127.0.0.1");
-        registryConfig.setPort(0);
-        return registryConfig;
     }
 }
