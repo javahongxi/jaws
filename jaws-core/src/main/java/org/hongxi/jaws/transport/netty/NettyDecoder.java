@@ -52,6 +52,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
         // Heartbeat frame: event bit set — consume and skip, do not pass to business layer
         if ((flag & Codec.FLAG_EVENT) != 0) {
+            in.skipBytes(8); // skip requestId (bytes 4-11)
             int bodyLen = in.readInt(); // bytes 12-15
             in.skipBytes(Math.max(0, bodyLen));
             return;
