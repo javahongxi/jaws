@@ -4,7 +4,6 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
-import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
@@ -90,26 +89,12 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
      * method-level key -> service-level key -> global key -> URL default.
      */
     private int resolveRetries(Request request, int urlDefault) {
-        DynamicConfiguration dc = DynamicConfigurationUtils.getDynamicConfiguration();
-        if (!dc.hasAnyConfig()) {
-            return urlDefault;
-        }
         String interfaceName = request.getInterfaceName();
         String methodName = request.getMethodName();
-
-        int val = dc.getIntConfig(DynamicConfigurationKeys.retries(interfaceName, methodName), Integer.MIN_VALUE);
-        if (val != Integer.MIN_VALUE) {
-            return val;
-        }
-        val = dc.getIntConfig(DynamicConfigurationKeys.retries(interfaceName), Integer.MIN_VALUE);
-        if (val != Integer.MIN_VALUE) {
-            return val;
-        }
-        val = dc.getIntConfig(DynamicConfigurationKeys.GLOBAL_RETRIES, Integer.MIN_VALUE);
-        if (val != Integer.MIN_VALUE) {
-            return val;
-        }
-        return urlDefault;
+        return DynamicConfigurationUtils.resolveIntConfig(urlDefault,
+                DynamicConfigurationKeys.retries(interfaceName, methodName),
+                DynamicConfigurationKeys.retries(interfaceName),
+                DynamicConfigurationKeys.GLOBAL_RETRIES);
     }
 
     private List<Reference<T>> selectReferences(Request request) {

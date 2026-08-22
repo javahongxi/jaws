@@ -6,7 +6,9 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ActivationComparator;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.Extension;
-import org.hongxi.jaws.rpc.*;
+import org.hongxi.jaws.rpc.Provider;
+import org.hongxi.jaws.rpc.Reference;
+import org.hongxi.jaws.rpc.URL;
 
 import java.util.ArrayList;
 import java.util.Collections;

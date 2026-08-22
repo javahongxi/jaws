@@ -8,12 +8,15 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
-import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.rpc.*;
+import org.hongxi.jaws.rpc.DefaultResponseFuture;
+import org.hongxi.jaws.rpc.Request;
+import org.hongxi.jaws.rpc.Response;
+import org.hongxi.jaws.rpc.ResponseFuture;
+import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -224,28 +227,12 @@ public class NettyChannel implements Channel {
      * method-level key -> service-level key -> global key -> URL default.
      */
     private int resolveTimeout(Request request, int urlDefault) {
-        DynamicConfiguration dc = DynamicConfigurationUtils.getDynamicConfiguration();
-        if (!dc.hasAnyConfig()) {
-            return urlDefault;
-        }
         String interfaceName = request.getInterfaceName();
         String methodName = request.getMethodName();
-
-        // method-level dynamic override
-        int val = dc.getIntConfig(DynamicConfigurationKeys.requestTimeout(interfaceName, methodName), 0);
-        if (val > 0) {
-            return val;
-        }
-        // service-level dynamic override
-        val = dc.getIntConfig(DynamicConfigurationKeys.requestTimeout(interfaceName), 0);
-        if (val > 0) {
-            return val;
-        }
-        // global dynamic override
-        val = dc.getIntConfig(DynamicConfigurationKeys.GLOBAL_REQUEST_TIMEOUT, 0);
-        if (val > 0) {
-            return val;
-        }
-        return urlDefault;
+        // Only positive values are accepted as valid timeouts
+        return DynamicConfigurationUtils.resolveIntConfig(urlDefault, v -> v > 0,
+                DynamicConfigurationKeys.requestTimeout(interfaceName, methodName),
+                DynamicConfigurationKeys.requestTimeout(interfaceName),
+                DynamicConfigurationKeys.GLOBAL_REQUEST_TIMEOUT);
     }
 }

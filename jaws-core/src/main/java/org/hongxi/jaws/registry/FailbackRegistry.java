@@ -7,8 +7,16 @@ import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Failback registry
@@ -181,7 +189,8 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         listeners.add(listener);
     }
 
-    private void retry() {
+    // Package-private for deterministic testing besides the scheduled retry
+    void retry() {
         if (!failedRegistered.isEmpty()) {
             Set<URL> failed = new HashSet<>(failedRegistered);
             log.info("[{}] Retry register {}", registryClassName, failed);

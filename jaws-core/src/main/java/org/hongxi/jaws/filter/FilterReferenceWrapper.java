@@ -4,7 +4,10 @@ import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
-import org.hongxi.jaws.rpc.*;
+import org.hongxi.jaws.rpc.Reference;
+import org.hongxi.jaws.rpc.Request;
+import org.hongxi.jaws.rpc.Response;
+import org.hongxi.jaws.rpc.URL;
 
 /**
  * A concrete reference node in the filter chain that wraps an original {@link Reference}
@@ -84,18 +87,10 @@ class FilterReferenceWrapper<T> implements Reference<T> {
         if (filterName == null) {
             return false;
         }
-        DynamicConfiguration dc = DynamicConfigurationUtils.getDynamicConfiguration();
-        if (!dc.hasAnyConfig()) {
-            return false;
-        }
-        String serviceKey = DynamicConfigurationKeys.filterEnabled(filterName, interfaceName);
-        String serviceVal = dc.getConfig(serviceKey);
-        if (serviceVal != null) {
-            return !"true".equalsIgnoreCase(serviceVal);
-        }
-        String globalKey = DynamicConfigurationKeys.filterEnabled(filterName);
-        String globalVal = dc.getConfig(globalKey);
-        return globalVal != null && !"true".equalsIgnoreCase(globalVal);
+        String val = DynamicConfigurationUtils.resolveStringConfig(
+                DynamicConfigurationKeys.filterEnabled(filterName, interfaceName),
+                DynamicConfigurationKeys.filterEnabled(filterName));
+        return val != null && !"true".equalsIgnoreCase(val);
     }
 
     private static String resolveFilterName(Filter filter) {

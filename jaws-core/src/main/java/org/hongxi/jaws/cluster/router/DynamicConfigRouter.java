@@ -89,13 +89,10 @@ public class DynamicConfigRouter<T> implements Router<T>, ConfigurationListener 
     // ---- internal ----
 
     private String loadRuleString() {
-        DynamicConfiguration dc = DynamicConfigurationUtils.getDynamicConfiguration();
         // service-level takes priority
-        String val = dc.getConfig(DynamicConfigurationKeys.routeRule(interfaceName));
-        if (val != null && !val.isEmpty()) {
-            return val;
-        }
-        return dc.getConfig(DynamicConfigurationKeys.GLOBAL_ROUTE_RULE);
+        return DynamicConfigurationUtils.resolveStringConfig(
+                DynamicConfigurationKeys.routeRule(interfaceName),
+                DynamicConfigurationKeys.GLOBAL_ROUTE_RULE);
     }
 
     private boolean matches(Reference<T> ref, RouteRule rule) {

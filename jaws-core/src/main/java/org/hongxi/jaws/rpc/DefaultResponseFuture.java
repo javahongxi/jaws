@@ -7,7 +7,11 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Default {@link ResponseFuture} implementing asynchronous waiting with timeout

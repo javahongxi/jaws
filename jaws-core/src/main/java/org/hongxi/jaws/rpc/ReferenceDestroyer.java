@@ -22,7 +22,13 @@ public class ReferenceDestroyer {
     private static final Logger log = LoggerFactory.getLogger(ReferenceDestroyer.class);
 
     private static final int DELAY_TIME = 1000;
-    private static final ScheduledExecutorService scheduledExecutor = Executors.newScheduledThreadPool(10);
+    // A single daemon thread is enough: destroy tasks are rare and sequential
+    private static final ScheduledExecutorService scheduledExecutor =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "jaws-reference-destroyer");
+                t.setDaemon(true);
+                return t;
+            });
 
     static {
         ShutdownHook.registerShutdownHook(() -> {
@@ -45,10 +51,12 @@ public class ReferenceDestroyer {
                     log.error("ReferenceSupport delayDestroy Error: url={}", reference.getUrl().getUri(), e);
                 }
             }
+            log.info("ReferenceSupport delayDestroy Success: size={} service={} urls={}",
+                    references.size(), references.get(0).getUrl().getIdentity(), getServerPorts(references));
         }, DELAY_TIME, TimeUnit.MILLISECONDS);
 
-        log.info("ReferenceSupport delayDestroy Success: size={} service={} urls={}",
-                references.size(), references.get(0).getUrl().getIdentity(), getServerPorts(references));
+        log.info("ReferenceSupport delayDestroy scheduled in {}ms: size={} service={}",
+                DELAY_TIME, references.size(), references.get(0).getUrl().getIdentity());
     }
 
     private static <T> String getServerPorts(List<Reference<T>> references) {

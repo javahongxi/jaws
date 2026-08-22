@@ -1,6 +1,7 @@
 package org.hongxi.jaws.common.util;
 
-import org.hongxi.jaws.exception.*;
+import org.hongxi.jaws.exception.JawsAbstractException;
+import org.hongxi.jaws.exception.JawsBizException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

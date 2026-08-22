@@ -1,5 +1,7 @@
 package org.hongxi.jaws.config.configcenter;
 
+import java.util.function.IntPredicate;
+
 /**
  * Static utility for accessing {@link DynamicConfiguration}.
  * <p>
@@ -60,5 +62,53 @@ public class DynamicConfigurationUtils {
 
     public static void removeListener(String key, ConfigurationListener listener) {
         dynamicConfiguration.removeListener(key, listener);
+    }
+
+    // ---- fallback-chain resolvers ----
+
+    /**
+     * Resolve an int config by trying the given keys in order (most specific
+     * first). The first configured value wins; otherwise {@code defaultValue}
+     * is returned.
+     */
+    public static int resolveIntConfig(int defaultValue, String... keys) {
+        return resolveIntConfig(defaultValue, v -> true, keys);
+    }
+
+    /**
+     * Resolve an int config by trying the given keys in order (most specific
+     * first). The first configured value accepted by {@code valid} wins;
+     * otherwise {@code defaultValue} is returned.
+     */
+    public static int resolveIntConfig(int defaultValue, IntPredicate valid, String... keys) {
+        DynamicConfiguration dc = getDynamicConfiguration();
+        if (!dc.hasAnyConfig()) {
+            return defaultValue;
+        }
+        for (String key : keys) {
+            int val = dc.getIntConfig(key, Integer.MIN_VALUE);
+            if (val != Integer.MIN_VALUE && valid.test(val)) {
+                return val;
+            }
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Resolve a String config by trying the given keys in order (most specific
+     * first). The first non-empty value wins; otherwise null is returned.
+     */
+    public static String resolveStringConfig(String... keys) {
+        DynamicConfiguration dc = getDynamicConfiguration();
+        if (!dc.hasAnyConfig()) {
+            return null;
+        }
+        for (String key : keys) {
+            String val = dc.getConfig(key);
+            if (val != null && !val.isEmpty()) {
+                return val;
+            }
+        }
+        return null;
     }
 }
