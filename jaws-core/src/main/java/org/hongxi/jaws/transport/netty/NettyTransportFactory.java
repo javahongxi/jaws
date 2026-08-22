@@ -10,7 +10,7 @@ import org.hongxi.jaws.transport.AbstractTransportFactory;
 /**
  * Created by shenhongxi on 2020/7/31.
  */
-@Extension(name = "netty")
+@Extension("netty")
 public class NettyTransportFactory extends AbstractTransportFactory {
     @Override
     protected Server innerCreateServer(URL url, MessageHandler messageHandler) {

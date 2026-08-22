@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
  * Consumer side: creates span → propagator injects trace context into request attachments.
  * Provider side: propagator extracts trace context → creates child span under same trace.
  */
-@Extension(name = "tracing")
+@Extension("tracing")
 @Activation(value = {"service", "reference"}, order = 5)
 public class TracingFilter implements Filter {
 

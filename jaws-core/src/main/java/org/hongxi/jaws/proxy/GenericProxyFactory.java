@@ -16,7 +16,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2026/7/18.
  */
-@Extension(name = "generic")
+@Extension("generic")
 public class GenericProxyFactory implements ProxyFactory {
 
     @Override

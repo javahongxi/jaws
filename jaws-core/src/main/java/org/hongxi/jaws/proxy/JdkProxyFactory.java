@@ -11,7 +11,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Extension(name = "jdk")
+@Extension("jdk")
 public class JdkProxyFactory implements ProxyFactory {
 
     @Override

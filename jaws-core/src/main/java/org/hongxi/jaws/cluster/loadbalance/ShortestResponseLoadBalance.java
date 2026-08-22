@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @see LeastActiveLoadBalance
  */
-@Extension(name = "shortestResponse")
+@Extension("shortestResponse")
 public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
 
     /* Sliding window period (ms); offsets are asynchronously reset after this period */

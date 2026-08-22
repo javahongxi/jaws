@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory;
  * Created by shenhongxi on 2021/4/21.
  *
  */
-@Extension(name = "injvm")
+@Extension("injvm")
 public class InjvmProtocol extends AbstractProtocol {
 
     private static final Logger log = LoggerFactory.getLogger(InjvmProtocol.class);

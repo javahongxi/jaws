@@ -6,7 +6,7 @@ import java.lang.annotation.*;
  * Marks a class as an SPI extension implementation with a logical name
  * and an optional numeric identifier.
  *
- * <p>The {@link #name()} is used by {@link ExtensionLoader} to register
+ * <p>The {@link #value()} is used by {@link ExtensionLoader} to register
  * and look up the extension. The {@link #number()} is an optional fixed
  * identifier used when the protocol needs to select an implementation by
  * number (e.g. serialization type embedded in the protocol header).
@@ -19,7 +19,7 @@ import java.lang.annotation.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE})
 public @interface Extension {
-    String name();
+    String value();
 
     /**
      * Optional numeric identifier for the extension, used when the protocol

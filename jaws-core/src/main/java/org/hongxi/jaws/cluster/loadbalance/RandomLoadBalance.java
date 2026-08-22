@@ -12,7 +12,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Extension(name = "random")
+@Extension("random")
 public class RandomLoadBalance<T> extends AbstractLoadBalance<T> {
 
     @Override

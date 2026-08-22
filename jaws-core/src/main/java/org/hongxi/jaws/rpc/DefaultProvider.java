@@ -18,7 +18,7 @@ import java.util.concurrent.TimeoutException;
 /**
  * Created by shenhongxi on 2021/3/7.
  */
-@Extension(name = "jaws")
+@Extension("jaws")
 public class DefaultProvider<T> extends AbstractProvider<T> {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultProvider.class);

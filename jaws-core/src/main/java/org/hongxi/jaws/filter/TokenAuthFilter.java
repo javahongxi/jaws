@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * If the provider has no token configured, authentication is skipped (backward compatible).
  */
-@Extension(name = "tokenAuth")
+@Extension("tokenAuth")
 @Activation(value = {"service", "reference"}, order = 1)
 public class TokenAuthFilter implements Filter {
 

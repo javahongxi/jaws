@@ -36,7 +36,7 @@ import java.util.concurrent.ConcurrentMap;
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
-@Extension(name = "zookeeper")
+@Extension("zookeeper")
 public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(ZookeeperDynamicConfiguration.class);

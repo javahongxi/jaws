@@ -25,7 +25,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Extension(name = "failover")
+@Extension("failover")
 public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
 
     private static final Logger log = LoggerFactory.getLogger(FailoverHaStrategy.class);

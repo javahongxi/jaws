@@ -22,7 +22,7 @@ import org.hongxi.jaws.transport.Server;
  *
  * @author shenhongxi
  */
-@Extension(name = "grpc")
+@Extension("grpc")
 public class GrpcTransportFactory extends AbstractTransportFactory {
 
     @Override

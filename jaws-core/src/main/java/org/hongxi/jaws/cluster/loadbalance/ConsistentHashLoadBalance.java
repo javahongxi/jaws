@@ -15,7 +15,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Extension(name = "consistentHash")
+@Extension("consistentHash")
 public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
 
     private static final int HASH_LOOP = 1000;

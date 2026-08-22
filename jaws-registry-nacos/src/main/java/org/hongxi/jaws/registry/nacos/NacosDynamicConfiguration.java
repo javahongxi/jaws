@@ -34,7 +34,7 @@ import java.util.concurrent.Executor;
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
-@Extension(name = "nacos")
+@Extension("nacos")
 public class NacosDynamicConfiguration implements DynamicConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(NacosDynamicConfiguration.class);

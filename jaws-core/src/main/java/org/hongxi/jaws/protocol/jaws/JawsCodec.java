@@ -41,7 +41,7 @@ import java.util.Map;
  * and business objects are written to / read from the same stream without
  * per-field byte[] allocation.
  */
-@Extension(name = "jaws")
+@Extension("jaws")
 public class JawsCodec implements Codec {
 
     public static final byte VERSION = 1;

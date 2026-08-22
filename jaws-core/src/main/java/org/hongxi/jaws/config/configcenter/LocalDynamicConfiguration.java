@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentMap;
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
-@Extension(name = "local")
+@Extension("local")
 public class LocalDynamicConfiguration implements DynamicConfiguration {
 
     private final ConcurrentMap<String, String> configs = new ConcurrentHashMap<>();

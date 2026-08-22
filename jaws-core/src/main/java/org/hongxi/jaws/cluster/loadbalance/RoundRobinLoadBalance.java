@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Extension(name = "roundRobin")
+@Extension("roundRobin")
 public class RoundRobinLoadBalance<T> extends AbstractLoadBalance<T> {
 
     private AtomicInteger idx = new AtomicInteger(0);

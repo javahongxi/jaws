@@ -6,7 +6,7 @@ import org.hongxi.jaws.rpc.URL;
 /**
  * Created by shenhongxi on 2021/4/21.
  */
-@Extension(name = "local")
+@Extension("local")
 public class LocalRegistryFactory extends AbstractRegistryFactory {
 
     @Override

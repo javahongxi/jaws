@@ -25,7 +25,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Extension(name = "leastActive")
+@Extension("leastActive")
 public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
 
     @Override

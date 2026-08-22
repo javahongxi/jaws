@@ -88,7 +88,7 @@ class FilterChainBuilder {
 
         // add filter names via other configs, like accessLog and so on
         if (url.getBoolParameter(URLParamType.accessLog)) {
-            filterNames.add(AccessLogFilter.class.getAnnotation(Extension.class).name());
+            filterNames.add(AccessLogFilter.class.getAnnotation(Extension.class).value());
         }
 
         // load all filters by name

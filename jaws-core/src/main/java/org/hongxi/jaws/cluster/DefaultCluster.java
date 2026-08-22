@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Created by shenhongxi on 2021/4/23.
  */
-@Extension(name = "default")
+@Extension("default")
 public class DefaultCluster<T> implements Cluster<T> {
 
     private URL url;

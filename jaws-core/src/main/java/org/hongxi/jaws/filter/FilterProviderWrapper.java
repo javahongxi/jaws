@@ -102,6 +102,6 @@ class FilterProviderWrapper<T> implements Provider<T> {
 
     private static String resolveFilterName(Filter filter) {
         Extension ext = filter.getClass().getAnnotation(Extension.class);
-        return ext != null ? ext.name() : null;
+        return ext != null ? ext.value() : null;
     }
 }

@@ -18,7 +18,7 @@ import java.util.Properties;
  * <p>
  * Created by shenhongxi on 2026/7/17.
  */
-@Extension(name = "nacos")
+@Extension("nacos")
 public class NacosRegistryFactory extends AbstractRegistryFactory {
 
     private static final Logger log = LoggerFactory.getLogger(NacosRegistryFactory.class);

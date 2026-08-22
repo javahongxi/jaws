@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Created by shenhongxi on 2025/7/19.
  */
-@Extension(name = "failback")
+@Extension("failback")
 public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
 
     private static final Logger log = LoggerFactory.getLogger(FailbackHaStrategy.class);

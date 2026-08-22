@@ -287,6 +287,6 @@ public class ExtensionLoader<T> {
 
     private String getExtensionName(Class<?> clazz) {
         Extension ext = clazz.getAnnotation(Extension.class);
-        return ext != null ? ext.name() : clazz.getSimpleName();
+        return ext != null ? ext.value() : clazz.getSimpleName();
     }
 }

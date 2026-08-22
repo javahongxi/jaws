@@ -20,7 +20,7 @@ import java.io.OutputStream;
  * @author shenhongxi
  * @since 2020/7/28
  */
-@Extension(name = "hessian2", number = 0)
+@Extension(value = "hessian2", number = 0)
 public class Hessian2Serialization implements Serialization {
 
     @Override

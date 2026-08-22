@@ -9,7 +9,7 @@ import org.hongxi.jaws.rpc.*;
 /**
  * Created by shenhongxi on 2021/4/21.
  */
-@Extension(name = "jaws")
+@Extension("jaws")
 public class JawsProtocol extends AbstractProtocol {
 
     public static final String DEFAULT_CODEC = "jaws";

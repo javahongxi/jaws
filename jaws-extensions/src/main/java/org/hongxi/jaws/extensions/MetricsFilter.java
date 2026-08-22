@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit;
  * Meter instances are cached per (service, method, side) to avoid
  * repeated builder allocation on the hot path.
  */
-@Extension(name = "metrics")
+@Extension("metrics")
 @Activation(value = {"service", "reference"}, order = 10)
 public class MetricsFilter implements Filter {
 

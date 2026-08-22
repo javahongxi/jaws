@@ -25,7 +25,7 @@ import java.io.OutputStream;
  * @author shenhongxi
  * @since 2020/7/28
  */
-@Extension(name = "fastjson2", number = 1)
+@Extension(value = "fastjson2", number = 1)
 public class FastJson2Serialization implements Serialization {
 
     private static final JSONWriter.Feature[] WRITE_FEATURES = {

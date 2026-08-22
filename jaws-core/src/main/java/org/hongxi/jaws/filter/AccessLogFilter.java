@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  * Should be placed at the outermost layer to execute last.
  * Note: this filter has a performance impact; consider disabling it under high request volume.
  */
-@Extension(name = "access")
+@Extension("access")
 @Activation(order = 100)
 public class AccessLogFilter implements Filter {
 

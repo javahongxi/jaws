@@ -13,7 +13,7 @@ import org.hongxi.jaws.rpc.RpcContext;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Extension(name = "failfast")
+@Extension("failfast")
 public class FailfastHaStrategy<T> extends AbstractHaStrategy<T> {
 
     @Override
