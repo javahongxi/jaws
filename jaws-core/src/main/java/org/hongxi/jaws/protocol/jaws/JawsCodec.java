@@ -31,7 +31,7 @@ import java.util.Map;
  * <pre>
  * Bytes 0-1   : magic (0xF0F0)
  * Byte  2     : version
- * Byte  3     : flag (low 3 bits = data type, bit 2 = event, high 5 bits = serializationId)
+ * Byte  3     : flag (low 2 bits = data type, bit 2 = event/heartbeat, high 5 bits = serializationId)
  * Bytes 4-11  : request id
  * Bytes 12-15 : body content length
  * </pre>
@@ -47,9 +47,14 @@ public class JawsCodec implements Codec {
     public static final byte VERSION = 1;
     public static final byte SERIALIZATION_MASK = (byte) 0xF8;
 
+    /**
+     * Flag values use only the low 2 bits (bit 2 is reserved for FLAG_EVENT,
+     * see {@link Codec#FLAG_EVENT}), so data-type flags never collide with
+     * the event bit: 0x00=request, 0x01=response, 0x02=exception, 0x03=void.
+     */
     public static final byte FLAG_RESPONSE = 0x01;
+    public static final byte FLAG_RESPONSE_EXCEPTION = 0x02;
     public static final byte FLAG_RESPONSE_VOID = 0x03;
-    public static final byte FLAG_RESPONSE_EXCEPTION = 0x05;
 
     @Override
     public void encode(Channel channel, Object message, ByteBuf out) throws IOException {

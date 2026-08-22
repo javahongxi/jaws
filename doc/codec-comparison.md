@@ -53,7 +53,7 @@ DubboCodec         (RPC 层 - 覆盖 body 编解码逻辑)
 ```
 Bytes 0-1   : magic 0xF0F0
 Byte  2     : version (当前 = 1)
-Byte  3     : flag (低 3 位 = dataType: 0x00=request, 0x01=response, 0x03=void, 0x05=exception;
+Byte  3     : flag (低 2 位 = dataType: 0x00=request, 0x01=response, 0x02=exception, 0x03=void;
                     bit 2 = event (心跳); 高 5 位 = serializationId，最多 32 种序列化协议)
 Bytes 4-11  : requestId
 Bytes 12-15 : body length
@@ -75,7 +75,7 @@ Bytes 12-15 : body length
 |------|------|-------|------|
 | 版本号 | header 有独立 version 字节 | 无 header 版字段，版本在 body 内 writeUTF 传递 | **Jaws 更优**：header 层即可完成版本校验，无需解析 body |
 | 序列化方式 | 嵌入 flag 高 5 位，通过 `@SpiMeta(number)` + `ExtensionLoader.getExtensionByNumber()` 查找 | 嵌入 flag 低 5 位 | **持平**：双方均支持每消息独立序列化方式 |
-| 响应状态 | flag 低 3 位区分 void/exception/normal | status 字节支持多种状态码 | **各有优势**：Jaws 在 header 即可判断响应类型；Dubbo 状态粒度更细 |
+| 响应状态 | flag 低 2 位区分 void/exception/normal | status 字节支持多种状态码 | **各有优势**：Jaws 在 header 即可判断响应类型；Dubbo 状态粒度更细 |
 | 心跳/事件 | `FLAG_EVENT` (bit 2) 原生支持 | FLAG_EVENT 位原生支持 | **持平** |
 | 双向标记 | 无 | FLAG_TWOWAY 位 | **Dubbo 更优**：支持单向调用 |
 | 帧结构 | 单层，简洁直接 | 单层 | **持平** |

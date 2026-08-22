@@ -43,7 +43,11 @@ public interface Codec {
     /** Magic number written at the beginning of every protocol frame. */
     short MAGIC = (short) 0xF0F0;
 
-    /** Bit mask for the data-type portion of the flag byte (low 3 bits). */
+    /**
+     * Bit mask for the data-type portion of the flag byte. Data types use the
+     * low 2 bits (0-3); bit 2 is reserved for {@link #FLAG_EVENT} and must not
+     * be used by data-type flags, so event frames never collide with data frames.
+     */
     byte MASK = 0x07;
 
     /** Flag value indicating a request frame. */
