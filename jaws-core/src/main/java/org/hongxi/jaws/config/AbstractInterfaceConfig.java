@@ -122,9 +122,9 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     protected String loadBalance;
 
     /**
-     * High available strategy.
+     * Retry policy on failure (e.g., failover, failfast, failback).
      */
-    protected String haStrategy;
+    protected String retryPolicy;
 
     @Override
     protected void collectParams(Map<String, String> params) {
@@ -142,7 +142,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         putIfPresent(params, "check", check);
         putIfPresent(params, "retries", retries);
         putIfPresent(params, "loadBalance", loadBalance);
-        putIfPresent(params, "haStrategy", haStrategy);
+        putIfPresent(params, "retryPolicy", retryPolicy);
     }
 
     /**
@@ -380,11 +380,11 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.loadBalance = loadBalance;
     }
 
-    public String getHaStrategy() {
-        return haStrategy;
+    public String getRetryPolicy() {
+        return retryPolicy;
     }
 
-    public void setHaStrategy(String haStrategy) {
-        this.haStrategy = haStrategy;
+    public void setRetryPolicy(String retryPolicy) {
+        this.retryPolicy = retryPolicy;
     }
 }

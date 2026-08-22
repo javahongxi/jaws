@@ -146,11 +146,11 @@ public class ConsumerCoordinator<T> {
     }
 
     private void prepareCluster() {
-        String haStrategyName = url.getParameter(UrlParam.Cluster.HA_STRATEGY);
+        String retryPolicyName = url.getParameter(UrlParam.Cluster.RETRY_POLICY);
         String loadBalanceName = url.getParameter(UrlParam.Cluster.LOAD_BALANCE);
 
         // noinspection unchecked
-        cluster = ExtensionLoader.getExtensionLoader(Cluster.class).getExtension(haStrategyName);
+        cluster = ExtensionLoader.getExtensionLoader(Cluster.class).getExtension(retryPolicyName);
         // noinspection unchecked
         LoadBalance<T> loadBalance = ExtensionLoader.getExtensionLoader(LoadBalance.class).getExtension(loadBalanceName);
         cluster.setLoadBalance(loadBalance);

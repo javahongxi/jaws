@@ -100,7 +100,7 @@ public abstract class AbstractRegistry implements Registry {
      * <ul>
      *   <li>Provider-local settings (e.g. thread pool, server connections, codec, transportFactory)
      *       that are transport/server concerns and not needed by consumers.</li>
-     *   <li>Consumer-local settings (e.g. retries, loadBalance, haStrategy, check)
+     *   <li>Consumer-local settings (e.g. retries, loadBalance, retryPolicy, check)
      *       that each consumer configures independently and should not be inherited from the provider.</li>
      * </ul>
      */
@@ -124,7 +124,7 @@ public abstract class AbstractRegistry implements Registry {
         url.getParameters().remove(UrlParam.Client.CHECK.getName());
         url.getParameters().remove(UrlParam.Client.THROW_EXCEPTION.getName());
         url.getParameters().remove(UrlParam.Cluster.LOAD_BALANCE.getName());
-        url.getParameters().remove(UrlParam.Cluster.HA_STRATEGY.getName());
+        url.getParameters().remove(UrlParam.Cluster.RETRY_POLICY.getName());
         url.getParameters().remove(UrlParam.Transport.REQUEST_TIMEOUT.getName());
         url.getParameters().remove(UrlParam.Transport.CONNECT_TIMEOUT.getName());
         url.getParameters().remove(UrlParam.Transport.FILTER.getName());
