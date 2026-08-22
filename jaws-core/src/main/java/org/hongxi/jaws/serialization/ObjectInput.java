@@ -1,5 +1,6 @@
 package org.hongxi.jaws.serialization;
 
+import java.io.Closeable;
 import java.io.IOException;
 
 /**
@@ -14,7 +15,7 @@ import java.io.IOException;
  * @author shenhongxi
  * @since 2026-08-21
  */
-public interface ObjectInput {
+public interface ObjectInput extends Closeable {
 
     String readUTF() throws IOException;
 

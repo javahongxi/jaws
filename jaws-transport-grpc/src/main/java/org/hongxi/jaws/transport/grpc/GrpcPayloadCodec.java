@@ -42,8 +42,7 @@ class GrpcPayloadCodec {
      */
     static byte[] encodeRequest(Request request, Serialization serialization) throws IOException {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        ObjectOutput out = serialization.serialize(bos);
-        try {
+        try (ObjectOutput out = serialization.serialize(bos)) {
             out.writeUTF(request.getInterfaceName());
             out.writeUTF(request.getMethodName());
             out.writeUTF(request.getParamDesc());
@@ -75,8 +74,6 @@ class GrpcPayloadCodec {
             }
 
             out.flush();
-        } finally {
-            out.close();
         }
         return bos.toByteArray();
     }
@@ -87,8 +84,7 @@ class GrpcPayloadCodec {
     static DefaultRequest decodeRequest(byte[] payload, Serialization serialization)
             throws IOException, ClassNotFoundException {
         ByteArrayInputStream bis = new ByteArrayInputStream(payload);
-        ObjectInput in = serialization.deserialize(bis);
-        try {
+        try (ObjectInput in = serialization.deserialize(bis)) {
             DefaultRequest request = new DefaultRequest();
             request.setInterfaceName(in.readUTF());
             request.setMethodName(in.readUTF());
@@ -119,8 +115,6 @@ class GrpcPayloadCodec {
             }
 
             return request;
-        } finally {
-            in.close();
         }
     }
 
@@ -131,12 +125,11 @@ class GrpcPayloadCodec {
      */
     static byte[] encodeResponse(Response response, Serialization serialization) throws IOException {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        ObjectOutput out = serialization.serialize(bos);
-        try {
+        try (ObjectOutput out = serialization.serialize(bos)) {
             out.writeLong(response.getRequestId());
             out.writeLong(response.getProcessTime());
 
-            // value (may be null)
+            // value (maybe null)
             boolean hasValue = false;
             if (response instanceof DefaultResponse dr) {
                 // Access the raw value field without triggering exception throw
@@ -174,8 +167,6 @@ class GrpcPayloadCodec {
             }
 
             out.flush();
-        } finally {
-            out.close();
         }
         return bos.toByteArray();
     }
@@ -186,8 +177,7 @@ class GrpcPayloadCodec {
     static DefaultResponse decodeResponse(byte[] payload, Serialization serialization)
             throws IOException, ClassNotFoundException {
         ByteArrayInputStream bis = new ByteArrayInputStream(payload);
-        ObjectInput in = serialization.deserialize(bis);
-        try {
+        try (ObjectInput in = serialization.deserialize(bis)) {
             DefaultResponse response = new DefaultResponse();
             response.setRequestId(in.readLong());
             response.setProcessTime(in.readLong());
@@ -220,8 +210,6 @@ class GrpcPayloadCodec {
             }
 
             return response;
-        } finally {
-            in.close();
         }
     }
 
