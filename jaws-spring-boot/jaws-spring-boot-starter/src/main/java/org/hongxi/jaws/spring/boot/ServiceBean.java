@@ -1,7 +1,6 @@
 package org.hongxi.jaws.spring.boot;
 
 import org.hongxi.jaws.config.ServiceConfig;
-import org.hongxi.jaws.config.annotation.ConfigDesc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.BeanNameAware;
@@ -35,7 +34,6 @@ import org.springframework.context.ApplicationContextAware;
  * @see ServiceAnnotationPostProcessor
  * @see JawsBootstrap
  */
-@ConfigDesc(excluded = true)
 public class ServiceBean extends ServiceConfig<Object>
         implements InitializingBean, DisposableBean, ApplicationContextAware, BeanNameAware {
 
