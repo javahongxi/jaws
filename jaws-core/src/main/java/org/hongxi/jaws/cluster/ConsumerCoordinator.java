@@ -9,7 +9,6 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.CollectionUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.filter.ProtocolFilterWrapper;
 import org.hongxi.jaws.rpc.Protocol;
@@ -62,7 +61,7 @@ public class ConsumerCoordinator<T> {
         Protocol protocol = new ProtocolFilterWrapper(
                 ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(refUrl.getProtocol()));
         URL consumerUrl = refUrl.createCopy();
-        consumerUrl.addParameter(UrlParam.Identity.NODE_TYPE.getName(), JawsConstants.NODE_TYPE_SERVICE);
+        consumerUrl.addParameter(UrlParam.Identity.ENDPOINT_TYPE.getName(), JawsConstants.ENDPOINT_TYPE_SERVICE);
         RegistryDirectory<T> directory = new RegistryDirectory<>(interfaceClass, refUrl, consumerUrl, registryUrls, protocol);
         return new ConsumerCoordinator<>(interfaceClass, refUrl, directory);
     }
@@ -80,7 +79,7 @@ public class ConsumerCoordinator<T> {
         Protocol protocol = new ProtocolFilterWrapper(
                 ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(refUrl.getProtocol()));
         URL consumerUrl = refUrl.createCopy();
-        consumerUrl.addParameter(UrlParam.Identity.NODE_TYPE.getName(), JawsConstants.NODE_TYPE_SERVICE);
+        consumerUrl.addParameter(UrlParam.Identity.ENDPOINT_TYPE.getName(), JawsConstants.ENDPOINT_TYPE_SERVICE);
 
         List<Reference<T>> references = new ArrayList<>();
         String[] splits = JawsConstants.COMMA_SPLIT_PATTERN.split(directUrls);
@@ -89,7 +88,7 @@ public class ConsumerCoordinator<T> {
             URL serviceUrl = refUrl.createCopy();
             serviceUrl.setHost(hostPort[0].trim());
             serviceUrl.setPort(Integer.parseInt(hostPort[1].trim()));
-            serviceUrl.addParameter(UrlParam.Identity.NODE_TYPE.getName(), JawsConstants.NODE_TYPE_SERVICE);
+            serviceUrl.addParameter(UrlParam.Identity.ENDPOINT_TYPE.getName(), JawsConstants.ENDPOINT_TYPE_SERVICE);
             Reference<T> reference = protocol.refer(interfaceClass, serviceUrl);
             references.add(reference);
         }
@@ -124,8 +123,7 @@ public class ConsumerCoordinator<T> {
                 log.warn("No services found for refer {}/{}", url.getPath(), url.getVersion());
             } else {
                 throw new JawsFrameworkException(
-                        String.format("ConsumerCoordinator No service urls for the refer:%s", url.getIdentity()),
-                        JawsErrorMsgConstants.SERVICE_NOT_FOUND);
+                        String.format("ConsumerCoordinator No service urls for the refer:%s", url.getIdentity()));
             }
         }
 

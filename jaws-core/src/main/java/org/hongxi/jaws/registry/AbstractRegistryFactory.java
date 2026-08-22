@@ -3,7 +3,6 @@ package org.hongxi.jaws.registry;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
@@ -40,13 +39,13 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
             }
             registry = createRegistry(url);
             if (registry == null) {
-                throw new JawsFrameworkException("Create registry false for url:" + url, JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                throw new JawsFrameworkException("Create registry false for url:" + url);
             }
             registries.put(registryUri, registry);
             initDynamicConfiguration(url);
             return registry;
         } catch (Exception e) {
-            throw new JawsFrameworkException("Create registry false for url:" + url, e, JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            throw new JawsFrameworkException("Create registry false for url:" + url, e);
         } finally {
             lock.unlock();
         }

@@ -3,41 +3,37 @@ package org.hongxi.jaws.exception;
 import java.io.Serial;
 
 /**
- * Created by shenhongxi on 2020/7/26.
+ * Business-level exception for provider-side business errors.
  */
 public class JawsBizException extends JawsAbstractException {
     @Serial
     private static final long serialVersionUID = -9030222846555573201L;
 
     public JawsBizException() {
-        super(JawsErrorMsgConstants.BIZ_DEFAULT_EXCEPTION);
-    }
-
-    public JawsBizException(JawsErrorMsg jawsErrorMsg) {
-        super(jawsErrorMsg);
+        super();
+        this.errorCode = JawsErrorCode.BIZ_DEFAULT;
     }
 
     public JawsBizException(String message) {
-        super(message, JawsErrorMsgConstants.BIZ_DEFAULT_EXCEPTION);
+        super(message);
+        this.errorCode = JawsErrorCode.BIZ_DEFAULT;
     }
 
-    public JawsBizException(String message, JawsErrorMsg jawsErrorMsg) {
-        super(message, jawsErrorMsg);
+    public JawsBizException(String message, int errorCode) {
+        super(message, errorCode);
     }
 
     public JawsBizException(String message, Throwable cause) {
-        super(message, cause, JawsErrorMsgConstants.BIZ_DEFAULT_EXCEPTION);
+        super(message, cause);
+        this.errorCode = JawsErrorCode.BIZ_DEFAULT;
     }
 
-    public JawsBizException(String message, Throwable cause, JawsErrorMsg jawsErrorMsg) {
-        super(message, cause, jawsErrorMsg);
+    public JawsBizException(String message, Throwable cause, int errorCode) {
+        super(message, cause, errorCode);
     }
 
     public JawsBizException(Throwable cause) {
-        super(cause, JawsErrorMsgConstants.BIZ_DEFAULT_EXCEPTION);
-    }
-
-    public JawsBizException(Throwable cause, JawsErrorMsg jawsErrorMsg) {
-        super(cause, jawsErrorMsg);
+        super(cause);
+        this.errorCode = JawsErrorCode.BIZ_DEFAULT;
     }
 }

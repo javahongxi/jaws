@@ -60,7 +60,7 @@ public final class UrlParam {
         public static final Def<String> VERSION = new Def<>("version", "1.0");
         public static final Def<String> GROUP = new Def<>("group", "default_rpc");
         public static final Def<String> PATH = new Def<>("path", "");
-        public static final Def<String> NODE_TYPE = new Def<>("nodeType", JawsConstants.NODE_TYPE_SERVICE);
+        public static final Def<String> ENDPOINT_TYPE = new Def<>("endpointType", JawsConstants.ENDPOINT_TYPE_SERVICE);
         public static final Def<String> APPLICATION = new Def<>("application", JawsConstants.FRAMEWORK_NAME);
         public static final Def<String> MODULE = new Def<>("module", JawsConstants.FRAMEWORK_NAME);
         public static final Def<String> TOKEN = new Def<>("token", "");

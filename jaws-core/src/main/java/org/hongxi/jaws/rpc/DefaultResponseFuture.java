@@ -2,7 +2,7 @@ package org.hongxi.jaws.rpc;
 
 import org.hongxi.jaws.common.FutureState;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -188,7 +188,7 @@ public class DefaultResponseFuture implements ResponseFuture {
                             " request timeout: serverPort=" + serverUrl.getHostPort()
                             + " " + JawsFrameworkUtils.toString(request) +
                             " cost=" + (System.currentTimeMillis() - createTime),
-                    JawsErrorMsgConstants.SERVICE_TIMEOUT);
+                    JawsErrorCode.SERVICE_TIMEOUT);
 
             lock.notifyAll();
         }

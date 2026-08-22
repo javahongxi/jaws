@@ -48,7 +48,7 @@ public class AccessLogFilter implements Filter {
         boolean isProvider = caller instanceof Provider;
 
         StringBuilder builder = new StringBuilder(128);
-        append(builder, isProvider ? JawsConstants.NODE_TYPE_SERVICE : JawsConstants.NODE_TYPE_REFERENCE);
+        append(builder, isProvider ? JawsConstants.ENDPOINT_TYPE_SERVICE : JawsConstants.ENDPOINT_TYPE_REFERENCE);
         // For reference side, remote ip, application, module are obtained from caller URL;
         // for service side, they come from request attachments.
         if (isProvider) {

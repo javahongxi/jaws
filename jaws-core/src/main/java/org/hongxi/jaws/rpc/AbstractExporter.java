@@ -3,7 +3,7 @@ package org.hongxi.jaws.rpc;
 /**
  * Created by shenhongxi on 2021/4/21.
  */
-public abstract class AbstractExporter<T> extends AbstractNode implements Exporter<T> {
+public abstract class AbstractExporter<T> extends AbstractEndpoint implements Exporter<T> {
     protected Provider<T> provider;
 
     public AbstractExporter(Provider<T> provider, URL url) {

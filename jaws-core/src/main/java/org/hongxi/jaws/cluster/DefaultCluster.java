@@ -6,7 +6,7 @@ import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 
@@ -69,7 +69,7 @@ public class DefaultCluster<T> implements Cluster<T> {
     public Response call(Request request) {
         if (!available.get()) {
             throw new JawsServiceException("Cluster not available, interface=" + getInterface(),
-                    JawsErrorMsgConstants.SERVICE_NOT_FOUND, false);
+                    JawsErrorCode.SERVICE_NOT_FOUND, false);
         }
 
         try {

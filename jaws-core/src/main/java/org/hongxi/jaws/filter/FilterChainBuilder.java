@@ -35,7 +35,7 @@ class FilterChainBuilder {
      * @return the provider wrapped with the filter chain
      */
     <T> Provider<T> buildProviderChain(Provider<T> provider, URL url) {
-        List<Filter> filters = loadFilters(url, JawsConstants.NODE_TYPE_SERVICE);
+        List<Filter> filters = loadFilters(url, JawsConstants.ENDPOINT_TYPE_SERVICE);
         if (filters.isEmpty()) {
             return provider;
         }
@@ -58,7 +58,7 @@ class FilterChainBuilder {
      * @return the reference wrapped with the filter chain
      */
     <T> Reference<T> buildReferenceChain(Reference<T> reference, URL url) {
-        List<Filter> filters = loadFilters(url, JawsConstants.NODE_TYPE_REFERENCE);
+        List<Filter> filters = loadFilters(url, JawsConstants.ENDPOINT_TYPE_REFERENCE);
         if (filters.isEmpty()) {
             return reference;
         }

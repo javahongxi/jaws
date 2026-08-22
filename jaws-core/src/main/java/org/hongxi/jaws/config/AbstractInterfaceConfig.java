@@ -7,7 +7,6 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.common.util.UrlUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.registry.RegistryService;
@@ -222,14 +221,13 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                     }
                     if (matchedMethod != null) {
                         throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " has more than one method "
-                                + methodName + " , must set argumentTypes attribute.", JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                                + methodName + " , must set argumentTypes attribute.");
                     }
                     matchedMethod = method;
                 }
             }
             if (matchedMethod == null) {
-                throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " not found method " + methodName,
-                        JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " not found method " + methodName);
             }
             methodBean.setArgumentTypes(ReflectUtils.getMethodParamDesc(matchedMethod));
         }
@@ -251,8 +249,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         if (NetUtils.isValidLocalHost(localAddress)) {
             return localAddress;
         }
-        throw new JawsServiceException("Please config local server hostname with intranet IP first!",
-                JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+        throw new JawsServiceException("Please config local server hostname with intranet IP first!");
     }
 
     // ========== Server & Client shared configuration getter/setter ==========

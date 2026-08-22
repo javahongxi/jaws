@@ -7,7 +7,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.common.util.NetUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -88,7 +88,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private void rejectMessage(ChannelHandlerContext ctx, NettyMessage msg) {
         sendResponse(ctx, JawsFrameworkUtils.buildErrorResponse(msg.requestId(), new JawsServiceException(
                 "process thread pool is full, reject by server: " + ctx.channel().localAddress(),
-                                JawsErrorMsgConstants.SERVICE_REJECT)));
+                                JawsErrorCode.SERVICE_REJECT)));
 
         log.error("process thread pool is full, reject, " +
                         "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",

@@ -11,7 +11,6 @@ import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
@@ -52,8 +51,7 @@ public class NettyChannel implements Channel {
         int timeout = resolveTimeout(request, urlTimeout);
         if (timeout <= 0) {
             throw new JawsFrameworkException(
-                    "NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.",
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                    "NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.");
         }
 
         ResponseFuture response = new DefaultResponseFuture(request, timeout, getUrl());
@@ -111,8 +109,7 @@ public class NettyChannel implements Channel {
 
         int timeout = nettyClient.getUrl().getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
-            throw new JawsFrameworkException("NettyChannel init Error: timeout(" + timeout + ") <= 0 is forbid.",
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            throw new JawsFrameworkException("NettyChannel init Error: timeout(" + timeout + ") <= 0 is forbid.");
         }
 
         ChannelFuture channelFuture = null;

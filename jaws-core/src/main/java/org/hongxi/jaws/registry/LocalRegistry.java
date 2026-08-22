@@ -160,11 +160,11 @@ public class LocalRegistry extends AbstractRegistry {
 
     private String getRegistryKey(URL url) {
         String keyPrefix = url.getPath();
-        String nodeType = url.getParameter(UrlParam.Identity.NODE_TYPE.getName());
-        if (nodeType != null) {
-            return keyPrefix + JawsConstants.PATH_SEPARATOR + nodeType;
+        String endpointType = url.getParameter(UrlParam.Identity.ENDPOINT_TYPE.getName());
+        if (endpointType != null) {
+            return keyPrefix + JawsConstants.PATH_SEPARATOR + endpointType;
         } else {
-            log.warn("Url need a nodeType as param in localRegistry, url={}", url);
+            log.warn("Url needs an endpointType param in localRegistry, url={}", url);
             return keyPrefix;
         }
     }

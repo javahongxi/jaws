@@ -15,7 +15,7 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
@@ -116,8 +116,7 @@ public class NettyClient extends AbstractClient {
         int timeout = getUrl().getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
             throw new JawsFrameworkException("NettyClient init Error: timeout(" +
-                    timeout + ") <= 0 is forbid.",
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                    timeout + ") <= 0 is forbid.");
         }
 
         final int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
@@ -272,7 +271,7 @@ public class NettyClient extends AbstractClient {
         if (this.callbackMap.size() >= NETTY_CLIENT_MAX_REQUEST) {
             // reject request, prevent from OutOfMemoryError
             throw new JawsServiceException("NettyClient over of max concurrent request, drop request, url: "
-                    + url.getUri() + " requestId=" + requestId, JawsErrorMsgConstants.SERVICE_REJECT);
+                    + url.getUri() + " requestId=" + requestId, JawsErrorCode.SERVICE_REJECT);
         }
 
         this.callbackMap.put(requestId, responseFuture);

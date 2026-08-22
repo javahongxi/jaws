@@ -5,8 +5,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.common.util.NetUtils;
-import org.hongxi.jaws.exception.JawsErrorMsg;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.filter.ProtocolFilterWrapper;
@@ -178,7 +177,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
         Map<String, String> map = new HashMap<>();
 
-        map.put(UrlParam.Identity.NODE_TYPE.getName(), JawsConstants.NODE_TYPE_SERVICE);
+        map.put(UrlParam.Identity.ENDPOINT_TYPE.getName(), JawsConstants.ENDPOINT_TYPE_SERVICE);
 
         collectConfigParams(map, protocolConfig, this);
         collectMethodConfigParams(map, this.getMethods());
@@ -189,7 +188,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
             log.warn("{} configService is malformed, for same service ({}) already exists ",
                     interfaceClass.getName(), serviceUrl.getIdentity());
             throw new JawsFrameworkException(String.format("%s configService is malformed, for same service (%s) already exists ",
-                    interfaceClass.getName(), serviceUrl.getIdentity()), JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                    interfaceClass.getName(), serviceUrl.getIdentity()));
         }
 
         List<URL> registryUrls = new ArrayList<>();
@@ -237,9 +236,9 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         for (URL url : registryUrls) {
             RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
             if (registryFactory == null) {
-                throw new JawsFrameworkException(new JawsErrorMsg(500, JawsErrorMsgConstants.FRAMEWORK_REGISTER_ERROR_CODE,
-                        "register error! Could not find extension for registry protocol:" + url.getProtocol()
-                                + ", make sure registry module for " + url.getProtocol() + " is in classpath!"));
+                throw new JawsFrameworkException("register error! Could not find extension for registry protocol:" + url.getProtocol()
+                                + ", make sure registry module for " + url.getProtocol() + " is in classpath!",
+                        JawsErrorCode.FRAMEWORK_REGISTER);
             }
             Registry registry = registryFactory.getRegistry(url);
             registry.register(serviceUrl);

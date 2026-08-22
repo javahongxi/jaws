@@ -9,15 +9,15 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Created by shenhongxi on 2021/4/21.
  */
-public abstract class AbstractReference<T> extends AbstractNode implements Reference<T> {
+public abstract class AbstractReference<T> extends AbstractEndpoint implements Reference<T> {
 
     protected Class<T> interfaceClass;
 
     /**
-     * Current number of in-flight RPC calls on this reference (nodeType=reference).
+     * Current number of in-flight RPC calls on this reference (endpointType=reference).
      * Incremented before each invocation and decremented after the response is received
      * (or after the async future completes). Consumed by load-balancing strategies
-     * such as leastActive and shortestResponse to estimate real-time node load.
+     * such as leastActive and shortestResponse to estimate real-time endpoint load.
      */
     protected AtomicInteger activeReferenceCount = new AtomicInteger(0);
 
@@ -40,7 +40,7 @@ public abstract class AbstractReference<T> extends AbstractNode implements Refer
     @Override
     public Response call(Request request) {
         if (!isAvailable()) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " call Error: node is not available, url=" + url.getUri()
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " call Error: endpoint is not available, url=" + url.getUri()
                     + " " + JawsFrameworkUtils.toString(request));
         }
 

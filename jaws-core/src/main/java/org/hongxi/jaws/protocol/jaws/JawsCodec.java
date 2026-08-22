@@ -12,7 +12,6 @@ import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.common.util.ReflectUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -64,14 +63,12 @@ public class JawsCodec implements Codec {
             } else if (message instanceof Response response) {
                 encodeResponse(response, out);
             } else {
-                throw new JawsFrameworkException("encode error: message type not support, " + message.getClass(),
-                        JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
+                throw new JawsFrameworkException("encode error: message type not support, " + message.getClass());
             }
         } catch (JawsAbstractException e) {
             throw e;
         } catch (Exception e) {
-            throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response),
-                    e, JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
+            throw new JawsFrameworkException("encode error: isResponse=" + (message instanceof Response), e);
         }
     }
 
@@ -81,8 +78,7 @@ public class JawsCodec implements Codec {
     @Override
     public Object decode(Channel channel, ByteBuf in) throws IOException {
         if (in.readableBytes() <= HEADER_LENGTH) {
-            throw new JawsFrameworkException("decode error: format problem",
-                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: format problem");
         }
 
         int startIndex = in.readerIndex();
@@ -90,15 +86,13 @@ public class JawsCodec implements Codec {
         // bytes 0-1: magic
         short type = in.readShort();
         if (type != MAGIC) {
-            throw new JawsFrameworkException("decode error: magic error",
-                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: magic error");
         }
 
         // byte 2: version
         byte version = in.readByte();
         if (version != VERSION) {
-            throw new JawsFrameworkException("decode error: version error",
-                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: version error");
         }
 
         // byte 3: flag (low 3 bits = data type, high 5 bits = serializationId)
@@ -114,8 +108,7 @@ public class JawsCodec implements Codec {
         int bodyLength = in.readInt();
 
         if (HEADER_LENGTH + bodyLength != in.readableBytes() + (in.readerIndex() - startIndex)) {
-            throw new JawsFrameworkException("decode error: content length error",
-                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: content length error");
         }
 
         // Resolve serialization from the id embedded in the protocol header
@@ -124,8 +117,7 @@ public class JawsCodec implements Codec {
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtensionByNumber(serializationId);
         if (serialization == null) {
-            throw new JawsFrameworkException("decode error: unknown serializationId " + serializationId,
-                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: unknown serializationId " + serializationId);
         }
 
         // Slice body region from ByteBuf (zero-copy, no body byte[] allocation)
@@ -141,12 +133,11 @@ public class JawsCodec implements Codec {
             }
         } catch (ClassNotFoundException e) {
             throw new JawsFrameworkException("decode " + (isResponse ? "response" : "request") +
-                    " error: class not found", e, JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+                    " error: class not found", e);
         } catch (JawsAbstractException e) {
             throw e;
         } catch (Exception e) {
-            throw new JawsFrameworkException("decode error: isResponse=" + isResponse,
-                    e, JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: isResponse=" + isResponse, e);
         } finally {
             bodyBuf.release();
         }
@@ -208,8 +199,7 @@ public class JawsCodec implements Codec {
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtensionByNumber(response.getSerializationNumber());
         if (serialization == null) {
-            throw new JawsFrameworkException("encode error: unknown serializationNumber " + response.getSerializationNumber(),
-                    JawsErrorMsgConstants.FRAMEWORK_ENCODE_ERROR);
+            throw new JawsFrameworkException("encode error: unknown serializationNumber " + response.getSerializationNumber());
         }
 
         // Reserve header space
@@ -352,8 +342,7 @@ public class JawsCodec implements Codec {
         } else if (dataType == FLAG_RESPONSE_EXCEPTION) {
             response.setException((Exception) result);
         } else {
-            throw new JawsFrameworkException("decode error: response dataType not support " + dataType,
-                    JawsErrorMsgConstants.FRAMEWORK_DECODE_ERROR);
+            throw new JawsFrameworkException("decode error: response dataType not support " + dataType);
         }
 
         response.setRequestId(requestId);

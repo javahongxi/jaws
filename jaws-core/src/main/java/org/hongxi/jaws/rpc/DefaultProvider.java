@@ -4,7 +4,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.exception.JawsBizException;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +44,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
         if (method == null) {
             JawsServiceException exception =
                     new JawsServiceException("Service method not exist: " + request.getInterfaceName() + "." + request.getMethodName()
-                            + "(" + request.getParamDesc() + ")", JawsErrorMsgConstants.SERVICE_METHOD_NOT_FOUND);
+                            + "(" + request.getParamDesc() + ")", JawsErrorCode.SERVICE_METHOD_NOT_FOUND);
 
             response.setException(exception);
             return CompletableFuture.completedFuture(response);
@@ -68,7 +68,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                         if (cause instanceof TimeoutException) {
                             asyncResponse.setException(new JawsServiceException(
                                     "provider async call timeout: " + request.getInterfaceName() + "." + request.getMethodName(),
-                                    JawsErrorMsgConstants.SERVICE_TIMEOUT));
+                                    JawsErrorCode.SERVICE_TIMEOUT));
                         } else if (cause instanceof Exception ex) {
                             asyncResponse.setException(new JawsBizException("provider async call process error", ex));
                         } else {

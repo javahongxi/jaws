@@ -296,7 +296,7 @@ public class URL {
         return protocol + JawsConstants.PROTOCOL_SEPARATOR + host + ":" + port +
                 "/" + getParameter(UrlParam.Identity.GROUP.getName(), UrlParam.Identity.GROUP.value()) + "/" +
                 getPath() + "/" + getParameter(UrlParam.Identity.VERSION.getName(), UrlParam.Identity.VERSION.value()) +
-                "/" + getParameter(UrlParam.Identity.NODE_TYPE.getName(), UrlParam.Identity.NODE_TYPE.value());
+                "/" + getParameter(UrlParam.Identity.ENDPOINT_TYPE.getName(), UrlParam.Identity.ENDPOINT_TYPE.value());
     }
 
     /**
@@ -311,7 +311,7 @@ public class URL {
             return false;
         }
 
-        if (!StringUtils.equals(this.getParameter(UrlParam.Identity.NODE_TYPE.getName()), JawsConstants.NODE_TYPE_SERVICE)) {
+        if (!StringUtils.equals(this.getParameter(UrlParam.Identity.ENDPOINT_TYPE.getName()), JawsConstants.ENDPOINT_TYPE_SERVICE)) {
             return false;
         }
 

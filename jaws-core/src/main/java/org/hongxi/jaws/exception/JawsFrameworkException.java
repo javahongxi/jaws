@@ -3,41 +3,38 @@ package org.hongxi.jaws.exception;
 import java.io.Serial;
 
 /**
- * Created by shenhongxi on 2020/6/26.
+ * Framework-level exception for errors such as codec failure, initialization error,
+ * registry error, etc.
  */
 public class JawsFrameworkException extends JawsAbstractException {
     @Serial
     private static final long serialVersionUID = -6860263607854518306L;
 
     public JawsFrameworkException() {
-        super(JawsErrorMsgConstants.FRAMEWORK_DEFAULT_ERROR);
-    }
-
-    public JawsFrameworkException(JawsErrorMsg jawsErrorMsg) {
-        super(jawsErrorMsg);
+        super();
+        this.errorCode = JawsErrorCode.FRAMEWORK_DEFAULT;
     }
 
     public JawsFrameworkException(String message) {
-        super(message, JawsErrorMsgConstants.FRAMEWORK_DEFAULT_ERROR);
+        super(message);
+        this.errorCode = JawsErrorCode.FRAMEWORK_DEFAULT;
     }
 
-    public JawsFrameworkException(String message, JawsErrorMsg jawsErrorMsg) {
-        super(message, jawsErrorMsg);
+    public JawsFrameworkException(String message, int errorCode) {
+        super(message, errorCode);
     }
 
     public JawsFrameworkException(String message, Throwable cause) {
-        super(message, cause, JawsErrorMsgConstants.FRAMEWORK_DEFAULT_ERROR);
+        super(message, cause);
+        this.errorCode = JawsErrorCode.FRAMEWORK_DEFAULT;
     }
 
-    public JawsFrameworkException(String message, Throwable cause, JawsErrorMsg jawsErrorMsg) {
-        super(message, cause, jawsErrorMsg);
+    public JawsFrameworkException(String message, Throwable cause, int errorCode) {
+        super(message, cause, errorCode);
     }
 
     public JawsFrameworkException(Throwable cause) {
-        super(cause, JawsErrorMsgConstants.FRAMEWORK_DEFAULT_ERROR);
-    }
-
-    public JawsFrameworkException(Throwable cause, JawsErrorMsg jawsErrorMsg) {
-        super(cause, jawsErrorMsg);
+        super(cause);
+        this.errorCode = JawsErrorCode.FRAMEWORK_DEFAULT;
     }
 }

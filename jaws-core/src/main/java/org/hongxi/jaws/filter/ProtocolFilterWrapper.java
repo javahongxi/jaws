@@ -1,6 +1,5 @@
 package org.hongxi.jaws.filter;
 
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.*;
 
@@ -21,8 +20,7 @@ public class ProtocolFilterWrapper implements Protocol {
 
     public ProtocolFilterWrapper(Protocol protocol) {
         if (protocol == null) {
-            throw new JawsFrameworkException("Protocol is null when constructing ProtocolFilterWrapper",
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            throw new JawsFrameworkException("Protocol is null when constructing ProtocolFilterWrapper");
         }
         this.protocol = protocol;
         this.filterChainBuilder = new FilterChainBuilder();

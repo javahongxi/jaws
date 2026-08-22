@@ -3,45 +3,41 @@ package org.hongxi.jaws.exception;
 import java.io.Serial;
 
 /**
- * Created by shenhongxi on 2020/7/25.
+ * Service-level exception for errors such as service not found, timeout, reject, etc.
  */
 public class JawsServiceException extends JawsAbstractException {
     @Serial
     private static final long serialVersionUID = 167949946546769763L;
 
     public JawsServiceException() {
-        super(JawsErrorMsgConstants.SERVICE_DEFAULT_ERROR);
-    }
-
-    public JawsServiceException(JawsErrorMsg jawsErrorMsg) {
-        super(jawsErrorMsg);
+        super();
+        this.errorCode = JawsErrorCode.SERVICE_DEFAULT;
     }
 
     public JawsServiceException(String message) {
-        super(message, JawsErrorMsgConstants.SERVICE_DEFAULT_ERROR);
+        super(message);
+        this.errorCode = JawsErrorCode.SERVICE_DEFAULT;
     }
 
-    public JawsServiceException(String message, JawsErrorMsg jawsErrorMsg) {
-        super(message, jawsErrorMsg);
+    public JawsServiceException(String message, int errorCode) {
+        super(message, errorCode);
     }
 
-    public JawsServiceException(String message, JawsErrorMsg jawsErrorMsg, boolean writableStackTrace) {
-        super(message, jawsErrorMsg, writableStackTrace);
+    public JawsServiceException(String message, int errorCode, boolean writableStackTrace) {
+        super(message, errorCode, writableStackTrace);
     }
 
     public JawsServiceException(String message, Throwable cause) {
-        super(message, cause, JawsErrorMsgConstants.SERVICE_DEFAULT_ERROR);
+        super(message, cause);
+        this.errorCode = JawsErrorCode.SERVICE_DEFAULT;
     }
 
-    public JawsServiceException(String message, Throwable cause, JawsErrorMsg jawsErrorMsg) {
-        super(message, cause, jawsErrorMsg);
+    public JawsServiceException(String message, Throwable cause, int errorCode) {
+        super(message, cause, errorCode);
     }
 
     public JawsServiceException(Throwable cause) {
-        super(cause, JawsErrorMsgConstants.SERVICE_DEFAULT_ERROR);
-    }
-
-    public JawsServiceException(Throwable cause, JawsErrorMsg jawsErrorMsg) {
-        super(cause, jawsErrorMsg);
+        super(cause);
+        this.errorCode = JawsErrorCode.SERVICE_DEFAULT;
     }
 }

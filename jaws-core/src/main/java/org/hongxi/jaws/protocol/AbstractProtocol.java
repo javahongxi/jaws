@@ -1,7 +1,6 @@
 package org.hongxi.jaws.protocol;
 
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.*;
 import org.slf4j.Logger;
@@ -23,14 +22,12 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public <T> Exporter<T> export(Provider<T> provider) {
         if (provider == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider is null",
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider is null");
         }
 
         URL url = provider.getUrl();
         if (url == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider url is null",
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider url is null");
         }
 
         String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
@@ -39,8 +36,7 @@ public abstract class AbstractProtocol implements Protocol {
             // noinspection unchecked
             Exporter<T> exporter = (Exporter<T>) exporterMap.get(protocolKey);
             if (exporter != null) {
-                throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: service already exists, url=" + url,
-                        JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: service already exists, url=" + url);
             }
 
             exporter = createExporter(provider);
@@ -54,13 +50,11 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public <T> Reference<T> refer(Class<T> interfaceClass, URL url) {
         if (url == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: url is null",
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: url is null");
         }
 
         if (interfaceClass == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: class is null, url=" + url,
-                    JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: class is null, url=" + url);
         }
         long start = System.currentTimeMillis();
         Reference<T> reference = createReference(interfaceClass, url);
@@ -87,11 +81,11 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public void destroy() {
         for (Map.Entry<String, Exporter<?>> entry : exporterMap.entrySet()) {
-            Node node = entry.getValue();
+            Endpoint node = entry.getValue();
             if (node != null) {
                 try {
                     node.destroy();
-                    log.info("{} destroy node Success: {}", this.getClass().getSimpleName(), node);
+                    log.info("{} destroy endpoint Success: {}", this.getClass().getSimpleName(), node);
                 } catch (Throwable t) {
                     log.error("{} destroy Error", this.getClass().getSimpleName(), t);
                 }

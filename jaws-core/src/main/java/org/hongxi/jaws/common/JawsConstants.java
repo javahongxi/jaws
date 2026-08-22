@@ -15,8 +15,8 @@ public class JawsConstants {
 
     public static final Pattern COMMA_SPLIT_PATTERN = Pattern.compile("\\s*[,]+\\s*");
 
-    public static final String NODE_TYPE_SERVICE = "service";
-    public static final String NODE_TYPE_REFERENCE = "reference";
+    public static final String ENDPOINT_TYPE_SERVICE = "service";
+    public static final String ENDPOINT_TYPE_REFERENCE = "reference";
 
     public static final String ASYNC_FLAG = "async";
 

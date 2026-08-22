@@ -2,7 +2,6 @@ package org.hongxi.jaws.protocol;
 
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.slf4j.Logger;
@@ -69,8 +68,7 @@ public class InjvmProtocol extends AbstractProtocol {
         @Override
         protected Response doCall(Request request) {
             if (exporter == null) {
-                throw new JawsServiceException("InjvmReference call Error: provider not exist, url=" + url.getUri(),
-                        JawsErrorMsgConstants.SERVICE_NOT_FOUND);
+                throw new JawsServiceException("InjvmReference call Error: provider not exist, url=" + url.getUri());
             }
 
             return exporter.getProvider().call(request);

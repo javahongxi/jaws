@@ -8,7 +8,6 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.CollectionUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.proxy.ProxyFactory;
 import org.hongxi.jaws.rpc.GenericService;
@@ -83,8 +82,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
         if (generic) {
             if (StringUtils.isBlank(serviceInterface)) {
                 throw new JawsFrameworkException(
-                        "Generic invocation requires serviceInterface to be set to the real interface name",
-                        JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+                        "Generic invocation requires serviceInterface to be set to the real interface name");
             }
             // noinspection unchecked
             interfaceClass = (Class<T>) GenericService.class;
@@ -138,7 +136,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
      */
     private URL buildRefUrl(ProtocolConfig protocol, String localIp, String path) {
         Map<String, String> params = new HashMap<>();
-        params.put(UrlParam.Identity.NODE_TYPE.getName(), JawsConstants.NODE_TYPE_REFERENCE);
+        params.put(UrlParam.Identity.ENDPOINT_TYPE.getName(), JawsConstants.ENDPOINT_TYPE_REFERENCE);
         params.put(UrlParam.Identity.VERSION.getName(), UrlParam.Identity.VERSION.value());
         collectConfigParams(params, protocol, this);
         collectMethodConfigParams(params, this.getMethods());

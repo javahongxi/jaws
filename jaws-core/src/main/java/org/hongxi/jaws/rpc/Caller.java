@@ -3,7 +3,7 @@ package org.hongxi.jaws.rpc;
 /**
  * Created by shenhongxi on 2021/3/6.
  */
-public interface Caller<T> extends Node {
+public interface Caller<T> extends Endpoint {
 
     Class<T> getInterface();
 

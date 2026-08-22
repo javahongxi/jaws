@@ -5,7 +5,7 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.slf4j.Logger;
@@ -77,7 +77,7 @@ public class AbstractReferenceHandler<T> {
             }
         }
         throw new JawsServiceException("Reference call Error: cluster not exists, interface=" + interfaceName + " "
-                + JawsFrameworkUtils.toString(request), JawsErrorMsgConstants.SERVICE_NOT_FOUND, false);
+                + JawsFrameworkUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
     }
 
     /**
@@ -145,7 +145,7 @@ public class AbstractReferenceHandler<T> {
 
         resultFuture.completeExceptionally(new JawsServiceException(
                 "Reference call Error: cluster not exists, interface=" + interfaceName + " "
-                        + JawsFrameworkUtils.toString(request), JawsErrorMsgConstants.SERVICE_NOT_FOUND, false));
+                        + JawsFrameworkUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false));
         return resultFuture;
     }
 
