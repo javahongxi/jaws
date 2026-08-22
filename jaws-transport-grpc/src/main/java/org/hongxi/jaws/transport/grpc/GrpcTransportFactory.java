@@ -1,6 +1,6 @@
 package org.hongxi.jaws.transport.grpc;
 
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractTransportFactory;
 import org.hongxi.jaws.transport.Client;
@@ -22,7 +22,7 @@ import org.hongxi.jaws.transport.Server;
  *
  * @author shenhongxi
  */
-@SpiMeta(name = "grpc")
+@Extension(name = "grpc")
 public class GrpcTransportFactory extends AbstractTransportFactory {
 
     @Override

@@ -3,7 +3,7 @@ package org.hongxi.jaws.serialization;
 import com.alibaba.fastjson2.JSONB;
 import com.alibaba.fastjson2.JSONReader;
 import com.alibaba.fastjson2.JSONWriter;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -25,7 +25,7 @@ import java.io.OutputStream;
  * @author shenhongxi
  * @since 2020/7/28
  */
-@SpiMeta(name = "fastjson2", number = 1)
+@Extension(name = "fastjson2", number = 1)
 public class FastJson2Serialization implements Serialization {
 
     private static final JSONWriter.Feature[] WRITE_FEATURES = {

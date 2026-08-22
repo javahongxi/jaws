@@ -1,7 +1,7 @@
 package org.hongxi.jaws.rpc;
 
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -18,7 +18,7 @@ import java.util.concurrent.TimeoutException;
 /**
  * Created by shenhongxi on 2021/3/7.
  */
-@SpiMeta(name = "jaws")
+@Extension(name = "jaws")
 public class DefaultProvider<T> extends AbstractProvider<T> {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultProvider.class);

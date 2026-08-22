@@ -1,7 +1,7 @@
 package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 
 import java.lang.reflect.Proxy;
 import java.util.List;
@@ -11,7 +11,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@SpiMeta(name = "jdk")
+@Extension(name = "jdk")
 public class JdkProxyFactory implements ProxyFactory {
 
     @Override

@@ -1,6 +1,6 @@
 package org.hongxi.jaws.protocol;
 
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory;
  * Created by shenhongxi on 2021/4/21.
  *
  */
-@SpiMeta(name = "injvm")
+@Extension(name = "injvm")
 public class InjvmProtocol extends AbstractProtocol {
 
     private static final Logger log = LoggerFactory.getLogger(InjvmProtocol.class);

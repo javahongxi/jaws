@@ -1,6 +1,6 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.AbstractReference;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @see LeastActiveLoadBalance
  */
-@SpiMeta(name = "shortestResponse")
+@Extension(name = "shortestResponse")
 public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
 
     /* Sliding window period (ms); offsets are asynchronously reset after this period */

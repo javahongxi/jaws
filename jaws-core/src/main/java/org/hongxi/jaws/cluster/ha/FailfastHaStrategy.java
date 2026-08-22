@@ -1,7 +1,7 @@
 package org.hongxi.jaws.cluster.ha;
 
 import org.hongxi.jaws.cluster.LoadBalance;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
@@ -13,7 +13,7 @@ import org.hongxi.jaws.rpc.RpcContext;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@SpiMeta(name = "failfast")
+@Extension(name = "failfast")
 public class FailfastHaStrategy<T> extends AbstractHaStrategy<T> {
 
     @Override

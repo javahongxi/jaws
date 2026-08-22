@@ -8,7 +8,7 @@ import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.zookeeper.CreateMode;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.config.configcenter.ConfigurationListener;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.rpc.URL;
@@ -36,7 +36,7 @@ import java.util.concurrent.ConcurrentMap;
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
-@SpiMeta(name = "zookeeper")
+@Extension(name = "zookeeper")
 public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(ZookeeperDynamicConfiguration.class);

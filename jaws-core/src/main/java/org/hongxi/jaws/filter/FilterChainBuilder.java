@@ -5,7 +5,7 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ActivationComparator;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.*;
 
 import java.util.ArrayList;
@@ -88,7 +88,7 @@ class FilterChainBuilder {
 
         // add filter names via other configs, like accessLog and so on
         if (url.getBoolParameter(URLParamType.accessLog)) {
-            filterNames.add(AccessLogFilter.class.getAnnotation(SpiMeta.class).name());
+            filterNames.add(AccessLogFilter.class.getAnnotation(Extension.class).name());
         }
 
         // load all filters by name

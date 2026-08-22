@@ -3,7 +3,7 @@ package org.hongxi.jaws.filter;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.Activation;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.StringTools;
 import org.hongxi.jaws.rpc.Caller;
 import org.hongxi.jaws.rpc.Provider;
@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  * Should be placed at the outermost layer to execute last.
  * Note: this filter has a performance impact; consider disabling it under high request volume.
  */
-@SpiMeta(name = "access")
+@Extension(name = "access")
 @Activation(order = 100)
 public class AccessLogFilter implements Filter {
 

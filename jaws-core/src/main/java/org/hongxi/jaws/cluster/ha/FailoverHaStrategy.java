@@ -2,7 +2,7 @@ package org.hongxi.jaws.cluster.ha;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
@@ -25,7 +25,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@SpiMeta(name = "failover")
+@Extension(name = "failover")
 public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
 
     private static final Logger log = LoggerFactory.getLogger(FailoverHaStrategy.class);

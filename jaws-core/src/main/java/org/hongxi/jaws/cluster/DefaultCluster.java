@@ -1,7 +1,7 @@
 package org.hongxi.jaws.cluster;
 
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Created by shenhongxi on 2021/4/23.
  */
-@SpiMeta(name = "default")
+@Extension(name = "default")
 public class DefaultCluster<T> implements Cluster<T> {
 
     private URL url;

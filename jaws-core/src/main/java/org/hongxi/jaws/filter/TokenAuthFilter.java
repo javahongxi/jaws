@@ -2,7 +2,7 @@ package org.hongxi.jaws.filter;
 
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.Activation;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Caller;
 import org.hongxi.jaws.rpc.Provider;
@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * If the provider has no token configured, authentication is skipped (backward compatible).
  */
-@SpiMeta(name = "tokenAuth")
+@Extension(name = "tokenAuth")
 @Activation(value = {"service", "reference"}, order = 1)
 public class TokenAuthFilter implements Filter {
 

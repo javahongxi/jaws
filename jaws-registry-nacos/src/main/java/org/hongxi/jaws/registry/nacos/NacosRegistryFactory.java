@@ -4,7 +4,7 @@ import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.naming.NamingFactory;
 import com.alibaba.nacos.api.naming.NamingService;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.AbstractRegistryFactory;
 import org.hongxi.jaws.rpc.URL;
@@ -18,7 +18,7 @@ import java.util.Properties;
  * <p>
  * Created by shenhongxi on 2026/7/17.
  */
-@SpiMeta(name = "nacos")
+@Extension(name = "nacos")
 public class NacosRegistryFactory extends AbstractRegistryFactory {
 
     private static final Logger log = LoggerFactory.getLogger(NacosRegistryFactory.class);

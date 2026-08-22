@@ -2,7 +2,7 @@ package org.hongxi.jaws.serialization;
 
 import com.alibaba.com.caucho.hessian.io.Hessian2Input;
 import com.alibaba.com.caucho.hessian.io.Hessian2Output;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,7 +20,7 @@ import java.io.OutputStream;
  * @author shenhongxi
  * @since 2020/7/28
  */
-@SpiMeta(name = "hessian2", number = 0)
+@Extension(name = "hessian2", number = 0)
 public class Hessian2Serialization implements Serialization {
 
     @Override

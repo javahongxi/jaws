@@ -1,6 +1,6 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 
@@ -25,7 +25,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@SpiMeta(name = "leastActive")
+@Extension(name = "leastActive")
 public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
 
     @Override

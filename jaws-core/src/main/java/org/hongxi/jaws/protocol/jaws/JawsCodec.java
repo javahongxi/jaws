@@ -9,7 +9,7 @@ import org.hongxi.jaws.serialization.ObjectOutput;
 import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.common.URLParamType;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -41,7 +41,7 @@ import java.util.Map;
  * and business objects are written to / read from the same stream without
  * per-field byte[] allocation.
  */
-@SpiMeta(name = "jaws")
+@Extension(name = "jaws")
 public class JawsCodec implements Codec {
 
     public static final byte VERSION = 1;

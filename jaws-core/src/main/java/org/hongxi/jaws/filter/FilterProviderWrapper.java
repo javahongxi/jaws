@@ -1,6 +1,6 @@
 package org.hongxi.jaws.filter;
 
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
@@ -101,7 +101,7 @@ class FilterProviderWrapper<T> implements Provider<T> {
     }
 
     private static String resolveFilterName(Filter filter) {
-        SpiMeta spiMeta = filter.getClass().getAnnotation(SpiMeta.class);
-        return spiMeta != null ? spiMeta.name() : null;
+        Extension ext = filter.getClass().getAnnotation(Extension.class);
+        return ext != null ? ext.name() : null;
     }
 }

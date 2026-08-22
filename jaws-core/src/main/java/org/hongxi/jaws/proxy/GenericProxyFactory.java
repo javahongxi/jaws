@@ -1,7 +1,7 @@
 package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.GenericService;
 import org.hongxi.jaws.rpc.URL;
 
@@ -16,7 +16,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2026/7/18.
  */
-@SpiMeta(name = "generic")
+@Extension(name = "generic")
 public class GenericProxyFactory implements ProxyFactory {
 
     @Override

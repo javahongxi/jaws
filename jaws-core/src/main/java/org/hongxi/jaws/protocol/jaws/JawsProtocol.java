@@ -2,14 +2,14 @@ package org.hongxi.jaws.protocol.jaws;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.protocol.AbstractProtocol;
 import org.hongxi.jaws.rpc.*;
 
 /**
  * Created by shenhongxi on 2021/4/21.
  */
-@SpiMeta(name = "jaws")
+@Extension(name = "jaws")
 public class JawsProtocol extends AbstractProtocol {
 
     public static final String DEFAULT_CODEC = "jaws";

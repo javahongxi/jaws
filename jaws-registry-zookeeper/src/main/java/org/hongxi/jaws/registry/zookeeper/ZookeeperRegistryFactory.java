@@ -4,7 +4,7 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.AbstractRegistryFactory;
 import org.hongxi.jaws.rpc.URL;
@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * Created by shenhongxi on 2021/4/24.
  */
-@SpiMeta(name = "zookeeper")
+@Extension(name = "zookeeper")
 public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
 
     private static final Logger log = LoggerFactory.getLogger(ZookeeperRegistryFactory.class);

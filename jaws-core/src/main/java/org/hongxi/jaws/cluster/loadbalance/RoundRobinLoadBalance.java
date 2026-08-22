@@ -1,6 +1,6 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 
@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@SpiMeta(name = "roundRobin")
+@Extension(name = "roundRobin")
 public class RoundRobinLoadBalance<T> extends AbstractLoadBalance<T> {
 
     private AtomicInteger idx = new AtomicInteger(0);

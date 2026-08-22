@@ -2,7 +2,7 @@ package org.hongxi.jaws.cluster.ha;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.URLParamType;
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Created by shenhongxi on 2025/7/19.
  */
-@SpiMeta(name = "failback")
+@Extension(name = "failback")
 public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
 
     private static final Logger log = LoggerFactory.getLogger(FailbackHaStrategy.class);

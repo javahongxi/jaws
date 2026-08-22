@@ -183,7 +183,7 @@ public class ExtensionLoader<T> {
                 parseLine(type, url, line, ++lineNumber, classNames);
             }
         } catch (IOException e) {
-            log.error("{}: Error reading spi configuration file", type.getName(), e);
+            log.error("{}: Error reading extension configuration file", type.getName(), e);
         }
     }
 
@@ -195,12 +195,12 @@ public class ExtensionLoader<T> {
         if (line.isEmpty()) return;
 
         if (line.indexOf(' ') >= 0 || line.indexOf('\t') >= 0) {
-            throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi configuration-file syntax");
+            throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal extension configuration-file syntax");
         }
 
         int cp = line.codePointAt(0);
         if (!Character.isJavaIdentifierStart(cp)) {
-            throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal spi provider-class name: " + line);
+            throw new JawsFrameworkException(type.getName() + ": " + url + ": " + lineNumber + ": Illegal extension provider-class name: " + line);
         }
 
         classNames.add(line);
@@ -222,20 +222,20 @@ public class ExtensionLoader<T> {
 
                 checkExtensionType(clazz);
 
-                String spiName = getSpiName(clazz);
-                if (classes.containsKey(spiName)) {
-                    throw new JawsFrameworkException(clazz + ": spi name already exists: " + spiName);
+                String extName = getExtensionName(clazz);
+                if (classes.containsKey(extName)) {
+                    throw new JawsFrameworkException(clazz + ": extension name already exists: " + extName);
                 } else {
-                    classes.put(spiName, clazz);
+                    classes.put(extName, clazz);
                 }
 
-                // Build number → name mapping for SPIs that declare a number
-                SpiMeta spiMeta = clazz.getAnnotation(SpiMeta.class);
-                if (spiMeta != null && spiMeta.number() >= 0) {
-                    numberMap.put((int) spiMeta.number(), spiName);
+                // Build number → name mapping for extensions that declare a number
+                Extension ext = clazz.getAnnotation(Extension.class);
+                if (ext != null && ext.number() >= 0) {
+                    numberMap.put((int) ext.number(), extName);
                 }
             } catch (Exception e) {
-                log.error("{}: Error load spi class", type.getName(), e);
+                log.error("{}: Error loading extension class", type.getName(), e);
             }
         }
         if (!numberMap.isEmpty()) {
@@ -274,7 +274,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * Get SPI extension by its numeric identifier declared in {@link SpiMeta#number()}.
+     * Get extension by its numeric identifier declared in {@link Extension#number()}.
      *
      * @param number the numeric identifier (0-31)
      * @return the extension instance, or null if not found
@@ -285,8 +285,8 @@ public class ExtensionLoader<T> {
         return name != null ? getExtension(name) : null;
     }
 
-    private String getSpiName(Class<?> clazz) {
-        SpiMeta spiMeta = clazz.getAnnotation(SpiMeta.class);
-        return spiMeta != null ? spiMeta.name() : clazz.getSimpleName();
+    private String getExtensionName(Class<?> clazz) {
+        Extension ext = clazz.getAnnotation(Extension.class);
+        return ext != null ? ext.name() : clazz.getSimpleName();
     }
 }

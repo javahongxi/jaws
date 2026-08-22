@@ -1,6 +1,6 @@
 package org.hongxi.jaws.config.configcenter;
 
-import org.hongxi.jaws.common.extension.SpiMeta;
+import org.hongxi.jaws.common.extension.Extension;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentMap;
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
-@SpiMeta(name = "local")
+@Extension(name = "local")
 public class LocalDynamicConfiguration implements DynamicConfiguration {
 
     private final ConcurrentMap<String, String> configs = new ConcurrentHashMap<>();
