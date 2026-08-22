@@ -24,6 +24,14 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
     private static final ReentrantLock lock = new ReentrantLock();
     private static final ConcurrentHashMap<String, Registry> registries = new ConcurrentHashMap<>();
 
+    /**
+     * Whether a remote DynamicConfiguration has been initialized. With multiple
+     * (possibly heterogeneous) registries, the first initialized one wins to
+     * avoid later registries overwriting the active config center and leaking
+     * previously initialized connections. Guarded by {@link #lock}.
+     */
+    private static volatile boolean dynamicConfigurationInitialized;
+
     protected String getRegistryUri(URL url) {
         return url.getUri();
     }
@@ -60,6 +68,10 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
      * to find the corresponding DynamicConfiguration implementation.
      */
     private void initDynamicConfiguration(URL url) {
+        if (dynamicConfigurationInitialized) {
+            log.info("DynamicConfiguration already initialized, skip registry type: {}", url.getProtocol());
+            return;
+        }
         try {
             String registryType = url.getProtocol();
             DynamicConfiguration dc = ExtensionLoader.getExtensionLoader(DynamicConfiguration.class)
@@ -67,6 +79,7 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
             if (dc != null) {
                 dc.init(url);
                 DynamicConfigurationUtils.setDynamicConfiguration(dc);
+                dynamicConfigurationInitialized = true;
                 log.info("DynamicConfiguration initialized with registry type: {}", registryType);
             }
         } catch (Exception e) {

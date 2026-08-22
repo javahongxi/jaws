@@ -87,7 +87,7 @@ build_classpath() {
     local module="$1"
     local deps
     deps=$($MVN -pl "$module" dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=/dev/stdout -DexcludeGroupIds=org.hongxi -q 2>/dev/null)
-    echo "jaws-core/target/classes:jaws-transport-netty/target/classes:jaws-registry-zookeeper/target/classes:jaws-samples/jaws-sample-api/target/classes:$deps"
+    echo "jaws-core/target/classes:jaws-registry-zookeeper/target/classes:jaws-samples/jaws-sample-api/target/classes:$deps"
 }
 
 cmd_build() {

@@ -119,7 +119,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
                         serviceUrl.toSimpleString(), url.toSimpleString());
                 continue;
             }
-            Reference<T> reference = findMatchingReference(serviceUrl, registryReferences.get(registryUrl));
+            Reference<T> reference = findMatchingReference(serviceUrl);
             if (reference == null) {
                 URL referenceUrl = serviceUrl.createCopy();
                 referenceUrl.addParameters(this.url.getParameters());
@@ -153,22 +153,42 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
     private void refreshReferences() {
         List<Reference<T>> allReferences = new ArrayList<>();
         for (List<Reference<T>> refs : registryReferences.values()) {
-            allReferences.addAll(refs);
+            for (Reference<T> reference : refs) {
+                // A provider registered with multiple registries would otherwise
+                // appear once per registry and get multiplied load-balancing
+                // weight. Deduplicate by service identity while keeping the
+                // duplicates in registryReferences for cross-registry failover.
+                if (!containsSameService(allReferences, reference)) {
+                    allReferences.add(reference);
+                }
+            }
         }
         setReferences(allReferences);
     }
 
-    private Reference<T> findMatchingReference(URL serviceUrl, List<Reference<T>> references) {
-        if (references == null) {
-            return null;
-        }
+    private boolean containsSameService(List<Reference<T>> references, Reference<T> candidate) {
         for (Reference<T> r : references) {
-            // Match by service identity only: the reference URL carries extra
-            // consumer parameters merged in at refer time, so full-parameter
-            // equality against the discovered URL would always fail and cause
-            // every notification to rebuild (and reconnect) the reference.
-            if (isSameService(serviceUrl, r.getServiceUrl())) {
-                return r;
+            if (isSameService(candidate.getServiceUrl(), r.getServiceUrl())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Reference<T> findMatchingReference(URL serviceUrl) {
+        // Search across ALL registries, not just the notifying one: a provider
+        // registered with multiple registries would otherwise be re-referred
+        // once per registry (the registryReferences keys differ per registry),
+        // producing duplicate references to the same address.
+        for (List<Reference<T>> references : registryReferences.values()) {
+            for (Reference<T> r : references) {
+                // Match by service identity only: the reference URL carries extra
+                // consumer parameters merged in at refer time, so full-parameter
+                // equality against the discovered URL would always fail and cause
+                // every notification to rebuild (and reconnect) the reference.
+                if (isSameService(serviceUrl, r.getServiceUrl())) {
+                    return r;
+                }
             }
         }
         return null;
