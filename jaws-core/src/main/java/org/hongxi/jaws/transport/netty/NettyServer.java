@@ -47,7 +47,7 @@ public class NettyServer extends AbstractServer {
     @Override
     public boolean open() {
         if (isAvailable()) {
-            log.warn("server channel already open, url={}", url);
+            log.debug("server channel already open, url={}", url);
             return state.isAliveState();
         }
 

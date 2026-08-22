@@ -127,19 +127,11 @@ class GrpcPayloadCodec {
             out.writeLong(response.getProcessTime());
 
             // value (maybe null)
-            boolean hasValue = false;
-            if (response instanceof DefaultResponse dr) {
-                // Access the raw value field without triggering exception throw
-                Object val = getRawValue(dr);
-                if (val != null) {
-                    hasValue = true;
-                }
-                out.writeLong(hasValue ? 1 : 0);
-                if (hasValue) {
-                    out.writeObject(val);
-                }
-            } else {
-                out.writeLong(0);
+            Object val = response.getRawValue();
+            boolean hasValue = val != null;
+            out.writeLong(hasValue ? 1 : 0);
+            if (hasValue) {
+                out.writeObject(val);
             }
 
             // exception
@@ -216,20 +208,5 @@ class GrpcPayloadCodec {
     static Serialization resolveSerialization(URL url) {
         String serializationName = url.getParameter(URLParamType.serialization);
         return ExtensionLoader.getExtensionLoader(Serialization.class).getExtension(serializationName);
-    }
-
-    /**
-     * Access the raw value field of a DefaultResponse without triggering
-     * the exception-throw behavior of {@link DefaultResponse#getValue()}.
-     */
-    private static Object getRawValue(DefaultResponse response) {
-        try {
-            java.lang.reflect.Field field = DefaultResponse.class.getDeclaredField("value");
-            field.setAccessible(true);
-            return field.get(response);
-        } catch (Exception e) {
-            log.warn("Failed to access raw value field via reflection, falling back to JSON", e);
-            return null;
-        }
     }
 }

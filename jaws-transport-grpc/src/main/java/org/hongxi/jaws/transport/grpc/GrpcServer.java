@@ -50,7 +50,7 @@ public class GrpcServer implements org.hongxi.jaws.transport.Server {
     @Override
     public boolean open() {
         if (isAvailable()) {
-            log.warn("gRPC server already open, url={}", url);
+            log.debug("gRPC server already open, url={}", url);
             return true;
         }
 

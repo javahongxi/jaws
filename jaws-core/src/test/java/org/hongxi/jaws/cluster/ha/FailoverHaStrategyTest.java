@@ -42,6 +42,7 @@ class FailoverHaStrategyTest {
         StubResponse(Object value) { this.value = value; }
 
         @Override public Object getValue() { return value; }
+        @Override public Object getRawValue() { return value; }
         @Override public Exception getException() { return null; }
         @Override public long getRequestId() { return 1L; }
         @Override public long getProcessTime() { return 0; }

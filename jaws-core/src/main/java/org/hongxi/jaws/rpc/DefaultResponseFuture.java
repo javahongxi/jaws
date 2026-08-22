@@ -107,6 +107,11 @@ public class DefaultResponseFuture implements ResponseFuture {
     }
 
     @Override
+    public Object getRawValue() {
+        return result;
+    }
+
+    @Override
     public void cancel() {
         Exception e = new JawsServiceException(this.getClass().getName() +
                 " task cancel: serverPort=" + serverUrl.getHostPort() + " "

@@ -24,6 +24,15 @@ public interface Response {
     Object getValue();
 
     /**
+     * Returns the raw invocation result value without throwing, even if an
+     * exception is set. Transport layers use this to serialize value and
+     * exception independently.
+     *
+     * @return result value, or {@code null} if not set
+     */
+    Object getRawValue();
+
+    /**
      * Returns the exception thrown during request processing, or {@code null} if
      * the request has completed normally or has not yet been processed.
      * <p>

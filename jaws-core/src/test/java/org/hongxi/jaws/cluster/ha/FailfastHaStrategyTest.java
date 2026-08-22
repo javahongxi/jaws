@@ -33,6 +33,7 @@ class FailfastHaStrategyTest {
 
     private static class StubResponse implements Response {
         @Override public Object getValue() { return "ok"; }
+        @Override public Object getRawValue() { return "ok"; }
         @Override public Exception getException() { return null; }
         @Override public long getRequestId() { return 1L; }
         @Override public long getProcessTime() { return 0; }

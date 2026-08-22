@@ -54,6 +54,11 @@ public class DefaultResponse implements Response, Serializable {
         return value;
     }
 
+    @Override
+    public Object getRawValue() {
+        return value;
+    }
+
     public void setValue(Object value) {
         this.value = value;
     }
