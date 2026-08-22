@@ -21,11 +21,16 @@ public class JawsReference<T> extends AbstractReference<T> {
 
     protected Client client;
 
+    private final TransportFactory transportFactory;
+
+    /** Guards against releasing the shared client more than once. */
+    private volatile boolean destroyed;
+
     public JawsReference(Class<T> interfaceClass, URL url) {
         super(interfaceClass, url);
-        client = ExtensionLoader.getExtensionLoader(TransportFactory.class)
-                .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY))
-                .createClient(url);
+        transportFactory = ExtensionLoader.getExtensionLoader(TransportFactory.class)
+                .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY));
+        client = transportFactory.createClient(url);
     }
 
     @Override
@@ -55,7 +60,11 @@ public class JawsReference<T> extends AbstractReference<T> {
 
     @Override
     public void destroy() {
-        client.close();
+        if (destroyed) {
+            return;
+        }
+        destroyed = true;
+        transportFactory.releaseClient(client);
         log.info("JawsReference destroy: url={}", url);
     }
 }

@@ -102,6 +102,13 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             return;
         }
 
+        // Registries may deliver the same full-volume list multiple times
+        // (initial cache data, watcher event, synchronous discover); skip
+        // redundant refreshes to avoid re-firing change listeners.
+        if (isUnchanged(registryReferences.get(registryUrl), urls)) {
+            return;
+        }
+
         log.info("Service urls changed: registry={}, service={}, urls={}",
                 registryUrl.getUri(), url.getIdentity(), formatIdentities(urls));
 
@@ -151,16 +158,51 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         setReferences(allReferences);
     }
 
-    private Reference<T> findMatchingReference(URL url, List<Reference<T>> references) {
+    private Reference<T> findMatchingReference(URL serviceUrl, List<Reference<T>> references) {
         if (references == null) {
             return null;
         }
         for (Reference<T> r : references) {
-            if (Objects.equals(url, r.getUrl()) || Objects.equals(url, r.getServiceUrl())) {
+            // Match by service identity only: the reference URL carries extra
+            // consumer parameters merged in at refer time, so full-parameter
+            // equality against the discovered URL would always fail and cause
+            // every notification to rebuild (and reconnect) the reference.
+            if (isSameService(serviceUrl, r.getServiceUrl())) {
                 return r;
             }
         }
         return null;
+    }
+
+    private boolean isSameService(URL discoveredUrl, URL referenceUrl) {
+        if (referenceUrl == null) {
+            return false;
+        }
+        return Objects.equals(discoveredUrl.getProtocol(), referenceUrl.getProtocol())
+                && Objects.equals(discoveredUrl.getHost(), referenceUrl.getHost())
+                && discoveredUrl.getPort() == referenceUrl.getPort()
+                && Objects.equals(discoveredUrl.getPath(), referenceUrl.getPath())
+                && Objects.equals(discoveredUrl.getGroup(), referenceUrl.getGroup())
+                && Objects.equals(discoveredUrl.getVersion(), referenceUrl.getVersion());
+    }
+
+    private boolean isUnchanged(List<Reference<T>> current, List<URL> urls) {
+        if (current == null || current.size() != urls.size()) {
+            return false;
+        }
+        for (URL serviceUrl : urls) {
+            boolean matched = false;
+            for (Reference<T> r : current) {
+                if (isSameService(serviceUrl, r.getServiceUrl())) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String formatIdentities(List<URL> urls) {

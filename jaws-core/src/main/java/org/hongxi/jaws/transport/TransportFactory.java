@@ -30,9 +30,24 @@ public interface TransportFactory {
 
     /**
      * Create a {@link Client} that connects to the remote address specified by the URL.
+     * <p>
+     * Implementations may share one client across services targeting the same
+     * remote address; each invocation increments the client's reference count.
+     * Callers must invoke {@link #releaseClient(Client)} when the client is no
+     * longer needed.
      *
      * @param url the URL containing the remote host, port and transport parameters
-     * @return a new client instance
+     * @return a new or shared client instance
      */
     Client createClient(URL url);
+
+    /**
+     * Release a client previously obtained from {@link #createClient(URL)}.
+     * <p>
+     * For shared clients the reference count is decremented, and the underlying
+     * connection is closed only when the last reference is released.
+     *
+     * @param client the client to release
+     */
+    void releaseClient(Client client);
 }
