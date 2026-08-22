@@ -290,14 +290,19 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     public void close() {
-        // Close all subscription caches before the client they depend on
-        synchronized (clientLock) {
+        // Close all subscription caches before the client they depend on.
+        // Must acquire clientLock the same way as doSubscribe/doUnsubscribe
+        // so that close is mutually exclusive with subscription operations.
+        try {
+            clientLock.lock();
             for (Map<NotifyListener, CuratorCache> listeners : serviceListeners.values()) {
                 for (CuratorCache cache : listeners.values()) {
                     cache.close();
                 }
             }
             serviceListeners.clear();
+        } finally {
+            clientLock.unlock();
         }
         curator.close();
     }

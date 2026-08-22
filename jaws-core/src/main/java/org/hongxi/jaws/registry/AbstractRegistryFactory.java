@@ -32,9 +32,10 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
      * dynamic configuration center; later registries skip initialization to
      * avoid overwriting the active config center and leaking connections.
      * If the first registry has no matching DynamicConfiguration extension,
-     * the next one in order takes over. Guarded by {@link #lock}.
+     * the next one in order takes over. Guarded by {@link #lock}; not volatile
+     * since all reads/writes happen while holding the lock.
      */
-    private static volatile boolean dynamicConfigurationInitialized;
+    private static boolean dynamicConfigurationInitialized;
 
     protected String getRegistryUri(URL url) {
         return url.getUri();

@@ -37,7 +37,8 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
     private static final Logger log = LoggerFactory.getLogger(AbstractLoadBalance.class);
 
     public static final int MAX_REFERENCE_COUNT = 10;
-    private List<Reference<T>> references;
+    // volatile: written by the notify thread in onRefresh, read by business threads on every select
+    private volatile List<Reference<T>> references;
     private volatile RouterChain<T> routerChain;
 
     @Override

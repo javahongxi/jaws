@@ -59,7 +59,8 @@ public class NettyClient extends AbstractClient {
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
 
     private Bootstrap bootstrap;
-    private NettyChannel channel;
+    // volatile: written under the instance lock in open()/close(), read lock-free in request()
+    private volatile NettyChannel channel;
 
     private final int fusingThreshold;
     /**

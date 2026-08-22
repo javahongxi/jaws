@@ -48,7 +48,8 @@ public class ExtensionLoader<T> {
     private ConcurrentMap<String, Class<T>> extensionClasses;
     private ConcurrentMap<String, T> singletonInstances;
     private Map<Integer, String> numberToName = Collections.emptyMap();
-    private volatile boolean init;
+    // Not volatile: all reads/writes happen inside the synchronized checkInit()
+    private boolean init;
 
     private ExtensionLoader(Class<T> type) {
         this(type, Thread.currentThread().getContextClassLoader());

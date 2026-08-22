@@ -22,18 +22,20 @@ import java.util.List;
  */
 public class DirectRegistry extends AbstractRegistry {
 
-    private final List<URL> directUrls = Collections.synchronizedList(new ArrayList<>());
+    // Written only during construction, then frozen; safe for lock-free reads
+    private final List<URL> directUrls;
 
     public DirectRegistry(URL url) {
         super(url);
+        List<URL> urls = new ArrayList<>();
         String address = url.getParameter("address");
         if (address == null || address.isEmpty()) {
-            registerDirectUrl(url.getHost(), url.getPort());
+            urls.add(buildDirectUrl(url.getHost(), url.getPort()));
         } else if (address.contains(",")) {
             try {
                 String[] directUrlArray = address.split(",");
                 for (String directUrl : directUrlArray) {
-                    parseDirectUrl(directUrl);
+                    urls.add(parseDirectUrl(directUrl));
                 }
             } catch (Exception e) {
                 throw new JawsFrameworkException(
@@ -41,23 +43,23 @@ public class DirectRegistry extends AbstractRegistry {
                                 "address should be ip1:port1,ip2:port2 ...", address));
             }
         } else {
-            registerDirectUrl(url.getHost(), url.getPort());
+            urls.add(buildDirectUrl(url.getHost(), url.getPort()));
         }
+        this.directUrls = Collections.unmodifiableList(urls);
     }
 
-    private void parseDirectUrl(String directUrl) {
+    private URL parseDirectUrl(String directUrl) {
         String[] ipAndPort = directUrl.split(":");
         String ip = ipAndPort[0];
         int port = Integer.parseInt(ipAndPort[1]);
         if (port < 0 || port > 65535) {
             throw new RuntimeException();
         }
-        registerDirectUrl(ip, port);
+        return buildDirectUrl(ip, port);
     }
 
-    private void registerDirectUrl(String ip, Integer port) {
-        URL url = new URL("direct", ip, port, "");
-        directUrls.add(url);
+    private URL buildDirectUrl(String ip, Integer port) {
+        return new URL("direct", ip, port, "");
     }
 
     @Override

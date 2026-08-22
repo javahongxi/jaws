@@ -46,17 +46,11 @@ public class LocalRegistry extends AbstractRegistry {
     public void doSubscribe(URL url, NotifyListener listener) {
 
         String subscribeKey = getSubscribeKey(url);
-        ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> urlListeners = subscribeListeners.get(subscribeKey);
-        if (urlListeners == null) {
-            subscribeListeners.putIfAbsent(subscribeKey, new ConcurrentHashMap<>());
-            urlListeners = subscribeListeners.get(subscribeKey);
-        }
+        ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> urlListeners =
+                subscribeListeners.computeIfAbsent(subscribeKey, k -> new ConcurrentHashMap<>());
 
-        ConcurrentHashSet<NotifyListener> listeners = urlListeners.get(url);
-        if (listeners == null) {
-            urlListeners.putIfAbsent(url, new ConcurrentHashSet<>());
-            listeners = urlListeners.get(url);
-        }
+        ConcurrentHashSet<NotifyListener> listeners =
+                urlListeners.computeIfAbsent(url, k -> new ConcurrentHashSet<>());
 
         listeners.add(listener);
 
@@ -87,23 +81,24 @@ public class LocalRegistry extends AbstractRegistry {
     @Override
     public void doRegister(URL url) {
         String registryKey = getRegistryKey(url);
+        List<URL> snapshot;
         synchronized (registeredServices) {
-            List<URL> urls = registeredServices.get(registryKey);
-
-            if (urls == null) {
-                registeredServices.putIfAbsent(registryKey, new ArrayList<>());
-                urls = registeredServices.get(registryKey);
-            }
+            List<URL> urls = registeredServices.computeIfAbsent(registryKey, k -> new ArrayList<>());
             add(url, urls);
 
             log.info("LocalRegistry register: url={}", url);
 
-            notifyListeners(url);
+            // Copy under the lock; notification happens outside the lock
+            // so listener callbacks (which may build connections) cannot
+            // hold the registry lock for an unbounded time
+            snapshot = new ArrayList<>(urls);
         }
+        notifyListeners(url, snapshot);
     }
 
     @Override
     public void doUnregister(URL url) {
+        List<URL> snapshot;
         synchronized (registeredServices) {
             List<URL> urls = registeredServices.get(getRegistryKey(url));
 
@@ -114,9 +109,10 @@ public class LocalRegistry extends AbstractRegistry {
             remove(url, urls);
 
             log.info("LocalRegistry unregister: url={}", url);
-            // Notify immediately after change
-            notifyListeners(url);
+            snapshot = new ArrayList<>(urls);
         }
+        // Notify immediately after change, outside the lock
+        notifyListeners(url, snapshot);
     }
 
     private void remove(URL url, List<URL> urls) {
@@ -148,24 +144,20 @@ public class LocalRegistry extends AbstractRegistry {
         }
     }
 
-    private void notifyListeners(URL changedUrl) {
-        List<URL> interestingUrls = discover(changedUrl);
-        if (interestingUrls != null) {
-            ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> urlListeners = subscribeListeners.get(getSubscribeKey(changedUrl));
-            if (urlListeners == null) {
-                return;
-            }
+    private void notifyListeners(URL changedUrl, List<URL> interestingUrls) {
+        ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> urlListeners = subscribeListeners.get(getSubscribeKey(changedUrl));
+        if (urlListeners == null) {
+            return;
+        }
 
-            for (ConcurrentHashSet<NotifyListener> listeners : urlListeners.values()) {
-                for (NotifyListener listener : listeners) {
-                    try {
-                        listener.notify(getUrl(), interestingUrls);
-                    } catch (Exception e) {
-                        log.warn("Exception when notify listener {}, changedUrl: {}", listener, changedUrl, e);
-                    }
+        for (ConcurrentHashSet<NotifyListener> listeners : urlListeners.values()) {
+            for (NotifyListener listener : listeners) {
+                try {
+                    listener.notify(getUrl(), interestingUrls);
+                } catch (Exception e) {
+                    log.warn("Exception when notify listener {}, changedUrl: {}", listener, changedUrl, e);
                 }
             }
-
         }
     }
 

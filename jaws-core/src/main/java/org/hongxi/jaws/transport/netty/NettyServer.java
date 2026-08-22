@@ -48,7 +48,8 @@ public class NettyServer extends AbstractServer {
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
-    private Channel serverChannel;
+    // volatile: written under the instance lock in open(), read lock-free in stopAccept()
+    private volatile Channel serverChannel;
     protected NettyServerChannelManager channelManager;
     private final MessageHandler messageHandler;
     private ThreadPoolExecutor threadPoolExecutor;
@@ -62,7 +63,7 @@ public class NettyServer extends AbstractServer {
     }
 
     @Override
-    public boolean open() {
+    public synchronized boolean open() {
         if (isAvailable()) {
             log.debug("server channel already open, url={}", url);
             return state.isAliveState();

@@ -15,9 +15,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Abstract base class for provider-side message handling.
@@ -30,7 +30,9 @@ public abstract class AbstractRequestHandler implements MessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRequestHandler.class);
 
-    protected final Map<String, Provider<?>> providers = new HashMap<>();
+    // ConcurrentHashMap: requests read providers lock-free on every RPC
+    // while export/unexport mutate it concurrently
+    protected final ConcurrentMap<String, Provider<?>> providers = new ConcurrentHashMap<>();
 
     @Override
     public CompletableFuture<Object> handleAsync(Channel channel, Object message) {
@@ -86,16 +88,15 @@ public abstract class AbstractRequestHandler implements MessageHandler {
         }
     }
 
-    public synchronized void addProvider(Provider<?> provider) {
+    public void addProvider(Provider<?> provider) {
         String serviceKey = RpcUtils.getServiceKey(provider.getUrl());
-        if (providers.containsKey(serviceKey)) {
+        if (providers.putIfAbsent(serviceKey, provider) != null) {
             throw new JawsFrameworkException("provider already exists: " + serviceKey);
         }
-        providers.put(serviceKey, provider);
         log.info("{} addProvider: url={}", this.getClass().getSimpleName(), provider.getUrl());
     }
 
-    public synchronized void removeProvider(Provider<?> provider) {
+    public void removeProvider(Provider<?> provider) {
         String serviceKey = RpcUtils.getServiceKey(provider.getUrl());
         providers.remove(serviceKey);
         log.info("{} removeProvider: url={}", this.getClass().getSimpleName(), provider.getUrl());

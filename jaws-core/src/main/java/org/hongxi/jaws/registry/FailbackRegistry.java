@@ -172,21 +172,11 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     }
 
     private void addFailedSubscribed(URL url, NotifyListener listener) {
-        Set<NotifyListener> listeners = failedSubscribed.get(url);
-        if (listeners == null) {
-            failedSubscribed.putIfAbsent(url, new ConcurrentHashSet<>());
-            listeners = failedSubscribed.get(url);
-        }
-        listeners.add(listener);
+        failedSubscribed.computeIfAbsent(url, k -> new ConcurrentHashSet<>()).add(listener);
     }
 
     private void addFailedUnsubscribed(URL url, NotifyListener listener) {
-        Set<NotifyListener> listeners = failedUnsubscribed.get(url);
-        if (listeners == null) {
-            failedUnsubscribed.putIfAbsent(url, new ConcurrentHashSet<>());
-            listeners = failedUnsubscribed.get(url);
-        }
-        listeners.add(listener);
+        failedUnsubscribed.computeIfAbsent(url, k -> new ConcurrentHashSet<>()).add(listener);
     }
 
     // Package-private for deterministic testing besides the scheduled retry

@@ -12,6 +12,8 @@ import org.hongxi.jaws.transport.TransportFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Jaws protocol reference.
  */
@@ -24,7 +26,7 @@ public class JawsReference<T> extends AbstractReference<T> {
     private final TransportFactory transportFactory;
 
     /** Guards against releasing the shared client more than once. */
-    private volatile boolean destroyed;
+    private final AtomicBoolean destroyed = new AtomicBoolean(false);
 
     public JawsReference(Class<T> interfaceClass, URL url) {
         super(interfaceClass, url);
@@ -60,10 +62,11 @@ public class JawsReference<T> extends AbstractReference<T> {
 
     @Override
     public void destroy() {
-        if (destroyed) {
+        // CAS ensures the shared client is released exactly once even when
+        // destroy() is invoked concurrently from multiple threads
+        if (!destroyed.compareAndSet(false, true)) {
             return;
         }
-        destroyed = true;
         transportFactory.releaseClient(client);
         log.info("JawsReference destroy: url={}", url);
     }

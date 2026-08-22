@@ -127,8 +127,10 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
      */
     private static class SlideWindowData {
 
-        private long succeededOffset;
-        private long succeededElapsedOffset;
+        // volatile: written by the CAS-winning thread in reset(),
+        // read by other threads in getAverageElapsed()
+        private volatile long succeededOffset;
+        private volatile long succeededElapsedOffset;
         private final Reference<?> reference;
 
         SlideWindowData(Reference<?> reference) {

@@ -41,8 +41,9 @@ public class GrpcClient implements Client {
     private final URL url;
     private final Serialization serialization;
 
-    private ManagedChannel managedChannel;
-    private JawsRpcServiceGrpc.JawsRpcServiceStub asyncStub;
+    // volatile: written under the instance lock in open()/close(), read lock-free in request()
+    private volatile ManagedChannel managedChannel;
+    private volatile JawsRpcServiceGrpc.JawsRpcServiceStub asyncStub;
     private volatile ChannelState state = ChannelState.UNINIT;
 
     public GrpcClient(URL url) {

@@ -37,7 +37,9 @@ public class DefaultResponseFuture implements ResponseFuture {
     protected int timeout = 0;
     protected long processTime = 0;
     protected Request request;
-    protected List<FutureListener> listeners;
+    // Volatile: written under the lock in addListener, read outside the lock
+    // in notifyListeners; after the state leaves DOING the list is never mutated again
+    protected volatile List<FutureListener> listeners;
     protected URL serverUrl;
     protected Class<?> returnType;
     // Framework-level attachments carried by the response; reserved for protocol extension

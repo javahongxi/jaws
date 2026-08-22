@@ -25,7 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class AbstractCluster<T> implements Cluster<T> {
 
     protected URL url;
-    protected List<Reference<T>> references = new ArrayList<>();
+    // volatile: written under the instance lock in onRefresh, read lock-free
+    // by destroy/getReferences/getInterface/toString
+    protected volatile List<Reference<T>> references = new ArrayList<>();
     protected LoadBalance<T> loadBalance;
     protected final AtomicBoolean available = new AtomicBoolean(false);
 
@@ -55,7 +57,7 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
     }
 
     @Override
-    public void destroy() {
+    public synchronized void destroy() {
         available.set(false);
         List<Reference<T>> references = this.references;
         if (references != null) {

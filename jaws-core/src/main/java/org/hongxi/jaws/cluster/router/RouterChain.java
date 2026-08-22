@@ -24,8 +24,12 @@ public class RouterChain<T> {
 
     /**
      * Add a router to the chain.
+     * <p>
+     * Synchronized because the copy-append-replace sequence on the volatile
+     * list is not atomic; concurrent calls would lose routers. Reads stay
+     * lock-free since {@code route} only sees the published snapshot.
      */
-    public void addRouter(Router<T> router) {
+    public synchronized void addRouter(Router<T> router) {
         List<Router<T>> newRouters = new ArrayList<>(routers);
         newRouters.add(router);
         this.routers = Collections.unmodifiableList(newRouters);

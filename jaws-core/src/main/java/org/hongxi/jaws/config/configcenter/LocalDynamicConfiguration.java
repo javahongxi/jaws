@@ -2,12 +2,11 @@ package org.hongxi.jaws.config.configcenter;
 
 import org.hongxi.jaws.common.extension.Extension;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Local in-memory implementation of {@link DynamicConfiguration}.
@@ -45,7 +44,9 @@ public class LocalDynamicConfiguration implements DynamicConfiguration {
 
     @Override
     public void addListener(String key, ConfigurationListener listener) {
-        List<ConfigurationListener> listeners = Collections.synchronizedList(new ArrayList<>());
+        // CopyOnWriteArrayList: listeners are iterated lock-free in notifyListeners
+        // while addListener/removeListener may mutate concurrently
+        List<ConfigurationListener> listeners = new CopyOnWriteArrayList<>();
         List<ConfigurationListener> existing = listenerMap.putIfAbsent(key, listeners);
         Objects.requireNonNullElse(existing, listeners).add(listener);
     }

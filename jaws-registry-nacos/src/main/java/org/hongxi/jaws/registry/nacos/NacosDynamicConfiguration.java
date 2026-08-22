@@ -12,12 +12,11 @@ import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 
 /**
@@ -125,7 +124,9 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
 
     @Override
     public void addListener(String key, ConfigurationListener listener) {
-        List<ConfigurationListener> listeners = Collections.synchronizedList(new ArrayList<>());
+        // CopyOnWriteArrayList: listeners are iterated lock-free in updateCacheFromRemote
+        // while addListener/removeListener may mutate concurrently
+        List<ConfigurationListener> listeners = new CopyOnWriteArrayList<>();
         List<ConfigurationListener> existing = listenerMap.putIfAbsent(key, listeners);
         if (existing == null) {
             listeners.add(listener);
