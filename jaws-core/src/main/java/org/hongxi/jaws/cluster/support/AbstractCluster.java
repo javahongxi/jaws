@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Base implementation of {@link Cluster} providing common lifecycle,
  * reference management, and load balance wiring.
  * <p>
- * Subclasses implement {@link #doCall} to define the fault-tolerance
+ * Subclasses implement {@link #call} to define the fault-tolerance
  * strategy (failover, failfast, failback, etc.).
  *
  * @see FailoverCluster

@@ -1,6 +1,5 @@
 package org.hongxi.jaws.cluster.support;
 
-import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
