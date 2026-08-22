@@ -175,7 +175,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                 try {
                     byte[] bytes = curator.getData().forPath(nodePath);
                     if (bytes != null) {
-                        data = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                        data = new String(bytes, StandardCharsets.UTF_8);
                     }
                 } catch (Exception e) {
                     log.warn("failed to get zk data, path={}", nodePath, e);
@@ -189,28 +189,40 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                     }
                 }
                 if (newurl == null) {
-                    newurl = url.createCopy();
-                    String host = "";
-                    int port = 80;
-                    if (node.contains(":")) {
-                        String[] hp = node.split(":");
-                        if (hp.length > 1) {
-                            host = hp[0];
-                            try {
-                                port = Integer.parseInt(hp[1]);
-                            } catch (Exception ignore) {
-                            }
-                        }
-                    } else {
-                        host = node;
+                    // Node data missing or malformed: fall back to the host:port
+                    // carried by the node name, or skip the node rather than
+                    // fabricating a routable URL with a guessed port
+                    newurl = parseUrlFromNodeName(url, node);
+                    if (newurl == null) {
+                        log.warn("Skip node with unresolvable address, path={}", nodePath);
+                        continue;
                     }
-                    newurl.setHost(host);
-                    newurl.setPort(port);
                 }
                 urls.add(newurl);
             }
         }
         return urls;
+    }
+
+    /**
+     * Build a URL from the {@code host:port} node name. Returns null if the
+     * node name does not carry a valid host:port.
+     */
+    static URL parseUrlFromNodeName(URL url, String node) {
+        int idx = node.lastIndexOf(':');
+        if (idx <= 0 || idx == node.length() - 1) {
+            return null;
+        }
+        int port;
+        try {
+            port = Integer.parseInt(node.substring(idx + 1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        URL newurl = url.createCopy();
+        newurl.setHost(node.substring(0, idx));
+        newurl.setPort(port);
+        return newurl;
     }
 
     private void createNode(URL url, ZkNodeType nodeType) {
