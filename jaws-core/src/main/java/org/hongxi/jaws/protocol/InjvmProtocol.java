@@ -1,7 +1,7 @@
 package org.hongxi.jaws.protocol;
 
 import org.hongxi.jaws.common.extension.Extension;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
 import org.slf4j.Logger;
@@ -76,7 +76,7 @@ public class InjvmProtocol extends AbstractProtocol {
 
         @Override
         protected boolean doInit() {
-            String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
+            String protocolKey = RpcUtils.getProtocolKey(url);
 
             // noinspection unchecked
             exporter = (Exporter<T>) exporterMap.get(protocolKey);

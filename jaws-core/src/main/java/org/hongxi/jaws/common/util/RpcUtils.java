@@ -7,9 +7,13 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.URL;
 
 /**
- * Created by shenhongxi on 2020/7/25.
+ * Utility methods for RPC service key construction, error response building,
+ * and request descriptor formatting.
  */
-public class JawsFrameworkUtils {
+public final class RpcUtils {
+
+    private RpcUtils() {
+    }
 
     public static String getServiceKey(Request request) {
         String group = getGroupFromRequest(request);

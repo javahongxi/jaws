@@ -13,7 +13,7 @@ import io.netty.util.Timeout;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -73,7 +73,7 @@ public class NettyClient extends AbstractClient {
     public Response request(Request request) {
         if (!isAvailable()) {
             throw new JawsServiceException("NettyChannel is unavailable: url="
-                    + url.getUri() + JawsFrameworkUtils.toString(request));
+                    + url.getUri() + RpcUtils.toString(request));
         }
 
         boolean async = false;
@@ -89,18 +89,18 @@ public class NettyClient extends AbstractClient {
             }
             if (!channel.isAvailable()) {
                 throw new JawsServiceException("NettyChannel is not available: url="
-                        + url.getUri() + JawsFrameworkUtils.toString(request));
+                        + url.getUri() + RpcUtils.toString(request));
             }
             response = channel.request(request);
         } catch (Exception e) {
             log.error("request Error: url={} {}, {}", url.getUri(),
-                    JawsFrameworkUtils.toString(request), e.getMessage());
+                    RpcUtils.toString(request), e.getMessage());
 
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
             } else {
                 throw new JawsServiceException("NettyClient request Error: url=" +
-                        url.getUri() + " " + JawsFrameworkUtils.toString(request), e);
+                        url.getUri() + " " + RpcUtils.toString(request), e);
             }
         }
 

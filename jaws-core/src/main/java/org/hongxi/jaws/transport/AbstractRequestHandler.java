@@ -1,7 +1,7 @@
 package org.hongxi.jaws.transport;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -37,16 +37,16 @@ public abstract class AbstractRequestHandler implements MessageHandler {
             throw new JawsFrameworkException("message type not support: " + message.getClass());
         }
 
-        String serviceKey = JawsFrameworkUtils.getServiceKey(request);
+        String serviceKey = RpcUtils.getServiceKey(request);
         Provider<?> provider = providers.get(serviceKey);
 
         if (provider == null) {
             log.error("{} handler Error: provider not exist serviceKey={} {}",
-                    this.getClass().getSimpleName(), serviceKey, JawsFrameworkUtils.toString(request));
+                    this.getClass().getSimpleName(), serviceKey, RpcUtils.toString(request));
             JawsServiceException exception = new JawsServiceException(
                     this.getClass().getSimpleName() + " handler Error: provider not exist serviceKey="
-                            + serviceKey + " " + JawsFrameworkUtils.toString(request));
-            DefaultResponse response = JawsFrameworkUtils.buildErrorResponse(request, exception);
+                            + serviceKey + " " + RpcUtils.toString(request));
+            DefaultResponse response = RpcUtils.buildErrorResponse(request, exception);
             return CompletableFuture.completedFuture(response);
         }
 
@@ -70,7 +70,7 @@ public abstract class AbstractRequestHandler implements MessageHandler {
             return provider.callAsync(request);
         } catch (Exception e) {
             return CompletableFuture.completedFuture(
-                    JawsFrameworkUtils.buildErrorResponse(request, new JawsBizException("provider call process error", e)));
+                    RpcUtils.buildErrorResponse(request, new JawsBizException("provider call process error", e)));
         }
     }
 
@@ -83,7 +83,7 @@ public abstract class AbstractRequestHandler implements MessageHandler {
     }
 
     public synchronized void addProvider(Provider<?> provider) {
-        String serviceKey = JawsFrameworkUtils.getServiceKey(provider.getUrl());
+        String serviceKey = RpcUtils.getServiceKey(provider.getUrl());
         if (providers.containsKey(serviceKey)) {
             throw new JawsFrameworkException("provider already exists: " + serviceKey);
         }
@@ -92,7 +92,7 @@ public abstract class AbstractRequestHandler implements MessageHandler {
     }
 
     public synchronized void removeProvider(Provider<?> provider) {
-        String serviceKey = JawsFrameworkUtils.getServiceKey(provider.getUrl());
+        String serviceKey = RpcUtils.getServiceKey(provider.getUrl());
         providers.remove(serviceKey);
         log.info("{} removeProvider: url={}", this.getClass().getSimpleName(), provider.getUrl());
     }

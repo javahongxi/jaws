@@ -1,6 +1,6 @@
 package org.hongxi.jaws.protocol;
 
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.*;
 import org.slf4j.Logger;
@@ -30,7 +30,7 @@ public abstract class AbstractProtocol implements Protocol {
             throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider url is null");
         }
 
-        String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
+        String protocolKey = RpcUtils.getProtocolKey(url);
 
         synchronized (exporterMap) {
             // noinspection unchecked
@@ -67,7 +67,7 @@ public abstract class AbstractProtocol implements Protocol {
 
     @Override
     public void unexport(URL url) {
-        String protocolKey = JawsFrameworkUtils.getProtocolKey(url);
+        String protocolKey = RpcUtils.getProtocolKey(url);
         Exporter<?> exporter = exporterMap.remove(protocolKey);
         if (exporter != null) {
             exporter.destroy();

@@ -4,7 +4,7 @@ import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.cluster.Router;
 import org.hongxi.jaws.cluster.router.RouterChain;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
@@ -59,7 +59,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
         if (references == null) {
             throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call : references_size= 0 "
-                    + JawsFrameworkUtils.toString(request));
+                    + RpcUtils.toString(request));
         }
 
         if (references.size() > 1) {
@@ -70,7 +70,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
         }
         if (refersHolder.isEmpty()) {
             throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call : references_size="
-                    + references.size() + " " + JawsFrameworkUtils.toString(request));
+                    + references.size() + " " + RpcUtils.toString(request));
         }
     }
 

@@ -1,7 +1,7 @@
 package org.hongxi.jaws.rpc;
 
 import org.hongxi.jaws.common.FutureState;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.slf4j.Logger;
@@ -66,7 +66,7 @@ public class DefaultResponseFuture implements ResponseFuture {
                 } catch (Exception e) {
                     cancel(new JawsServiceException(this.getClass().getName() +
                             " getValue InterruptedException : "
-                            + JawsFrameworkUtils.toString(request) +
+                            + RpcUtils.toString(request) +
                             " cost=" + (System.currentTimeMillis() - createTime), e));
                 }
 
@@ -115,7 +115,7 @@ public class DefaultResponseFuture implements ResponseFuture {
     public void cancel() {
         Exception e = new JawsServiceException(this.getClass().getName() +
                 " task cancel: serverPort=" + serverUrl.getHostPort() + " "
-                + JawsFrameworkUtils.toString(request) +
+                + RpcUtils.toString(request) +
                 " cost=" + (System.currentTimeMillis() - createTime));
         cancel(e);
     }
@@ -186,7 +186,7 @@ public class DefaultResponseFuture implements ResponseFuture {
             exception = new JawsServiceException(
                     this.getClass().getName() +
                             " request timeout: serverPort=" + serverUrl.getHostPort()
-                            + " " + JawsFrameworkUtils.toString(request) +
+                            + " " + RpcUtils.toString(request) +
                             " cost=" + (System.currentTimeMillis() - createTime),
                     JawsErrorCode.SERVICE_TIMEOUT);
 

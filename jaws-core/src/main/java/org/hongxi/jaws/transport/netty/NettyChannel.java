@@ -7,7 +7,7 @@ import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
@@ -91,11 +91,11 @@ public class NettyChannel implements Channel {
         if (writeFuture.cause() != null) {
             throw new JawsServiceException("NettyChannel send request to server Error: url="
                     + getUrl().getUri() + " local=" + localAddress + " "
-                    + JawsFrameworkUtils.toString(request), writeFuture.cause());
+                    + RpcUtils.toString(request), writeFuture.cause());
         } else {
             throw new JawsServiceException("NettyChannel send request to server Timeout: url="
                     + getUrl().getUri() + " local=" + localAddress + " "
-                    + JawsFrameworkUtils.toString(request));
+                    + RpcUtils.toString(request));
         }
     }
 

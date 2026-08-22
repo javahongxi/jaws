@@ -5,7 +5,7 @@ import io.netty.channel.*;
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -86,7 +86,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     }
 
     private void rejectMessage(ChannelHandlerContext ctx, NettyMessage msg) {
-        sendResponse(ctx, JawsFrameworkUtils.buildErrorResponse(msg.requestId(), new JawsServiceException(
+        sendResponse(ctx, RpcUtils.buildErrorResponse(msg.requestId(), new JawsServiceException(
                 "process thread pool is full, reject by server: " + ctx.channel().localAddress(),
                                 JawsErrorCode.SERVICE_REJECT)));
 
@@ -111,7 +111,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         } catch (Exception e) {
             log.error("decode failed! requestId: {}, size: {}, remote: {}",
                     msg.requestId(), msg.data().readableBytes(), ctx.channel().remoteAddress(), e);
-            Response response = JawsFrameworkUtils.buildErrorResponse(msg.requestId(), e);
+            Response response = RpcUtils.buildErrorResponse(msg.requestId(), e);
             if (msg.isRequest()) {
                 sendResponse(ctx, response);
             } else {
@@ -133,8 +133,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 RpcContext.init(request);
                 DefaultResponse response;
                 if (throwable != null) {
-                    log.error("processRequest failed! request: {}", JawsFrameworkUtils.toString(request), throwable);
-                    response = JawsFrameworkUtils.buildErrorResponse(request,
+                    log.error("processRequest failed! request: {}", RpcUtils.toString(request), throwable);
+                    response = RpcUtils.buildErrorResponse(request,
                             new JawsServiceException("process request failed. errmsg:" + throwable.getMessage()));
                 } else if (res instanceof DefaultResponse dr) {
                     response = dr;

@@ -4,7 +4,7 @@ import org.hongxi.jaws.common.util.GenericUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
@@ -23,7 +23,7 @@ public class GenericRequestHandler extends AbstractRequestHandler {
             JawsServiceException exception = new JawsServiceException(
                     "Generic invocation: method not found: " + request.getInterfaceName() + "."
                             + request.getMethodName() + "(" + request.getParamDesc() + ")");
-            DefaultResponse response = JawsFrameworkUtils.buildErrorResponse(request, exception);
+            DefaultResponse response = RpcUtils.buildErrorResponse(request, exception);
             response.setSerializationNumber(request.getSerializationNumber());
             return CompletableFuture.completedFuture(response);
         }

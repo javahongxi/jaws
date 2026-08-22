@@ -3,7 +3,7 @@ package org.hongxi.jaws.cluster.support;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -34,7 +34,7 @@ public class FailfastCluster<T> extends AbstractCluster<T> {
                 throw (RuntimeException) e;
             }
             if (!url.getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
-                return JawsFrameworkUtils.buildErrorResponse(request, e);
+                return RpcUtils.buildErrorResponse(request, e);
             }
             if (e instanceof JawsAbstractException jae) {
                 throw jae;

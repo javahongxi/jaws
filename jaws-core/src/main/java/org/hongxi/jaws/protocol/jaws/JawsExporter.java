@@ -15,17 +15,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Created by shenhongxi on 2021/4/21.
+ * Jaws protocol exporter.
  */
-public class DefaultRpcExporter<T> extends AbstractExporter<T> {
+public class JawsExporter<T> extends AbstractExporter<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultRpcExporter.class);
+    private static final Logger log = LoggerFactory.getLogger(JawsExporter.class);
 
     private static final ConcurrentMap<String, ProviderMessageHandler> messageHandlerMap = new ConcurrentHashMap<>();
 
     protected Server server;
 
-    public DefaultRpcExporter(Provider<T> provider, URL url) {
+    public JawsExporter(Provider<T> provider, URL url) {
         super(provider, url);
 
         ProviderMessageHandler messageHandler = messageHandlerMap.computeIfAbsent(
@@ -53,7 +53,7 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
         if (messageHandler != null) {
             messageHandler.removeProvider(provider);
         }
-        log.info("DefaultRpcExporter destroy Success: url={}", url);
+        log.info("JawsExporter destroy: url={}", url);
     }
 
     @Override

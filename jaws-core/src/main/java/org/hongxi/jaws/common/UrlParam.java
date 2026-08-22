@@ -96,7 +96,7 @@ public final class UrlParam {
         public static final Def<Integer> CONNECT_TIMEOUT = new Def<>("connectTimeout", 1000);
         public static final Def<Integer> MAX_CONTENT_LENGTH = new Def<>("maxContentLength", 10 * 1024 * 1024);
         public static final Def<Long> HEARTBEAT = new Def<>("heartbeat", 0L);
-        public static final Def<Boolean> TRANS_EXCEPTION_STACK = new Def<>("transExceptionStack", true);
+        public static final Def<Boolean> TRANSFER_EXCEPTION_STACK = new Def<>("transferExceptionStack", true);
 
         private Transport() {
         }

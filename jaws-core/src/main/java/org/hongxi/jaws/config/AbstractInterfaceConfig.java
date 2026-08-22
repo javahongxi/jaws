@@ -90,9 +90,9 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     protected String accessLog;
 
     /**
-     * Whether to transmit the RPC server-side business exception stack; default is true.
+     * Whether to transfer the exception stack trace to the consumer side; default is true.
      */
-    protected Boolean transExceptionStack;
+    protected Boolean transferExceptionStack;
 
     // ========== Client-only configuration ==========
 
@@ -135,7 +135,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         putIfPresent(params, "filter", filter);
         // server-only
         putIfPresent(params, "accessLog", accessLog);
-        putIfPresent(params, "transExceptionStack", transExceptionStack);
+        putIfPresent(params, "transferExceptionStack", transferExceptionStack);
         // client-only
         putIfPresent(params, "throwException", throwException);
         putIfPresent(params, "requestTimeout", requestTimeout);
@@ -330,12 +330,12 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         this.accessLog = accessLog;
     }
 
-    public Boolean getTransExceptionStack() {
-        return transExceptionStack;
+    public Boolean getTransferExceptionStack() {
+        return transferExceptionStack;
     }
 
-    public void setTransExceptionStack(Boolean transExceptionStack) {
-        this.transExceptionStack = transExceptionStack;
+    public void setTransferExceptionStack(Boolean transferExceptionStack) {
+        this.transferExceptionStack = transferExceptionStack;
     }
 
     // ========== Client-only configuration getter/setter ==========

@@ -4,7 +4,7 @@ import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.ExceptionUtils;
-import org.hongxi.jaws.common.util.JawsFrameworkUtils;
+import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.*;
@@ -64,20 +64,20 @@ public class AbstractReferenceHandler<T> {
                     throw new JawsServiceException(msg);
                 } else if (!cluster.getUrl().getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
                     log.warn("invoke failed, returning default value as throwException=false: uri={} {}",
-                            cluster.getUrl().getUri(), JawsFrameworkUtils.toString(request), e);
+                            cluster.getUrl().getUri(), RpcUtils.toString(request), e);
                     if (returnType != null && returnType.isPrimitive()) {
                         return PrimitiveDefault.getDefaultReturnValue(returnType);
                     }
                     return null;
                 } else {
                     log.error("invoke Error: uri={} {}",
-                            cluster.getUrl().getUri(), JawsFrameworkUtils.toString(request), e);
+                            cluster.getUrl().getUri(), RpcUtils.toString(request), e);
                     throw e;
                 }
             }
         }
         throw new JawsServiceException("Reference call Error: cluster not exists, interface=" + interfaceName + " "
-                + JawsFrameworkUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
+                + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
     }
 
     /**
@@ -145,7 +145,7 @@ public class AbstractReferenceHandler<T> {
 
         resultFuture.completeExceptionally(new JawsServiceException(
                 "Reference call Error: cluster not exists, interface=" + interfaceName + " "
-                        + JawsFrameworkUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false));
+                        + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false));
         return resultFuture;
     }
 

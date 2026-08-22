@@ -9,15 +9,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Created by shenhongxi on 2021/4/21.
+ * Jaws protocol reference.
  */
-public class DefaultRpcReference<T> extends AbstractReference<T> {
+public class JawsReference<T> extends AbstractReference<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultRpcReference.class);
+    private static final Logger log = LoggerFactory.getLogger(JawsReference.class);
 
     protected Client client;
 
-    public DefaultRpcReference(Class<T> interfaceClass, URL url) {
+    public JawsReference(Class<T> interfaceClass, URL url) {
         super(interfaceClass, url);
         client = ExtensionLoader.getExtensionLoader(TransportFactory.class)
                 .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY))
@@ -52,6 +52,6 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
     @Override
     public void destroy() {
         client.close();
-        log.info("DefaultRpcReference destroy: url={}", url);
+        log.info("JawsReference destroy: url={}", url);
     }
 }

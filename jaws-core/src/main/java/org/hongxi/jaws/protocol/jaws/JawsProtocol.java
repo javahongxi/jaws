@@ -18,13 +18,13 @@ public class JawsProtocol extends AbstractProtocol {
     protected <T> Exporter<T> createExporter(Provider<T> provider) {
         URL url = provider.getUrl();
         setDefaultCodec(url);
-        return new DefaultRpcExporter<>(provider, url);
+        return new JawsExporter<>(provider, url);
     }
 
     @Override
     protected <T> Reference<T> createReference(Class<T> interfaceClass, URL url) {
         setDefaultCodec(url);
-        return new DefaultRpcReference<>(interfaceClass, url);
+        return new JawsReference<>(interfaceClass, url);
     }
 
     private void setDefaultCodec(URL url) {
