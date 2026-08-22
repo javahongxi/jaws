@@ -5,12 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.hongxi</groupId>
-        <artifactId>jaws-samples</artifactId>
+        <artifactId>jaws-sample-gray</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jaws-sample-provider-mcp</artifactId>
-    <description>Demo: expose Jaws RPC services as MCP Tools via Spring Boot</description>
+    <artifactId>jaws-sample-stable-provider</artifactId>
 
     <dependencies>
         <dependency>
@@ -21,11 +20,6 @@
         <dependency>
             <groupId>org.hongxi</groupId>
             <artifactId>jaws-registry-nacos</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.hongxi</groupId>
-            <artifactId>jaws-mcp-spring-boot-starter</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
@@ -44,5 +38,4 @@
             </plugin>
         </plugins>
     </build>
-
 </project>

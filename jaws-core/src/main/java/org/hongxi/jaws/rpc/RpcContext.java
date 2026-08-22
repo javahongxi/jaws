@@ -30,6 +30,10 @@ public class RpcContext {
         RpcContext context = new RpcContext();
         if (request != null) {
             context.setRequest(request);
+            Map<String, String> reqAttachments = request.getAttachments();
+            if (reqAttachments != null && !reqAttachments.isEmpty()) {
+                context.attachments.putAll(reqAttachments);
+            }
         }
         LOCAL_CONTEXT.set(context);
         return context;

@@ -71,7 +71,7 @@ EOF
 ensure_built() {
     # mvn exec:java resolves dependencies from ~/.m2, so we need install (not just compile).
     # Re-install only when sources are newer than the installed JAR.
-    local jar="$HOME/.m2/repository/org/hongxi/jaws-core/0.0.4-SNAPSHOT/jaws-core-0.0.4-SNAPSHOT.jar"
+    local jar="$HOME/.m2/repository/org/hongxi/jaws-core/1.0.0-SNAPSHOT/jaws-core-1.0.0-SNAPSHOT.jar"
     local src="jaws-core/src/main/java"
     if [ ! -f "$jar" ] || [ "$(find "$src" -newer "$jar" -print -quit 2>/dev/null)" ]; then
         echo "项目未编译或源码已更新，正在编译安装..."

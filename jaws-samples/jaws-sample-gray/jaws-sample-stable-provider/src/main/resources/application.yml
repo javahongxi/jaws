@@ -7,9 +7,7 @@ jaws:
     name: ${spring.application.name}
   protocol:
     name: jaws
-    port: 10001
+    port: 10000
     serialization: fastjson2
   registry:
     address: nacos://127.0.0.1:8848
-  service:
-    tag: "gray"

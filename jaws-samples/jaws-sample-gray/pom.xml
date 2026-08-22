@@ -6,13 +6,14 @@
     <parent>
         <groupId>org.hongxi</groupId>
         <artifactId>jaws-samples</artifactId>
-        <version>0.0.4-SNAPSHOT</version>
+        <version>1.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>jaws-sample-gray</artifactId>
     <packaging>pom</packaging>
 
     <modules>
+        <module>jaws-sample-stable-provider</module>
         <module>jaws-sample-gray-provider</module>
         <module>jaws-sample-gray-consumer</module>
     </modules>

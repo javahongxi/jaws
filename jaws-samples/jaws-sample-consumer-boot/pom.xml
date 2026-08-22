@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.hongxi</groupId>
         <artifactId>jaws-samples</artifactId>
-        <version>0.0.4-SNAPSHOT</version>
+        <version>1.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>jaws-sample-consumer-boot</artifactId>

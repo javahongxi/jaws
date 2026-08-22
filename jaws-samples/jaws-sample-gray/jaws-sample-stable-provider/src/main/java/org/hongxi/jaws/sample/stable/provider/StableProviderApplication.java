@@ -1,4 +1,4 @@
-package org.hongxi.jaws.sample.gray.provider;
+package org.hongxi.jaws.sample.stable.provider;
 
 import org.hongxi.jaws.spring.boot.annotation.EnableJaws;
 import org.springframework.boot.SpringApplication;
@@ -6,8 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @EnableJaws
 @SpringBootApplication
-public class GrayProviderApplication {
+public class StableProviderApplication {
     public static void main(String[] args) {
-        SpringApplication.run(GrayProviderApplication.class, args);
+        SpringApplication.run(StableProviderApplication.class, args);
     }
 }
