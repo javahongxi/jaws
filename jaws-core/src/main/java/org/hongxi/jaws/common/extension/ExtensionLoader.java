@@ -244,6 +244,10 @@ public class ExtensionLoader<T> {
                 if (ext != null && ext.number() >= 0) {
                     numberMap.put((int) ext.number(), extName);
                 }
+            } catch (JawsFrameworkException e) {
+                // Contract violations (duplicate names, illegal extension classes)
+                // must fail fast instead of being silently skipped
+                throw e;
             } catch (Exception e) {
                 log.error("{}: Error loading extension class", type.getName(), e);
             }
@@ -263,7 +267,7 @@ public class ExtensionLoader<T> {
 
     private void checkClassPublic(Class<T> clazz) {
         if (!Modifier.isPublic(clazz.getModifiers())) {
-            throw new JawsFrameworkException(clazz.getName() + "is not a public class");
+            throw new JawsFrameworkException(clazz.getName() + " is not a public class");
         }
     }
 
@@ -279,7 +283,7 @@ public class ExtensionLoader<T> {
 
     private void checkClassInherit(Class<T> clazz) {
         if (!type.isAssignableFrom(clazz)) {
-            throw new JawsFrameworkException(clazz.getName() + "is not instanceof " + type.getName());
+            throw new JawsFrameworkException(clazz.getName() + " is not instanceof " + type.getName());
         }
     }
 

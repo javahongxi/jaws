@@ -234,7 +234,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
             curator.create().withMode(CreateMode.EPHEMERAL)
                     .forPath(ZkUtils.toNodePath(url, nodeType), url.toFullStr().getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new JawsFrameworkException("Failed to create node for " + url.getIdentity(), e);
         }
     }
 
@@ -245,7 +245,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                 curator.delete().forPath(nodePath);
             }
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new JawsFrameworkException("Failed to remove node for " + url.getIdentity(), e);
         }
     }
 
@@ -286,6 +286,15 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     public void close() {
+        // Close all subscription caches before the client they depend on
+        synchronized (clientLock) {
+            for (Map<NotifyListener, CuratorCache> listeners : serviceListeners.values()) {
+                for (CuratorCache cache : listeners.values()) {
+                    cache.close();
+                }
+            }
+            serviceListeners.clear();
+        }
         curator.close();
     }
 }

@@ -6,6 +6,9 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.exception.JawsServiceException;
 
 import java.io.File;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -74,7 +77,9 @@ public class URL {
                 if (!part.isEmpty()) {
                     int j = part.indexOf('=');
                     if (j >= 0) {
-                        parameters.put(part.substring(0, j), part.substring(j + 1));
+                        // Values are URL-encoded by toFullStr(); decoding is a no-op
+                        // for legacy unencoded values without '%'
+                        parameters.put(part.substring(0, j), decode(part.substring(j + 1)));
                     } else {
                         parameters.put(part, part);
                     }
@@ -384,9 +389,27 @@ public class URL {
             String name = entry.getKey();
             String value = entry.getValue();
 
-            builder.append(name).append("=").append(value).append("&");
+            // Encode the value so reserved characters (&, =, %) cannot
+            // corrupt the URL when parsed back by valueOf()
+            builder.append(name).append("=").append(encode(value)).append("&");
         }
 
         return builder.toString();
+    }
+
+    private static String encode(String value) {
+        return value == null ? "" : URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String decode(String value) {
+        if (value == null) {
+            return "";
+        }
+        try {
+            return URLDecoder.decode(value, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            // Legacy unencoded value containing a stray '%': keep as-is
+            return value;
+        }
     }
 }

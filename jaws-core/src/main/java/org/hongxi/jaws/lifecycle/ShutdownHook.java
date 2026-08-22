@@ -69,10 +69,10 @@ public class ShutdownHook extends Thread {
         for (CloseableObject resource : resourceList) {
             try {
                 resource.closeable.close();
+                log.info("Success to close {}", resource.closeable.getClass());
             } catch (Exception e) {
                 log.error("Failed to close {}", resource.closeable.getClass(), e);
             }
-            log.info("Success to close {}", resource.closeable.getClass());
         }
         log.info("Success to close all the resource!");
         resourceList.clear();
@@ -89,13 +89,8 @@ public class ShutdownHook extends Thread {
 
         @Override
         public int compareTo(CloseableObject o) {
-            if (this.priority > o.priority) {
-                return -1;
-            } else if (this.priority == o.priority) {
-                return 0;
-            } else {
-                return 1;
-            }
+            // Smaller priority is closed earlier
+            return Integer.compare(this.priority, o.priority);
         }
     }
 }

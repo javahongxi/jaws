@@ -25,8 +25,9 @@ public class DefaultResponseFuture implements ResponseFuture {
 
     protected final Object lock = new Object();
     protected volatile FutureState state = FutureState.DOING;
-    protected Object result = null;
-    protected Exception exception = null;
+    // Volatile: also read outside the lock by getRawValue()/getException()/isSuccess()
+    protected volatile Object result = null;
+    protected volatile Exception exception = null;
 
     protected long createTime = System.currentTimeMillis();
     protected int timeout = 0;
