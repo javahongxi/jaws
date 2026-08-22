@@ -61,6 +61,12 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
      */
     private String serviceInterface;
 
+    @Override
+    protected void collectParams(Map<String, String> params) {
+        super.collectParams(params);
+        putIfPresent(params, "directUrl", directUrl);
+    }
+
     public T getRef() {
         if (ref == null) {
             initRef();

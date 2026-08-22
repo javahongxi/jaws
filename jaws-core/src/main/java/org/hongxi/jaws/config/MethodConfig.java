@@ -1,7 +1,7 @@
 package org.hongxi.jaws.config;
 
-import org.hongxi.jaws.config.annotation.ConfigDesc;
 import java.io.Serial;
+import java.util.Map;
 
 /**
  * Created by shenhongxi on 2021/3/5.
@@ -31,7 +31,12 @@ public class MethodConfig extends AbstractConfig {
      */
     private Integer retries;
 
-    @ConfigDesc(excluded = true)
+    @Override
+    protected void collectParams(Map<String, String> params) {
+        putIfPresent(params, "requestTimeout", requestTimeout);
+        putIfPresent(params, "retries", retries);
+    }
+
     public String getName() {
         return name;
     }
@@ -40,7 +45,6 @@ public class MethodConfig extends AbstractConfig {
         this.name = name;
     }
 
-    @ConfigDesc(excluded = true)
     public String getArgumentTypes() {
         return argumentTypes;
     }

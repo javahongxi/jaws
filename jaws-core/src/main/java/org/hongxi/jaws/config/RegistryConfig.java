@@ -2,6 +2,8 @@ package org.hongxi.jaws.config;
 
 import java.io.Serial;
 
+import java.util.Map;
+
 /**
  * Created by shenhongxi on 2021/3/5.
  */
@@ -49,6 +51,18 @@ public class RegistryConfig extends AbstractConfig {
      * Failed retry period in milliseconds for the register center.
      */
     private Integer registryRetryPeriod;
+
+    @Override
+    protected void collectParams(Map<String, String> params) {
+        putIfPresent(params, "protocol", protocol);
+        putIfPresent(params, "address", address);
+        putIfPresent(params, "port", port);
+        putIfPresent(params, "username", username);
+        putIfPresent(params, "password", password);
+        putIfPresent(params, "connectTimeout", connectTimeout);
+        putIfPresent(params, "registrySessionTimeout", registrySessionTimeout);
+        putIfPresent(params, "registryRetryPeriod", registryRetryPeriod);
+    }
 
     public String getProtocol() {
         return protocol;

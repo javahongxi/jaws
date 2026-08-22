@@ -132,6 +132,26 @@ public class AbstractInterfaceConfig extends AbstractConfig {
      */
     protected String haStrategy;
 
+    @Override
+    protected void collectParams(Map<String, String> params) {
+        putIfPresent(params, "application", application);
+        putIfPresent(params, "module", module);
+        putIfPresent(params, "group", group);
+        putIfPresent(params, "version", version);
+        putIfPresent(params, "filter", filter);
+        // server-only
+        putIfPresent(params, "accessLog", accessLog);
+        putIfPresent(params, "transExceptionStack", transExceptionStack);
+        // client-only
+        putIfPresent(params, "throwException", throwException);
+        putIfPresent(params, "requestTimeout", requestTimeout);
+        putIfPresent(params, "check", check);
+        putIfPresent(params, "retries", retries);
+        putIfPresent(params, "cluster", cluster);
+        putIfPresent(params, "loadBalance", loadBalance);
+        putIfPresent(params, "haStrategy", haStrategy);
+    }
+
     /**
      * Parse registry URLs.
      */

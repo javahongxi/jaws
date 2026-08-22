@@ -82,6 +82,13 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
      */
     private String tag;
 
+    @Override
+    protected void collectParams(Map<String, String> params) {
+        super.collectParams(params);
+        putIfPresent(params, "token", token);
+        putIfPresent(params, "tag", tag);
+    }
+
     public synchronized void export() {
         if (exported.get()) {
             log.warn("{} has already been exported, so ignore the export request!", interfaceClass.getName());

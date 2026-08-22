@@ -1,22 +1,22 @@
 package org.hongxi.jaws.config;
 
-import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.config.annotation.ConfigDesc;
-import org.hongxi.jaws.exception.JawsErrorMsgConstants;
-import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serial;
 import java.io.Serializable;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Created by shenhongxi on 2021/3/5.
+ * Base class for all RPC configuration beans.
+ * <p>
+ * Subclasses override {@link #collectParams(Map)} to explicitly declare which
+ * Java Bean properties are exported into URL parameter maps.  This replaces
+ * the former reflection-based mechanism so that the mapping is visible at a
+ * glance and no getter can accidentally leak into the URL.
+ *
+ * @see #collectParams(Map)
  */
 public class AbstractConfig implements Serializable {
     @Serial
@@ -34,6 +34,41 @@ public class AbstractConfig implements Serializable {
      */
     protected String id;
 
+    // ---- Parameter collection ----
+
+    /**
+     * Collect config properties into the given parameter map.
+     * <p>
+     * Each subclass overrides this method to explicitly declare which of its
+     * properties are exported as URL parameters.  Subclasses should call
+     * {@code super.collectParams(params)} first so that inherited properties
+     * are included.
+     *
+     * @param params the mutable parameter map to populate
+     */
+    protected void collectParams(Map<String, String> params) {
+        // base class has no properties to export
+    }
+
+    /**
+     * Helper for subclasses: put a non-null, non-blank value into the map.
+     *
+     * @param params target map
+     * @param key    parameter key
+     * @param value  property value (String, Number, or Boolean)
+     */
+    protected static void putIfPresent(Map<String, String> params, String key, Object value) {
+        if (value == null) {
+            return;
+        }
+        String s = String.valueOf(value).trim();
+        if (!s.isEmpty()) {
+            params.put(key, s);
+        }
+    }
+
+    // ---- Legacy entry points (delegates to collectParams) ----
+
     /**
      * Append and override config parameters in order; later configs override earlier ones with the same key.
      *
@@ -48,13 +83,14 @@ public class AbstractConfig implements Serializable {
         }
     }
 
-    protected static void collectMethodConfigParams(Map<String, String> parameters, List<MethodConfig> methods) {
+    protected static void collectMethodConfigParams(Map<String, String> parameters, java.util.List<MethodConfig> methods) {
         if (methods == null || methods.isEmpty()) {
             return;
         }
         for (MethodConfig mc : methods) {
             if (mc != null) {
-                String prefix = JawsConstants.METHOD_CONFIG_PREFIX + mc.getName() + "(" + mc.getArgumentTypes() + ")";
+                String prefix = org.hongxi.jaws.common.JawsConstants.METHOD_CONFIG_PREFIX
+                        + mc.getName() + "(" + mc.getArgumentTypes() + ")";
                 mc.appendConfigParams(parameters, prefix);
             }
         }
@@ -68,69 +104,22 @@ public class AbstractConfig implements Serializable {
      * Append config properties into the given parameter map.
      *
      * @param parameters
+     * @param prefix     optional key prefix (used for method-level configs)
      */
     protected void appendConfigParams(Map<String, String> parameters, String prefix) {
-        Method[] methods = this.getClass().getMethods();
-        for (Method method : methods) {
-            try {
-                String name = method.getName();
-                if (isConfigMethod(method)) {
-                    int idx = name.startsWith("get") ? 3 : 2;
-                    String key = name.substring(idx, idx + 1).toLowerCase() + name.substring(idx + 1);
-                    ConfigDesc configDesc = method.getAnnotation(ConfigDesc.class);
-                    if (configDesc != null && !StringUtils.isBlank(configDesc.key())) {
-                        key = configDesc.key();
-                    }
-
-                    Object value = method.invoke(this);
-                    if (value == null || StringUtils.isBlank(String.valueOf(value))) {
-                        if (configDesc != null && configDesc.required()) {
-                            throw new JawsFrameworkException(String.format("%s.%s should not be null or empty", this.getClass()
-                                    .getSimpleName(), key), JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
-                        }
-                        continue;
-                    }
-                    if (prefix != null && !prefix.isEmpty()) {
-                        key = prefix + "." + key;
-                    }
-                    parameters.put(key, String.valueOf(value).trim());
-                }
-            } catch (Exception e) {
-                throw new JawsFrameworkException(String.format("Error when append params for config: %s.%s", this.getClass()
-                        .getSimpleName(), method.getName()), e, JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
+        Map<String, String> raw = new LinkedHashMap<>();
+        collectParams(raw);
+        if (prefix != null && !prefix.isEmpty()) {
+            for (Map.Entry<String, String> entry : raw.entrySet()) {
+                parameters.put(prefix + "." + entry.getKey(), entry.getValue());
             }
+        } else {
+            parameters.putAll(raw);
         }
     }
 
-    private boolean isConfigMethod(Method method) {
-        boolean checkMethod =
-                (method.getName().startsWith("get") || method.getName().startsWith("is"))
-                        && Modifier.isPublic(method.getModifiers()) && method.getParameterTypes().length == 0
-                        && isPrimitive(method.getReturnType());
+    // ---- id ----
 
-        if (checkMethod) {
-            // Check method-level exclusion
-            ConfigDesc configDesc = method.getAnnotation(ConfigDesc.class);
-            if (configDesc != null && configDesc.excluded()) {
-                return false;
-            }
-            // Check class-level exclusion: if the declaring class is annotated with
-            // @ConfigDesc(excluded = true), skip all its declared getters
-            Class<?> declaringClass = method.getDeclaringClass();
-            ConfigDesc classDesc = declaringClass.getAnnotation(ConfigDesc.class);
-            if (classDesc != null && classDesc.excluded()) {
-                return false;
-            }
-        }
-        return checkMethod;
-    }
-
-    private boolean isPrimitive(Class<?> type) {
-        return type.isPrimitive() || type == String.class || type == Character.class || type == Boolean.class || type == Byte.class
-                || type == Short.class || type == Integer.class || type == Long.class || type == Float.class || type == Double.class;
-    }
-
-    @ConfigDesc(excluded = true)
     public String getId() {
         return id;
     }
@@ -139,36 +128,19 @@ public class AbstractConfig implements Serializable {
         this.id = id;
     }
 
+    // ---- toString ----
+
     @Override
     public String toString() {
         try {
-            StringBuilder buf = new StringBuilder();
-            String tagName = getTagName(getClass());
-            buf.append(tagName);
-            Method[] methods = getClass().getMethods();
-            for (Method method : methods) {
-                try {
-                    String name = method.getName();
-                    if ((name.startsWith("get") || name.startsWith("is")) && !"getClass".equals(name) && !"get".equals(name)
-                            && !"is".equals(name) && Modifier.isPublic(method.getModifiers()) && method.getParameterTypes().length == 0
-                            && isPrimitive(method.getReturnType())) {
-                        int i = name.startsWith("get") ? 3 : 2;
-                        String key = name.substring(i, i + 1).toLowerCase() + name.substring(i + 1);
-                        Object value = method.invoke(this);
-                        if (value != null) {
-                            buf.append(" ");
-                            buf.append(key);
-                            buf.append("=");
-                            buf.append(value);
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn(e.getMessage(), e);
-                }
+            StringBuilder buf = new StringBuilder(getTagName(getClass()));
+            Map<String, String> params = new LinkedHashMap<>();
+            collectParams(params);
+            for (Map.Entry<String, String> entry : params.entrySet()) {
+                buf.append(' ').append(entry.getKey()).append('=').append(entry.getValue());
             }
             return buf.toString();
         } catch (Throwable t) {
-            // Defensive error handling
             log.warn(t.getMessage(), t);
             return super.toString();
         }
@@ -182,7 +154,6 @@ public class AbstractConfig implements Serializable {
                 break;
             }
         }
-        tag = tag.toLowerCase();
-        return tag;
+        return tag.toLowerCase();
     }
 }

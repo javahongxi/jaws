@@ -1,7 +1,7 @@
 package org.hongxi.jaws.config;
 
-import org.hongxi.jaws.config.annotation.ConfigDesc;
 import java.io.Serial;
+import java.util.Map;
 
 /**
  * Created by shenhongxi on 2021/3/5.
@@ -75,7 +75,20 @@ public class ProtocolConfig extends AbstractConfig {
      */
     protected Long heartbeat;
 
-    @ConfigDesc(key = "protocol", required = true)
+    @Override
+    protected void collectParams(Map<String, String> params) {
+        putIfPresent(params, "protocol", name);
+        putIfPresent(params, "serialization", serialization);
+        putIfPresent(params, "codec", codec);
+        putIfPresent(params, "transportFactory", transportFactory);
+        putIfPresent(params, "maxServerConnections", maxServerConnections);
+        putIfPresent(params, "minWorkerThreads", minWorkerThreads);
+        putIfPresent(params, "maxWorkerThreads", maxWorkerThreads);
+        putIfPresent(params, "workerQueueSize", workerQueueSize);
+        putIfPresent(params, "maxContentLength", maxContentLength);
+        putIfPresent(params, "heartbeat", heartbeat);
+    }
+
     public String getName() {
         return name;
     }
@@ -84,7 +97,6 @@ public class ProtocolConfig extends AbstractConfig {
         this.name = name;
     }
 
-    @ConfigDesc(excluded = true)
     public String getHost() {
         return host;
     }
@@ -93,7 +105,6 @@ public class ProtocolConfig extends AbstractConfig {
         this.host = host;
     }
 
-    @ConfigDesc(excluded = true)
     public Integer getPort() {
         return port;
     }
