@@ -9,6 +9,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Base implementation of {@link Client} holding state shared by all
+ * client transports: the remote {@link URL}, the {@link Codec} resolved
+ * from the URL parameter via the extension loader, and the volatile
+ * {@link ChannelState} lifecycle flag.
+ * <p>
+ * Concrete transports such as {@link org.hongxi.jaws.transport.netty.NettyClient}
+ * extend this class to provide connection management and request sending.
+ * <p>
  * Created by shenhongxi on 2020/7/28.
  */
 public abstract class AbstractClient implements Client {

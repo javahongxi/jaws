@@ -5,6 +5,17 @@ import java.io.Serial;
 import java.util.Map;
 
 /**
+ * Configuration of a single registry center (protocol, address, port and
+ * session/retry settings) used by both service export and reference subscribe.
+ * <p>
+ * Each {@code RegistryConfig} is converted into a registry {@code URL} from
+ * which the corresponding {@link org.hongxi.jaws.registry.RegistryFactory}
+ * SPI extension is resolved.
+ *
+ * @see ServiceConfig
+ * @see ReferenceConfig
+ *
+ * <p>
  * Created by shenhongxi on 2021/3/5.
  */
 public class RegistryConfig extends AbstractConfig {

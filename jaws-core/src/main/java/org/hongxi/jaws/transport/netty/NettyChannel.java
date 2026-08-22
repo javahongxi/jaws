@@ -23,6 +23,17 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 
 /**
+ * {@link Channel} implementation wrapping a native Netty
+ * {@link io.netty.channel.Channel}, used by {@link NettyClient} as its
+ * single connection to the remote server. Encodes {@link Request} objects
+ * straight into a pooled {@link ByteBuf} (zero-copy), writes them with a
+ * connect-aware timeout, and reports send success or failure back to the
+ * client's error-fusing counters.
+ * <p>
+ * Supports close-and-reopen reconnection, and resolves per-request timeouts
+ * from dynamic configuration with a method → service → global → URL
+ * fallback chain.
+ * <p>
  * Created by shenhongxi on 2020/7/30.
  */
 public class NettyChannel implements Channel {

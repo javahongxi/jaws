@@ -17,6 +17,18 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
+ * Base invocation handler for consumer proxies, holding the per-protocol
+ * {@link Cluster} list and executing a {@link org.hongxi.jaws.rpc.Request}
+ * against them.
+ * <p>
+ * Propagates {@code RpcContext} attachments, distinguishes business
+ * exceptions from framework ones (optionally returning default values for
+ * primitive return types when {@code throwException=false}), and supports
+ * asynchronous invocation via {@code CompletableFuture}.
+ *
+ * @see ReferenceInvocationHandler
+ *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 public class AbstractReferenceHandler<T> {

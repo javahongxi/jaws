@@ -13,7 +13,13 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Created by shenhongxi on 2020/6/14.
+ * A simplified counterpart of Dubbo's {@code com.alibaba.dubbo.common.URL}, modeling a
+ * service endpoint as protocol, host, port, path and a key-value parameter map.
+ * Provides parsing ({@link #valueOf(String)}), typed parameter access, backup-address
+ * expansion, and service matching via {@link #canServe(URL)} / {@link #getIdentity()}.
+ * Note that parameters are mutable, so instances are not safe for concurrent modification.
+ *
+ * <p>Created by shenhongxi on 2020/6/14.
  */
 public class URL {
 

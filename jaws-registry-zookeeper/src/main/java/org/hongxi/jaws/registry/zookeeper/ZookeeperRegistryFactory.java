@@ -14,6 +14,13 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 
 /**
+ * SPI factory ({@code zookeeper}) that creates {@link ZookeeperRegistry}
+ * instances. It builds the {@link CuratorFramework} client from the registry
+ * URL's session and connection timeouts, optional digest authentication,
+ * and an exponential-backoff retry policy.
+ *
+ * @see ZookeeperRegistry
+ *
  * Created by shenhongxi on 2021/4/24.
  */
 @Extension("zookeeper")

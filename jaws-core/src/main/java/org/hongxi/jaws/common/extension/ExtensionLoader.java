@@ -18,6 +18,16 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
+ * Jaws' equivalent of Dubbo SPI: loads implementations of an extension
+ * interface from {@code META-INF/services/} configuration files, one
+ * {@code ExtensionLoader} per extension type.
+ * <p>
+ * Extension interfaces must be annotated with {@link Spi}, which also
+ * determines the {@link Scope} (singleton vs prototype) of the instances
+ * handed out by {@link #getExtension(String)}. Extensions may be annotated
+ * with {@link Extension} to declare their name and numeric id, and with
+ * {@link Activation} for conditional activation and ordering.
+ * <p>
  * Created by shenhongxi on 2020/6/25.
  */
 public class ExtensionLoader<T> {

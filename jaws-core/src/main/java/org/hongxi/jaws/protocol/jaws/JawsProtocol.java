@@ -7,6 +7,15 @@ import org.hongxi.jaws.protocol.AbstractProtocol;
 import org.hongxi.jaws.rpc.*;
 
 /**
+ * Default protocol implementation of the framework, registered under the
+ * {@code "jaws"} extension name, that creates {@link JawsExporter} and
+ * {@link JawsReference} for service exposure and consumer reference.
+ * <p>
+ * Defaults the URL codec to {@code "jaws"} when none is configured.
+ *
+ * @see AbstractProtocol
+ *
+ * <p>
  * Created by shenhongxi on 2021/4/21.
  */
 @Extension("jaws")

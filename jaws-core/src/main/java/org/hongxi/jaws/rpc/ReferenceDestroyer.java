@@ -10,7 +10,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Created by shenhongxi on 2021/3/7.
+ * Utility that destroys a group of {@link Reference references} after a fixed delay
+ * (1 second by default), giving in-flight requests time to complete before the
+ * underlying connections are torn down. Destruction runs on a shared scheduled
+ * executor, which is shut down via a JVM shutdown hook.
+ *
+ * <p>Created by shenhongxi on 2021/3/7.
  */
 public class ReferenceDestroyer {
 

@@ -8,6 +8,16 @@ import java.util.Collections;
 import java.util.List;
 
 /**
+ * Registry that connects consumers directly to a fixed list of service
+ * addresses, bypassing any real registry center. Direct URLs are parsed from
+ * the {@code address} parameter (in {@code ip1:port1,ip2:port2} form) or fall
+ * back to the registry URL's own host and port.
+ * <p>
+ * Registration is a no-op; discovery simply rewrites the subscribe URL's
+ * host and port to each configured direct address.
+ *
+ * @see AbstractRegistry
+ *
  * Created by shenhongxi on 2021/4/22.
  */
 public class DirectRegistry extends AbstractRegistry {

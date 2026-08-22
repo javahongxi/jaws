@@ -15,6 +15,18 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 
 /**
+ * Netty {@link ByteToMessageDecoder} that frames the jaws protocol:
+ * a 16-byte header (magic, version, flag, requestId, body length) followed
+ * by the body. The flag byte distinguishes requests from responses and, when
+ * {@code (flag & Codec.FLAG_EVENT) != 0}, indicates a heartbeat frame that is
+ * consumed here and never forwarded to the business layer.
+ * <p>
+ * Bodies exceeding {@code maxContentLength} are rejected (answered with an
+ * error response if a request) without closing the connection. Valid frames
+ * are emitted as zero-copy {@link NettyMessage} holding a retained
+ * {@link ByteBuf} slice, which {@link NettyChannelHandler} releases after
+ * processing.
+ * <p>
  * Created by shenhongxi on 2020/7/6.
  */
 public class NettyDecoder extends ByteToMessageDecoder {

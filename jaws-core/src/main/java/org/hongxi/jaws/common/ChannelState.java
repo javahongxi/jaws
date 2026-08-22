@@ -1,6 +1,12 @@
 package org.hongxi.jaws.common;
 
 /**
+ * Lifecycle states of a {@code Channel}, from creation to close:
+ * UNINIT, INIT, ALIVE, UNALIVE and CLOSE, each carrying an integer value.
+ * <p>
+ * Callers typically use the {@code is*State()} helpers to decide whether a
+ * channel is ready for traffic or has to be reconnected/rebuilt.
+ * <p>
  * Created by shenhongxi on 2020/6/25.
  */
 public enum ChannelState {

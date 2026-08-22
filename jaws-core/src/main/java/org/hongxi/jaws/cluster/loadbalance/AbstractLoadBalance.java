@@ -16,6 +16,20 @@ import java.util.Collections;
 import java.util.List;
 
 /**
+ * Base implementation of {@link LoadBalance} providing common reference
+ * management, router-chain filtering, and warm-up weight calculation.
+ * <p>
+ * {@link #select} and {@link #selectToHolder} first shrink the candidate
+ * references through the configured {@link RouterChain}, then delegate to
+ * {@link #doSelect} when more than one reference survives.
+ * Subclasses define the concrete strategy (random, round robin,
+ * consistent hash, least active, shortest response, etc.).
+ *
+ * @see RandomLoadBalance
+ * @see ShortestResponseLoadBalance
+ * @see #getWarmupWeight
+ *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {

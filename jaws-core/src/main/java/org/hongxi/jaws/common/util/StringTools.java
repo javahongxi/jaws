@@ -8,6 +8,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.TreeMap;
 
+/**
+ * Small string and URL utility helpers: lenient integer parsing that
+ * defaults to 0 on failure, UTF-8 URL encoding/decoding of parameter
+ * values, and rendering of parameter maps into sorted query strings.
+ * <p>
+ * Used mainly when building and parsing {@code URL} parameter maps.
+ */
 public class StringTools {
 
     public static int parseInteger(String intStr) {

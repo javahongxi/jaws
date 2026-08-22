@@ -7,7 +7,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Created by shenhongxi on 2021/4/21.
+ * Base implementation of {@link Reference} providing availability checking and
+ * per-endpoint call statistics: an {@link java.util.concurrent.atomic.AtomicInteger
+ * AtomicInteger} tracks in-flight calls, while atomic counters accumulate successful
+ * call count and elapsed time. Both feed load-balancing strategies such as leastActive
+ * and shortestResponse.
+ * <p>
+ * Subclasses implement {@link #doCall(Request)} to perform the actual remote
+ * invocation.
+ *
+ * <p>Created by shenhongxi on 2021/4/21.
  */
 public abstract class AbstractReference<T> extends AbstractEndpoint implements Reference<T> {
 

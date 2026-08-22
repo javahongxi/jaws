@@ -27,6 +27,18 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
+ * Netty-based {@link Client} implementation maintaining a single
+ * {@link NettyChannel} connection per remote URL. Installs the client
+ * pipeline (IdleStateHandler → HeartbeatHandler → {@link NettyDecoder} →
+ * {@link NettyChannelHandler}) and completes async requests through
+ * {@link ResponseFuture} callbacks, each guarded by a one-shot timeout
+ * scheduled on a shared HashedWheelTimer.
+ * <p>
+ * Also implements error fusing: once consecutive errors reach the fusing
+ * threshold the client is marked unavailable and recovers on success.
+ *
+ * @see NettyChannel
+ * <p>
  * Created by shenhongxi on 2020/7/28.
  */
 public class NettyClient extends AbstractClient {

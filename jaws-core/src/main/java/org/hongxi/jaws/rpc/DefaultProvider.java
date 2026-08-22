@@ -16,7 +16,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Created by shenhongxi on 2021/3/7.
+ * Default {@link Provider} implementation ("jaws" extension) that dispatches requests
+ * to the service implementation via reflection. Supports methods returning
+ * {@link CompletableFuture} by chaining them into the response with an optional
+ * per-method timeout, converts declared/business exceptions carefully (optionally
+ * stripping stack traces before transferring), and turns {@link Error} throwables into
+ * exceptions so a provider crash never takes down the caller.
+ *
+ * <p>Created by shenhongxi on 2021/3/7.
  */
 @Extension("jaws")
 public class DefaultProvider<T> extends AbstractProvider<T> {

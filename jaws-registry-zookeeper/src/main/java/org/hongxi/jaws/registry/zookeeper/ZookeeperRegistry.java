@@ -23,6 +23,18 @@ import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
+ * {@link FailbackRegistry} implementation backed by ZooKeeper via Curator.
+ * Providers are registered as ephemeral {@link ZkNodeType#AVAILABLE_SERVER}
+ * nodes carrying the full URL, and subscriptions watch the server path with
+ * a {@code CuratorCache} to push service-list changes to
+ * {@link NotifyListener}s.
+ * <p>
+ * On reconnection the registry re-registers all services and re-subscribes
+ * all listeners, and it closes the Curator client via a shutdown hook.
+ *
+ * @see ZookeeperRegistryFactory
+ * @see ZkUtils
+ *
  * Created by shenhongxi on 2021/4/24.
  */
 public class ZookeeperRegistry extends FailbackRegistry implements Closeable {

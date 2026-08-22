@@ -5,6 +5,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Static helpers for classifying jaws exceptions and masking server-side
+ * stack traces before they are serialized back to consumers.
+ * <p>
+ * {@link #setMockStackTrace} replaces the original stack with a fixed
+ * {@link #REMOTE_MOCK_STACK} element so implementation details of the
+ * provider are not leaked.
+ * <p>
  * Created by shenhongxi on 2020/7/26.
  */
 public class ExceptionUtils {

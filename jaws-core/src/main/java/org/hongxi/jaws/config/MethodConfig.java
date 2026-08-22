@@ -4,6 +4,17 @@ import java.io.Serial;
 import java.util.Map;
 
 /**
+ * Method-level configuration that overrides interface-level settings for a
+ * single service method, such as request timeout and retries on failure.
+ * <p>
+ * Attach {@code MethodConfig} instances to {@link ServiceConfig} or
+ * {@link ReferenceConfig} to apply per-method parameters to the exported
+ * or subscribed URL.
+ *
+ * @see ServiceConfig
+ * @see ReferenceConfig
+ *
+ * <p>
  * Created by shenhongxi on 2021/3/5.
  */
 public class MethodConfig extends AbstractConfig {

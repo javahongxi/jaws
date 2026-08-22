@@ -4,6 +4,13 @@ import java.io.File;
 import java.util.regex.Pattern;
 
 /**
+ * Framework-wide constants for jaws, covering protocol names and separators,
+ * registry protocols (local, zookeeper, nacos), endpoint types, and shared
+ * split patterns for addresses.
+ * <p>
+ * Centralizing these keys keeps URL parsing and registry discovery consistent
+ * across modules.
+ * <p>
  * Created by shenhongxi on 2020/6/26.
  */
 public class JawsConstants {

@@ -7,7 +7,14 @@ import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Created by shenhongxi on 2021/3/6.
+ * Server-side invocation abstraction wrapping a service implementation (roughly the
+ * provider-side {@code Invoker} in Dubbo). Resolves request method signatures via
+ * {@link #lookupMethod(String, String)} and exposes the backing implementation through
+ * {@link #getImpl()}. The default {@link #callAsync(Request)} bridges synchronous
+ * {@link #call(Request)} results into a {@link CompletableFuture}.
+ * Registered as a prototype-scoped SPI so each service URL gets its own instance.
+ *
+ * <p>Created by shenhongxi on 2021/3/6.
  */
 @Spi(scope = Scope.PROTOTYPE)
 public interface Provider<T> extends Caller<T> {

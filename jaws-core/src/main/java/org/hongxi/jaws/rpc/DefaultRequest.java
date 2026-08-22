@@ -7,7 +7,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Created by shenhongxi on 2020/7/28.
+ * Default serializable {@link Request} sent from consumer to provider, identifying the
+ * target by interface name, method name and parameter descriptor rather than by class
+ * references, since both sides may not share the same classloader. Also carries the
+ * call arguments, framework attachments, retry count, request id, and the serialization
+ * number of the codec used to encode the payload.
+ *
+ * <p>Created by shenhongxi on 2020/7/28.
  */
 public class DefaultRequest implements Request, Serializable {
     @Serial

@@ -8,6 +8,14 @@ import org.hongxi.jaws.transport.Server;
 import org.hongxi.jaws.transport.AbstractTransportFactory;
 
 /**
+ * {@code netty} {@link org.hongxi.jaws.common.extension.Extension} of
+ * {@link AbstractTransportFactory} that instantiates the Netty transport
+ * implementation: a {@link NettyServer} with its business thread pool for
+ * the provider side, and a {@link NettyClient} for the consumer side.
+ *
+ * @see NettyServer
+ * @see NettyClient
+ * <p>
  * Created by shenhongxi on 2020/7/31.
  */
 @Extension("netty")

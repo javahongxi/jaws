@@ -4,6 +4,17 @@ import java.io.Serial;
 import java.util.Map;
 
 /**
+ * Configuration of a single RPC protocol, covering endpoint address (host,
+ * port), serialization and codec selection, transport factory, and
+ * server/client tuning knobs such as worker thread pool, queue size,
+ * max connections, max content length, and heartbeat interval.
+ * <p>
+ * A heartbeat value of {@code 0} disables heartbeat detection.
+ *
+ * @see ServiceConfig
+ * @see ReferenceConfig
+ *
+ * <p>
  * Created by shenhongxi on 2021/3/5.
  */
 public class ProtocolConfig extends AbstractConfig {

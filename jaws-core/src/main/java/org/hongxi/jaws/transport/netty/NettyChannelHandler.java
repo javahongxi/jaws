@@ -23,6 +23,17 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
+ * Sharable terminal handler of the Netty pipeline that bridges the transport
+ * layer and the business layer. Each {@link NettyMessage} frame is decoded
+ * by the {@link Codec} and dispatched to the {@link MessageHandler}; on the
+ * server side this runs on a business {@link ThreadPoolExecutor} so the
+ * Netty event loop is never blocked, and a full pool results in an immediate
+ * error response rather than queuing. Heartbeat frames never reach this
+ * handler — they are consumed earlier by {@link NettyDecoder}.
+ * <p>
+ * Also encodes response objects back onto the channel and closes the
+ * connection on uncaught exceptions.
+ * <p>
  * Created by shenhongxi on 2020/7/7.
  */
 @ChannelHandler.Sharable

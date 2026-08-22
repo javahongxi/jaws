@@ -13,6 +13,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
+ * In-memory {@link AbstractRegistry} implementation that keeps registered
+ * service URLs in a local map keyed by interface and endpoint type, useful
+ * for tests or single-process deployments without a real registry center.
+ * <p>
+ * Registering or unregistering a URL immediately notifies all subscribers
+ * of the matching service key via their {@link NotifyListener}.
+ *
+ * @see LocalRegistryFactory
+ *
  * Created by shenhongxi on 2021/4/21.
  */
 public class LocalRegistry extends AbstractRegistry {

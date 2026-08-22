@@ -11,7 +11,16 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Created by shenhongxi on 2021/3/7.
+ * Base implementation of {@link Provider} providing lifecycle state and a method
+ * routing table built from the service interface.
+ * <p>
+ * Subclasses implement {@link #invoke(Request)} to define how a request is executed;
+ * {@link #call(Request)} simply joins the async result. Method lookup supports exact
+ * signature matching, with name-only fallback for non-overloaded methods.
+ *
+ * <p>Created by shenhongxi on 2021/3/7.
+ *
+ * @see DefaultProvider
  */
 public abstract class AbstractProvider<T> implements Provider<T> {
     protected Class<T> interfaceClass;

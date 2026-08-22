@@ -24,6 +24,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
+ * Netty-based {@link org.hongxi.jaws.transport.Server} implementation built on
+ * boss/worker {@link io.netty.channel.EventLoopGroup} NIO transport. Each child
+ * channel runs the pipeline channel_manager → IdleStateHandler → HeartbeatHandler
+ * → {@link NettyDecoder} → {@link NettyChannelHandler}, the last of which
+ * dispatches decoded requests to a dedicated business thread pool.
+ * <p>
+ * Supports graceful shutdown via {@link #stopAccept()} and
+ * {@link #awaitInactiveRequests(long)}, which stop taking new connections
+ * and wait for in-flight requests to drain.
+ *
+ * @see NettyServerChannelManager
+ * <p>
  * Created by shenhongxi on 2020/6/27.
  */
 public class NettyServer extends AbstractServer {

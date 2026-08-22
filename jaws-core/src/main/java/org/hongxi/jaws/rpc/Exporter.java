@@ -1,7 +1,14 @@
 package org.hongxi.jaws.rpc;
 
 /**
- * Created by shenhongxi on 2021/3/6.
+ * An exposed service endpoint that owns a {@link Provider} and makes it reachable
+ * under a {@link URL}, roughly corresponding to Dubbo's {@code Exporter}. Besides the
+ * endpoint lifecycle, it supports graceful shutdown: {@link #stopAccept()} rejects new
+ * requests while {@link #awaitInactiveRequests(long)} waits for in-flight ones.
+ *
+ * <p>Created by shenhongxi on 2021/3/6.
+ *
+ * @see AbstractExporter
  */
 public interface Exporter<T> extends Endpoint {
 

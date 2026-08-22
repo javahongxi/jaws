@@ -11,6 +11,13 @@ import java.util.Map;
 import java.util.StringJoiner;
 
 /**
+ * Parses registry addresses into {@link URL} instances, splitting
+ * multi-registry address strings and applying default protocol, port, path
+ * and parameters to entries that omit them.
+ * <p>
+ * Comma-separated backup addresses are encoded into the {@code backup}
+ * parameter so multi-node information is preserved in a single URL.
+ * <p>
  * Created by shenhongxi on 2021/3/5.
  */
 public class UrlUtils {

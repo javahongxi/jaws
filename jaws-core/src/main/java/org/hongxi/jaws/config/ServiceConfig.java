@@ -26,6 +26,20 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
+ * Provider-side service configuration responsible for exposing a service
+ * implementation under one or more protocols and registering it with the
+ * configured registries, similar to Dubbo's service export.
+ * <p>
+ * {@code export()} builds the service URL, creates a {@link Provider} and
+ * {@link Exporter} via the protocol SPI (wrapped with filters), while
+ * {@code unexport()} performs a graceful multi-phase shutdown: stop accepting
+ * requests, drain in-flight calls, unregister from registries, then release
+ * resources.
+ *
+ * @see ReferenceConfig
+ * @see AbstractInterfaceConfig
+ *
+ * <p>
  * Created by shenhongxi on 2021/3/6.
  */
 public class ServiceConfig<T> extends AbstractInterfaceConfig {

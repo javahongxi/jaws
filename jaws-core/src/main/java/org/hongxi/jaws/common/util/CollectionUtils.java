@@ -4,6 +4,11 @@ import java.util.Collection;
 import java.util.Map;
 
 /**
+ * Static helpers for null-safe emptiness checks on {@link Collection} and
+ * {@link Map}, mirroring Spring's {@code CollectionUtils}.
+ * <p>
+ * Non-instantiable; all methods treat {@code null} as empty.
+ * <p>
  * Created by shenhongxi on 2020/7/30.
  */
 public abstract class CollectionUtils {

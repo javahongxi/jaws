@@ -10,6 +10,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
+ * A {@link Set} implementation backed by a {@link ConcurrentHashMap}, providing
+ * thread-safe set semantics without synchronization, in the spirit of
+ * {@code ConcurrentHashMap.newKeySet()}.
+ * <p>
+ * Backing values are a shared dummy object; iterators reflect the weakly
+ * consistent behavior of the underlying map.
+ * <p>
  * Created by shenhongxi on 2021/3/6.
  */
 public class ConcurrentHashSet<E> extends AbstractSet<E> implements Set<E>, Serializable {

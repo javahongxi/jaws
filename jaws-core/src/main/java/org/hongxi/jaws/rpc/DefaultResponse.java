@@ -7,7 +7,13 @@ import java.io.Serializable;
 import java.util.*;
 
 /**
- * Created by shenhongxi on 2020/7/25.
+ * Default serializable {@link Response} carried over the wire between provider and
+ * consumer. Holds either the return value or an exception (never both), plus the
+ * request id, process time, attachments, and a serialization number identifying the
+ * codec used. Note that {@link #getValue()} throws the embedded exception if one is set;
+ * use {@link #getRawValue()} to read the value unconditionally.
+ *
+ * <p>Created by shenhongxi on 2020/7/25.
  */
 public class DefaultResponse implements Response, Serializable {
     @Serial

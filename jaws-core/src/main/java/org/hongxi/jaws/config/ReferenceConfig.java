@@ -17,6 +17,19 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
+ * Consumer-side reference configuration that lazily creates a proxy for a
+ * remote service, similar to Dubbo's reference subscribe.
+ * <p>
+ * On first {@code getRef()} it builds one {@link ConsumerCoordinator} per
+ * protocol (registry-based or direct-URL point-to-point), each owning a
+ * {@link Cluster}, and then obtains the proxy from the {@link ProxyFactory}
+ * SPI. Supports generic invocation where the interface class is replaced by
+ * {@link GenericService} so consumers need no interface JAR.
+ *
+ * @see ServiceConfig
+ * @see AbstractInterfaceConfig
+ *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 public class ReferenceConfig<T> extends AbstractInterfaceConfig {

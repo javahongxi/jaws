@@ -14,6 +14,18 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
+ * JDK dynamic proxy {@link InvocationHandler} that turns local interface
+ * method calls into remote {@link DefaultRequest} invocations dispatched
+ * through the {@link Cluster} layer.
+ * <p>
+ * Methods declared only on {@code Object} (toString, equals, hashCode) are
+ * handled locally unless the interface re-declares them, and methods
+ * returning {@link CompletableFuture} are invoked asynchronously.
+ *
+ * @see AbstractReferenceHandler
+ * @see JdkProxyFactory
+ *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> implements InvocationHandler {

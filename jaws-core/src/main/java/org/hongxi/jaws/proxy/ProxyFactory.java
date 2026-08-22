@@ -6,6 +6,17 @@ import org.hongxi.jaws.common.extension.Spi;
 import java.util.List;
 
 /**
+ * SPI for creating client-side proxies bound to one or more
+ * {@link Cluster} instances, so that interface method calls are routed
+ * as remote invocations.
+ * <p>
+ * Built-in implementations include a JDK dynamic proxy factory and a
+ * generic-invocation factory.
+ *
+ * @see JdkProxyFactory
+ * @see ReferenceInvocationHandler
+ *
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @Spi

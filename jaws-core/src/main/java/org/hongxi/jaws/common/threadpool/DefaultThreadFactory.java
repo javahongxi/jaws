@@ -6,6 +6,14 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
+ * Named {@link ThreadFactory} for jaws thread pools, producing threads
+ * named {@code <prefix>-<pool>-thread-<n>} with configurable daemon flag
+ * and priority.
+ * <p>
+ * Each factory instance draws from a shared pool counter, so multiple
+ * factories with the same prefix still produce unique, diagnosable thread
+ * names; the default prefix is "jaws".
+ * <p>
  * Created by shenhongxi on 2020/7/6.
  */
 public class DefaultThreadFactory implements ThreadFactory {
