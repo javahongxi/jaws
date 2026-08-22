@@ -48,7 +48,6 @@ class GrpcPayloadCodec {
             out.writeUTF(request.getParamDesc());
             out.writeLong(request.getRequestId());
             out.writeInt(request.getRetries());
-            out.writeLong(serialization.getSerializationNumber());
 
             // arguments
             Object[] args = request.getArguments();
@@ -91,8 +90,6 @@ class GrpcPayloadCodec {
             request.setParamDesc(in.readUTF());
             request.setRequestId(in.readLong());
             request.setRetries(in.readInt());
-            // skip serialization number from payload (already determined by the serialization param)
-            in.readLong();
 
             // arguments
             int argCount = in.readInt();
