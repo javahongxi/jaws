@@ -22,15 +22,18 @@ JawsCodec         (协议层 - 业务编解码, magic=0xF0F0, 直接操作 ByteB
 ### Dubbo 编解码结构
 
 ```
-ExchangeCodec (传输层 - 头解析 + 流式 body 解码, magic=0xdabb)
+NettyCodecAdapter  (Netty 适配层 - ByteBuf ↔ ChannelBuffer 桥接)
         ↕
-DubboCodec (RPC 层 - 覆盖 body 编解码逻辑)
+ExchangeCodec      (传输层 - 头解析 + 流式 body 解码, magic=0xdabb, 操作自建 ChannelBuffer)
+        ↕
+DubboCodec         (RPC 层 - 覆盖 body 编解码逻辑)
 ```
 
-- **ExchangeCodec**：直接操作 ChannelBuffer，一次完成头解析和 body 流式解码，通过 `decodeBody()` 模板方法留给子类扩展
+- **NettyCodecAdapter**：Netty 传输层与 Dubbo Codec 之间的桥接。编码时创建 `DynamicChannelBuffer`（底层 `byte[]`）交给 `Codec2.encode()`，完成后通过 `toByteBuffer()` 转换为 `ByteBuffer` 再包装为 Netty `ChannelBuffer`；解码时从 Netty `ChannelBuffer` 通过 `toByteBuffer()` 提取数据，拷贝到 Dubbo `ChannelBuffer` 后交给 `Codec2.decode()`
+- **ExchangeCodec**：操作 Dubbo 自建的 `ChannelBuffer` 抽象（`dubbo-remoting-api` 模块，不依赖 Netty），一次完成头解析和 body 流式解码，通过 `decodeBody()` 模板方法留给子类扩展
 - **DubboCodec**：通过继承覆盖 `encodeRequestData`/`decodeBody` 等方法，注入 RPC 语义
 
-**架构对比**：Jaws 将帧检测（NettyDecoder）与协议语义解析（JawsCodec）分离，中间通过 `NettyMessage` record 解耦，职责边界清晰；Dubbo 通过继承体系在同一个 Codec 类中完成（ExchangeCodec + DubboCodec），少一层间接调用。
+**架构对比**：Jaws 的 `Codec` 接口直接操作 Netty `ByteBuf`，编解码全程无桥接开销；Dubbo 的 `Codec2` 操作自建 `ChannelBuffer` 抽象，保持了 `dubbo-remoting-api` 的传输层无关性，但在与 Netty 交互时通过 `NettyCodecAdapter` 桥接，产生额外的分配和拷贝。Jaws 将帧检测（NettyDecoder）与协议语义解析（JawsCodec）分离，中间通过 `NettyMessage` record 解耦，职责边界清晰；Dubbo 通过继承体系在同一个 Codec 类中完成（ExchangeCodec + DubboCodec），少一层间接调用。
 
 ## 二、线上数据格式
 
@@ -95,13 +98,32 @@ NettyChannel / NettyChannelHandler
 ### Dubbo 编码路径
 
 ```
-ExchangeCodec.encodeRequest()
-  ① 在 ChannelBuffer 上预留 HEADER_LENGTH 空间
-  ② ChannelBufferOutputStream 直接写 body 到 buffer
-  ③ 回填 header 到预留空间
+NettyCodecAdapter.InternalEncoder.encode()
+  ① ChannelBuffers.dynamicBuffer(1024)                    [分配 HeapChannelBuffer (byte[])]
+  ② codec.encode(channel, buffer, msg)                    [序列化写入 byte[]]
+  ③ ChannelBuffers.wrappedBuffer(buffer.toByteBuffer())   [ByteBuffer.wrap(byte[]) → Netty ChannelBuffer]
+ExchangeCodec.encodeRequest() (在步骤②内)
+  ④ byte[] header = new byte[16]                          [临时 header 数组]
+  ⑤ ChannelBufferOutputStream(buffer) 直写 body            [在 ChannelBuffer 内零拷贝]
+  ⑥ buffer.writeBytes(header) 回填 header                  [header 写入 ChannelBuffer]
 ```
 
-共 **0 次额外 byte[] 分配**，body 直接写入最终目标 buffer。
+Codec 层内部（ExchangeCodec）零拷贝，但 NettyCodecAdapter 桥接层产生 **1 次 HeapChannelBuffer 分配 + 1 次 toByteBuffer() 转换**。
+
+### Dubbo 解码路径
+
+```
+NettyCodecAdapter.InternalDecoder.messageReceived()
+  ① input.toByteBuffer()                                  [Netty ChannelBuffer → ByteBuffer]
+  ② ChannelBuffers.wrappedBuffer(byteBuffer)              [ByteBuffer → Dubbo ChannelBuffer，可能触发 arraycopy]
+  ③ 有残留数据时：dynamicBuffer(size) + writeBytes × 2    [残留 + 新数据合并拷贝]
+ExchangeCodec.decode() (在步骤②③后的 ChannelBuffer 上)
+  ④ byte[] header = new byte[16]; buffer.readBytes(header) [header 拷贝到 byte[]]
+  ⑤ ChannelBufferInputStream(buffer, len) 包装 body 区域   [在 ChannelBuffer 内零拷贝]
+  ⑥ CodecSupport.deserialize(url, is, proto) 流式反序列化
+```
+
+Codec 层内部（ExchangeCodec）零拷贝，但 NettyCodecAdapter 桥接层产生 **1-2 次 buffer 转换/拷贝**（取决于是否有半包残留）。
 
 ### Jaws 解码路径
 
@@ -117,20 +139,38 @@ JawsCodec.decode()
 
 > 注：Serialization 接口已升级为流式 API（`serialize(OutputStream) → ObjectOutput` / `deserialize(InputStream) → ObjectInput`），所有协议元数据和业务对象通过同一个流顺序读写，Hessian2 实现零中间 byte[] 拷贝。Fastjson2 因 JSONB 不支持原生流式传输，内部仍使用 length-prefixed byte[] 适配，但接口层面已与 Dubbo 对齐。
 
-### Dubbo 解码路径
+### Dubbo 解码路径（旧版，见下方修正）
+
+> **注意**：以下描述的是 ExchangeCodec 在 ChannelBuffer 抽象层内部的行为。
+> 实际上 NettyCodecAdapter 桥接层还有额外的 buffer 转换开销（见上文「Dubbo 解码路径」）。
 
 ```
-ExchangeCodec.decode()
-  ① 读 header (16B) → NEED_MORE_INPUT 或继续
-  ② ChannelBufferInputStream 包装 body 区域，零拷贝
+ExchangeCodec.decode() (在 ChannelBuffer 上)
+  ① byte[] header = new byte[16]; buffer.readBytes(header)  [header 拷贝]
+  ② ChannelBufferInputStream 包装 body 区域                 [在 ChannelBuffer 内零拷贝]
   ③ DecodeableRpcInvocation 支持懒反序列化
 ```
 
-共 **0 次额外分配 + 0 次拷贝**。
+Codec 层内部 0 次额外 body 拷贝，但 header 读取有 1 次 `byte[16]` 分配。
 
 ### 效率小结
 
-Jaws 编解码路径已与 Dubbo **完全持平**：编码路径采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式（0 次额外分配），解码路径通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化（0 次额外分配）。Serialization 接口已升级为流式 API（`ObjectOutput`/`ObjectInput`），消除了 per-field byte[] 拷贝，与 Dubbo 的 `ObjectOutput`/`ObjectInput` 设计对齐。高吞吐场景下 GC 压力与 Dubbo 相当。
+| 维度 | Jaws | Dubbo |
+|------|------|-------|
+| Codec 接口 | 直接操作 Netty `ByteBuf` | 操作自建 `ChannelBuffer` 抽象 |
+| 编码路径（Codec 层） | 0 次中间分配，body 直写 ByteBuf | 0 次中间分配，body 直写 ChannelBuffer |
+| 编码路径（Netty 桥接） | 无桥接层 | 1 次 HeapChannelBuffer 分配 + toByteBuffer() 转换 |
+| 解码路径（Codec 层） | 0 次中间分配，`retainedSlice` + `ByteBufInputStream` | 0 次中间 body 拷贝，`ChannelBufferInputStream` |
+| 解码路径（Netty 桥接） | 无桥接层 | 1-2 次 buffer 转换/拷贝（`toByteBuffer()` + 残留合并） |
+| 底层内存 | Netty 池化/非池化 `ByteBuf` | 默认 `HeapChannelBuffer` = `new byte[]`，无池化 |
+| 内存管理 | Netty 引用计数 + 内存池 | JVM GC |
+
+Jaws 的编解码路径**优于** Dubbo：
+- **编码**：Jaws 采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式，全程在 Netty ByteBuf 上操作，0 次中间分配。Dubbo 在 Codec 层同样零拷贝，但 NettyCodecAdapter 桥接层需额外分配 HeapChannelBuffer 并转换为 Netty ChannelBuffer
+- **解码**：Jaws 通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化，全程在 Netty ByteBuf 上操作。Dubbo 在 Codec 层同样零拷贝，但 NettyCodecAdapter 桥接层需将 Netty ChannelBuffer 通过 `toByteBuffer()` 转换后拷贝到 Dubbo ChannelBuffer
+- **Serialization**：双方均已升级为流式 API（`ObjectOutput`/`ObjectInput`），Hessian2 实现零中间 byte[] 拷贝，此维度持平
+
+根本差异在于：Jaws 的 `Codec` 接口直接依赖 Netty `ByteBuf`，消除了桥接开销；Dubbo 的 `Codec2` 接口通过自建 `ChannelBuffer` 抽象保持传输层无关性（`dubbo-remoting-api` 不依赖 Netty），代价是在 Netty 传输层引入桥接拷贝。这是架构设计上的取舍 — 模块纯净性 vs 运行时效率。
 
 ## 五、Jaws 设计的优点
 
@@ -178,4 +218,4 @@ flag 字节 bit 2 作为 event 标记（`FLAG_EVENT = 0x04`）。`JawsCodec.enco
 
 Jaws 的编解码设计**分层合理、代码简洁、健壮性好**。单层帧结构简洁直接；NettyDecoder 专注帧检测、JawsCodec 专注协议语义的分层使职责明确；NettyMessage record 解耦了帧检测与业务处理；独立 version 字段和 flag 区分响应类型是合理的设计选择；flag 高 5 位嵌入 serializationId 实现了每消息独立序列化且全链路闭环；NettyDecoder/NettyChannelHandler 的双向 OOM 保护和编码降级体现了工程上的细致考量。
 
-与 Dubbo 的编解码设计已**完全持平**，无显著差距。
+与 Dubbo 的编解码设计相比，Jaws 在**运行时效率上更优**：直接操作 Netty `ByteBuf` 消除了 Dubbo `ChannelBuffer` 抽象带来的桥接拷贝开销。Dubbo 选择保持 `dubbo-remoting-api` 模块的传输层无关性（通过自建 `ChannelBuffer` 抽象），Jaws 选择让 `jaws-core` 直接依赖 Netty 以换取零桥接开销 — 这是模块纯净性 vs 运行时效率的架构取舍。
