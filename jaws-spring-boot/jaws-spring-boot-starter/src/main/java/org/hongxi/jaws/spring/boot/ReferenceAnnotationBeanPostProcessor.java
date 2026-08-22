@@ -141,7 +141,7 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
         Object proxy = refConfig.getRef();
         referenceConfigs.add(refConfig);
 
-        log.info("[JawsReferenceBPP] created reference: interface={}, group={}, version={}",
+        log.info("created reference: interface={}, group={}, version={}",
                 interfaceClass.getName(), refConfig.getGroup(), refConfig.getVersion());
 
         return proxy;
@@ -153,7 +153,7 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
             try {
                 referenceConfig.destroy();
             } catch (Exception e) {
-                log.warn("[JawsReferenceBPP] failed to destroy reference", e);
+                log.warn("failed to destroy reference", e);
             }
         }
     }

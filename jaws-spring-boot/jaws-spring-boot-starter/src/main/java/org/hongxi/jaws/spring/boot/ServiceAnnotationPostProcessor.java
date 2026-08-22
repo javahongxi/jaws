@@ -120,7 +120,7 @@ public class ServiceAnnotationPostProcessor
                 if (!registry.containsBeanDefinition(beanName)) {
                     /* register the impl class as a Spring bean */
                     registry.registerBeanDefinition(beanName, candidate);
-                    log.info("[ServiceAnnotationPostProcessor] registered @JawsService impl bean: name={}, class={}",
+                    log.info("registered @JawsService impl bean: name={}, class={}",
                             beanName, beanClassName);
                 }
             }
@@ -225,7 +225,7 @@ public class ServiceAnnotationPostProcessor
 
         registry.registerBeanDefinition(serviceBeanName, builder.getBeanDefinition());
 
-        log.info("[ServiceAnnotationPostProcessor] registered ServiceBean: name={}, interface={}, ref={}",
+        log.info("registered ServiceBean: name={}, interface={}, ref={}",
                 serviceBeanName, interfaceClass.getName(), refBeanName);
     }
 

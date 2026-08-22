@@ -63,10 +63,10 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             // Immediately discover existing instances since the subscribe
             // notification is asynchronous and may not arrive before we check.
             List<URL> discovered = registry.discover(consumerUrl);
-            log.info("[RegistryDirectory] init discover: consumerUrl={}, discoveredCount={}",
+            log.info("init discover: consumerUrl={}, discoveredCount={}",
                     consumerUrl.toSimpleString(), discovered == null ? 0 : discovered.size());
             if (!CollectionUtils.isEmpty(discovered)) {
-                log.info("[RegistryDirectory] discovered urls: {}", formatIdentities(discovered));
+                log.info("discovered urls: {}", formatIdentities(discovered));
                 notify(registryUrl, discovered);
             }
         }
@@ -105,7 +105,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         List<Reference<T>> newReferences = new ArrayList<>();
         for (URL serviceUrl : urls) {
             if (!serviceUrl.canServe(url)) {
-                log.warn("[RegistryDirectory] discovered URL filtered by canServe: discovered={}, refUrl={}",
+                log.warn("discovered URL filtered by canServe: discovered={}, refUrl={}",
                         serviceUrl.toSimpleString(), url.toSimpleString());
                 continue;
             }

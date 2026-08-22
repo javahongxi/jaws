@@ -44,7 +44,7 @@ public class EnableJawsRegistrar implements ImportBeanDefinitionRegistrar {
 
         Set<String> packagesToScan = resolvePackagesToScan(attributes, importingClassMetadata);
         if (packagesToScan.isEmpty()) {
-            log.warn("[EnableJawsRegistrar] no base packages specified in @EnableJaws, skipping");
+            log.warn("no base packages specified in @EnableJaws, skipping");
             return;
         }
 
@@ -57,7 +57,7 @@ public class EnableJawsRegistrar implements ImportBeanDefinitionRegistrar {
                     builder.getBeanDefinition());
         }
 
-        log.info("[EnableJawsRegistrar] registered serviceAnnotationPostProcessor with packages: {}",
+        log.info("registered serviceAnnotationPostProcessor with packages: {}",
                 packagesToScan);
     }
 

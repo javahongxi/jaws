@@ -70,7 +70,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
         client.start();
         this.curator = client;
         ensureRootPath();
-        log.info("[ZookeeperDynamicConfiguration] initialized with server={}", registryUrl.getBackupAddress());
+        log.info("initialized with server={}", registryUrl.getBackupAddress());
     }
 
     private void ensureRootPath() {
@@ -79,7 +79,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
                 curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(CONFIG_ROOT);
             }
         } catch (Exception e) {
-            log.warn("[ZookeeperDynamicConfiguration] failed to ensure root path: {}", CONFIG_ROOT, e);
+            log.warn("failed to ensure root path: {}", CONFIG_ROOT, e);
         }
     }
 
@@ -99,7 +99,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
             return value;
         }
         if (curator == null) {
-            log.warn("[ZookeeperDynamicConfiguration] curator not initialized, returning null for key={}", key);
+            log.warn("curator not initialized, returning null for key={}", key);
             return null;
         }
         try {
@@ -116,7 +116,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
             }
             return null;
         } catch (Exception e) {
-            log.warn("[ZookeeperDynamicConfiguration] failed to get config: key={}, msg={}", key, e.getMessage());
+            log.warn("failed to get config: key={}", key, e);
             return null;
         }
     }
@@ -124,7 +124,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
     @Override
     public void setConfig(String key, String value) {
         if (curator == null) {
-            log.warn("[ZookeeperDynamicConfiguration] curator not initialized, cannot set key={}", key);
+            log.warn("curator not initialized, cannot set key={}", key);
             return;
         }
         try {
@@ -147,7 +147,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
                 }
             }
         } catch (Exception e) {
-            log.warn("[ZookeeperDynamicConfiguration] failed to set config: key={}, msg={}", key, e.getMessage());
+            log.warn("failed to set config: key={}", key, e);
         }
     }
 
@@ -218,7 +218,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
                 l.onConfigChanged(key, value);
             }
         }
-        log.info("[ZookeeperDynamicConfiguration] config changed: key={}, value={}", key, value);
+        log.info("config changed: key={}, value={}", key, value);
     }
 
     private void unregisterCacheListener(String key) {
@@ -227,7 +227,7 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
             try {
                 cache.close();
             } catch (Exception e) {
-                log.warn("[ZookeeperDynamicConfiguration] failed to close cache: key={}, msg={}", key, e.getMessage());
+                log.warn("failed to close cache: key={}", key, e);
             }
         }
     }

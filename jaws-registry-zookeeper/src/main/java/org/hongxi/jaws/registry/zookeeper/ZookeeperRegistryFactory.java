@@ -39,7 +39,7 @@ public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
                     username, password, sessionTimeout, connectionTimeout);
             return new ZookeeperRegistry(registryUrl, curator);
         } catch (Exception e) {
-            log.error("[ZookeeperRegistry] fail to connect zookeeper", e);
+            log.error("fail to connect zookeeper", e);
             throw new RuntimeException(e);
         }
     }

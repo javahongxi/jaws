@@ -69,7 +69,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
                 properties.put(PropertyKeyConst.NAMESPACE, namespace);
             }
             this.configService = NacosFactory.createConfigService(properties);
-            log.info("[NacosDynamicConfiguration] initialized with server={}:{}", registryUrl.getHost(), registryUrl.getPort());
+            log.info("initialized with server={}:{}", registryUrl.getHost(), registryUrl.getPort());
         } catch (NacosException e) {
             throw new RuntimeException("Failed to create Nacos ConfigService", e);
         }
@@ -87,7 +87,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
             return value;
         }
         if (configService == null) {
-            log.warn("[NacosDynamicConfiguration] configService not initialized, returning null for key={}", key);
+            log.warn("configService not initialized, returning null for key={}", key);
             return null;
         }
         try {
@@ -98,7 +98,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
             }
             return value;
         } catch (NacosException e) {
-            log.warn("[NacosDynamicConfiguration] failed to get config: key={}, msg={}", key, e.getMessage());
+            log.warn("failed to get config: key={}", key, e);
             return null;
         }
     }
@@ -106,7 +106,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
     @Override
     public void setConfig(String key, String value) {
         if (configService == null) {
-            log.warn("[NacosDynamicConfiguration] configService not initialized, cannot set key={}", key);
+            log.warn("configService not initialized, cannot set key={}", key);
             return;
         }
         try {
@@ -119,7 +119,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
                 ensureNacosListener(key);
             }
         } catch (NacosException e) {
-            log.warn("[NacosDynamicConfiguration] failed to set config: key={}, msg={}", key, e.getMessage());
+            log.warn("failed to set config: key={}", key, e);
         }
     }
 
@@ -175,7 +175,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
             try {
                 configService.addListener(key, DEFAULT_GROUP, nacosListener);
             } catch (NacosException e) {
-                log.warn("[NacosDynamicConfiguration] failed to add listener: key={}, msg={}", key, e.getMessage());
+                log.warn("failed to add listener: key={}", key, e);
             }
         }
     }
@@ -192,7 +192,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
                 l.onConfigChanged(key, value);
             }
         }
-        log.info("[NacosDynamicConfiguration] config changed: key={}, value={}", key, value);
+        log.info("config changed: key={}, value={}", key, value);
     }
 
     private void unregisterNacosListener(String key) {
@@ -201,7 +201,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
             try {
                 configService.removeListener(key, DEFAULT_GROUP, nacosListener);
             } catch (Exception e) {
-                log.warn("[NacosDynamicConfiguration] failed to remove listener: key={}, msg={}", key, e.getMessage());
+                log.warn("failed to remove listener: key={}", key, e);
             }
         }
     }

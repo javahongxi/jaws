@@ -63,7 +63,7 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
             }
         }
 
-        log.info("[JawsBootstrap] all services exported, count={}", serviceBeans.size());
+        log.info("all services exported, count={}", serviceBeans.size());
     }
 
     private void onContextClosed(ContextClosedEvent event) {
@@ -72,7 +72,7 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
         }
         stopped = true;
 
-        log.info("[JawsBootstrap] starting graceful shutdown...");
+        log.info("starting graceful shutdown...");
 
         // Trigger graceful shutdown via ServiceBean.destroy() -> unexport() -> 4-phase shutdown
         Map<String, ServiceBean> serviceBeans =
@@ -81,12 +81,12 @@ public class JawsBootstrap implements ApplicationListener<ApplicationContextEven
             try {
                 serviceBean.destroy();
             } catch (Exception e) {
-                log.warn("[JawsBootstrap] failed to destroy ServiceBean: {}",
+                log.warn("failed to destroy ServiceBean: {}",
                         serviceBean.getServiceBeanName(), e);
             }
         }
 
-        log.info("[JawsBootstrap] graceful shutdown complete, services={}", serviceBeans.size());
+        log.info("graceful shutdown complete, services={}", serviceBeans.size());
     }
 
     @Override

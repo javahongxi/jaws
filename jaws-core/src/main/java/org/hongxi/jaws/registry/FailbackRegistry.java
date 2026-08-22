@@ -35,7 +35,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             try {
                 retry();
             } catch (Exception e) {
-                log.warn("[{}] False when retry in failback registry", registryClassName, e);
+                log.warn("[{}] Failed to retry in failback registry", registryClassName, e);
             }
         }, retryPeriod, retryPeriod, TimeUnit.MILLISECONDS);
 

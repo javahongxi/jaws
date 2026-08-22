@@ -3,7 +3,7 @@
 
     <property name="log.context.name" value="jaws-sample-provider-direct"/>
     <property name="log.charset" value="UTF-8"/>
-    <property name="log.pattern" value="[%-5level] %date --%thread-- [%logger] %msg %n"/>
+    <property name="log.pattern" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"/>
 
     <contextName>${log.context.name}</contextName>
 

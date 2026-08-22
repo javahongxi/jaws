@@ -51,7 +51,7 @@ public class RouterChain<T> {
                 }
                 current = filtered;
             } catch (Exception e) {
-                log.warn("Router {} threw exception, skipping: {}", router.getClass().getSimpleName(), e.getMessage());
+                log.warn("Router {} threw exception, skipping", router.getClass().getSimpleName(), e);
             }
         }
         return current;

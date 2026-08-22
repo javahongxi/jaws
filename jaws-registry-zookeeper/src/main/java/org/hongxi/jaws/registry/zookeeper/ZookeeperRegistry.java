@@ -112,9 +112,9 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                             List<String> currentChildren = curator.getChildren().forPath(serverTypePath);
                             List<URL> urls = nodeChildrenToUrls(url, serverTypePath, currentChildren);
                             listener.notify(getUrl(), urls);
-                            log.info("[ZookeeperRegistry] service list change: path={}, currentChildren={}", serverTypePath, currentChildren);
+                            log.info("service list change: path={}, currentChildren={}", serverTypePath, currentChildren);
                         } catch (Exception e) {
-                            log.warn("[ZookeeperRegistry] failed to get children for path {}", serverTypePath, e);
+                            log.warn("failed to get children for path {}", serverTypePath, e);
                         }
                     }
                 }
@@ -128,10 +128,10 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
             removeNode(url, ZkNodeType.CLIENT);
             createNode(url, ZkNodeType.CLIENT);
         } catch (Exception e) {
-            log.warn("[ZookeeperRegistry] subscribe service: create node error, path={}, msg={}", ZkUtils.toNodePath(url, ZkNodeType.CLIENT), e.getMessage());
+            log.warn("subscribe service: create node error, path={}", ZkUtils.toNodePath(url, ZkNodeType.CLIENT), e);
         }
 
-        log.info("[ZookeeperRegistry] subscribe service: path={}, info={}", ZkUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr());
+        log.info("subscribe service: path={}, info={}", ZkUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr());
     }
 
     @Override
@@ -178,7 +178,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                         data = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
                     }
                 } catch (Exception e) {
-                    log.warn("get zk data failed! {}", e.getMessage());
+                    log.warn("failed to get zk data, path={}", nodePath, e);
                 }
                 URL newurl = null;
                 if (StringUtils.isNotBlank(data)) {
@@ -247,7 +247,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                     removeNode(url, ZkNodeType.AVAILABLE_SERVER);
                     createNode(url, ZkNodeType.AVAILABLE_SERVER);
                 }
-                log.info("[ZookeeperRegistry] reconnect: registered services {}", registered);
+                log.info("reconnect: registered services {}", registered);
             } finally {
                 serverLock.unlock();
             }
@@ -265,7 +265,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
                         subscribeServiceInternal(url, listener);
                     }
                 }
-                log.info("[ZookeeperRegistry] reconnect all clients");
+                log.info("reconnect all clients");
             } finally {
                 clientLock.unlock();
             }

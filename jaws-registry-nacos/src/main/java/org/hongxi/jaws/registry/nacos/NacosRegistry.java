@@ -101,12 +101,12 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
                     List<Instance> instances = namingEvent.getInstances();
                     List<URL> urls = instancesToUrls(url, instances);
                     listener.notify(getUrl(), urls);
-                    log.info("[NacosRegistry] service list change: serviceName={}, group={}, instanceCount={}",
+                    log.info("service list change: serviceName={}, group={}, instanceCount={}",
                             serviceName, group, instances != null ? instances.size() : 0);
                 }
             });
             namingService.subscribe(serviceName, group, eventListener);
-            log.info("[NacosRegistry] subscribe service: serviceName={}, group={}, info={}",
+            log.info("subscribe service: serviceName={}, group={}, info={}",
                     serviceName, group, url.toFullStr());
         } catch (Throwable e) {
             throw new JawsFrameworkException(
@@ -177,7 +177,7 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
         try {
             namingService.shutDown();
         } catch (Exception e) {
-            log.warn("[NacosRegistry] failed to shutdown namingService", e);
+            log.warn("failed to shutdown namingService", e);
         }
     }
 }

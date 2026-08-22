@@ -90,7 +90,7 @@ public class ServiceBean extends ServiceConfig<Object>
         setRef(ref);
 
         pending = true;
-        log.info("[ServiceBean] registered service bean: name={}, interface={}, ref={}",
+        log.info("registered service bean: name={}, interface={}, ref={}",
                 serviceBeanName, getInterface().getName(), refBeanName);
     }
 
@@ -101,7 +101,7 @@ public class ServiceBean extends ServiceConfig<Object>
         if (pending) {
             pending = false;
             export();
-            log.info("[ServiceBean] exported service: bean={}, interface={}, group={}, version={}",
+            log.info("exported service: bean={}, interface={}, group={}, version={}",
                     serviceBeanName, getInterface().getName(), getGroup(), getVersion());
         }
     }
@@ -109,7 +109,7 @@ public class ServiceBean extends ServiceConfig<Object>
     @Override
     public void destroy() throws Exception {
         unexport();
-        log.info("[ServiceBean] unexported service: bean={}, interface={}",
+        log.info("unexported service: bean={}, interface={}",
                 serviceBeanName, getInterface().getName());
     }
 }

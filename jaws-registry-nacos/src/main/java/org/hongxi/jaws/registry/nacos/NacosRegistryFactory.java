@@ -35,7 +35,7 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
                     buildProperties(address, username, password, connectTimeout));
             return new NacosRegistry(registryUrl, namingService);
         } catch (Exception e) {
-            log.error("[NacosRegistry] fail to connect nacos", e);
+            log.error("fail to connect nacos", e);
             throw new RuntimeException(e);
         }
     }

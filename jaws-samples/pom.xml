@@ -28,6 +28,14 @@
         <module>jaws-sample-gray</module>
     </modules>
 
+    <dependencies>
+        <!-- samples are runnable applications, provide a logging implementation -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+    </dependencies>
+
     <build>
         <plugins>
             <plugin>
