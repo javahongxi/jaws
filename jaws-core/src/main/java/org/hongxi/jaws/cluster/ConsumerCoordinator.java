@@ -146,19 +146,14 @@ public class ConsumerCoordinator<T> {
     }
 
     private void prepareCluster() {
-        String clusterName = url.getParameter(UrlParam.Cluster.CLUSTER);
-        String loadBalanceName = url.getParameter(UrlParam.Cluster.LOAD_BALANCE);
         String haStrategyName = url.getParameter(UrlParam.Cluster.HA_STRATEGY);
+        String loadBalanceName = url.getParameter(UrlParam.Cluster.LOAD_BALANCE);
 
         // noinspection unchecked
-        cluster = ExtensionLoader.getExtensionLoader(Cluster.class).getExtension(clusterName);
+        cluster = ExtensionLoader.getExtensionLoader(Cluster.class).getExtension(haStrategyName);
         // noinspection unchecked
         LoadBalance<T> loadBalance = ExtensionLoader.getExtensionLoader(LoadBalance.class).getExtension(loadBalanceName);
-        // noinspection unchecked
-        HaStrategy<T> ha = ExtensionLoader.getExtensionLoader(HaStrategy.class).getExtension(haStrategyName);
-        ha.setUrl(url);
         cluster.setLoadBalance(loadBalance);
-        cluster.setHaStrategy(ha);
         cluster.setUrl(url);
 
         // Register routers for traffic control

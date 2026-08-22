@@ -9,7 +9,9 @@ import org.hongxi.jaws.rpc.URL;
 import java.util.List;
 
 /**
- * Cluster is a service broker
+ * Cluster is the service broker that handles load balancing, fault tolerance,
+ * and request routing. Each implementation encapsulates a specific fault-tolerance
+ * strategy (failover, failfast, failback, etc.).
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
@@ -24,8 +26,6 @@ public interface Cluster<T> extends Caller<T> {
     void onRefresh(List<Reference<T>> references);
 
     List<Reference<T>> getReferences();
-
-    void setHaStrategy(HaStrategy<T> haStrategy);
 
     void setLoadBalance(LoadBalance<T> loadBalance);
 

@@ -1,13 +1,16 @@
-package org.hongxi.jaws.cluster.ha;
+package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
+import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
@@ -21,33 +24,45 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Failover ha strategy.
+ * Failover cluster: retries on failure by selecting a different reference.
  * <p>
- * Created by shenhongxi on 2021/4/23.
+ * The number of retries is resolved with dynamic configuration priority:
+ * method-level dynamic &gt; service-level dynamic &gt; global dynamic &gt; URL config.
  */
 @Extension("failover")
-public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
+public class FailoverCluster<T> extends AbstractCluster<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(FailoverHaStrategy.class);
+    private static final Logger log = LoggerFactory.getLogger(FailoverCluster.class);
 
-    protected ThreadLocal<List<Reference<T>>> referencesHolder = ThreadLocal.withInitial(ArrayList::new);
+    private final ThreadLocal<List<Reference<T>>> referencesHolder = ThreadLocal.withInitial(ArrayList::new);
 
     @Override
-    public Response call(Request request, LoadBalance<T> loadBalance) {
+    public Response call(Request request) {
+        if (!available.get()) {
+            throw new JawsServiceException("Cluster not available, interface=" + getInterface(),
+                    JawsErrorCode.SERVICE_NOT_FOUND, false);
+        }
 
-        List<Reference<T>> references = selectReferences(request, loadBalance);
+        try {
+            return doCall(request);
+        } catch (Exception e) {
+            return handleException(request, e);
+        }
+    }
+
+    private Response doCall(Request request) {
+        List<Reference<T>> references = selectReferences(request);
         if (references.isEmpty()) {
             throw new JawsServiceException(
-                    String.format("FailoverHaStrategy No references for request:%s, loadBalance:%s",
+                    String.format("FailoverCluster No references for request:%s, loadBalance:%s",
                             request, loadBalance));
         }
         URL refUrl = references.get(0).getUrl();
         // Resolve retries with dynamic configuration priority:
         // method-level dynamic > service-level dynamic > global dynamic > URL config
         int urlRetries = refUrl.getMethodParameter(request.getMethodName(), request.getParamDesc(),
-                        UrlParam.Cluster.RETRIES.getName(), UrlParam.Cluster.RETRIES.intValue());
+                UrlParam.Cluster.RETRIES.getName(), UrlParam.Cluster.RETRIES.intValue());
         int tryCount = resolveRetries(request, urlRetries);
-        // If negative, disable retries
         if (tryCount < 0) {
             tryCount = 0;
         }
@@ -59,17 +74,16 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
                 RpcContext.getContext().setServerUrl(refer.getUrl());
                 return refer.call(request);
             } catch (RuntimeException e) {
-                // Rethrow business exceptions directly
                 if (ExceptionUtils.isBizException(e)) {
                     throw e;
                 } else if (i >= tryCount) {
                     throw e;
                 }
-                log.warn("FailoverHaStrategy Call false for request: {}", request, e);
+                log.warn("FailoverCluster call failed, retrying: {}", request, e);
             }
         }
 
-        throw new JawsFrameworkException("FailoverHaStrategy.call should not come here!");
+        throw new JawsFrameworkException("FailoverCluster.call should not come here!");
     }
 
     /**
@@ -84,17 +98,14 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
         String interfaceName = request.getInterfaceName();
         String methodName = request.getMethodName();
 
-        // method-level dynamic override
         int val = dc.getIntConfig(DynamicConfigurationKeys.retries(interfaceName, methodName), Integer.MIN_VALUE);
         if (val != Integer.MIN_VALUE) {
             return val;
         }
-        // service-level dynamic override
         val = dc.getIntConfig(DynamicConfigurationKeys.retries(interfaceName), Integer.MIN_VALUE);
         if (val != Integer.MIN_VALUE) {
             return val;
         }
-        // global dynamic override
         val = dc.getIntConfig(DynamicConfigurationKeys.GLOBAL_RETRIES, Integer.MIN_VALUE);
         if (val != Integer.MIN_VALUE) {
             return val;
@@ -102,10 +113,23 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
         return urlDefault;
     }
 
-    protected List<Reference<T>> selectReferences(Request request, LoadBalance<T> loadBalance) {
+    private List<Reference<T>> selectReferences(Request request) {
         List<Reference<T>> references = referencesHolder.get();
         references.clear();
         loadBalance.selectToHolder(request, references);
         return references;
+    }
+
+    private Response handleException(Request request, Exception e) {
+        if (ExceptionUtils.isBizException(e)) {
+            throw (RuntimeException) e;
+        }
+        if (!url.getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
+            return JawsFrameworkUtils.buildErrorResponse(request, e);
+        }
+        if (e instanceof JawsAbstractException jae) {
+            throw jae;
+        }
+        throw new JawsServiceException("FailoverCluster call failed, request=" + request, e);
     }
 }

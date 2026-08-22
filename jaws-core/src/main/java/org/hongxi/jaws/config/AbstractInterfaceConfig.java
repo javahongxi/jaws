@@ -117,11 +117,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     protected Integer retries;
 
     /**
-     * Which cluster implementation to use.
-     */
-    protected String cluster;
-
-    /**
      * Load balancing strategy.
      */
     protected String loadBalance;
@@ -146,7 +141,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         putIfPresent(params, "requestTimeout", requestTimeout);
         putIfPresent(params, "check", check);
         putIfPresent(params, "retries", retries);
-        putIfPresent(params, "cluster", cluster);
         putIfPresent(params, "loadBalance", loadBalance);
         putIfPresent(params, "haStrategy", haStrategy);
     }
@@ -376,14 +370,6 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     public void setRetries(Integer retries) {
         this.retries = retries;
-    }
-
-    public String getCluster() {
-        return cluster;
-    }
-
-    public void setCluster(String cluster) {
-        this.cluster = cluster;
     }
 
     public String getLoadBalance() {

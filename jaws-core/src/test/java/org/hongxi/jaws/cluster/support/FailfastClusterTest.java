@@ -1,4 +1,4 @@
-package org.hongxi.jaws.cluster.ha;
+package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.rpc.Reference;
@@ -14,22 +14,24 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * FailfastHaStrategy 单元测试
+ * FailfastCluster unit tests
  */
-class FailfastHaStrategyTest {
+class FailfastClusterTest {
 
-    private FailfastHaStrategy<String> strategy;
+    private FailfastCluster<String> cluster;
     private URL testUrl;
 
     @BeforeEach
     void setUp() {
-        strategy = new FailfastHaStrategy<>();
+        cluster = new FailfastCluster<>();
+        cluster.init();
         testUrl = new URL("jaws", "127.0.0.1", 8080, "testService");
     }
 
-    /* ==================== 辅助 stub ==================== */
+    /* ==================== stubs ==================== */
 
     private static class StubResponse implements Response {
         @Override public Object getValue() { return "ok"; }
@@ -112,7 +114,7 @@ class FailfastHaStrategyTest {
         }
     }
 
-    /* ==================== 测试用例 ==================== */
+    /* ==================== test cases ==================== */
 
     @Test
     void callShouldReturnResponseFromSelectedReference() {
@@ -120,8 +122,10 @@ class FailfastHaStrategyTest {
         StubReference ref = new StubReference(testUrl, expected);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        cluster.setUrl(testUrl);
+        cluster.setLoadBalance(lb);
 
-        Response result = strategy.call(request, lb);
+        Response result = cluster.call(request);
 
         assertEquals(expected, result);
         assertEquals(1, ref.getCallCount());
@@ -132,8 +136,10 @@ class FailfastHaStrategyTest {
         StubReference ref = new StubReference(testUrl, new StubResponse());
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        cluster.setUrl(testUrl);
+        cluster.setLoadBalance(lb);
 
-        strategy.call(request, lb);
+        cluster.call(request);
 
         assertEquals(testUrl, org.hongxi.jaws.rpc.RpcContext.getContext().getServerUrl());
     }
@@ -144,10 +150,13 @@ class FailfastHaStrategyTest {
         StubReference ref = new StubReference(testUrl, ex);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        cluster.setUrl(testUrl);
+        cluster.setLoadBalance(lb);
 
-        RuntimeException thrown = assertThrows(RuntimeException.class, () -> strategy.call(request, lb));
+        RuntimeException thrown = assertThrows(RuntimeException.class, () -> cluster.call(request));
 
-        assertEquals("network error", thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("FailfastCluster call failed"));
+        assertEquals(ex, thrown.getCause());
         assertEquals(1, ref.getCallCount());
     }
 }

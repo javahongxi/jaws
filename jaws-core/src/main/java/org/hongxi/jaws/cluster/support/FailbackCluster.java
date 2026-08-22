@@ -1,4 +1,4 @@
-package org.hongxi.jaws.cluster.ha;
+package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.UrlParam;
@@ -20,17 +20,14 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Failback ha strategy.
- * <p>
- * Failed requests are recorded and retried asynchronously at a fixed interval.
- * Suitable for non-critical paths such as notifications, message pushing, and log reporting.
- * <p>
- * Created by shenhongxi on 2025/7/19.
+ * Failback cluster: failed requests are recorded and retried asynchronously
+ * at a fixed interval. Suitable for non-critical paths such as notifications,
+ * message pushing, and log reporting.
  */
 @Extension("failback")
-public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
+public class FailbackCluster<T> extends AbstractCluster<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(FailbackHaStrategy.class);
+    private static final Logger log = LoggerFactory.getLogger(FailbackCluster.class);
 
     private static final ScheduledExecutorService RETRY_EXECUTOR = Executors.newScheduledThreadPool(1, r -> {
         Thread t = new Thread(r, "jaws-failback-retry");
@@ -51,7 +48,7 @@ public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
     private volatile boolean retryScheduled = false;
 
     @Override
-    public Response call(Request request, LoadBalance<T> loadBalance) {
+    public Response call(Request request) {
         Reference<T> refer = loadBalance.select(request);
         try {
             RpcContext.getContext().setServerUrl(refer.getUrl());
@@ -60,15 +57,15 @@ public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
             if (ExceptionUtils.isBizException(e)) {
                 throw e;
             }
-            log.warn("FailbackHaStrategy call failed, recording for retry: {}", request, e);
-            addTask(request, loadBalance);
+            log.warn("FailbackCluster call failed, recording for retry: {}", request, e);
+            addTask(request);
             DefaultResponse response = new DefaultResponse(request.getRequestId());
             response.setException(e);
             return response;
         }
     }
 
-    private void addTask(Request request, LoadBalance<T> loadBalance) {
+    private void addTask(Request request) {
         failedTasks.add(new FailbackTask<>(request, loadBalance));
         ensureRetryScheduled();
     }
@@ -102,22 +99,21 @@ public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
                 RpcContext.getContext().setServerUrl(refer.getUrl());
                 task.request.setRetries(task.retryCount + 1);
                 Response response = refer.call(task.request);
-                // check if the response carries an exception (e.g. remote error)
                 if (response.getException() != null) {
                     throw new RuntimeException(response.getException());
                 }
-                log.info("FailbackHaStrategy retry success for request: {}, retries: {}", task.request, task.retryCount + 1);
+                log.info("FailbackCluster retry success for request: {}, retries: {}", task.request, task.retryCount + 1);
             } catch (RuntimeException e) {
                 if (ExceptionUtils.isBizException(e)) {
-                    log.warn("FailbackHaStrategy retry got biz exception, discarding task: {}", task.request, e);
+                    log.warn("FailbackCluster retry got biz exception, discarding task: {}", task.request, e);
                     continue;
                 }
                 task.retryCount++;
                 int maxRetries = UrlParam.Cluster.RETRIES.intValue();
                 if (task.retryCount >= maxRetries) {
-                    log.error("FailbackHaStrategy retry exhausted after {} attempts, discarding: {}", maxRetries, task.request);
+                    log.error("FailbackCluster retry exhausted after {} attempts, discarding: {}", maxRetries, task.request);
                 } else {
-                    log.warn("FailbackHaStrategy retry failed, re-queuing: {}, retryCount: {}", task.request, task.retryCount);
+                    log.warn("FailbackCluster retry failed, re-queuing: {}, retryCount: {}", task.request, task.retryCount);
                     failedTasks.add(task);
                 }
             }

@@ -1,4 +1,4 @@
-package org.hongxi.jaws.cluster.ha;
+package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.exception.JawsBizException;
@@ -22,18 +22,19 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * FailoverHaStrategy 单元测试
+ * FailoverCluster unit tests
  */
-class FailoverHaStrategyTest {
+class FailoverClusterTest {
 
-    private FailoverHaStrategy<String> strategy;
+    private FailoverCluster<String> cluster;
 
     @BeforeEach
     void setUp() {
-        strategy = new FailoverHaStrategy<>();
+        cluster = new FailoverCluster<>();
+        cluster.init();
     }
 
-    /* ==================== 辅助 stub ==================== */
+    /* ==================== stubs ==================== */
 
     private static class StubResponse implements Response {
         private final Object value;
@@ -70,20 +71,14 @@ class FailoverHaStrategyTest {
         @Override public void setSerializationNumber(byte number) {}
     }
 
-    /**
-     * 可配置行为的 Reference：支持设置成功/失败响应、调用计数
-     */
     private static class StubReference implements Reference<String> {
         private final URL url;
         private final AtomicInteger callCount = new AtomicInteger(0);
         private final List<Response> responses = new ArrayList<>();
         private final List<RuntimeException> exceptions = new ArrayList<>();
 
-        StubReference(URL url) {
-            this.url = url;
-        }
+        StubReference(URL url) { this.url = url; }
 
-        /* 设置第 N 次调用的返回结果 */
         StubReference thenReturn(Response response) {
             responses.add(response);
             exceptions.add(null);
@@ -120,9 +115,6 @@ class FailoverHaStrategyTest {
         }
     }
 
-    /**
-     * 可配置 selectToHolder 返回顺序的 LoadBalance
-     */
     private static class StubLoadBalance implements LoadBalance<String> {
         private final List<Reference<String>> refs = new ArrayList<>();
 
@@ -149,7 +141,12 @@ class FailoverHaStrategyTest {
         return new URL("jaws", "127.0.0.1", 8080, "testService");
     }
 
-    /* ==================== 测试用例 ==================== */
+    private void wireCluster(URL url, LoadBalance<String> lb) {
+        cluster.setUrl(url);
+        cluster.setLoadBalance(lb);
+    }
+
+    /* ==================== test cases ==================== */
 
     @Test
     void firstCallSucceedsShouldReturnImmediately() {
@@ -157,8 +154,9 @@ class FailoverHaStrategyTest {
         StubReference ref = new StubReference(url).thenReturn(new StubResponse("result-1"));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        wireCluster(url, lb);
 
-        Response result = strategy.call(request, lb);
+        Response result = cluster.call(request);
 
         assertEquals("result-1", result.getValue());
         assertEquals(1, ref.getCallCount());
@@ -172,8 +170,9 @@ class FailoverHaStrategyTest {
                 .thenReturn(new StubResponse("retry-ok"));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        wireCluster(url, lb);
 
-        Response result = strategy.call(request, lb);
+        Response result = cluster.call(request);
 
         assertEquals("retry-ok", result.getValue());
         assertEquals(2, ref.getCallCount());
@@ -189,10 +188,12 @@ class FailoverHaStrategyTest {
                 .thenThrow(secondEx);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        wireCluster(url, lb);
 
-        RuntimeException thrown = assertThrows(RuntimeException.class, () -> strategy.call(request, lb));
+        RuntimeException thrown = assertThrows(RuntimeException.class, () -> cluster.call(request));
 
-        assertEquals("err-2", thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("FailoverCluster call failed"));
+        assertEquals(secondEx, thrown.getCause());
         assertEquals(2, ref.getCallCount());
     }
 
@@ -203,8 +204,9 @@ class FailoverHaStrategyTest {
         StubReference ref = new StubReference(url).thenThrow(bizEx);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        wireCluster(url, lb);
 
-        RuntimeException thrown = assertThrows(JawsBizException.class, () -> strategy.call(request, lb));
+        RuntimeException thrown = assertThrows(JawsBizException.class, () -> cluster.call(request));
 
         assertTrue(thrown.getMessage().contains("biz error"));
         assertEquals(1, ref.getCallCount());
@@ -212,10 +214,12 @@ class FailoverHaStrategyTest {
 
     @Test
     void emptyReferencesShouldThrowServiceException() {
+        URL url = defaultUrl();
         StubLoadBalance lb = new StubLoadBalance();
         StubRequest request = new StubRequest();
+        wireCluster(url, lb);
 
-        assertThrows(JawsServiceException.class, () -> strategy.call(request, lb));
+        assertThrows(JawsServiceException.class, () -> cluster.call(request));
     }
 
     @Test
@@ -224,8 +228,9 @@ class FailoverHaStrategyTest {
         StubReference ref = new StubReference(url).thenThrow(new RuntimeException("fail"));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        wireCluster(url, lb);
 
-        assertThrows(RuntimeException.class, () -> strategy.call(request, lb));
+        assertThrows(RuntimeException.class, () -> cluster.call(request));
 
         assertEquals(1, ref.getCallCount());
     }
@@ -236,8 +241,9 @@ class FailoverHaStrategyTest {
         StubReference ref = new StubReference(url).thenThrow(new RuntimeException("fail"));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        wireCluster(url, lb);
 
-        assertThrows(RuntimeException.class, () -> strategy.call(request, lb));
+        assertThrows(RuntimeException.class, () -> cluster.call(request));
 
         assertEquals(1, ref.getCallCount());
     }
@@ -245,14 +251,14 @@ class FailoverHaStrategyTest {
     @Test
     void multipleReferencesShouldRoundRobin() {
         URL url1 = urlWithRetries(2);
-        URL url2 = new URL("jaws", "127.0.0.2", 8080, "testService",
-                url1.getParameters());
+        URL url2 = new URL("jaws", "127.0.0.2", 8080, "testService", url1.getParameters());
         StubReference ref1 = new StubReference(url1).thenThrow(new RuntimeException("fail-1"));
         StubReference ref2 = new StubReference(url2).thenReturn(new StubResponse("from-ref2"));
         StubLoadBalance lb = new StubLoadBalance(ref1, ref2);
         StubRequest request = new StubRequest();
+        wireCluster(url1, lb);
 
-        Response result = strategy.call(request, lb);
+        Response result = cluster.call(request);
 
         assertEquals("from-ref2", result.getValue());
         assertEquals(1, ref1.getCallCount());
@@ -265,8 +271,9 @@ class FailoverHaStrategyTest {
         StubReference ref = new StubReference(url).thenReturn(new StubResponse());
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
+        wireCluster(url, lb);
 
-        strategy.call(request, lb);
+        cluster.call(request);
 
         assertEquals(url, org.hongxi.jaws.rpc.RpcContext.getContext().getServerUrl());
     }
@@ -279,6 +286,7 @@ class FailoverHaStrategyTest {
                 .thenThrow(new RuntimeException("fail-2"))
                 .thenReturn(new StubResponse("ok"));
         StubLoadBalance lb = new StubLoadBalance(ref);
+        wireCluster(url, lb);
 
         List<Integer> retriesSeen = new ArrayList<>();
         StubRequest request = new StubRequest() {
@@ -289,7 +297,7 @@ class FailoverHaStrategyTest {
             }
         };
 
-        strategy.call(request, lb);
+        cluster.call(request);
 
         assertEquals(List.of(0, 1, 2), retriesSeen);
     }
