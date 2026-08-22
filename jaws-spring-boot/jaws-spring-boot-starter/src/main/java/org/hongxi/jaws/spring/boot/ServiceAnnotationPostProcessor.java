@@ -191,14 +191,14 @@ public class ServiceAnnotationPostProcessor
 
         /* group: annotation > global */
         String group = StringUtils.isNotBlank(jawsService.group())
-                ? jawsService.group() : environment.getProperty("jaws.group");
+                ? jawsService.group() : environment.getProperty("jaws.service.group");
         if (StringUtils.isNotBlank(group)) {
             builder.addPropertyValue("group", group);
         }
 
         /* version: annotation > global */
         String version = StringUtils.isNotBlank(jawsService.version())
-                ? jawsService.version() : environment.getProperty("jaws.version");
+                ? jawsService.version() : environment.getProperty("jaws.service.version");
         if (StringUtils.isNotBlank(version)) {
             builder.addPropertyValue("version", version);
         }

@@ -73,14 +73,14 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
 
         /* group: annotation > global */
         String group = StringUtils.isNotBlank(jawsRef.group())
-                ? jawsRef.group() : properties.getGroup();
+                ? jawsRef.group() : properties.getReference().getGroup();
         if (StringUtils.isNotBlank(group)) {
             refConfig.setGroup(group);
         }
 
         /* version: annotation > global */
         String version = StringUtils.isNotBlank(jawsRef.version())
-                ? jawsRef.version() : properties.getVersion();
+                ? jawsRef.version() : properties.getReference().getVersion();
         if (StringUtils.isNotBlank(version)) {
             refConfig.setVersion(version);
         }

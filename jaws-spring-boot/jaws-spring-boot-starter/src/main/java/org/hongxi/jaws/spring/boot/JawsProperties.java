@@ -10,8 +10,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * jaws:
  *   application:
  *     name: my-app
- *   group: default
- *   version: "1.0"
  *   protocol:
  *     name: jaws
  *     port: 10000
@@ -22,8 +20,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     username: nacos
  *     password: nacos
  *   service:
+ *     group: default
+ *     version: "1.0"
  *     token: ""
  *   reference:
+ *     group: default
+ *     version: "1.0"
  *     request-timeout: 2000
  *     check: false
  * </pre>
@@ -39,16 +41,6 @@ public class JawsProperties {
      * Application configuration.
      */
     private Application application = new Application();
-
-    /**
-     * Default service group.
-     */
-    private String group;
-
-    /**
-     * Default service version.
-     */
-    private String version;
 
     /**
      * Protocol configuration.
@@ -76,22 +68,6 @@ public class JawsProperties {
 
     public void setApplication(Application application) {
         this.application = application;
-    }
-
-    public String getGroup() {
-        return group;
-    }
-
-    public void setGroup(String group) {
-        this.group = group;
-    }
-
-    public String getVersion() {
-        return version;
-    }
-
-    public void setVersion(String version) {
-        this.version = version;
     }
 
     public Protocol getProtocol() {
@@ -333,9 +309,35 @@ public class JawsProperties {
     public static class Service {
 
         /**
+         * Default service group.
+         */
+        private String group;
+
+        /**
+         * Default service version.
+         */
+        private String version;
+
+        /**
          * Service auth token, empty means no auth.
          */
         private String token;
+
+        public String getGroup() {
+            return group;
+        }
+
+        public void setGroup(String group) {
+            this.group = group;
+        }
+
+        public String getVersion() {
+            return version;
+        }
+
+        public void setVersion(String version) {
+            this.version = version;
+        }
 
         public String getToken() {
             return token;
@@ -352,6 +354,16 @@ public class JawsProperties {
     public static class Reference {
 
         /**
+         * Default reference group.
+         */
+        private String group;
+
+        /**
+         * Default reference version.
+         */
+        private String version;
+
+        /**
          * Request timeout in milliseconds.
          */
         private Integer requestTimeout;
@@ -365,6 +377,22 @@ public class JawsProperties {
          * Retry count on failure.
          */
         private Integer retries;
+
+        public String getGroup() {
+            return group;
+        }
+
+        public void setGroup(String group) {
+            this.group = group;
+        }
+
+        public String getVersion() {
+            return version;
+        }
+
+        public void setVersion(String version) {
+            this.version = version;
+        }
 
         public Integer getRequestTimeout() {
             return requestTimeout;
