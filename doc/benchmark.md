@@ -45,7 +45,7 @@ SLEEP=5 ./run-sample.sh bench-jaws
 
 ## 性能基线（2026-08-23）
 
-环境：macOS aarch64，8 核，单 JVM（provider + consumer 同进程），jaws + netty，fastjson2，DURATION=20s。
+环境：macOS aarch64，8 核，单 JVM（provider + consumer 同进程），jaws + netty，fastjson2，DURATION=20s。同进程内仍走真实 TCP 回环（经本机网卡 IP，非进程内直调），且所有请求共享单条连接多路复用（lsof 可见同一 PID 同时持有 LISTEN 与连接两端）。
 
 | 线程数 | QPS | 说明 |
 |------|-------|---------|
