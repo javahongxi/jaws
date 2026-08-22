@@ -36,6 +36,13 @@ public class NettyDecoder extends ByteToMessageDecoder {
     private final Channel channel;
     private final int maxContentLength;
 
+    /**
+     * Remaining body bytes of a rejected oversized frame that have not arrived yet.
+     * While positive, decode() drains them instead of parsing, keeping the stream
+     * in sync without closing the connection.
+     */
+    private long bytesToSkip;
+
     public NettyDecoder(Codec codec, Channel channel, int maxContentLength) {
         this.codec = codec;
         this.channel = channel;
@@ -44,6 +51,16 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
+        // Drain the remainder of a rejected oversized frame body
+        if (bytesToSkip > 0) {
+            int drained = (int) Math.min(bytesToSkip, in.readableBytes());
+            in.skipBytes(drained);
+            bytesToSkip -= drained;
+            if (bytesToSkip > 0) {
+                return;
+            }
+        }
+
         if (in.readableBytes() < Codec.HEADER_LENGTH) {
             return;
         }
@@ -77,11 +94,19 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
         boolean isRequest = (flag & Codec.MASK) == Codec.FLAG_REQUEST;
 
+        if (bodyLength < 0) {
+            throw new JawsFrameworkException("NettyDecoder negative body length: " + bodyLength);
+        }
+
         // Reject oversized messages to prevent OOM, without closing the connection
         if (maxContentLength > 0 && bodyLength > maxContentLength) {
             log.warn("transport data content length over of limit, size: {} > {}. remote={} local={}",
                     bodyLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
-            in.skipBytes(in.readableBytes());
+            // The body may arrive in later chunks; drain the rest in subsequent
+            // decode() calls to keep the stream in sync.
+            int drained = Math.min(bodyLength, in.readableBytes());
+            in.skipBytes(drained);
+            bytesToSkip = bodyLength - drained;
             if (isRequest) {
                 Exception e = new JawsServiceException(
                         "NettyDecoder transport data content length over of limit, size: " + bodyLength + " > " + maxContentLength);
