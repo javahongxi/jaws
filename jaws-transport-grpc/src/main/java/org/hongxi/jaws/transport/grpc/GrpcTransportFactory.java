@@ -13,8 +13,12 @@ import org.hongxi.jaws.transport.Server;
  * Select this transport by setting {@code transportFactory=grpc} in the
  * {@link org.hongxi.jaws.config.ProtocolConfig} or URL parameters.
  * <p>
- * gRPC provides HTTP2-based multiplexing, flow control, and lays the groundwork
- * for server-streaming and bidirectional-streaming in Phase 2.
+ * gRPC provides HTTP2-based multiplexing, flow control, and compatibility
+ * with cloud-native infrastructure (service mesh, API gateway).
+ * <p>
+ * Currently supports unary invocation only. Server-streaming is deferred
+ * because the byte payload uses Jaws Serialization SPI, which is opaque
+ * to non-Java streaming consumers.
  *
  * @author shenhongxi
  */

@@ -26,6 +26,8 @@ service JawsRpcService {
   rpc Invoke(ByteRequest) returns (ByteResponse);
 
   // Server-streaming invocation: one request, multiple responses.
-  // Phase 2: to be implemented.
+  // Deferred: requires a serialization format (e.g. protobuf or JSON) that
+  // streaming consumers can decode without the Jaws Java Serialization SPI,
+  // otherwise the byte payload is opaque to non-Java clients.
   // rpc StreamInvoke(ByteRequest) returns (stream ByteResponse);
 }
