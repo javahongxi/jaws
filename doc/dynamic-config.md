@@ -34,6 +34,20 @@
 
 远程配置中心采用本地缓存 + 监听变更模式，热路径零远程调用开销。
 
+### 多注册中心约定（约定优于配置）
+
+配置多个注册中心时，约定**第一个**注册中心（按配置顺序）作为动态配置中心，
+后续注册中心自动跳过初始化，避免配置中心被覆盖和连接泄漏：
+
+```
+DynamicConfiguration initialized with registry type: zookeeper
+DynamicConfiguration already initialized, skip registry type: nacos
+```
+
+- 若第一个注册中心没有对应的动态配置实现（未引入相应模块），则按顺序顺延到下一个；
+- Provider 与 Consumer 各自独立初始化，请保持两端注册中心配置顺序一致，
+  以确保读写同一个配置中心。
+
 ## 示例
 
 通过 Nacos 控制台或 API 推送配置：

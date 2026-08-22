@@ -25,10 +25,14 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
     private static final ConcurrentHashMap<String, Registry> registries = new ConcurrentHashMap<>();
 
     /**
-     * Whether a remote DynamicConfiguration has been initialized. With multiple
-     * (possibly heterogeneous) registries, the first initialized one wins to
-     * avoid later registries overwriting the active config center and leaking
-     * previously initialized connections. Guarded by {@link #lock}.
+     * Whether a remote DynamicConfiguration has been initialized.
+     * <p>
+     * Convention over configuration: with multiple (possibly heterogeneous)
+     * registries, the FIRST registry in configuration order acts as the
+     * dynamic configuration center; later registries skip initialization to
+     * avoid overwriting the active config center and leaking connections.
+     * If the first registry has no matching DynamicConfiguration extension,
+     * the next one in order takes over. Guarded by {@link #lock}.
      */
     private static volatile boolean dynamicConfigurationInitialized;
 
