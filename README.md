@@ -5,7 +5,6 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 ## 特性
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，编解码全链路零拷贝（零额外 byte[] 分配）
-- **gRPC 传输** — 可选 gRPC 传输层，配置 `transportFactory("grpc")` 即可切换，兼容 Jaws 全部上层特性
 - **多种序列化** — 内置 fastjson2 / hessian2，消费端指定序列化方式，协议头携带序列化标识透传至服务端
 - **连接心跳** — 双向心跳检测，Provider 与 Consumer 自动对齐心跳间隔，防止 NAT / LB 超时断连
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
@@ -25,6 +24,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 - **MCP 桥接** — 将 Jaws RPC 服务自动暴露为 MCP Tools，AI Agent 可直接调用后端服务
 - **REST 桥接** — 将 Jaws RPC 服务通过 REST API 对外暴露，传统 HTTP 客户端可直接调用，与 MCP 共享核心组件
+- **gRPC 传输** — 可选 gRPC 传输层，配置 `transportFactory("grpc")` 即可切换，兼容 Jaws 全部上层特性
 
 ## 快速开始
 
@@ -179,7 +179,6 @@ public class MyRunner implements CommandLineRunner {
 |----------|----------------------------|----------------|
 | 语言     | Java                       | 17             |
 | 网络     | Netty                      | 4.1.132        |
-| 传输     | gRPC                       | 1.81.0         |
 | 注册中心 | ZooKeeper + Curator        | 3.9 / 5.9      |
 | 注册中心 | Nacos                      | 3.2.3          |
 | 序列化   | fastjson2 / hessian-lite   | 2.0.62 / 4.0.5 |
