@@ -27,7 +27,7 @@ public enum FutureState {
     }
 
     public boolean isDoneState() {
-        return this == DONE;
+        return this == DONE || this == CANCELED;
     }
 
     public boolean isDoingState() {

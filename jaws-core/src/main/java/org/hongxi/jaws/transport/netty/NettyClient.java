@@ -192,6 +192,11 @@ public class NettyClient extends AbstractClient {
         }
 
         try {
+            // Graceful drain: keep the connection open and give in-flight
+            // requests a chance to complete within the given timeout
+            if (timeout > 0) {
+                awaitPendingRequests(timeout);
+            }
             cleanup();
             if (state.isUnInitState()) {
                 log.info("NettyClient close failed: state={}, url={}", state.value(), url.getUri());
@@ -210,11 +215,39 @@ public class NettyClient extends AbstractClient {
         // Cancel all pending timeout tasks
         timeoutMap.values().forEach(Timeout::cancel);
         timeoutMap.clear();
-        // Clear callbacks
+        // Fail pending futures so callers get an immediate error instead of
+        // waiting for request timeout after the connection is torn down
+        for (ResponseFuture future : callbackMap.values()) {
+            try {
+                future.cancel();
+            } catch (Exception e) {
+                log.error("cancel pending request error: uri={} requestId={}",
+                        url.getUri(), future.getRequestId(), e);
+            }
+        }
         callbackMap.clear();
         // Close the channel
         if (channel != null) {
             channel.close();
+        }
+    }
+
+    /**
+     * Wait for in-flight requests to complete, up to the given timeout.
+     */
+    private void awaitPendingRequests(long timeout) {
+        long deadline = System.currentTimeMillis() + timeout;
+        while (!callbackMap.isEmpty() && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        if (!callbackMap.isEmpty()) {
+            log.warn("NettyClient close with {} pending requests not completed: url={}",
+                    callbackMap.size(), url.getUri());
         }
     }
 
