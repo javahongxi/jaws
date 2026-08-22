@@ -10,8 +10,10 @@ import org.hongxi.jaws.sample.injvm.service.DemoServiceImpl;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Jaws RPC 性能基准测试
@@ -47,6 +49,13 @@ public class RpcBenchmark {
     private static final int SLEEP_MS = Integer.parseInt(System.getProperty("sleep", "0"));
 
     private static final String BENCHMARK_RESULT = "benchmark";
+    private static final String EXPECTED_RESULT = "Hello, " + BENCHMARK_RESULT;
+
+    /**
+     * Error counters keyed by error type (exception simple name or "InvalidResponse"),
+     * accumulated across both warmup and measurement phases.
+     */
+    private static final ConcurrentHashMap<String, LongAdder> ERROR_COUNTERS = new ConcurrentHashMap<>();
 
     public static void main(String[] args) throws Exception {
         System.out.println("============================================");
@@ -88,12 +97,21 @@ public class RpcBenchmark {
         // 5. 输出结果
         printResult(result);
 
+        long totalErrors = totalErrors();
         System.out.println("\n============================================");
-        System.out.println("  Benchmark Done");
+        System.out.println("  Benchmark Done (" + (totalErrors == 0 ? "PASSED" : "FAILED") + ")");
         System.out.println("============================================");
 
         /* 基准测试完毕，强制退出（Netty/Curator 的非守护线程会阻止 JVM 自动退出） */
-        System.exit(0);
+        System.exit(totalErrors > 0 ? 1 : 0);
+    }
+
+    private static void recordError(String type) {
+        ERROR_COUNTERS.computeIfAbsent(type, k -> new LongAdder()).increment();
+    }
+
+    private static long totalErrors() {
+        return ERROR_COUNTERS.values().stream().mapToLong(LongAdder::sum).sum();
     }
 
     /*
@@ -185,14 +203,16 @@ public class RpcBenchmark {
                 while (System.nanoTime() < deadline) {
                     long start = System.nanoTime();
                     try {
-                        demoService.hello(BENCHMARK_RESULT);
-                        if (!warmup) {
+                        String result = demoService.hello(BENCHMARK_RESULT);
+                        if (!EXPECTED_RESULT.equals(result)) {
+                            recordError("InvalidResponse");
+                        } else if (!warmup) {
                             long elapsed = System.nanoTime() - start;
                             latencies.add(elapsed);
                         }
                         calls++;
                     } catch (Exception e) {
-                        // 忽略单次调用异常，继续压测
+                        recordError(e.getClass().getSimpleName());
                     }
                 }
                 totalCalls.addAndGet(calls);
@@ -269,6 +289,12 @@ public class RpcBenchmark {
         System.out.printf("  P99          : %,.2f us%n", p99Us);
         System.out.printf("  P99.9        : %,.2f us%n", p999Us);
         System.out.printf("  Max          : %,.2f us%n", maxUs);
+        System.out.println("--------------------------------------------");
+
+        long totalErrors = totalErrors();
+        System.out.printf("  Errors       : %,d (warmup + measure)%n", totalErrors);
+        ERROR_COUNTERS.forEach((type, counter) ->
+                System.out.printf("    - %-28s %,d%n", type, counter.sum()));
         System.out.println("--------------------------------------------");
     }
 
