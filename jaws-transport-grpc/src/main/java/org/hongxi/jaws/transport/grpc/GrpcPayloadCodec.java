@@ -1,6 +1,6 @@
 package org.hongxi.jaws.transport.grpc;
 
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -218,7 +218,7 @@ class GrpcPayloadCodec {
      * Resolve the {@link Serialization} instance from the URL parameter.
      */
     static Serialization resolveSerialization(URL url) {
-        String serializationName = url.getParameter(URLParamType.serialization);
+        String serializationName = url.getParameter(UrlParam.Transport.SERIALIZATION);
         return ExtensionLoader.getExtensionLoader(Serialization.class).getExtension(serializationName);
     }
 }

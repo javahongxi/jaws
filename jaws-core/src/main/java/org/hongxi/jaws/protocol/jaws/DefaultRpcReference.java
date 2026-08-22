@@ -1,6 +1,6 @@
 package org.hongxi.jaws.protocol.jaws;
 
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.rpc.*;
 import org.hongxi.jaws.transport.Client;
@@ -20,7 +20,7 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
     public DefaultRpcReference(Class<T> interfaceClass, URL url) {
         super(interfaceClass, url);
         client = ExtensionLoader.getExtensionLoader(TransportFactory.class)
-                .getExtension(url.getParameter(URLParamType.transportFactory))
+                .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY))
                 .createClient(url);
     }
 
@@ -31,7 +31,7 @@ public class DefaultRpcReference<T> extends AbstractReference<T> {
 
     @Override
     protected Response doCall(Request request) {
-        request.setAttachment(URLParamType.group.getName(), url.getGroup());
+        request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
         return client.request(request);
     }
 

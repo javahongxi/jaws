@@ -1,7 +1,7 @@
 package org.hongxi.jaws.common.util;
 
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
 
 import java.util.ArrayList;
@@ -48,7 +48,7 @@ public class UrlUtils {
 
         String defaultProtocol = defaults == null ? null : defaults.get("protocol");
         if (defaultProtocol == null || defaultProtocol.isEmpty()) {
-            defaultProtocol = URLParamType.protocol.value();
+            defaultProtocol = UrlParam.Transport.PROTOCOL.value();
         }
 
         int defaultPort = StringTools.parseInteger(defaults == null ? null : defaults.get("port"));

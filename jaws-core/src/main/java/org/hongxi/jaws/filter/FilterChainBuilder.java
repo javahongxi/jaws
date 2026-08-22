@@ -2,7 +2,7 @@ package org.hongxi.jaws.filter;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ActivationComparator;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.Extension;
@@ -80,14 +80,14 @@ class FilterChainBuilder {
         Set<String> filterNames = new LinkedHashSet<>(loader.getExtensionNames(key));
 
         // add filter names via "filter" config
-        String filterStr = url.getParameter(URLParamType.filter.getName());
+        String filterStr = url.getParameter(UrlParam.Transport.FILTER.getName());
         if (StringUtils.isNotBlank(filterStr)) {
             String[] names = JawsConstants.COMMA_SPLIT_PATTERN.split(filterStr);
             Collections.addAll(filterNames, names);
         }
 
         // add filter names via other configs, like accessLog and so on
-        if (url.getBoolParameter(URLParamType.accessLog)) {
+        if (url.getBoolParameter(UrlParam.Server.ACCESS_LOG)) {
             filterNames.add(AccessLogFilter.class.getAnnotation(Extension.class).value());
         }
 

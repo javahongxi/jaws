@@ -3,7 +3,7 @@ package org.hongxi.jaws.registry.nacos;
 import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.naming.NamingFactory;
 import com.alibaba.nacos.api.naming.NamingService;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.AbstractRegistryFactory;
@@ -29,8 +29,8 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
             String address = registryUrl.getBackupAddress();
             String username = registryUrl.getParameter("username");
             String password = registryUrl.getParameter("password");
-            int connectTimeout = registryUrl.getParameter(URLParamType.connectTimeout.getName(),
-                    URLParamType.connectTimeout.intValue());
+            int connectTimeout = registryUrl.getParameter(UrlParam.Transport.CONNECT_TIMEOUT.getName(),
+                    UrlParam.Transport.CONNECT_TIMEOUT.intValue());
             NamingService namingService = NamingFactory.createNamingService(
                     buildProperties(address, username, password, connectTimeout));
             return new NacosRegistry(registryUrl, namingService);

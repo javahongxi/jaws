@@ -3,7 +3,7 @@ package org.hongxi.jaws.cluster.loadbalance;
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.cluster.Router;
 import org.hongxi.jaws.cluster.router.RouterChain;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Reference;
@@ -135,12 +135,12 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
             return defaultWeight;
         }
         int warmup = serviceUrl.getParameter(
-                URLParamType.warmup.getName(), URLParamType.warmup.intValue());
+                UrlParam.Cluster.WARMUP.getName(), UrlParam.Cluster.WARMUP.intValue());
         if (warmup <= 0) {
             return defaultWeight;
         }
         long timestamp = serviceUrl.getParameter(
-                URLParamType.timestamp.getName(), 0L);
+                UrlParam.Cluster.TIMESTAMP.getName(), 0L);
         if (timestamp <= 0) {
             return defaultWeight;
         }

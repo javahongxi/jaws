@@ -3,7 +3,7 @@ package org.hongxi.jaws.transport.netty;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import org.hongxi.jaws.codec.Codec;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.common.util.NetUtils;
@@ -40,7 +40,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         this.channel = channel;
         this.messageHandler = messageHandler;
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                channel.getUrl().getParameter(URLParamType.codec.getName(), URLParamType.codec.value()));
+                channel.getUrl().getParameter(UrlParam.Transport.CODEC.getName(), UrlParam.Transport.CODEC.value()));
     }
 
     public NettyChannelHandler(Channel channel, MessageHandler messageHandler, ThreadPoolExecutor threadPoolExecutor) {
@@ -121,7 +121,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     }
 
     private void processRequest(ChannelHandlerContext ctx, Request request) {
-        request.setAttachment(URLParamType.host.getName(), NetUtils.getHostName(ctx.channel().remoteAddress()));
+        request.setAttachment(UrlParam.Server.HOST.getName(), NetUtils.getHostName(ctx.channel().remoteAddress()));
         final long processStartTime = System.currentTimeMillis();
         // Track active request for graceful shutdown
         if (channel instanceof NettyServer nettyServer) {

@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.ChannelState;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
@@ -42,13 +42,13 @@ public class NettyChannel implements Channel {
         this.nettyClient = nettyClient;
         this.remoteAddress = new InetSocketAddress(getUrl().getHost(), getUrl().getPort());
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
-                .getExtension(getUrl().getParameter(URLParamType.codec));
+                .getExtension(getUrl().getParameter(UrlParam.Transport.CODEC));
     }
 
     public Response request(Request request) {
         int urlTimeout = nettyClient.getUrl().getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),
-                URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
+                UrlParam.Transport.REQUEST_TIMEOUT.getName(), UrlParam.Transport.REQUEST_TIMEOUT.intValue());
         int timeout = resolveTimeout(request, urlTimeout);
         if (timeout <= 0) {
             throw new JawsFrameworkException(
@@ -109,7 +109,7 @@ public class NettyChannel implements Channel {
             return true;
         }
 
-        int timeout = nettyClient.getUrl().getIntParameter(URLParamType.connectTimeout);
+        int timeout = nettyClient.getUrl().getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
             throw new JawsFrameworkException("NettyChannel init Error: timeout(" + timeout + ") <= 0 is forbid.",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);

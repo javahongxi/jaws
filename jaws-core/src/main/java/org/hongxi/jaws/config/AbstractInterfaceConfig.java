@@ -3,7 +3,7 @@ package org.hongxi.jaws.config;
 import org.apache.commons.lang3.StringUtils;
 import java.io.Serial;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.common.util.UrlUtils;
@@ -146,8 +146,8 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 Map<String, String> map = new HashMap<>();
                 config.appendConfigParams(map);
 
-                map.put(URLParamType.application.getName(), getApplication());
-                map.put(URLParamType.path.getName(), RegistryService.class.getName());
+                map.put(UrlParam.Identity.APPLICATION.getName(), getApplication());
+                map.put(UrlParam.Identity.PATH.getName(), RegistryService.class.getName());
 
                 // Determine registry protocol: prefer parsing from address, then RegistryConfig.protocol, finally fall back to local
                 String protocol;
@@ -158,13 +158,13 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                 } else {
                     protocol = JawsConstants.REGISTRY_PROTOCOL_LOCAL;
                 }
-                map.put(URLParamType.protocol.getName(), protocol);
+                map.put(UrlParam.Transport.PROTOCOL.getName(), protocol);
                 // The address may contain multiple registry addresses
                 List<URL> urls = UrlUtils.parseURLs(address, map);
                 if (urls != null && !urls.isEmpty()) {
                     for (URL url : urls) {
                         // Protocol information is already encoded in the URL structure; no longer retained in parameters
-                        url.removeParameter(URLParamType.protocol.getName());
+                        url.removeParameter(UrlParam.Transport.PROTOCOL.getName());
                         registryUrls.add(url);
                     }
                 }

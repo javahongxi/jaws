@@ -1,6 +1,6 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.exception.JawsBizException;
@@ -50,13 +50,13 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             return CompletableFuture.completedFuture(response);
         }
 
-        boolean defaultTransExceptionStack = URLParamType.transExceptionStack.boolValue();
+        boolean defaultTransExceptionStack = UrlParam.Transport.TRANS_EXCEPTION_STACK.boolValue();
         try {
             Object value = method.invoke(ref, request.getArguments());
             if (value instanceof CompletableFuture<?> future) {
                 long timeout = this.url.getMethodParameter(
                         request.getMethodName(), request.getParamDesc(),
-                        URLParamType.requestTimeout.getName(), URLParamType.requestTimeout.intValue());
+                        UrlParam.Transport.REQUEST_TIMEOUT.getName(), UrlParam.Transport.REQUEST_TIMEOUT.intValue());
                 if (timeout > 0) {
                     future = future.orTimeout(timeout, TimeUnit.MILLISECONDS);
                 }
@@ -116,7 +116,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
 
         if (response.getException() != null) {
             // Whether to transmit business exception stack
-            boolean transExceptionStack = this.url.getParameter(URLParamType.transExceptionStack.getName(), defaultTransExceptionStack);
+            boolean transExceptionStack = this.url.getParameter(UrlParam.Transport.TRANS_EXCEPTION_STACK.getName(), defaultTransExceptionStack);
             // Do not transmit business exception stack
             if (!transExceptionStack) {
                 ExceptionUtils.setMockStackTrace(response.getException().getCause());

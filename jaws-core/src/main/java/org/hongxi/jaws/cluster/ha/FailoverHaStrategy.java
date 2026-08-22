@@ -1,7 +1,7 @@
 package org.hongxi.jaws.cluster.ha;
 
 import org.hongxi.jaws.cluster.LoadBalance;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
@@ -45,7 +45,7 @@ public class FailoverHaStrategy<T> extends AbstractHaStrategy<T> {
         // Resolve retries with dynamic configuration priority:
         // method-level dynamic > service-level dynamic > global dynamic > URL config
         int urlRetries = refUrl.getMethodParameter(request.getMethodName(), request.getParamDesc(),
-                        URLParamType.retries.getName(), URLParamType.retries.intValue());
+                        UrlParam.Cluster.RETRIES.getName(), UrlParam.Cluster.RETRIES.intValue());
         int tryCount = resolveRetries(request, urlRetries);
         // If negative, disable retries
         if (tryCount < 0) {

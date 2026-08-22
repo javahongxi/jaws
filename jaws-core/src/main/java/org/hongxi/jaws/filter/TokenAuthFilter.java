@@ -1,6 +1,6 @@
 package org.hongxi.jaws.filter;
 
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -40,7 +40,7 @@ public class TokenAuthFilter implements Filter {
     private Response filterConsumer(Caller<?> caller, Request request) {
         String token = null;
         if (caller instanceof Reference<?> ref) {
-            token = ref.getServiceUrl().getParameter(URLParamType.token.getName());
+            token = ref.getServiceUrl().getParameter(UrlParam.Identity.TOKEN.getName());
         }
         if (token != null && !token.isEmpty()) {
             request.setAttachment(TOKEN_ATTACHMENT, token);
@@ -49,7 +49,7 @@ public class TokenAuthFilter implements Filter {
     }
 
     private Response filterProvider(Caller<?> caller, Request request) {
-        String expectedToken = caller.getUrl().getParameter(URLParamType.token.getName());
+        String expectedToken = caller.getUrl().getParameter(UrlParam.Identity.TOKEN.getName());
         if (expectedToken == null || expectedToken.isEmpty()) {
             // no token configured, skip auth
             return caller.call(request);
@@ -58,7 +58,7 @@ public class TokenAuthFilter implements Filter {
         if (!expectedToken.equals(actualToken)) {
             log.warn("Token auth failed: service={}, method={}, remote={}",
                     request.getInterfaceName(), request.getMethodName(),
-                    request.getAttachments().get(URLParamType.host.getName()));
+                    request.getAttachments().get(UrlParam.Server.HOST.getName()));
             throw new JawsServiceException("Token authentication failed for service: " + request.getInterfaceName());
         }
         return caller.call(request);

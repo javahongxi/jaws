@@ -12,7 +12,7 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -62,7 +62,7 @@ public class NettyClient extends AbstractClient {
 
     public NettyClient(URL url) {
         super(url);
-        fusingThreshold = url.getIntParameter(URLParamType.fusingThreshold);
+        fusingThreshold = url.getIntParameter(UrlParam.Client.FUSING_THRESHOLD);
     }
 
     public Bootstrap getBootstrap() {
@@ -113,14 +113,14 @@ public class NettyClient extends AbstractClient {
             return true;
         }
 
-        int timeout = getUrl().getIntParameter(URLParamType.connectTimeout);
+        int timeout = getUrl().getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
             throw new JawsFrameworkException("NettyClient init Error: timeout(" +
                     timeout + ") <= 0 is forbid.",
                     JawsErrorMsgConstants.FRAMEWORK_INIT_ERROR);
         }
 
-        final int maxContentLength = url.getIntParameter(URLParamType.maxContentLength);
+        final int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
 
         bootstrap = new Bootstrap();
         bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout);
@@ -132,7 +132,7 @@ public class NettyClient extends AbstractClient {
                     @Override
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline pipeline = ch.pipeline();
-                        long heartbeat = url.getLongParameter(URLParamType.heartbeat);
+                        long heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
                         if (heartbeat > 0) {
                             pipeline.addLast("idle_state",
                                     new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));

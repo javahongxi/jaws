@@ -2,7 +2,7 @@ package org.hongxi.jaws.transport.grpc;
 
 import io.grpc.ServerBuilder;
 import org.hongxi.jaws.common.ChannelState;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.transport.Channel;
@@ -84,7 +84,7 @@ public class GrpcServer implements org.hongxi.jaws.transport.Server {
             if (grpcServer != null) {
                 grpcServer.shutdown();
                 int waitMs = timeout > 0 ? timeout :
-                        url.getIntParameter(URLParamType.gracefulShutdownTimeout);
+                        url.getIntParameter(UrlParam.Server.GRACEFUL_SHUTDOWN_TIMEOUT);
                 if (waitMs > 0) {
                     grpcServer.awaitTermination(waitMs, TimeUnit.MILLISECONDS);
                 }

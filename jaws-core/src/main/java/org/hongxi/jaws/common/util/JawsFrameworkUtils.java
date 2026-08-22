@@ -1,7 +1,7 @@
 package org.hongxi.jaws.common.util;
 
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.URL;
@@ -26,11 +26,11 @@ public class JawsFrameworkUtils {
     }
 
     public static String getGroupFromRequest(Request request) {
-        return getValueFromRequest(request, URLParamType.group.name(), URLParamType.group.value());
+        return getValueFromRequest(request, UrlParam.Identity.GROUP.getName(), UrlParam.Identity.GROUP.value());
     }
 
     public static String getVersionFromRequest(Request request) {
-        return getValueFromRequest(request, URLParamType.version.name(), URLParamType.version.value());
+        return getValueFromRequest(request, UrlParam.Identity.VERSION.getName(), UrlParam.Identity.VERSION.value());
     }
 
     public static String getValueFromRequest(Request request, String key, String defaultValue) {

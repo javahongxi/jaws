@@ -1,6 +1,6 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -109,7 +109,7 @@ public class RpcContext {
      */
     public String getCallerIp() {
         if (request != null) {
-            return request.getAttachments().get(URLParamType.host.getName());
+            return request.getAttachments().get(UrlParam.Server.HOST.getName());
         }
         return null;
     }

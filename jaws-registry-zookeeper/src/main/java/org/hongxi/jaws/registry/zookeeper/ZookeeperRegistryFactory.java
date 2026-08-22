@@ -3,7 +3,7 @@ package org.hongxi.jaws.registry.zookeeper;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.AbstractRegistryFactory;
@@ -24,8 +24,8 @@ public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
     @Override
     protected Registry createRegistry(URL registryUrl) {
         try {
-            int connectionTimeout = registryUrl.getIntParameter(URLParamType.connectTimeout);
-            int sessionTimeout = registryUrl.getIntParameter(URLParamType.registrySessionTimeout);
+            int connectionTimeout = registryUrl.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
+            int sessionTimeout = registryUrl.getIntParameter(UrlParam.Registry.SESSION_TIMEOUT);
             String username = registryUrl.getParameter("username");
             String password = registryUrl.getParameter("password");
             CuratorFramework curator = createCurator(registryUrl.getBackupAddress(),

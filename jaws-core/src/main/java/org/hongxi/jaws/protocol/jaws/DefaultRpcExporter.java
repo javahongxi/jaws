@@ -1,6 +1,6 @@
 package org.hongxi.jaws.protocol.jaws;
 
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.rpc.AbstractExporter;
 import org.hongxi.jaws.rpc.Provider;
@@ -33,7 +33,7 @@ public class DefaultRpcExporter<T> extends AbstractExporter<T> {
         messageHandler.addProvider(provider);
 
         server = ExtensionLoader.getExtensionLoader(TransportFactory.class)
-                .getExtension(url.getParameter(URLParamType.transportFactory))
+                .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY))
                 .createServer(url, messageHandler);
     }
 

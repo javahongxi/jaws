@@ -1,6 +1,6 @@
 package org.hongxi.jaws.cluster;
 
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ExceptionUtils;
@@ -78,7 +78,7 @@ public class DefaultCluster<T> implements Cluster<T> {
             if (ExceptionUtils.isBizException(e)) {
                 throw (RuntimeException) e;
             }
-            if (!getUrl().getBoolParameter(URLParamType.throwException)) {
+            if (!getUrl().getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
                 return JawsFrameworkUtils.buildErrorResponse(request, e);
             }
             if (e instanceof JawsAbstractException jae) {

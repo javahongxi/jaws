@@ -2,7 +2,7 @@ package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.JawsFrameworkUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -42,9 +42,9 @@ public class AbstractReferenceHandler<T> {
         }
 
         for (Cluster<T> cluster : clusters) {
-            request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
-            request.setAttachment(URLParamType.application.getName(), cluster.getUrl().getApplication());
-            request.setAttachment(URLParamType.module.getName(), cluster.getUrl().getModule());
+            request.setAttachment(UrlParam.Identity.VERSION.getName(), cluster.getUrl().getVersion());
+            request.setAttachment(UrlParam.Identity.APPLICATION.getName(), cluster.getUrl().getApplication());
+            request.setAttachment(UrlParam.Identity.MODULE.getName(), cluster.getUrl().getModule());
 
             try {
                 return cluster.call(request).getValue();
@@ -62,7 +62,7 @@ public class AbstractReferenceHandler<T> {
                                 + t.getClass().getName() + ", message: " + t.getMessage();
                     }
                     throw new JawsServiceException(msg);
-                } else if (!cluster.getUrl().getBoolParameter(URLParamType.throwException)) {
+                } else if (!cluster.getUrl().getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
                     log.warn("invoke failed, returning default value as throwException=false: uri={} {}",
                             cluster.getUrl().getUri(), JawsFrameworkUtils.toString(request), e);
                     if (returnType != null && returnType.isPrimitive()) {
@@ -98,9 +98,9 @@ public class AbstractReferenceHandler<T> {
         CompletableFuture<Object> resultFuture = new CompletableFuture<>();
 
         for (Cluster<T> cluster : clusters) {
-            request.setAttachment(URLParamType.version.getName(), cluster.getUrl().getVersion());
-            request.setAttachment(URLParamType.application.getName(), cluster.getUrl().getApplication());
-            request.setAttachment(URLParamType.module.getName(), cluster.getUrl().getModule());
+            request.setAttachment(UrlParam.Identity.VERSION.getName(), cluster.getUrl().getVersion());
+            request.setAttachment(UrlParam.Identity.APPLICATION.getName(), cluster.getUrl().getApplication());
+            request.setAttachment(UrlParam.Identity.MODULE.getName(), cluster.getUrl().getModule());
 
             try {
                 Response response = cluster.call(request);

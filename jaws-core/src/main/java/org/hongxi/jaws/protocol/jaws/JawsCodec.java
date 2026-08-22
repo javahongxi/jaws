@@ -7,7 +7,7 @@ import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.serialization.ObjectInput;
 import org.hongxi.jaws.serialization.ObjectOutput;
 import org.hongxi.jaws.serialization.Serialization;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.exception.JawsAbstractException;
@@ -159,7 +159,7 @@ public class JawsCodec implements Codec {
      */
     private void encodeRequest(Channel channel, Request request, ByteBuf out) throws IOException {
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
-                .getExtension(channel.getUrl().getParameter(URLParamType.serialization));
+                .getExtension(channel.getUrl().getParameter(UrlParam.Transport.SERIALIZATION));
 
         // Reserve header space
         int headerStart = out.writerIndex();

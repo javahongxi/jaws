@@ -2,7 +2,7 @@ package org.hongxi.jaws.cluster.router;
 
 import org.hongxi.jaws.cluster.Router;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.URL;
@@ -59,7 +59,7 @@ public class TagRouter<T> implements Router<T> {
             if (serviceUrl == null) {
                 continue;
             }
-            String providerTag = serviceUrl.getParameter(URLParamType.tag.getName());
+            String providerTag = serviceUrl.getParameter(UrlParam.Identity.TAG.getName());
             if (requestTag.equals(providerTag)) {
                 tagged.add(ref);
             }

@@ -2,7 +2,7 @@ package org.hongxi.jaws.rpc;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.exception.JawsServiceException;
 
 import java.io.File;
@@ -133,19 +133,19 @@ public class URL {
         return Long.parseLong(value);
     }
 
-    public String getParameter(URLParamType paramType) {
+    public String getParameter(UrlParam.Def<?> paramType) {
         return getParameter(paramType.getName(), paramType.value());
     }
 
-    public boolean getBoolParameter(URLParamType paramType) {
+    public boolean getBoolParameter(UrlParam.Def<?> paramType) {
         return getParameter(paramType.getName(), paramType.boolValue());
     }
 
-    public int getIntParameter(URLParamType paramType) {
+    public int getIntParameter(UrlParam.Def<?> paramType) {
         return getParameter(paramType.getName(), paramType.intValue());
     }
 
-    public long getLongParameter(URLParamType paramType) {
+    public long getLongParameter(UrlParam.Def<?> paramType) {
         return getParameter(paramType.getName(), paramType.longValue());
     }
 
@@ -266,19 +266,19 @@ public class URL {
     }
 
     public String getVersion() {
-        return getParameter(URLParamType.version.getName(), URLParamType.version.value());
+        return getParameter(UrlParam.Identity.VERSION.getName(), UrlParam.Identity.VERSION.value());
     }
 
     public String getGroup() {
-        return getParameter(URLParamType.group.getName(), URLParamType.group.value());
+        return getParameter(UrlParam.Identity.GROUP.getName(), UrlParam.Identity.GROUP.value());
     }
 
     public String getApplication() {
-        return getParameter(URLParamType.application.getName(), URLParamType.application.value());
+        return getParameter(UrlParam.Identity.APPLICATION.getName(), UrlParam.Identity.APPLICATION.value());
     }
 
     public String getModule() {
-        return getParameter(URLParamType.module.getName(), URLParamType.module.value());
+        return getParameter(UrlParam.Identity.MODULE.getName(), UrlParam.Identity.MODULE.value());
     }
 
     public String getUri() {
@@ -294,9 +294,9 @@ public class URL {
      */
     public String getIdentity() {
         return protocol + JawsConstants.PROTOCOL_SEPARATOR + host + ":" + port +
-                "/" + getParameter(URLParamType.group.getName(), URLParamType.group.value()) + "/" +
-                getPath() + "/" + getParameter(URLParamType.version.getName(), URLParamType.version.value()) +
-                "/" + getParameter(URLParamType.nodeType.getName(), URLParamType.nodeType.value());
+                "/" + getParameter(UrlParam.Identity.GROUP.getName(), UrlParam.Identity.GROUP.value()) + "/" +
+                getPath() + "/" + getParameter(UrlParam.Identity.VERSION.getName(), UrlParam.Identity.VERSION.value()) +
+                "/" + getParameter(UrlParam.Identity.NODE_TYPE.getName(), UrlParam.Identity.NODE_TYPE.value());
     }
 
     /**
@@ -311,18 +311,18 @@ public class URL {
             return false;
         }
 
-        if (!StringUtils.equals(this.getParameter(URLParamType.nodeType.getName()), JawsConstants.NODE_TYPE_SERVICE)) {
+        if (!StringUtils.equals(this.getParameter(UrlParam.Identity.NODE_TYPE.getName()), JawsConstants.NODE_TYPE_SERVICE)) {
             return false;
         }
 
-        String version = getParameter(URLParamType.version.getName(), URLParamType.version.value());
-        String refVersion = refUrl.getParameter(URLParamType.version.getName(), URLParamType.version.value());
+        String version = getParameter(UrlParam.Identity.VERSION.getName(), UrlParam.Identity.VERSION.value());
+        String refVersion = refUrl.getParameter(UrlParam.Identity.VERSION.getName(), UrlParam.Identity.VERSION.value());
         if (!version.equals(refVersion)) {
             return false;
         }
         // check group
-        String group = getParameter(URLParamType.group.getName(), URLParamType.group.value());
-        String refGroup = refUrl.getParameter(URLParamType.group.getName(), URLParamType.group.value());
+        String group = getParameter(UrlParam.Identity.GROUP.getName(), UrlParam.Identity.GROUP.value());
+        String refGroup = refUrl.getParameter(UrlParam.Identity.GROUP.getName(), UrlParam.Identity.GROUP.value());
         return group.equals(refGroup);
     }
 

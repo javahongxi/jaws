@@ -1,7 +1,7 @@
 package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.lifecycle.ShutdownHook;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
@@ -30,7 +30,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     public FailbackRegistry(URL url) {
         super(url);
 
-        long retryPeriod = url.getLongParameter(URLParamType.registryRetryPeriod);
+        long retryPeriod = url.getLongParameter(UrlParam.Registry.RETRY_PERIOD);
         retryExecutor.scheduleAtFixedRate(() -> {
             try {
                 retry();
@@ -123,8 +123,8 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     }
 
     private boolean shouldCheck(URL url) {
-        return getUrl().getBoolParameter(URLParamType.check)
-                && url.getBoolParameter(URLParamType.check)
+        return getUrl().getBoolParameter(UrlParam.Client.CHECK)
+                && url.getBoolParameter(UrlParam.Client.CHECK)
                 && (url.getPort() != 0);
     }
 

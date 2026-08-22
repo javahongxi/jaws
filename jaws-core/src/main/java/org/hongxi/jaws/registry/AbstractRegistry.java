@@ -1,6 +1,6 @@
 package org.hongxi.jaws.registry;
 
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
@@ -106,30 +106,30 @@ public abstract class AbstractRegistry implements Registry {
      */
     private URL removeRegistryUnnecessaryParams(URL url) {
         // Transport SPI: codec is a local transport concern, consumer applies default on connect
-        url.getParameters().remove(URLParamType.codec.getName());
-        url.getParameters().remove(URLParamType.transportFactory.getName());
+        url.getParameters().remove(UrlParam.Transport.CODEC.getName());
+        url.getParameters().remove(UrlParam.Transport.TRANSPORT_FACTORY.getName());
 
         // Provider-local server settings
-        url.getParameters().remove(URLParamType.maxServerConnections.getName());
-        url.getParameters().remove(URLParamType.minWorkerThreads.getName());
-        url.getParameters().remove(URLParamType.maxWorkerThreads.getName());
-        url.getParameters().remove(URLParamType.workerQueueSize.getName());
-        url.getParameters().remove(URLParamType.maxContentLength.getName());
-        url.getParameters().remove(URLParamType.accessLog.getName());
+        url.getParameters().remove(UrlParam.Server.MAX_CONNECTIONS.getName());
+        url.getParameters().remove(UrlParam.Server.MIN_WORKER_THREADS.getName());
+        url.getParameters().remove(UrlParam.Server.MAX_WORKER_THREADS.getName());
+        url.getParameters().remove(UrlParam.Server.WORKER_QUEUE_SIZE.getName());
+        url.getParameters().remove(UrlParam.Transport.MAX_CONTENT_LENGTH.getName());
+        url.getParameters().remove(UrlParam.Server.ACCESS_LOG.getName());
         // NOTE: heartbeat is intentionally kept — it is a shared protocol-level parameter
         // that both provider and consumer need for connection keep-alive.
 
         // Consumer-local settings: each consumer configures these independently
-        url.getParameters().remove(URLParamType.retries.getName());
-        url.getParameters().remove(URLParamType.check.getName());
-        url.getParameters().remove(URLParamType.throwException.getName());
-        url.getParameters().remove(URLParamType.cluster.getName());
-        url.getParameters().remove(URLParamType.loadBalance.getName());
-        url.getParameters().remove(URLParamType.haStrategy.getName());
-        url.getParameters().remove(URLParamType.requestTimeout.getName());
-        url.getParameters().remove(URLParamType.connectTimeout.getName());
-        url.getParameters().remove(URLParamType.filter.getName());
-        url.getParameters().remove(URLParamType.fusingThreshold.getName());
+        url.getParameters().remove(UrlParam.Cluster.RETRIES.getName());
+        url.getParameters().remove(UrlParam.Client.CHECK.getName());
+        url.getParameters().remove(UrlParam.Client.THROW_EXCEPTION.getName());
+        url.getParameters().remove(UrlParam.Cluster.CLUSTER.getName());
+        url.getParameters().remove(UrlParam.Cluster.LOAD_BALANCE.getName());
+        url.getParameters().remove(UrlParam.Cluster.HA_STRATEGY.getName());
+        url.getParameters().remove(UrlParam.Transport.REQUEST_TIMEOUT.getName());
+        url.getParameters().remove(UrlParam.Transport.CONNECT_TIMEOUT.getName());
+        url.getParameters().remove(UrlParam.Transport.FILTER.getName());
+        url.getParameters().remove(UrlParam.Client.FUSING_THRESHOLD.getName());
 
         return url;
     }

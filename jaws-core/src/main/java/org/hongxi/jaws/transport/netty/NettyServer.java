@@ -7,7 +7,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.common.ChannelState;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.StandardThreadPoolExecutor;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -57,21 +57,21 @@ public class NettyServer extends AbstractServer {
         }
 
         log.info("server channel start open, url={}", url);
-        int maxServerConnections = url.getIntParameter(URLParamType.maxServerConnections);
+        int maxServerConnections = url.getIntParameter(UrlParam.Server.MAX_CONNECTIONS);
         channelManager = new NettyServerChannelManager(maxServerConnections);
 
         if (threadPoolExecutor == null || threadPoolExecutor.isShutdown()) {
             threadPoolExecutor = new StandardThreadPoolExecutor(
-                    url.getIntParameter(URLParamType.minWorkerThreads),
-                    url.getIntParameter(URLParamType.maxWorkerThreads),
-                    url.getIntParameter(URLParamType.workerQueueSize),
+                    url.getIntParameter(UrlParam.Server.MIN_WORKER_THREADS),
+                    url.getIntParameter(UrlParam.Server.MAX_WORKER_THREADS),
+                    url.getIntParameter(UrlParam.Server.WORKER_QUEUE_SIZE),
                     new DefaultThreadFactory("NettyServer-" + url.getHostPort(), true));
         }
         threadPoolExecutor.prestartAllCoreThreads();
         NettyChannelHandler channelHandler = new NettyChannelHandler(
                 NettyServer.this, messageHandler, threadPoolExecutor);
 
-        int maxContentLength = url.getIntParameter(URLParamType.maxContentLength);
+        int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
 
         ServerBootstrap serverBootstrap = new ServerBootstrap();
         serverBootstrap.group(bossGroup, workerGroup)
@@ -81,7 +81,7 @@ public class NettyServer extends AbstractServer {
                     protected void initChannel(SocketChannel socketChannel) throws Exception {
                         ChannelPipeline pipeline = socketChannel.pipeline();
                         pipeline.addLast("channel_manager", channelManager);
-                        long heartbeat = url.getLongParameter(URLParamType.heartbeat);
+                        long heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
                         if (heartbeat > 0) {
                             pipeline.addLast("idle_state",
                                     new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));

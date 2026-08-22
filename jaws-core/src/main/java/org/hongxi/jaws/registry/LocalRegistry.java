@@ -1,7 +1,7 @@
 package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.rpc.URL;
@@ -160,7 +160,7 @@ public class LocalRegistry extends AbstractRegistry {
 
     private String getRegistryKey(URL url) {
         String keyPrefix = url.getPath();
-        String nodeType = url.getParameter(URLParamType.nodeType.getName());
+        String nodeType = url.getParameter(UrlParam.Identity.NODE_TYPE.getName());
         if (nodeType != null) {
             return keyPrefix + JawsConstants.PATH_SEPARATOR + nodeType;
         } else {

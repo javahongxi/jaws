@@ -2,7 +2,7 @@ package org.hongxi.jaws.transport;
 
 import org.hongxi.jaws.codec.Codec;
 import org.hongxi.jaws.common.ChannelState;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
@@ -22,7 +22,7 @@ public abstract class AbstractClient implements Client {
     public AbstractClient(URL url) {
         this.url = url;
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
-                        .getExtension(url.getParameter(URLParamType.codec));
+                        .getExtension(url.getParameter(UrlParam.Transport.CODEC));
         log.info("init netty client. url: {}-{}, use codec: {}", 
                 url.getHost(), url.getPath(), codec.getClass().getSimpleName());
     }

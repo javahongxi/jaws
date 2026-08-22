@@ -1,7 +1,7 @@
 package org.hongxi.jaws.cluster.ha;
 
 import org.hongxi.jaws.cluster.LoadBalance;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.lifecycle.ShutdownHook;
@@ -79,8 +79,8 @@ public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
                 if (!retryScheduled) {
                     retryScheduled = true;
                     int period = url != null
-                            ? url.getIntParameter(URLParamType.failbackPeriod)
-                            : URLParamType.failbackPeriod.intValue();
+                            ? url.getIntParameter(UrlParam.Registry.FAILBACK_PERIOD)
+                            : UrlParam.Registry.FAILBACK_PERIOD.intValue();
                     RETRY_EXECUTOR.scheduleAtFixedRate(this::retry, period, period, TimeUnit.MILLISECONDS);
                 }
             }
@@ -113,7 +113,7 @@ public class FailbackHaStrategy<T> extends AbstractHaStrategy<T> {
                     continue;
                 }
                 task.retryCount++;
-                int maxRetries = URLParamType.retries.intValue();
+                int maxRetries = UrlParam.Cluster.RETRIES.intValue();
                 if (task.retryCount >= maxRetries) {
                     log.error("FailbackHaStrategy retry exhausted after {} attempts, discarding: {}", maxRetries, task.request);
                 } else {

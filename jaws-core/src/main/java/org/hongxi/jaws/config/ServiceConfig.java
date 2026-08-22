@@ -1,7 +1,7 @@
 package org.hongxi.jaws.config;
 
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.common.util.NetUtils;
@@ -112,7 +112,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
         try {
             // Determine graceful shutdown timeout from the first exporter's URL config
-            long gracefulTimeout = exporters.get(0).getUrl().getIntParameter(URLParamType.gracefulShutdownTimeout);
+            long gracefulTimeout = exporters.get(0).getUrl().getIntParameter(UrlParam.Server.GRACEFUL_SHUTDOWN_TIMEOUT);
 
             // Phase 1: Stop accepting new requests
             log.info("[GracefulShutdown] Phase 1: Stop accepting new requests, exporters={}", exporters.size());
@@ -159,7 +159,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
     private void doExport(ProtocolConfig protocolConfig) {
         String protocolName = protocolConfig.getName();
         if (protocolName == null || protocolName.isEmpty()) {
-            protocolName = URLParamType.protocol.value();
+            protocolName = UrlParam.Transport.PROTOCOL.value();
         }
 
         int port = resolvePort(protocolConfig, protocolName);
@@ -171,7 +171,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
         Map<String, String> map = new HashMap<>();
 
-        map.put(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_SERVICE);
+        map.put(UrlParam.Identity.NODE_TYPE.getName(), JawsConstants.NODE_TYPE_SERVICE);
 
         collectConfigParams(map, protocolConfig, this);
         collectMethodConfigParams(map, this.getMethods());
@@ -226,7 +226,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
     private void register(List<URL> registryUrls, URL serviceUrl) {
         // Record startup timestamp for consumer-side warm-up calculation
-        serviceUrl.addParameter(URLParamType.timestamp.getName(), String.valueOf(System.currentTimeMillis()));
+        serviceUrl.addParameter(UrlParam.Cluster.TIMESTAMP.getName(), String.valueOf(System.currentTimeMillis()));
         for (URL url : registryUrls) {
             RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
             if (registryFactory == null) {

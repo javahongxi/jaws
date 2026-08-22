@@ -1,7 +1,7 @@
 package org.hongxi.jaws.protocol.jaws;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.protocol.AbstractProtocol;
 import org.hongxi.jaws.rpc.*;
@@ -28,9 +28,9 @@ public class JawsProtocol extends AbstractProtocol {
     }
 
     private void setDefaultCodec(URL url) {
-        String codec = url.getParameter(URLParamType.codec.getName());
+        String codec = url.getParameter(UrlParam.Transport.CODEC.getName());
         if (StringUtils.isBlank(codec)) {
-            url.getParameters().put(URLParamType.codec.getName(), DEFAULT_CODEC);
+            url.getParameters().put(UrlParam.Transport.CODEC.getName(), DEFAULT_CODEC);
         }
     }
 }

@@ -5,7 +5,7 @@ import java.io.Serial;
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.ConsumerCoordinator;
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.exception.JawsErrorMsgConstants;
@@ -113,7 +113,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
             clusters.add(consumerCoordinator.getCluster());
         }
 
-        String proxyType = generic ? "generic" : URLParamType.proxy.value();
+        String proxyType = generic ? "generic" : UrlParam.Transport.PROXY.value();
         ProxyFactory proxyFactory = ExtensionLoader.getExtensionLoader(ProxyFactory.class).getExtension(proxyType);
         ref = proxyFactory.getProxy(interfaceClass, clusters);
 
@@ -132,8 +132,8 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
      */
     private URL buildRefUrl(ProtocolConfig protocol, String localIp, String path) {
         Map<String, String> params = new HashMap<>();
-        params.put(URLParamType.nodeType.getName(), JawsConstants.NODE_TYPE_REFERENCE);
-        params.put(URLParamType.version.getName(), URLParamType.version.value());
+        params.put(UrlParam.Identity.NODE_TYPE.getName(), JawsConstants.NODE_TYPE_REFERENCE);
+        params.put(UrlParam.Identity.VERSION.getName(), UrlParam.Identity.VERSION.value());
         collectConfigParams(params, protocol, this);
         collectMethodConfigParams(params, this.getMethods());
         return new URL(protocol.getName(), localIp, 0, path, params);

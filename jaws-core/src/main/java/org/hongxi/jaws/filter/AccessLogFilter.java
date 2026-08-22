@@ -1,7 +1,7 @@
 package org.hongxi.jaws.filter;
 
 import org.hongxi.jaws.common.JawsConstants;
-import org.hongxi.jaws.common.URLParamType;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.StringTools;
@@ -27,7 +27,7 @@ public class AccessLogFilter implements Filter {
 
     @Override
     public Response filter(Caller<?> caller, Request request) {
-        boolean needLog = caller.getUrl().getBoolParameter(URLParamType.accessLog);
+        boolean needLog = caller.getUrl().getBoolParameter(UrlParam.Server.ACCESS_LOG);
         if (needLog) {
             long t1 = System.currentTimeMillis();
             boolean success = false;
@@ -52,13 +52,13 @@ public class AccessLogFilter implements Filter {
         // For reference side, remote ip, application, module are obtained from caller URL;
         // for service side, they come from request attachments.
         if (isProvider) {
-            append(builder, request.getAttachments().get(URLParamType.host.getName()));
-            append(builder, request.getAttachments().get(URLParamType.application.getName()));
-            append(builder, request.getAttachments().get(URLParamType.module.getName()));
+            append(builder, request.getAttachments().get(UrlParam.Server.HOST.getName()));
+            append(builder, request.getAttachments().get(UrlParam.Identity.APPLICATION.getName()));
+            append(builder, request.getAttachments().get(UrlParam.Identity.MODULE.getName()));
         } else {
             append(builder, caller.getUrl().getHost());
-            append(builder, caller.getUrl().getParameter(URLParamType.application.getName()));
-            append(builder, caller.getUrl().getParameter(URLParamType.module.getName()));
+            append(builder, caller.getUrl().getParameter(UrlParam.Identity.APPLICATION.getName()));
+            append(builder, caller.getUrl().getParameter(UrlParam.Identity.MODULE.getName()));
         }
         append(builder, request.getInterfaceName());
         append(builder, request.getMethodName());
