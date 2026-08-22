@@ -26,6 +26,18 @@ import java.util.Map;
  * The gRPC proto uses a generic {@code bytes payload} field; this class bridges
  * the gap between Jaws' object model and the byte-level gRPC payload using
  * the configured {@link Serialization} SPI (hessian2 or fastjson2).
+ * <p>
+ * <b>Design note on copies:</b> unlike the native jaws protocol (where the codec
+ * writes directly into pooled Netty {@code ByteBuf}s with zero intermediate
+ * byte[] allocation), this adapter necessarily materializes the payload as a
+ * {@code byte[]} and copies it into an immutable protobuf {@code ByteString}.
+ * That is an inherent cost of the protobuf/gRPC boundary, not a codec-layer
+ * inefficiency — zero-copy holds only on the native protocol path.
+ * <p>
+ * This module is an optional, education-oriented transport: it demonstrates
+ * that the transport SPI is genuinely pluggable and provides an HTTP/2
+ * baseline to compare against the TCP private protocol. The primary transport
+ * remains the zero-copy Netty implementation in jaws-core.
  *
  * @author shenhongxi
  */

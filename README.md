@@ -1,6 +1,6 @@
 # Jaws Framework 🦈
 
-Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注册与发现、负载均衡、高可用容错等完整的微服务通信能力。
+Jaws 是一个基于 Java 17 和 Netty 的**轻量级、高性能** RPC 框架，提供服务注册与发现、负载均衡、高可用容错等完整的微服务通信能力。
 
 ## 特性
 
@@ -24,7 +24,7 @@ Jaws 是一个基于 Java 17 和 Netty 的高性能 RPC 框架，提供服务注
 - **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
 - **MCP 桥接** — 将 Jaws RPC 服务自动暴露为 MCP Tools，AI Agent 可直接调用后端服务
 - **REST 桥接** — 将 Jaws RPC 服务通过 REST API 对外暴露，传统 HTTP 客户端可直接调用，与 MCP 共享核心组件
-- **gRPC 传输** — 可选 gRPC 传输层，配置 `transportFactory("grpc")` 即可切换，兼容 Jaws 全部上层特性
+- **gRPC 传输** — 可选学习型传输实现，验证传输层 SPI 可插拔性并提供 HTTP/2 与 TCP 私有协议的对比基线
 
 ## 快速开始
 
