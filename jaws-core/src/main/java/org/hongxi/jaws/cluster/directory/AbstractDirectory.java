@@ -19,7 +19,7 @@ import java.util.function.Consumer;
  */
 public abstract class AbstractDirectory<T> implements Directory<T> {
 
-    /** The URL used to subscribe and discover services from registry, with nodeType=service. */
+    /** The URL used to subscribe and discover services from registry, with endpointType=service. */
     protected final URL consumerUrl;
 
     private volatile List<Reference<T>> references = List.of();

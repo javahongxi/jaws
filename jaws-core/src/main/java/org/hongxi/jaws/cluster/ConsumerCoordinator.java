@@ -53,7 +53,7 @@ public class ConsumerCoordinator<T> {
      * service discovery.
      *
      * @param interfaceClass the service interface
-     * @param refUrl         the consumer reference URL (nodeType=reference)
+     * @param refUrl         the consumer reference URL (endpointType=reference)
      * @param registryUrls   the list of registry URLs to subscribe to
      * @return a new ConsumerCoordinator instance (not yet initialized)
      */
@@ -71,7 +71,7 @@ public class ConsumerCoordinator<T> {
      * peer-to-peer connections (no registry involved).
      *
      * @param interfaceClass the service interface
-     * @param refUrl         the consumer reference URL (nodeType=reference)
+     * @param refUrl         the consumer reference URL (endpointType=reference)
      * @param directUrls     comma-separated list of direct provider addresses (host:port)
      * @return a new ConsumerCoordinator instance (not yet initialized)
      */

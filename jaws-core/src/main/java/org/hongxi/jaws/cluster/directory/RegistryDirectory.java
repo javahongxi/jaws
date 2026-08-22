@@ -29,7 +29,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
 
     private final Class<T> interfaceClass;
 
-    /** The consumer reference URL, with nodeType=reference. */
+    /** The consumer reference URL, with endpointType=reference. */
     private final URL url;
 
     private final List<URL> registryUrls;

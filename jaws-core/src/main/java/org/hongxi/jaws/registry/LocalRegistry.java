@@ -20,7 +20,7 @@ public class LocalRegistry extends AbstractRegistry {
     private static final Logger log = LoggerFactory.getLogger(LocalRegistry.class);
 
     /**
-     * Map<interface/nodeType, List<URL>>, URLs in the list are distinguished by identity/id
+     * Map<interface/endpointType, List<URL>>, URLs in the list are distinguished by identity/id
      */
     private final ConcurrentMap<String, List<URL>> registeredServices = new ConcurrentHashMap<>();
 
