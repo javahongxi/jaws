@@ -43,8 +43,10 @@ public class NettyChannel implements Channel {
     private final InetSocketAddress remoteAddress;
     private final Codec codec;
 
-    private io.netty.channel.Channel channel;
-    private InetSocketAddress localAddress;
+    // Written under open()/close() locks but read by business threads without
+    // locking in request()/isAvailable(), so both must be volatile for visibility
+    private volatile io.netty.channel.Channel channel;
+    private volatile InetSocketAddress localAddress;
 
     private volatile ChannelState state = ChannelState.UNINIT;
 
@@ -68,14 +70,17 @@ public class NettyChannel implements Channel {
         ResponseFuture response = new DefaultResponseFuture(request, timeout, getUrl());
         nettyClient.registerCallback(request.getRequestId(), response);
 
-        ByteBuf buf = channel.alloc().buffer();
+        // Snapshot the volatile field so this request uses a single channel
+        // reference even if a reconnect swaps it mid-flight
+        io.netty.channel.Channel ch = channel;
+        ByteBuf buf = ch.alloc().buffer();
         try {
             codec.encode(this, request, buf);
         } catch (IOException e) {
             buf.release();
             throw new JawsServiceException("encode request error: url=" + getUrl().getUri(), e);
         }
-        ChannelFuture writeFuture = channel.writeAndFlush(buf);
+        ChannelFuture writeFuture = ch.writeAndFlush(buf);
 
         boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
         if (completed && writeFuture.isSuccess()) {
