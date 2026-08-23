@@ -95,7 +95,7 @@ class RandomLoadBalanceTest {
         warmingUrl.addParameter(UrlParam.Cluster.TIMESTAMP.getName(), String.valueOf(System.currentTimeMillis()));
 
         List<Reference<String>> refs = new ArrayList<>();
-        refs.add(new UrlTestReference("warming", warmingUrl));
+        refs.add(new TestReference("warming", warmingUrl));
         refs.add(new TestReference("normal"));
         lb.onRefresh(refs);
 
@@ -130,23 +130,5 @@ class RandomLoadBalanceTest {
             @Override public byte getSerializationNumber() { return 0; }
             @Override public void setSerializationNumber(byte number) {}
         };
-    }
-
-    /**
-     * Reference stub carrying a service URL so that warm-up parameters can be tested.
-     */
-    static class UrlTestReference extends TestReference {
-
-        private final URL serviceUrl;
-
-        UrlTestReference(String name, URL serviceUrl) {
-            super(name);
-            this.serviceUrl = serviceUrl;
-        }
-
-        @Override
-        public URL getServiceUrl() {
-            return serviceUrl;
-        }
     }
 }

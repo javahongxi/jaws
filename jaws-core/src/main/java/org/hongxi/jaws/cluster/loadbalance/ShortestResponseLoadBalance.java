@@ -49,8 +49,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected Reference<T> doSelect(Request request) {
-        List<Reference<T>> references = getReferences();
+    protected Reference<T> doSelect(List<Reference<T>> references, Request request) {
         int length = references.size();
 
         long shortestResponse = Long.MAX_VALUE;
@@ -113,8 +112,8 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected void doSelectCandidates(Request request, List<Reference<T>> candidates) {
-        List<Reference<T>> references = getReferences();
+    protected void doSelectCandidates(List<Reference<T>> references, Request request,
+                                        List<Reference<T>> candidates) {
         int startIndex = ThreadLocalRandom.current().nextInt(references.size());
         int currentCursor = 0;
         int currentAvailableCursor = 0;

@@ -35,8 +35,7 @@ public class RandomLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected Reference<T> doSelect(Request request) {
-        List<Reference<T>> references = getReferences();
+    protected Reference<T> doSelect(List<Reference<T>> references, Request request) {
         if (!needWeight) {
             return selectRandomAvailable(references);
         }
@@ -102,14 +101,14 @@ public class RandomLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected void doSelectCandidates(Request request, List<Reference<T>> candidates) {
-        List<Reference<T>> references = getReferences();
-
+    protected void doSelectCandidates(List<Reference<T>> references, Request request,
+                                        List<Reference<T>> candidates) {
         int idx = (int) (ThreadLocalRandom.current().nextDouble() * references.size());
-        for (int i = 0; i < references.size(); i++) {
+        for (int i = 0, count = 0; i < references.size() && count < MAX_REFERENCE_COUNT; i++) {
             Reference<T> reference = references.get((i + idx) % references.size());
             if (reference.isAvailable()) {
                 candidates.add(reference);
+                count++;
             }
         }
     }

@@ -84,6 +84,32 @@ class ConsistentHashLoadBalanceTest {
     }
 
     @Test
+    void removingProviderShouldKeepMostMappings() {
+        List<Reference<String>> refs = createRefs("A", "B", "C");
+        lb.onRefresh(refs);
+
+        /* 记录一批请求键各自命中的 reference */
+        Reference<String>[] before = new Reference[200];
+        for (int i = 0; i < 200; i++) {
+            before[i] = lb.select(mockRequestWithArgs("key-" + i));
+        }
+
+        /* 移除 B 后，原本命中 A/C 的键应全部保持不变（一致性哈希的核心性质） */
+        List<Reference<String>> remaining = new ArrayList<>();
+        remaining.add(refs.get(0));
+        remaining.add(refs.get(2));
+        lb.onRefresh(remaining);
+
+        for (int i = 0; i < 200; i++) {
+            if ("B".equals(((TestReference) before[i]).getName())) {
+                continue;
+            }
+            assertSame(before[i], lb.select(mockRequestWithArgs("key-" + i)),
+                    "未下线节点承载的请求键不应被重新映射");
+        }
+    }
+
+    @Test
     void selectSingleReference() {
         List<Reference<String>> refs = createRefs("only");
         lb.onRefresh(refs);

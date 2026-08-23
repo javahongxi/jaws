@@ -11,16 +11,22 @@ import org.hongxi.jaws.rpc.URL;
 class TestReference implements Reference<String> {
 
     private final String name;
+    private final URL serviceUrl;
     private volatile boolean available = true;
     private volatile int activeCount = 0;
 
     TestReference(String name) {
-        this.name = name;
+        this(name, null);
     }
 
     TestReference(String name, int activeCount) {
-        this.name = name;
+        this(name, null);
         this.activeCount = activeCount;
+    }
+
+    TestReference(String name, URL serviceUrl) {
+        this.name = name;
+        this.serviceUrl = serviceUrl;
     }
 
     void setAvailable(boolean available) {
@@ -42,7 +48,7 @@ class TestReference implements Reference<String> {
 
     @Override
     public URL getServiceUrl() {
-        return null;
+        return serviceUrl;
     }
 
     @Override

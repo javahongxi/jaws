@@ -29,9 +29,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
 
     @Override
-    protected Reference<T> doSelect(Request request) {
-        List<Reference<T>> references = getReferences();
-
+    protected Reference<T> doSelect(List<Reference<T>> references, Request request) {
         int referenceSize = references.size();
         int startIndex = ThreadLocalRandom.current().nextInt(referenceSize);
         int currentCursor = 0;
@@ -69,9 +67,8 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected void doSelectCandidates(Request request, List<Reference<T>> candidates) {
-        List<Reference<T>> references = getReferences();
-
+    protected void doSelectCandidates(List<Reference<T>> references, Request request,
+                                        List<Reference<T>> candidates) {
         int referenceSize = references.size();
         int startIndex = ThreadLocalRandom.current().nextInt(referenceSize);
         int currentCursor = 0;
@@ -90,7 +87,7 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
             candidates.add(temp);
         }
 
-        candidates.sort(new LeastActiveComparator<>());
+        candidates.sort(new LeastActiveComparator<>(this));
     }
 
     private int compare(Reference<T> ref1, int weight1, Reference<T> ref2, int weight2) {
@@ -102,10 +99,23 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
         return effective1 - effective2;
     }
 
+    /**
+     * Orders candidates by weight-adjusted active count, so a higher-weight
+     * reference with the same active count is preferred.
+     */
     static class LeastActiveComparator<T> implements Comparator<Reference<T>> {
+
+        private final LeastActiveLoadBalance<T> loadBalance;
+
+        LeastActiveComparator(LeastActiveLoadBalance<T> loadBalance) {
+            this.loadBalance = loadBalance;
+        }
+
         @Override
         public int compare(Reference<T> reference1, Reference<T> reference2) {
-            return reference1.activeReferenceCount() - reference2.activeReferenceCount();
+            int weight1 = loadBalance.getWarmupWeight(reference1, 100);
+            int weight2 = loadBalance.getWarmupWeight(reference2, 100);
+            return loadBalance.compare(reference1, weight1, reference2, weight2);
         }
     }
 }

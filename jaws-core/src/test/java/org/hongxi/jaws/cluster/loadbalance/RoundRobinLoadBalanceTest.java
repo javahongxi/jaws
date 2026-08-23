@@ -82,6 +82,20 @@ class RoundRobinLoadBalanceTest {
     }
 
     @Test
+    void selectShouldInterleaveSmoothly() {
+        List<Reference<String>> refs = createRefs("A", "B");
+        lb.onRefresh(refs);
+
+        /* 平滑加权轮询下，等权重两个节点应严格交替，不出现连续命中 */
+        String previous = null;
+        for (int i = 0; i < 100; i++) {
+            String name = ((TestReference) lb.select(request)).getName();
+            assertNotEquals(previous, name, "平滑轮询不应连续命中同一 reference");
+            previous = name;
+        }
+    }
+
+    @Test
     void selectSingleReference() {
         List<Reference<String>> refs = createRefs("only");
         lb.onRefresh(refs);

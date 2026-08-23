@@ -20,7 +20,8 @@ import java.util.List;
  * <p>
  * {@link #select} and {@link #selectCandidates} first shrink the candidate
  * references through the configured {@link RouterChain}, then delegate to
- * {@link #doSelect} when more than one reference survives.
+ * {@link #doSelect} with the filtered list when more than one reference
+ * survives.
  * Subclasses define the concrete strategy (random, round robin,
  * consistent hash, least active, shortest response, etc.).
  *
@@ -53,7 +54,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
         }
         Reference<T> ref = null;
         if (references.size() > 1) {
-            ref = doSelect(request);
+            ref = doSelect(references, request);
 
         } else if (references.size() == 1) {
             ref = references.get(0).isAvailable() ? references.get(0) : null;
@@ -76,7 +77,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
         List<Reference<T>> candidates = new ArrayList<>();
         if (references.size() > 1) {
-            doSelectCandidates(request, candidates);
+            doSelectCandidates(references, request, candidates);
 
         } else if (references.size() == 1 && references.get(0).isAvailable()) {
             candidates.add(references.get(0));
@@ -88,13 +89,24 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
         return candidates;
     }
 
-    protected List<Reference<T>> getReferences() {
-        return references;
-    }
+    /**
+     * Select one reference from the router-filtered list.
+     *
+     * @param references references surviving the router chain, never empty
+     * @param request    the invocation to be routed
+     * @return the selected available reference, or {@code null} if none is available
+     */
+    protected abstract Reference<T> doSelect(List<Reference<T>> references, Request request);
 
-    protected abstract Reference<T> doSelect(Request request);
-
-    protected abstract void doSelectCandidates(Request request, List<Reference<T>> candidates);
+    /**
+     * Fill candidates from the router-filtered list in priority order.
+     *
+     * @param references references surviving the router chain, size &gt; 1
+     * @param request    the invocation to be routed
+     * @param candidates collector of available candidates, most preferred first
+     */
+    protected abstract void doSelectCandidates(List<Reference<T>> references, Request request,
+                                               List<Reference<T>> candidates);
 
     /**
      * Set the router chain for filtering references before selection.
