@@ -7,7 +7,6 @@ import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -25,14 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * FailoverCluster unit tests
  */
 class FailoverClusterTest {
-
-    private FailoverCluster<String> cluster;
-
-    @BeforeEach
-    void setUp() {
-        cluster = new FailoverCluster<>();
-        cluster.init();
-    }
 
     /* ==================== stubs ==================== */
 
@@ -141,9 +132,10 @@ class FailoverClusterTest {
         return new URL("jaws", "127.0.0.1", 8080, "testService");
     }
 
-    private void wireCluster(URL url, LoadBalance<String> lb) {
-        cluster.setUrl(url);
-        cluster.setLoadBalance(lb);
+    private FailoverCluster<String> newCluster(URL url, LoadBalance<String> lb) {
+        FailoverCluster<String> cluster = new FailoverCluster<>(url, lb);
+        cluster.init();
+        return cluster;
     }
 
     /* ==================== test cases ==================== */
@@ -154,7 +146,7 @@ class FailoverClusterTest {
         StubReference ref = new StubReference(url).thenReturn(new StubResponse("result-1"));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         Response result = cluster.call(request);
 
@@ -170,7 +162,7 @@ class FailoverClusterTest {
                 .thenReturn(new StubResponse("retry-ok"));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         Response result = cluster.call(request);
 
@@ -188,7 +180,7 @@ class FailoverClusterTest {
                 .thenThrow(secondEx);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         RuntimeException thrown = assertThrows(RuntimeException.class, () -> cluster.call(request));
 
@@ -204,7 +196,7 @@ class FailoverClusterTest {
         StubReference ref = new StubReference(url).thenThrow(bizEx);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         RuntimeException thrown = assertThrows(JawsBizException.class, () -> cluster.call(request));
 
@@ -217,7 +209,7 @@ class FailoverClusterTest {
         URL url = defaultUrl();
         StubLoadBalance lb = new StubLoadBalance();
         StubRequest request = new StubRequest();
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         assertThrows(JawsServiceException.class, () -> cluster.call(request));
     }
@@ -228,7 +220,7 @@ class FailoverClusterTest {
         StubReference ref = new StubReference(url).thenThrow(new RuntimeException("fail"));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         assertThrows(RuntimeException.class, () -> cluster.call(request));
 
@@ -241,7 +233,7 @@ class FailoverClusterTest {
         StubReference ref = new StubReference(url).thenThrow(new RuntimeException("fail"));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         assertThrows(RuntimeException.class, () -> cluster.call(request));
 
@@ -256,7 +248,7 @@ class FailoverClusterTest {
         StubReference ref2 = new StubReference(url2).thenReturn(new StubResponse("from-ref2"));
         StubLoadBalance lb = new StubLoadBalance(ref1, ref2);
         StubRequest request = new StubRequest();
-        wireCluster(url1, lb);
+        FailoverCluster<String> cluster = newCluster(url1, lb);
 
         Response result = cluster.call(request);
 
@@ -271,7 +263,7 @@ class FailoverClusterTest {
         StubReference ref = new StubReference(url).thenReturn(new StubResponse());
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         cluster.call(request);
 
@@ -286,7 +278,7 @@ class FailoverClusterTest {
                 .thenThrow(new RuntimeException("fail-2"))
                 .thenReturn(new StubResponse("ok"));
         StubLoadBalance lb = new StubLoadBalance(ref);
-        wireCluster(url, lb);
+        FailoverCluster<String> cluster = newCluster(url, lb);
 
         List<Integer> retriesSeen = new ArrayList<>();
         StubRequest request = new StubRequest() {

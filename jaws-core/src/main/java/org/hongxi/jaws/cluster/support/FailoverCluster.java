@@ -1,5 +1,6 @@
 package org.hongxi.jaws.cluster.support;
 
+import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
@@ -33,6 +34,10 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
     private static final Logger log = LoggerFactory.getLogger(FailoverCluster.class);
 
     private final ThreadLocal<List<Reference<T>>> referencesHolder = ThreadLocal.withInitial(ArrayList::new);
+
+    public FailoverCluster(URL url, LoadBalance<T> loadBalance) {
+        super(url, loadBalance);
+    }
 
     @Override
     public Response call(Request request) {

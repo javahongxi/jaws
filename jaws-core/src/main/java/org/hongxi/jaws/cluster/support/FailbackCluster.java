@@ -10,6 +10,7 @@ import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
+import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +48,10 @@ public class FailbackCluster<T> extends AbstractCluster<T> {
 
     private volatile boolean retryScheduled = false;
 
+    public FailbackCluster(URL url, LoadBalance<T> loadBalance) {
+        super(url, loadBalance);
+    }
+
     @Override
     public Response call(Request request) {
         Reference<T> refer = loadBalance.select(request);
@@ -75,9 +80,7 @@ public class FailbackCluster<T> extends AbstractCluster<T> {
             synchronized (this) {
                 if (!retryScheduled) {
                     retryScheduled = true;
-                    int period = url != null
-                            ? url.getIntParameter(UrlParam.Registry.FAILBACK_PERIOD)
-                            : UrlParam.Registry.FAILBACK_PERIOD.intValue();
+                    int period = url.getIntParameter(UrlParam.Registry.FAILBACK_PERIOD);
                     RETRY_EXECUTOR.scheduleAtFixedRate(this::retry, period, period, TimeUnit.MILLISECONDS);
                 }
             }

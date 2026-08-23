@@ -23,12 +23,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public abstract class AbstractCluster<T> implements Cluster<T> {
 
-    protected URL url;
+    protected final URL url;
+    protected final LoadBalance<T> loadBalance;
     // volatile: written under the instance lock in onRefresh, read lock-free
     // by destroy/getReferences/getInterface/toString
     protected volatile List<Reference<T>> references = new ArrayList<>();
-    protected LoadBalance<T> loadBalance;
     protected final AtomicBoolean available = new AtomicBoolean(false);
+
+    protected AbstractCluster(URL url, LoadBalance<T> loadBalance) {
+        this.url = url;
+        this.loadBalance = loadBalance;
+    }
 
     @Override
     public void init() {
@@ -77,11 +82,6 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
     }
 
     @Override
-    public void setUrl(URL url) {
-        this.url = url;
-    }
-
-    @Override
     public URL getUrl() {
         return url;
     }
@@ -89,11 +89,6 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
     @Override
     public List<Reference<T>> getReferences() {
         return references;
-    }
-
-    @Override
-    public void setLoadBalance(LoadBalance<T> loadBalance) {
-        this.loadBalance = loadBalance;
     }
 
     @Override

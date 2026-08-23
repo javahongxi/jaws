@@ -1,5 +1,6 @@
 package org.hongxi.jaws.cluster.support;
 
+import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
@@ -11,12 +12,17 @@ import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
+import org.hongxi.jaws.rpc.URL;
 
 /**
  * Failfast cluster: fails immediately on the first error without retrying.
  */
 @Extension("failfast")
 public class FailfastCluster<T> extends AbstractCluster<T> {
+
+    public FailfastCluster(URL url, LoadBalance<T> loadBalance) {
+        super(url, loadBalance);
+    }
 
     @Override
     public Response call(Request request) {

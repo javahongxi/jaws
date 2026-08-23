@@ -111,6 +111,64 @@ public class ExtensionLoader<T> {
         }
     }
 
+    /**
+     * Get a prototype extension instance created with the given constructor
+     * arguments. The public constructor whose parameter types accept the
+     * arguments is selected by assignability.
+     * <p>
+     * Constructor injection is only supported for prototype extensions;
+     * singleton extensions must be stateless and are created via
+     * {@link #getExtension(String)}.
+     *
+     * @param name the extension name
+     * @param args constructor arguments
+     * @return the extension instance, or null if no extension with the name
+     */
+    public T getExtension(String name, Object... args) {
+        if (args == null || args.length == 0) {
+            return getExtension(name);
+        }
+        if (name == null) return null;
+
+        checkInit();
+
+        if (singleton) {
+            throw new JawsFrameworkException(
+                    type.getName() + ": Constructor injection not supported for singleton extension " + name);
+        }
+
+        Class<T> clazz = extensionClasses.get(name);
+        if (clazz == null) {
+            return null;
+        }
+        try {
+            return newInstance(clazz, args);
+        } catch (Exception e) {
+            throw new JawsFrameworkException(type.getName() + ": Error get extension " + name, e);
+        }
+    }
+
+    private T newInstance(Class<T> clazz, Object[] args) throws ReflectiveOperationException {
+        for (Constructor<?> constructor : clazz.getConstructors()) {
+            Class<?>[] paramTypes = constructor.getParameterTypes();
+            if (paramTypes.length != args.length) {
+                continue;
+            }
+            boolean matched = true;
+            for (int i = 0; i < args.length; i++) {
+                if (args[i] == null || !paramTypes[i].isAssignableFrom(args[i].getClass())) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) {
+                // noinspection unchecked
+                return ((Constructor<T>) constructor).newInstance(args);
+            }
+        }
+        throw new NoSuchMethodException(clazz.getName() + " has no constructor accepting the given arguments");
+    }
+
     private T getSingletonInstance(String name) {
         Class<T> clazz = extensionClasses.get(name);
         if (clazz == null) {
@@ -280,13 +338,9 @@ public class ExtensionLoader<T> {
     }
 
     private void checkConstructorPublic(Class<T> clazz) {
-        Constructor<?>[] constructors = clazz.getConstructors();
-        for (Constructor<?> constructor : constructors) {
-            if (constructor.getParameterTypes().length == 0) {
-                return;
-            }
+        if (clazz.getConstructors().length == 0) {
+            throw new JawsFrameworkException(clazz.getName() + " has no public constructor");
         }
-        throw new JawsFrameworkException(clazz.getName() + " has no public no-args constructor");
     }
 
     private void checkClassInherit(Class<T> clazz) {

@@ -21,13 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class FailfastClusterTest {
 
-    private FailfastCluster<String> cluster;
     private URL testUrl;
 
     @BeforeEach
     void setUp() {
-        cluster = new FailfastCluster<>();
-        cluster.init();
         testUrl = new URL("jaws", "127.0.0.1", 8080, "testService");
     }
 
@@ -122,8 +119,7 @@ class FailfastClusterTest {
         StubReference ref = new StubReference(testUrl, expected);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        cluster.setUrl(testUrl);
-        cluster.setLoadBalance(lb);
+        FailfastCluster<String> cluster = newCluster(lb);
 
         Response result = cluster.call(request);
 
@@ -136,8 +132,7 @@ class FailfastClusterTest {
         StubReference ref = new StubReference(testUrl, new StubResponse());
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        cluster.setUrl(testUrl);
-        cluster.setLoadBalance(lb);
+        FailfastCluster<String> cluster = newCluster(lb);
 
         cluster.call(request);
 
@@ -150,13 +145,18 @@ class FailfastClusterTest {
         StubReference ref = new StubReference(testUrl, ex);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        cluster.setUrl(testUrl);
-        cluster.setLoadBalance(lb);
+        FailfastCluster<String> cluster = newCluster(lb);
 
         RuntimeException thrown = assertThrows(RuntimeException.class, () -> cluster.call(request));
 
         assertTrue(thrown.getMessage().contains("FailfastCluster call failed"));
         assertEquals(ex, thrown.getCause());
         assertEquals(1, ref.getCallCount());
+    }
+
+    private FailfastCluster<String> newCluster(LoadBalance<String> lb) {
+        FailfastCluster<String> cluster = new FailfastCluster<>(testUrl, lb);
+        cluster.init();
+        return cluster;
     }
 }

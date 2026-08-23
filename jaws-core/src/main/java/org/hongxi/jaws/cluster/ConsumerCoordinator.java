@@ -149,11 +149,7 @@ public class ConsumerCoordinator<T> {
         String loadBalanceName = url.getParameter(UrlParam.Cluster.LOAD_BALANCE);
 
         // noinspection unchecked
-        cluster = ExtensionLoader.getExtensionLoader(Cluster.class).getExtension(retryPolicyName);
-        // noinspection unchecked
         LoadBalance<T> loadBalance = ExtensionLoader.getExtensionLoader(LoadBalance.class).getExtension(loadBalanceName);
-        cluster.setLoadBalance(loadBalance);
-        cluster.setUrl(url);
 
         // Register routers for traffic control
         if (loadBalance instanceof AbstractLoadBalance) {
@@ -165,6 +161,12 @@ public class ConsumerCoordinator<T> {
             dynamicConfigRouter = new DynamicConfigRouter<>(interfaceClass.getName());
             ((AbstractLoadBalance<T>) loadBalance).addRouter(dynamicConfigRouter);
         }
+
+        // Create the cluster with url and loadBalance injected via constructor,
+        // so it is fully assembled the moment it is created.
+        // noinspection unchecked
+        cluster = ExtensionLoader.getExtensionLoader(Cluster.class)
+                .getExtension(retryPolicyName, url, loadBalance);
     }
 
     /**

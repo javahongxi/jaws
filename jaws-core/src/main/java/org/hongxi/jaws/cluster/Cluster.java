@@ -3,7 +3,6 @@ package org.hongxi.jaws.cluster;
 import org.hongxi.jaws.common.extension.Spi;
 import org.hongxi.jaws.rpc.Caller;
 import org.hongxi.jaws.rpc.Reference;
-import org.hongxi.jaws.rpc.URL;
 
 import java.util.List;
 
@@ -20,13 +19,9 @@ public interface Cluster<T> extends Caller<T> {
     @Override
     void init();
 
-    void setUrl(URL url);
-
     void onRefresh(List<Reference<T>> references);
 
     List<Reference<T>> getReferences();
-
-    void setLoadBalance(LoadBalance<T> loadBalance);
 
     LoadBalance<T> getLoadBalance();
 }
