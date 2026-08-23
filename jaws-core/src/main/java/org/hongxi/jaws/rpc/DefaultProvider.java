@@ -77,7 +77,8 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                                     "provider async call timeout: " + request.getInterfaceName() + "." + request.getMethodName(),
                                     JawsErrorCode.SERVICE_TIMEOUT));
                         } else if (cause instanceof Exception ex) {
-                            asyncResponse.setException(new JawsBizException("provider async call failed", ex));
+                            asyncResponse.setException(new JawsBizException("provider async call failed",
+                                    ExceptionUtils.toSerializableException(ex, method, interfaceClass)));
                         } else {
                             asyncResponse.setException(new JawsServiceException("provider async call failed with fatal error: " + cause));
                         }
@@ -89,11 +90,9 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             }
             response.setValue(value);
         } catch (Exception e) {
-            if (e.getCause() != null) {
-                response.setException(new JawsBizException("provider call failed", e.getCause()));
-            } else {
-                response.setException(new JawsBizException("provider call failed", e));
-            }
+            Throwable bizCause = e.getCause() != null ? e.getCause() : e;
+            response.setException(new JawsBizException("provider call failed",
+                    ExceptionUtils.toSerializableException(bizCause, method, interfaceClass)));
 
             // not print stack in error log when exception declared in method
             boolean logException = true;
@@ -111,12 +110,12 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                         request, response.getException().getCause().toString());
             }
         } catch (Throwable t) {
-            // If provider encounters an Error, convert it to Exception to prevent dragging down the caller
-            if (t.getCause() != null) {
-                response.setException(new JawsServiceException("provider has encountered a fatal error", t.getCause()));
-            } else {
-                response.setException(new JawsServiceException("provider has encountered a fatal error", t));
-            }
+            // If provider encounters an Error, stringify it into the message instead of
+            // attaching it as cause: Error classes are usually absent in the consumer's
+            // class loader and would break response deserialization.
+            Throwable fatalCause = t.getCause() != null ? t.getCause() : t;
+            response.setException(new JawsServiceException(
+                    "provider has encountered a fatal error: " + ExceptionUtils.toString(fatalCause)));
             // Also log for Throwable
             log.error("Exception caught during method invocation. request: {}", request, t);
         }

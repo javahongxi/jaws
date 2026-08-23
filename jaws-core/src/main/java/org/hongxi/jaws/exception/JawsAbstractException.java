@@ -19,6 +19,14 @@ public abstract class JawsAbstractException extends RuntimeException {
 
     protected int errorCode;
 
+    /**
+     * Request id captured at construction time. Exceptions travel across threads
+     * and serialization boundaries, so the id must be frozen here instead of
+     * reading the thread-local {@link RpcContext} lazily in {@link #getMessage()}.
+     * Serializable, so the provider-side value survives transfer to the consumer.
+     */
+    private final String requestId = RpcContext.getContext().getRequestId();
+
     public JawsAbstractException() {
         super();
     }
@@ -53,7 +61,7 @@ public abstract class JawsAbstractException extends RuntimeException {
     @Override
     public String getMessage() {
         return String.format("error_message: %s, error_code: %d, request_id: %s",
-                getOriginMessage(), errorCode, RpcContext.getContext().getRequestId());
+                getOriginMessage(), errorCode, requestId);
     }
 
     public String getOriginMessage() {
