@@ -6,6 +6,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.transport.Channel;
+import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@link MessageHandler} pipeline via {@link GrpcServerService}.
  * <p>
  * Unlike {@code NettyServer}, this server does not use the Jaws binary
- * protocol or {@link org.hongxi.jaws.codec.Codec}. gRPC/HTTP2 handles
+ * protocol or {@link Codec}. gRPC/HTTP2 handles
  * all framing; business payloads are serialized via Jaws
  * {@link Serialization} directly.
  *

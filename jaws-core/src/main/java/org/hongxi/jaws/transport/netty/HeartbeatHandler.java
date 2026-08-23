@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.timeout.IdleStateEvent;
-import org.hongxi.jaws.codec.Codec;
+import org.hongxi.jaws.transport.Codec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

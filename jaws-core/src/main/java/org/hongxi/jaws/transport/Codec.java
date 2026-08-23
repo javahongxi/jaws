@@ -1,9 +1,8 @@
-package org.hongxi.jaws.codec;
+package org.hongxi.jaws.transport;
 
 import io.netty.buffer.ByteBuf;
 import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
-import org.hongxi.jaws.transport.Channel;
 
 import java.io.IOException;
 

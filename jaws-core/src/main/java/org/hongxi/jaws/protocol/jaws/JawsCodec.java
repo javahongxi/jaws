@@ -3,7 +3,7 @@ package org.hongxi.jaws.protocol.jaws;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
-import org.hongxi.jaws.codec.Codec;
+import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.serialization.ObjectInput;
 import org.hongxi.jaws.serialization.ObjectOutput;
 import org.hongxi.jaws.serialization.Serialization;

@@ -2,7 +2,7 @@ package org.hongxi.jaws.transport.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
-import org.hongxi.jaws.codec.Codec;
+import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;

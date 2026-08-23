@@ -2,7 +2,7 @@ package org.hongxi.jaws.transport.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
-import org.hongxi.jaws.codec.Codec;
+import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.junit.jupiter.api.Test;
 
