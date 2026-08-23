@@ -1,7 +1,6 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
 import org.hongxi.jaws.common.extension.Extension;
-import org.hongxi.jaws.rpc.AbstractReference;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 
@@ -35,7 +34,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
     /* Sliding window period (ms); offsets are asynchronously reset after this period */
     private static final long SLIDE_PERIOD = 30_000L;
 
-    private final ConcurrentMap<Reference<T>, SlideWindowData> slideWindowMap = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Reference<T>, LoadEstimator> slideWindowMap = new ConcurrentHashMap<>();
 
     private volatile long lastUpdateTime = System.currentTimeMillis();
 
@@ -66,8 +65,8 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
                 continue;
             }
 
-            SlideWindowData data = slideWindowMap.computeIfAbsent(ref, SlideWindowData::new);
-            long estimateResponse = data.getEstimateResponse(ref);
+            LoadEstimator data = slideWindowMap.computeIfAbsent(ref, LoadEstimator::new);
+            long estimateResponse = data.estimateLoad();
             int weight = getWarmupWeight(ref, 100);
             weights[i] = weight;
 
@@ -90,7 +89,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
         /* Asynchronously reset sliding window offsets */
         if (System.currentTimeMillis() - lastUpdateTime > SLIDE_PERIOD
                 && resetting.compareAndSet(false, true)) {
-            slideWindowMap.values().forEach(SlideWindowData::reset);
+            slideWindowMap.values().forEach(LoadEstimator::reset);
             lastUpdateTime = System.currentTimeMillis();
             resetting.set(false);
         }
@@ -126,57 +125,6 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
             }
             currentAvailableCursor++;
             candidates.add(temp);
-        }
-    }
-
-    /**
-     * Sliding window data: records statistics offsets for computing average response time within the window.
-     */
-    private static class SlideWindowData {
-
-        // volatile: written by the CAS-winning thread in reset(),
-        // read by other threads in getAverageElapsed()
-        private volatile long succeededOffset;
-        private volatile long succeededElapsedOffset;
-        private final Reference<?> reference;
-
-        SlideWindowData(Reference<?> reference) {
-            this.reference = reference;
-        }
-
-        void reset() {
-            if (reference instanceof AbstractReference<?> ar) {
-                succeededOffset = ar.getSucceededCount();
-                succeededElapsedOffset = ar.getSucceededElapsed();
-            }
-        }
-
-        /**
-         * Get average response time (nanoseconds) within the window; returns 0 if no data.
-         */
-        private long getAverageElapsed() {
-            if (!(reference instanceof AbstractReference<?> ar)) {
-                return 0;
-            }
-            long succeed = ar.getSucceededCount() - succeededOffset;
-            if (succeed == 0) {
-                return 0;
-            }
-            return (ar.getSucceededElapsed() - succeededElapsedOffset) / succeed;
-        }
-
-        /**
-         * Estimated response time = average response time * (active connections + 1)
-         * More active connections means longer estimated wait time.
-         */
-        long getEstimateResponse(Reference<?> ref) {
-            int active = ref.activeReferenceCount() + 1;
-            long avgElapsed = getAverageElapsed();
-            if (avgElapsed == 0) {
-                /* No call data yet; use active count as a heuristic estimate */
-                return active;
-            }
-            return avgElapsed * active;
         }
     }
 }
