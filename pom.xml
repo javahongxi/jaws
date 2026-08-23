@@ -32,7 +32,7 @@
         <mcp-bom.version>2.0.0</mcp-bom.version>
         <nacos.version>3.2.3</nacos.version>
         <protobuf.version>4.34.1</protobuf.version>
-        <zookeeper.version>3.9.3</zookeeper.version>
+        <zookeeper.version>3.9.5</zookeeper.version>
     </properties>
 
     <dependencyManagement>
