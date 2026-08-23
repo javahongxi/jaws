@@ -87,7 +87,7 @@ public final class UrlParam {
 
     public static final class Transport {
         public static final Def<String> PROTOCOL = new Def<>("protocol", JawsConstants.PROTOCOL_JAWS);
-        public static final Def<String> CODEC = new Def<>("codec", "jaws");
+        public static final Def<String> CODEC = new Def<>("codec", JawsConstants.PROTOCOL_JAWS);
         public static final Def<String> SERIALIZATION = new Def<>("serialization", "hessian2");
         public static final Def<String> TRANSPORT_FACTORY = new Def<>("transportFactory", "netty");
         public static final Def<String> PROXY = new Def<>("proxy", "jdk");
@@ -106,7 +106,6 @@ public final class UrlParam {
 
     public static final class Server {
         public static final Def<String> HOST = new Def<>("host", "");
-        public static final Def<Integer> PORT = new Def<>("port", 0);
         public static final Def<Integer> MAX_CONNECTIONS = new Def<>("maxServerConnections", 100000);
         public static final Def<Integer> MIN_WORKER_THREADS = new Def<>("minWorkerThreads", 20);
         public static final Def<Integer> MAX_WORKER_THREADS = new Def<>("maxWorkerThreads", 200);
@@ -124,7 +123,6 @@ public final class UrlParam {
         public static final Def<Boolean> CHECK = new Def<>("check", true);
         public static final Def<Boolean> THROW_EXCEPTION = new Def<>("throwException", true);
         public static final Def<Integer> FUSING_THRESHOLD = new Def<>("fusingThreshold", 10);
-        public static final Def<String> DIRECT_URL = new Def<>("directUrl", "");
 
         private Client() {
         }
