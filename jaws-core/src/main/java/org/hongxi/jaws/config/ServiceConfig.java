@@ -4,6 +4,7 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
+import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -109,14 +110,22 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
     public synchronized void export() {
         if (exported.get()) {
-            log.warn("{} has already been exported, so ignore the export request!", interfaceClass.getName());
+            log.warn("{} has already been exported, ignoring the duplicate export request", interfaceClass.getName());
             return;
+        }
+
+        if (CollectionUtils.isEmpty(protocols)) {
+            throw new JawsFrameworkException(String.format(
+                    "No protocol configured for service [%s], " +
+                    "please configure at least one ProtocolConfig.",
+                    interfaceClass.getName()));
         }
 
         checkInterfaceAndMethods(interfaceClass, methods);
 
         loadRegistryUrls();
-        if (registryUrls == null || registryUrls.isEmpty()) {
+
+        if (registryUrls.isEmpty()) {
             log.info("No registry configured for service [{}], will export without registering.", interfaceClass.getName());
         }
 
@@ -204,10 +213,9 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         URL serviceUrl = new URL(protocolName, hostAddress, port, interfaceClass.getName(), map);
 
         if (EXPORTED_SERVICES.contains(serviceUrl.getIdentity())) {
-            log.warn("{} configService is malformed, for same service ({}) already exists ",
-                    interfaceClass.getName(), serviceUrl.getIdentity());
-            throw new JawsFrameworkException(String.format("%s configService is malformed, for same service (%s) already exists ",
-                    interfaceClass.getName(), serviceUrl.getIdentity()));
+            throw new JawsFrameworkException(String.format(
+                    "Service [%s] is already exported, duplicate export is not allowed.",
+                    serviceUrl.getIdentity()));
         }
 
         List<URL> registryUrls = new ArrayList<>();
@@ -255,8 +263,10 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
         for (URL url : registryUrls) {
             RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
             if (registryFactory == null) {
-                throw new JawsFrameworkException("register error! Could not find extension for registry protocol:" + url.getProtocol()
-                                + ", make sure registry module for " + url.getProtocol() + " is in classpath!",
+                throw new JawsFrameworkException(String.format(
+                        "No RegistryFactory found for registry protocol [%s], " +
+                        "please make sure the corresponding registry module is in the classpath.",
+                        url.getProtocol()),
                         JawsErrorCode.FRAMEWORK_REGISTER);
             }
             Registry registry = registryFactory.getRegistry(url);
@@ -271,7 +281,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
                 Registry registry = registryFactory.getRegistry(url);
                 registry.unregister(serviceUrl);
             } catch (Exception e) {
-                log.warn("unregister url false: {}", url, e);
+                log.warn("Failed to unregister service url: {}", url, e);
             }
         }
     }
@@ -323,7 +333,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
 
     public void setInterface(Class<T> interfaceClass) {
         if (interfaceClass != null && !interfaceClass.isInterface()) {
-            throw new IllegalStateException("The interface class " + interfaceClass + " is not a interface!");
+            throw new JawsFrameworkException("The interface class " + interfaceClass + " is not an interface!");
         }
         this.interfaceClass = interfaceClass;
     }

@@ -27,12 +27,12 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public <T> Exporter<T> export(Provider<T> provider) {
         if (provider == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider is null");
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export failed: provider must not be null");
         }
 
         URL url = provider.getUrl();
         if (url == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: provider url is null");
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " export failed: provider url must not be null");
         }
 
         String protocolKey = RpcUtils.getProtocolKey(url);
@@ -41,13 +41,13 @@ public abstract class AbstractProtocol implements Protocol {
             // noinspection unchecked
             Exporter<T> exporter = (Exporter<T>) exporterMap.get(protocolKey);
             if (exporter != null) {
-                throw new JawsFrameworkException(this.getClass().getSimpleName() + " export Error: service already exists, url=" + url);
+                throw new JawsFrameworkException(this.getClass().getSimpleName() + " export failed: service already exists, url=" + url);
             }
 
             exporter = createExporter(provider);
             exporter.init();
             exporterMap.put(protocolKey, exporter);
-            log.info("{} export Success: url={}", this.getClass().getSimpleName(), url);
+            log.info("{} exported successfully: url={}", this.getClass().getSimpleName(), url);
             return exporter;
         }
     }
@@ -55,17 +55,17 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public <T> Reference<T> refer(Class<T> interfaceClass, URL url) {
         if (url == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: url is null");
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer failed: url must not be null");
         }
 
         if (interfaceClass == null) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer Error: class is null, url=" + url);
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " refer failed: interfaceClass must not be null, url=" + url);
         }
         long start = System.currentTimeMillis();
         Reference<T> reference = createReference(interfaceClass, url);
         reference.init();
 
-        log.info("{} refer Success: url={}, cost:{}ms", this.getClass().getSimpleName(), url, System.currentTimeMillis() - start);
+        log.info("{} referred successfully: url={}, cost:{}ms", this.getClass().getSimpleName(), url, System.currentTimeMillis() - start);
 
         return reference;
     }
@@ -90,9 +90,9 @@ public abstract class AbstractProtocol implements Protocol {
             if (node != null) {
                 try {
                     node.destroy();
-                    log.info("{} destroy endpoint Success: {}", this.getClass().getSimpleName(), node);
+                    log.info("{} destroyed endpoint successfully: {}", this.getClass().getSimpleName(), node);
                 } catch (Throwable t) {
-                    log.error("{} destroy Error", this.getClass().getSimpleName(), t);
+                    log.error("{} failed to destroy endpoint", this.getClass().getSimpleName(), t);
                 }
             }
         }

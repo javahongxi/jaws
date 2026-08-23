@@ -105,8 +105,10 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
         }
 
         if (CollectionUtils.isEmpty(protocols)) {
-            throw new JawsFrameworkException(interfaceClass.getName() +
-                    " ReferenceConfig is malformed, for protocol not set correctly!");
+            throw new JawsFrameworkException(String.format(
+                    "No protocol configured for reference [%s], " +
+                    "please configure at least one ProtocolConfig.",
+                    interfaceClass.getName()));
         }
 
         checkInterfaceAndMethods(interfaceClass, methods);
@@ -164,7 +166,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
      */
     private List<URL> resolveRegistryUrls(URL refUrl) {
         if (registryUrls.isEmpty()) {
-            throw new IllegalStateException(String.format(
+            throw new JawsFrameworkException(String.format(
                     "No registry found for service [%s] with protocol [%s], " +
                     "please configure at least one registry address via RegistryConfig.",
                     interfaceClass.getName(), refUrl.getProtocol()));
@@ -189,7 +191,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
 
     public void setInterface(Class<T> interfaceClass) {
         if (interfaceClass != null && !interfaceClass.isInterface()) {
-            throw new IllegalStateException("The interface class " + interfaceClass + " is not a interface!");
+            throw new JawsFrameworkException("The interface class " + interfaceClass + " is not an interface!");
         }
         this.interfaceClass = interfaceClass;
     }

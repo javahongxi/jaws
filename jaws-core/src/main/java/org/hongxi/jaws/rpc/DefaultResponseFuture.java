@@ -223,7 +223,7 @@ public class DefaultResponseFuture implements ResponseFuture {
         try {
             listener.operationComplete(this);
         } catch (Throwable t) {
-            log.error("{} notifyListener Error: {}",
+            log.error("{} failed to notify listener: {}",
                     this.getClass().getName(), listener.getClass().getSimpleName(), t);
         }
     }

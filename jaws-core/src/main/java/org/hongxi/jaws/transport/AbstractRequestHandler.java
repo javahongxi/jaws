@@ -37,20 +37,20 @@ public abstract class AbstractRequestHandler implements MessageHandler {
     @Override
     public CompletableFuture<Object> handleAsync(Channel channel, Object message) {
         if (channel == null || message == null) {
-            throw new JawsFrameworkException("handler(channel, message) params is null");
+            throw new JawsFrameworkException("handler(channel, message): channel and message must not be null");
         }
         if (!(message instanceof Request request)) {
-            throw new JawsFrameworkException("message type not support: " + message.getClass());
+            throw new JawsFrameworkException("unsupported message type: " + message.getClass());
         }
 
         String serviceKey = RpcUtils.getServiceKey(request);
         Provider<?> provider = providers.get(serviceKey);
 
         if (provider == null) {
-            log.error("{} handler Error: provider not exist serviceKey={} {}",
+            log.error("{} no provider found for serviceKey={} {}",
                     this.getClass().getSimpleName(), serviceKey, RpcUtils.toString(request));
             JawsServiceException exception = new JawsServiceException(
-                    this.getClass().getSimpleName() + " handler Error: provider not exist serviceKey="
+                    this.getClass().getSimpleName() + " no provider found for serviceKey="
                             + serviceKey + " " + RpcUtils.toString(request));
             DefaultResponse response = RpcUtils.buildErrorResponse(request, exception);
             return CompletableFuture.completedFuture(response);
@@ -76,7 +76,7 @@ public abstract class AbstractRequestHandler implements MessageHandler {
             return provider.callAsync(request);
         } catch (Exception e) {
             return CompletableFuture.completedFuture(
-                    RpcUtils.buildErrorResponse(request, new JawsBizException("provider call process error", e)));
+                    RpcUtils.buildErrorResponse(request, new JawsBizException("provider call failed", e)));
         }
     }
 

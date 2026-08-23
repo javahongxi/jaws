@@ -141,7 +141,7 @@ public class AbstractConfig implements Serializable {
             }
             return buf.toString();
         } catch (Throwable t) {
-            log.warn(t.getMessage(), t);
+            log.warn("Failed to build toString for config object", t);
             return super.toString();
         }
     }

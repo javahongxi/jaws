@@ -81,7 +81,7 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
             }
         }
 
-        throw new JawsFrameworkException("FailoverCluster.call should not come here!");
+        throw new JawsFrameworkException("FailoverCluster.call should never reach here after the retry loop");
     }
 
     /**

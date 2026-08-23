@@ -48,14 +48,14 @@ public class ReferenceDestroyer {
                 try {
                     reference.destroy();
                 } catch (Exception e) {
-                    log.error("ReferenceSupport delayDestroy Error: url={}", reference.getUrl().getUri(), e);
+                    log.error("Failed to destroy reference (delayed): url={}", reference.getUrl().getUri(), e);
                 }
             }
-            log.info("ReferenceSupport delayDestroy Success: size={} service={} urls={}",
+            log.info("Delayed reference destroy completed: size={} service={} urls={}",
                     references.size(), references.get(0).getUrl().getIdentity(), getServerPorts(references));
         }, DELAY_TIME, TimeUnit.MILLISECONDS);
 
-        log.info("ReferenceSupport delayDestroy scheduled in {}ms: size={} service={}",
+        log.info("Delayed reference destroy scheduled in {}ms: size={} service={}",
                 DELAY_TIME, references.size(), references.get(0).getUrl().getIdentity());
     }
 

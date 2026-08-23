@@ -75,7 +75,7 @@ public class ShutdownHook extends Thread {
                 log.error("Failed to close {}", resource.closeable.getClass(), e);
             }
         }
-        log.info("Success to close all the resource!");
+        log.info("All resources closed successfully");
         resourceList.clear();
     }
 

@@ -8,7 +8,6 @@ import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.common.util.UrlUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.registry.RegistryService;
 import org.hongxi.jaws.rpc.URL;
 
@@ -83,7 +82,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     /**
      * Parsed registry URLs
      */
-    protected List<URL> registryUrls = new ArrayList<>();
+    protected final List<URL> registryUrls = new ArrayList<>();
 
     // ========== Server-only configuration ==========
 
@@ -190,10 +189,10 @@ public class AbstractInterfaceConfig extends AbstractConfig {
 
     protected void checkInterfaceAndMethods(Class<?> interfaceClass, List<MethodConfig> methods) {
         if (interfaceClass == null) {
-            throw new IllegalStateException("interface not allow null!");
+            throw new JawsFrameworkException("The interface class must not be null!");
         }
         if (!interfaceClass.isInterface()) {
-            throw new IllegalStateException("The interface class " + interfaceClass + " is not a interface!");
+            throw new JawsFrameworkException("The interface class " + interfaceClass + " is not an interface!");
         }
         if (methods == null || methods.isEmpty()) {
             return;
@@ -202,7 +201,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         for (MethodConfig methodBean : methods) {
             String methodName = methodBean.getName();
             if (methodName == null || methodName.isEmpty()) {
-                throw new IllegalStateException("MethodConfig name is required! Please check the method config for interface \""
+                throw new JawsFrameworkException("MethodConfig name is required, please check the method config for interface \""
                         + interfaceClass.getName() + "\".");
             }
             Method matchedMethod = null;
@@ -217,14 +216,14 @@ public class AbstractInterfaceConfig extends AbstractConfig {
                         continue;
                     }
                     if (matchedMethod != null) {
-                        throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " has more than one method "
-                                + methodName + " , must set argumentTypes attribute.");
+                        throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " has more than one method named "
+                                + methodName + ", please set the argumentTypes attribute to disambiguate.");
                     }
                     matchedMethod = method;
                 }
             }
             if (matchedMethod == null) {
-                throw new JawsFrameworkException("The interface " + interfaceClass.getName() + " not found method " + methodName);
+                throw new JawsFrameworkException("Method [" + methodName + "] not found in interface [" + interfaceClass.getName() + "]");
             }
             methodBean.setArgumentTypes(ReflectUtils.getMethodParamDesc(matchedMethod));
         }
@@ -246,7 +245,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
         if (NetUtils.isValidLocalHost(localAddress)) {
             return localAddress;
         }
-        throw new JawsServiceException("Please config local server hostname with intranet IP first!");
+        throw new JawsFrameworkException("Please configure the local server hostname with an intranet IP first");
     }
 
     // ========== Server & Client shared configuration getter/setter ==========

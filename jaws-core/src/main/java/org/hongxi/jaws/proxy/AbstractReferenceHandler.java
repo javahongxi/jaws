@@ -85,13 +85,13 @@ public class AbstractReferenceHandler<T> {
                     }
                     return null;
                 } else {
-                    log.error("invoke Error: uri={} {}",
+                    log.error("Invocation failed: uri={} {}",
                             cluster.getUrl().getUri(), RpcUtils.toString(request), e);
                     throw e;
                 }
             }
         }
-        throw new JawsServiceException("Reference call Error: cluster not exists, interface=" + interfaceName + " "
+        throw new JawsServiceException("Reference call failed: no cluster found for interface=" + interfaceName + " "
                 + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
     }
 
@@ -159,7 +159,7 @@ public class AbstractReferenceHandler<T> {
         }
 
         resultFuture.completeExceptionally(new JawsServiceException(
-                "Reference call Error: cluster not exists, interface=" + interfaceName + " "
+                "Reference call failed: no cluster found for interface=" + interfaceName + " "
                         + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false));
         return resultFuture;
     }

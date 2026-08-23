@@ -61,7 +61,7 @@ public class URL {
 
     public static URL valueOf(String url) {
         if (StringUtils.isBlank(url)) {
-            throw new JawsServiceException("url is null");
+            throw new JawsServiceException("url must not be blank");
         }
         String protocol = null;
         String host = null;

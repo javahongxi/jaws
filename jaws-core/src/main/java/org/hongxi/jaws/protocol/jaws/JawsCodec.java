@@ -63,7 +63,7 @@ public class JawsCodec implements Codec {
             } else if (message instanceof Response response) {
                 encodeResponse(response, out);
             } else {
-                throw new JawsFrameworkException("encode error: message type not support, " + message.getClass());
+                throw new JawsFrameworkException("encode error: unsupported message type: " + message.getClass());
             }
         } catch (JawsAbstractException e) {
             throw e;
@@ -78,7 +78,7 @@ public class JawsCodec implements Codec {
     @Override
     public Object decode(Channel channel, ByteBuf in) throws IOException {
         if (in.readableBytes() <= HEADER_LENGTH) {
-            throw new JawsFrameworkException("decode error: format problem");
+            throw new JawsFrameworkException("decode error: invalid frame format");
         }
 
         int startIndex = in.readerIndex();
@@ -86,13 +86,13 @@ public class JawsCodec implements Codec {
         // bytes 0-1: magic
         short type = in.readShort();
         if (type != MAGIC) {
-            throw new JawsFrameworkException("decode error: magic error");
+            throw new JawsFrameworkException("decode error: invalid magic number");
         }
 
         // byte 2: version
         byte version = in.readByte();
         if (version != VERSION) {
-            throw new JawsFrameworkException("decode error: version error");
+            throw new JawsFrameworkException("decode error: unsupported protocol version " + version);
         }
 
         // byte 3: flag (low 3 bits = data type, high 5 bits = serializationId)
@@ -108,7 +108,7 @@ public class JawsCodec implements Codec {
         int bodyLength = in.readInt();
 
         if (HEADER_LENGTH + bodyLength != in.readableBytes() + (in.readerIndex() - startIndex)) {
-            throw new JawsFrameworkException("decode error: content length error");
+            throw new JawsFrameworkException("decode error: body length mismatch");
         }
 
         // Resolve serialization from the id embedded in the protocol header
@@ -342,7 +342,7 @@ public class JawsCodec implements Codec {
         } else if (dataType == FLAG_RESPONSE_EXCEPTION) {
             response.setException((Exception) result);
         } else {
-            throw new JawsFrameworkException("decode error: response dataType not support " + dataType);
+            throw new JawsFrameworkException("decode error: unsupported response dataType " + dataType);
         }
 
         response.setRequestId(requestId);

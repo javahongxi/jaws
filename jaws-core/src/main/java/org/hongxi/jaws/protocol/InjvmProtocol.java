@@ -75,7 +75,7 @@ public class InjvmProtocol extends AbstractProtocol {
         @Override
         protected Response doCall(Request request) {
             if (exporter == null) {
-                throw new JawsServiceException("InjvmReference call Error: provider not exist, url=" + url.getUri());
+                throw new JawsServiceException("InjvmReference call failed: no provider found, url=" + url.getUri());
             }
 
             return exporter.getProvider().call(request);
@@ -89,7 +89,7 @@ public class InjvmProtocol extends AbstractProtocol {
             exporter = (Exporter<T>) exporterMap.get(protocolKey);
 
             if (exporter == null) {
-                log.error("InjvmReference init Error: provider not exist, url={}", url);
+                log.error("InjvmReference init failed: no provider found, url={}", url);
                 return false;
             }
 

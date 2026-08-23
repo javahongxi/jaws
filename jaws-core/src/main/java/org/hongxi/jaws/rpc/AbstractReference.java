@@ -1,7 +1,7 @@
 package org.hongxi.jaws.rpc;
 
 import org.hongxi.jaws.common.util.RpcUtils;
-import org.hongxi.jaws.exception.JawsFrameworkException;
+import org.hongxi.jaws.exception.JawsServiceException;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -49,7 +49,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
     @Override
     public Response call(Request request) {
         if (!isAvailable()) {
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " call Error: endpoint is not available, url=" + url.getUri()
+            throw new JawsServiceException(this.getClass().getSimpleName() + " call failed: endpoint is not available, url=" + url.getUri()
                     + " " + RpcUtils.toString(request));
         }
 

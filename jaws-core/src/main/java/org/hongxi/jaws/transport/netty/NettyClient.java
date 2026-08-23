@@ -116,13 +116,13 @@ public class NettyClient extends AbstractClient {
             }
             response = channel.request(request);
         } catch (Exception e) {
-            log.error("request Error: url={} {}, {}", url.getUri(),
+            log.error("request failed: url={} {}, {}", url.getUri(),
                     RpcUtils.toString(request), e.getMessage());
 
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
             } else {
-                throw new JawsServiceException("NettyClient request Error: url=" +
+                throw new JawsServiceException("NettyClient request failed: url=" +
                         url.getUri() + " " + RpcUtils.toString(request), e);
             }
         }
@@ -138,8 +138,7 @@ public class NettyClient extends AbstractClient {
 
         int timeout = getUrl().getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
-            throw new JawsFrameworkException("NettyClient init Error: timeout(" +
-                    timeout + ") <= 0 is forbid.");
+            throw new JawsFrameworkException("NettyClient init failed: connect timeout must be positive but was " + timeout);
         }
 
         final int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
@@ -166,7 +165,7 @@ public class NettyClient extends AbstractClient {
                             ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
 
                             if (responseFuture == null) {
-                                log.warn("has response from server, but responseFuture not exist, requestId={}",
+                                log.warn("received response from server, but no responseFuture found, requestId={}",
                                         response.getRequestId());
                                 return CompletableFuture.completedFuture(null);
                             }
@@ -184,7 +183,7 @@ public class NettyClient extends AbstractClient {
         channel = new NettyChannel(this);
         channel.open();
 
-        log.info("NettyClient finished open: url={}", url);
+        log.info("NettyClient opened successfully: url={}", url);
 
         // Set available state
         state = ChannelState.ALIVE;
@@ -216,9 +215,9 @@ public class NettyClient extends AbstractClient {
 
             // Set close state
             state = ChannelState.CLOSE;
-            log.info("NettyClient close Success: url={}", url.getUri());
+            log.info("NettyClient closed successfully: url={}", url.getUri());
         } catch (Exception e) {
-            log.error("NettyClient close Error: url={}", url.getUri(), e);
+            log.error("NettyClient failed to close: url={}", url.getUri(), e);
         }
     }
 
@@ -232,7 +231,7 @@ public class NettyClient extends AbstractClient {
             try {
                 future.cancel();
             } catch (Exception e) {
-                log.error("cancel pending request error: uri={} requestId={}",
+                log.error("failed to cancel pending request: uri={} requestId={}",
                         url.getUri(), future.getRequestId(), e);
             }
         }
@@ -257,7 +256,7 @@ public class NettyClient extends AbstractClient {
             }
         }
         if (!callbackMap.isEmpty()) {
-            log.warn("NettyClient close with {} pending requests not completed: url={}",
+            log.warn("NettyClient closed while {} pending requests not completed: url={}",
                     callbackMap.size(), url.getUri());
         }
     }
@@ -282,7 +281,7 @@ public class NettyClient extends AbstractClient {
             synchronized (this) {
                 count = errorCount.longValue();
                 if (count >= fusingThreshold && state.isAliveState()) {
-                    log.error("NettyClient unavailable Error: url={} {}",
+                    log.error("NettyClient marked unavailable due to consecutive errors: url={} {}",
                             url.getIdentity(), url.getHostPort());
                     state = ChannelState.UNALIVE;
                 }
@@ -309,7 +308,7 @@ public class NettyClient extends AbstractClient {
                 long count = errorCount.longValue();
                 if (count < fusingThreshold) {
                     state = ChannelState.ALIVE;
-                    log.info("NettyClient recover available: url={} {}",
+                    log.info("NettyClient recovered to available: url={} {}",
                             url.getIdentity(), url.getHostPort());
                 }
             }
@@ -326,7 +325,7 @@ public class NettyClient extends AbstractClient {
     public void registerCallback(long requestId, ResponseFuture responseFuture) {
         if (this.callbackMap.size() >= NETTY_CLIENT_MAX_REQUEST) {
             // reject request, prevent from OutOfMemoryError
-            throw new JawsServiceException("NettyClient over of max concurrent request, drop request, url: "
+            throw new JawsServiceException("NettyClient exceeded max concurrent requests, request rejected, url: "
                     + url.getUri() + " requestId=" + requestId, JawsErrorCode.SERVICE_REJECT);
         }
 
@@ -342,7 +341,7 @@ public class NettyClient extends AbstractClient {
                     try {
                         future.cancel();
                     } catch (Exception e) {
-                        log.error("timeout cancel error: uri={} requestId={}", url.getUri(), requestId, e);
+                        log.error("failed to cancel timeout task: uri={} requestId={}", url.getUri(), requestId, e);
                     }
                 }
             }, timeout, TimeUnit.MILLISECONDS);

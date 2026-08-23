@@ -44,7 +44,7 @@ public class GenericInvocationHandler<T> extends AbstractReferenceHandler<T> imp
                 case "toString" -> "GenericService[" + interfaceName + "]";
                 case "hashCode" -> this.clusters == null ? 0 : this.clusters.hashCode();
                 case "equals" -> proxy == args[0];
-                default -> throw new JawsServiceException("can not invoke local method:" + method.getName());
+                default -> throw new JawsServiceException("cannot invoke local method: " + method.getName());
             };
         }
 

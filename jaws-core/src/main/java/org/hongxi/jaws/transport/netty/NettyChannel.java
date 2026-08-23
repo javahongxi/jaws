@@ -67,7 +67,7 @@ public class NettyChannel implements Channel {
         int timeout = resolveTimeout(request, urlTimeout);
         if (timeout <= 0) {
             throw new JawsFrameworkException(
-                    "NettyClient init Error: timeout(" + timeout + ") <= 0 is forbid.");
+                    "NettyChannel request failed: request timeout must be positive but was " + timeout);
         }
 
         ResponseFuture response = new DefaultResponseFuture(request, timeout, getUrl());
@@ -108,11 +108,11 @@ public class NettyChannel implements Channel {
         nettyClient.incrErrorCount();
 
         if (writeFuture.cause() != null) {
-            throw new JawsServiceException("NettyChannel send request to server Error: url="
+            throw new JawsServiceException("NettyChannel failed to send request to server: url="
                     + getUrl().getUri() + " local=" + localAddress + " "
                     + RpcUtils.toString(request), writeFuture.cause());
         } else {
-            throw new JawsServiceException("NettyChannel send request to server Timeout: url="
+            throw new JawsServiceException("NettyChannel timed out sending request to server: url="
                     + getUrl().getUri() + " local=" + localAddress + " "
                     + RpcUtils.toString(request));
         }
@@ -121,14 +121,14 @@ public class NettyChannel implements Channel {
     @Override
     public synchronized boolean open() {
         if (isAvailable()) {
-            log.warn("the channel already open, local: {} remote: {} url: {}",
+            log.warn("channel already open, local: {} remote: {} url: {}",
                     localAddress, remoteAddress, nettyClient.getUrl().getUri());
             return true;
         }
 
         int timeout = nettyClient.getUrl().getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
-            throw new JawsFrameworkException("NettyChannel init Error: timeout(" + timeout + ") <= 0 is forbid.");
+            throw new JawsFrameworkException("NettyChannel init failed: connect timeout must be positive but was " + timeout);
         }
 
         ChannelFuture channelFuture = null;
@@ -196,7 +196,7 @@ public class NettyChannel implements Channel {
                 channel.close();
             }
         } catch (Exception e) {
-            log.error("channel close Error: {} local={}", getUrl().getUri(), localAddress, e);
+            log.error("failed to close channel: {} local={}", getUrl().getUri(), localAddress, e);
         }
     }
 

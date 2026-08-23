@@ -57,7 +57,7 @@ public interface DynamicConfiguration {
      * Get configuration value by key.
      *
      * @param key the configuration key
-     * @return the value, or null if not exists
+     * @return the value, or null if the key does not exist
      */
     String getConfig(String key);
 
@@ -65,8 +65,8 @@ public interface DynamicConfiguration {
      * Get configuration value by key with a default.
      *
      * @param key          the configuration key
-     * @param defaultValue default value if key not exists
-     * @return the value, or defaultValue if not exists
+     * @param defaultValue default value if the key does not exist
+     * @return the value, or defaultValue if the key does not exist
      */
     default String getConfig(String key, String defaultValue) {
         String value = getConfig(key);
@@ -85,7 +85,7 @@ public interface DynamicConfiguration {
      * Get integer configuration value by key with a default.
      *
      * @param key          the configuration key
-     * @param defaultValue default value if key not exists or parsing fails
+     * @param defaultValue default value if the key does not exist or parsing fails
      * @return the parsed int value, or defaultValue
      */
     default int getIntConfig(String key, int defaultValue) {
@@ -104,7 +104,7 @@ public interface DynamicConfiguration {
      * Get long configuration value by key with a default.
      *
      * @param key          the configuration key
-     * @param defaultValue default value if key not exists or parsing fails
+     * @param defaultValue default value if the key does not exist or parsing fails
      * @return the parsed long value, or defaultValue
      */
     default long getLongConfig(String key, long defaultValue) {
@@ -135,7 +135,7 @@ public interface DynamicConfiguration {
      * Check if a boolean toggle is enabled, with a default value.
      *
      * @param key          the toggle key
-     * @param defaultValue default value if key not exists
+     * @param defaultValue default value if the key does not exist
      * @return true if enabled, false if disabled, or defaultValue if not set
      */
     default boolean isEnabled(String key, boolean defaultValue) {

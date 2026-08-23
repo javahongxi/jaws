@@ -43,9 +43,8 @@ public class DirectConsumer {
         demoRef.setApplication("sample-consumer-direct");
         demoRef.setModule("sample-direct");
         demoRef.setGroup("test");
-        demoRef.setRequestTimeout(2000);
         demoRef.setVersion("2.0");
-        demoRef.setCheck(false);
+        demoRef.setRequestTimeout(2000);
         demoRef.setProtocol(protocolConfig);
         demoRef.setDirectUrl(DIRECT_URL);
 
@@ -102,7 +101,6 @@ public class DirectConsumer {
         orderRef.setModule("sample-direct");
         orderRef.setGroup("test");
         orderRef.setVersion("2.0");
-        orderRef.setCheck(false);
         orderRef.setProtocol(protocolConfig);
         orderRef.setDirectUrl(DIRECT_URL);
 

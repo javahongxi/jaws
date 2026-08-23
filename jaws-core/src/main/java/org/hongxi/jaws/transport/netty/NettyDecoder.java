@@ -100,7 +100,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
         // Reject oversized messages to prevent OOM, without closing the connection
         if (maxContentLength > 0 && bodyLength > maxContentLength) {
-            log.warn("transport data content length over of limit, size: {} > {}. remote={} local={}",
+            log.warn("transport data content length exceeds limit, size: {} > {}. remote={} local={}",
                     bodyLength, maxContentLength, ctx.channel().remoteAddress(), ctx.channel().localAddress());
             // The body may arrive in later chunks; drain the rest in subsequent
             // decode() calls to keep the stream in sync.
@@ -109,7 +109,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
             bytesToSkip = bodyLength - drained;
             if (isRequest) {
                 Exception e = new JawsServiceException(
-                        "NettyDecoder transport data content length over of limit, size: " + bodyLength + " > " + maxContentLength);
+                        "NettyDecoder transport data content length exceeds limit, size: " + bodyLength + " > " + maxContentLength);
                 Response response = RpcUtils.buildErrorResponse(requestId, e);
                 ByteBuf msg = ctx.alloc().buffer();
                 codec.encode(channel, response, msg);

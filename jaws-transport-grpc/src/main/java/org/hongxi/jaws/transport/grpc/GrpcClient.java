@@ -6,6 +6,7 @@ import io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import org.hongxi.jaws.common.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.DefaultResponseFuture;
@@ -127,7 +128,7 @@ public class GrpcClient implements Client {
 
         int timeout = url.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
-            throw new JawsServiceException("gRPC client init error: timeout(" + timeout + ") <= 0");
+            throw new JawsFrameworkException("gRPC client init failed: connect timeout must be positive but was " + timeout);
         }
 
         try {

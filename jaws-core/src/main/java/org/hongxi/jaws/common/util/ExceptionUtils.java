@@ -38,7 +38,7 @@ public class ExceptionUtils {
             try {
                 e.setStackTrace(REMOTE_MOCK_STACK);
             } catch (Exception e1) {
-                log.warn("replace remote exception stack failed! {}", e1.getMessage());
+                log.warn("Failed to replace remote exception stack: {}", e1.getMessage());
             }
         }
     }

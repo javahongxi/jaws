@@ -50,7 +50,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
 
         if (method == null) {
             JawsServiceException exception =
-                    new JawsServiceException("Service method not exist: " + request.getInterfaceName() + "." + request.getMethodName()
+                    new JawsServiceException("Service method not found: " + request.getInterfaceName() + "." + request.getMethodName()
                             + "(" + request.getParamDesc() + ")", JawsErrorCode.SERVICE_METHOD_NOT_FOUND);
 
             response.setException(exception);
@@ -77,9 +77,9 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                                     "provider async call timeout: " + request.getInterfaceName() + "." + request.getMethodName(),
                                     JawsErrorCode.SERVICE_TIMEOUT));
                         } else if (cause instanceof Exception ex) {
-                            asyncResponse.setException(new JawsBizException("provider async call process error", ex));
+                            asyncResponse.setException(new JawsBizException("provider async call failed", ex));
                         } else {
-                            asyncResponse.setException(new JawsServiceException("provider async call fatal error: " + cause));
+                            asyncResponse.setException(new JawsServiceException("provider async call failed with fatal error: " + cause));
                         }
                     } else {
                         asyncResponse.setValue(result);
@@ -90,9 +90,9 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             response.setValue(value);
         } catch (Exception e) {
             if (e.getCause() != null) {
-                response.setException(new JawsBizException("provider call process error", e.getCause()));
+                response.setException(new JawsBizException("provider call failed", e.getCause()));
             } else {
-                response.setException(new JawsBizException("provider call process error", e));
+                response.setException(new JawsBizException("provider call failed", e));
             }
 
             // not print stack in error log when exception declared in method
@@ -105,20 +105,20 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                 }
             }
             if (logException) {
-                log.error("Exception caught when during method invocation. request: {}", request, e);
+                log.error("Exception caught during method invocation. request: {}", request, e);
             } else {
-                log.info("Exception caught when during method invocation. request: {}, exception: {}",
+                log.info("Exception caught during method invocation. request: {}, exception: {}",
                         request, response.getException().getCause().toString());
             }
         } catch (Throwable t) {
             // If provider encounters an Error, convert it to Exception to prevent dragging down the caller
             if (t.getCause() != null) {
-                response.setException(new JawsServiceException("provider has encountered a fatal error!", t.getCause()));
+                response.setException(new JawsServiceException("provider has encountered a fatal error", t.getCause()));
             } else {
-                response.setException(new JawsServiceException("provider has encountered a fatal error!", t));
+                response.setException(new JawsServiceException("provider has encountered a fatal error", t));
             }
             // Also log for Throwable
-            log.error("Exception caught when during method invocation. request:{}", request, t);
+            log.error("Exception caught during method invocation. request: {}", request, t);
         }
 
         if (response.getException() != null) {

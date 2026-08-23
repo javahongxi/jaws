@@ -44,7 +44,7 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
                 case "toString" -> clustersToString();
                 case "equals" -> proxy == args[0];
                 case "hashCode" -> this.clusters == null ? 0 : this.clusters.hashCode();
-                default -> throw new JawsServiceException("can not invoke local method:" + method.getName());
+                default -> throw new JawsServiceException("cannot invoke local method: " + method.getName());
             };
         }
 

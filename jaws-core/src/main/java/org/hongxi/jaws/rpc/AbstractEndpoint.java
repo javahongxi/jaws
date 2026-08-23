@@ -27,17 +27,17 @@ public abstract class AbstractEndpoint implements Endpoint {
     @Override
     public synchronized void init() {
         if (init) {
-            log.warn("{} endpoint already init: {}", this.getClass().getSimpleName(), desc());
+            log.warn("{} endpoint already initialized: {}", this.getClass().getSimpleName(), desc());
             return;
         }
 
         boolean result = doInit();
 
         if (!result) {
-            log.error("{} endpoint init Error: {}", this.getClass().getSimpleName(), desc());
-            throw new JawsFrameworkException(this.getClass().getSimpleName() + " endpoint init Error: " + desc());
+            log.error("{} endpoint init failed: {}", this.getClass().getSimpleName(), desc());
+            throw new JawsFrameworkException(this.getClass().getSimpleName() + " endpoint init failed: " + desc());
         } else {
-            log.info("{} endpoint init Success: {}", this.getClass().getSimpleName(), desc());
+            log.info("{} endpoint initialized successfully: {}", this.getClass().getSimpleName(), desc());
 
             init = true;
             available = true;

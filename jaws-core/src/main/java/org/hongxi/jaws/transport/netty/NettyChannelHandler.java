@@ -92,18 +92,18 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 nettyMsg.data().release();
             }
         } else {
-            log.error("message type not support: class={}", msg.getClass());
+            log.error("unsupported message type: class={}", msg.getClass());
             throw new JawsFrameworkException(
-                    "NettyChannelHandler message type not support: class=" + msg.getClass());
+                    "NettyChannelHandler received unsupported message type: class=" + msg.getClass());
         }
     }
 
     private void rejectMessage(ChannelHandlerContext ctx, NettyMessage msg) {
         sendResponse(ctx, RpcUtils.buildErrorResponse(msg.requestId(), new JawsServiceException(
-                "process thread pool is full, reject by server: " + ctx.channel().localAddress(),
+                "request rejected by server due to full thread pool: " + ctx.channel().localAddress(),
                                 JawsErrorCode.SERVICE_REJECT)));
 
-        log.error("process thread pool is full, reject, " +
+        log.error("request rejected due to full thread pool, " +
                         "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
                 threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
                 threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
@@ -122,7 +122,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 messageHandler.handleAsync(channel, response);
             }
         } catch (Exception e) {
-            log.error("decode failed! requestId: {}, size: {}, remote: {}",
+            log.error("Failed to decode, requestId: {}, size: {}, remote: {}",
                     msg.requestId(), msg.data().readableBytes(), ctx.channel().remoteAddress(), e);
             Response response = RpcUtils.buildErrorResponse(msg.requestId(), e);
             if (msg.isRequest()) {
@@ -146,9 +146,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 RpcContext.init(request);
                 DefaultResponse response;
                 if (throwable != null) {
-                    log.error("processRequest failed! request: {}", RpcUtils.toString(request), throwable);
+                    log.error("Failed to process request: {}", RpcUtils.toString(request), throwable);
                     response = RpcUtils.buildErrorResponse(request,
-                            new JawsServiceException("process request failed. errmsg:" + throwable.getMessage()));
+                            new JawsServiceException("process request failed: " + throwable.getMessage()));
                 } else if (res instanceof DefaultResponse dr) {
                     response = dr;
                 } else if (res instanceof Response r) {
