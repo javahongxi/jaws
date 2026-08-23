@@ -38,7 +38,12 @@ public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
         for (Reference<T> ref : references) {
             String key = referenceKey(ref);
             for (int i = 0; i < VIRTUAL_NODES; i++) {
-                newRing.put(hash(key + "#" + i), ref);
+                // probe for a free slot so a hash collision never overwrites a node
+                int position = hash(key + "#" + i);
+                while (newRing.containsKey(position)) {
+                    position++;
+                }
+                newRing.put(position, ref);
             }
         }
         this.ring = newRing;
@@ -98,20 +103,34 @@ public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
         if (ref.getServiceUrl() != null) {
             return ref.getServiceUrl().getHostPort();
         }
-        return String.valueOf(ref.hashCode());
+        // Fallback key for references without a service url (e.g. test stubs).
+        // Going through FNV below instead of hashing the identity code
+        // directly gives the key the full 2^31 space, making collisions
+        // between distinct references far less likely.
+        return ref.getClass().getName() + "@" + System.identityHashCode(ref);
     }
 
     private int getHash(Request request) {
-        int hashcode;
-        if (request.getArguments() == null || request.getArguments().length == 0) {
-            hashcode = request.hashCode();
-        } else {
-            hashcode = Arrays.hashCode(request.getArguments());
+        Object[] arguments = request.getArguments();
+        if (arguments == null || arguments.length == 0) {
+            return hash(String.valueOf(request.hashCode()));
         }
-        return 0x7fffffff & hashcode;
+        // Arrays.hashCode of short similar strings clusters tightly, which
+        // may land a batch of keys inside one ring arc; FNV1a over the
+        // string form spreads them across the ring.
+        return hash(Arrays.deepToString(arguments));
     }
 
+    /**
+     * FNV1a-32 hash to spread virtual nodes across the full integer space;
+     * {@link String#hashCode} collisions here would silently overwrite ring
+     * entries and break the mapping stability guarantee.
+     */
     private static int hash(String key) {
-        return 0x7fffffff & key.hashCode();
+        int h = 0x811C9DC5;
+        for (int i = 0; i < key.length(); i++) {
+            h = (h ^ key.charAt(i)) * 0x01000193;
+        }
+        return h & 0x7fffffff;
     }
 }
