@@ -3,7 +3,6 @@ package org.hongxi.jaws.config;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -27,6 +26,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -57,7 +58,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
     /**
      * Set of identities of all exported services, used to prevent duplicate exports
      */
-    private static final ConcurrentHashSet<String> EXPORTED_SERVICES = new ConcurrentHashSet<>();
+    private static final Set<String> EXPORTED_SERVICES = ConcurrentHashMap.newKeySet();
 
     /**
      * Dynamic port counter for shared-channel mode with no explicit port configured

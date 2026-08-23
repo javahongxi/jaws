@@ -1,7 +1,6 @@
 package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +31,7 @@ public abstract class AbstractRegistry implements Registry {
 
     private final URL registryUrl;
 
-    protected final Set<URL> registered = new ConcurrentHashSet<>();
+    protected final Set<URL> registered = ConcurrentHashMap.newKeySet();
 
     protected final Map<URL, Set<NotifyListener>> subscribed = new ConcurrentHashMap<>();
 
@@ -58,7 +57,7 @@ public abstract class AbstractRegistry implements Registry {
     public void subscribe(URL url, NotifyListener listener) {
         log.info("[{}] Listener ({}) will subscribe to url ({}) in Registry [{}]",
                 registryClassName, listener, url, registryUrl.getIdentity());
-        subscribed.computeIfAbsent(url, k -> new ConcurrentHashSet<>()).add(listener);
+        subscribed.computeIfAbsent(url, k -> ConcurrentHashMap.newKeySet()).add(listener);
         doSubscribe(url.createCopy(), listener);
     }
 

@@ -2,7 +2,6 @@ package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -34,7 +34,7 @@ public class LocalRegistry extends AbstractRegistry {
      */
     private final ConcurrentMap<String, List<URL>> registeredServices = new ConcurrentHashMap<>();
 
-    private final ConcurrentHashMap<String, ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>>> subscribeListeners =
+    private final ConcurrentHashMap<String, ConcurrentHashMap<URL, Set<NotifyListener>>> subscribeListeners =
             new ConcurrentHashMap<>();
 
     public LocalRegistry(URL url) {
@@ -45,11 +45,11 @@ public class LocalRegistry extends AbstractRegistry {
     public void doSubscribe(URL url, NotifyListener listener) {
 
         String subscribeKey = getSubscribeKey(url);
-        ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> urlListeners =
+        ConcurrentHashMap<URL, Set<NotifyListener>> urlListeners =
                 subscribeListeners.computeIfAbsent(subscribeKey, k -> new ConcurrentHashMap<>());
 
-        ConcurrentHashSet<NotifyListener> listeners =
-                urlListeners.computeIfAbsent(url, k -> new ConcurrentHashSet<>());
+        Set<NotifyListener> listeners =
+                urlListeners.computeIfAbsent(url, k -> ConcurrentHashMap.newKeySet());
 
         listeners.add(listener);
 
@@ -64,7 +64,7 @@ public class LocalRegistry extends AbstractRegistry {
     @Override
     public void doUnsubscribe(URL url, NotifyListener listener) {
         String subscribeKey = getSubscribeKey(url);
-        ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> urlListeners = subscribeListeners.get(subscribeKey);
+        ConcurrentHashMap<URL, Set<NotifyListener>> urlListeners = subscribeListeners.get(subscribeKey);
         if (urlListeners != null) {
             urlListeners.remove(url);
         }
@@ -144,12 +144,12 @@ public class LocalRegistry extends AbstractRegistry {
     }
 
     private void notifyListeners(URL changedUrl, List<URL> interestingUrls) {
-        ConcurrentHashMap<URL, ConcurrentHashSet<NotifyListener>> urlListeners = subscribeListeners.get(getSubscribeKey(changedUrl));
+        ConcurrentHashMap<URL, Set<NotifyListener>> urlListeners = subscribeListeners.get(getSubscribeKey(changedUrl));
         if (urlListeners == null) {
             return;
         }
 
-        for (ConcurrentHashSet<NotifyListener> listeners : urlListeners.values()) {
+        for (Set<NotifyListener> listeners : urlListeners.values()) {
             for (NotifyListener listener : listeners) {
                 try {
                     listener.notify(getUrl(), interestingUrls);

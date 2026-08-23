@@ -1,7 +1,6 @@
 package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
@@ -35,10 +34,10 @@ public abstract class FailbackRegistry extends AbstractRegistry {
                 return t;
             });
 
-    private final Set<URL> failedRegistered = new ConcurrentHashSet<>();
-    private final Set<URL> failedUnregistered = new ConcurrentHashSet<>();
-    private final ConcurrentMap<URL, ConcurrentHashSet<NotifyListener>> failedSubscribed = new ConcurrentHashMap<>();
-    private final ConcurrentMap<URL, ConcurrentHashSet<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<>();
+    private final Set<URL> failedRegistered = ConcurrentHashMap.newKeySet();
+    private final Set<URL> failedUnregistered = ConcurrentHashMap.newKeySet();
+    private final ConcurrentMap<URL, Set<NotifyListener>> failedSubscribed = new ConcurrentHashMap<>();
+    private final ConcurrentMap<URL, Set<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<>();
 
     /** Last successful discovery result per service URL, used as fallback when the registry is unreachable. */
     private final ConcurrentMap<URL, List<URL>> discoveryCache = new ConcurrentHashMap<>();
@@ -184,11 +183,11 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     }
 
     private void addFailedSubscribed(URL url, NotifyListener listener) {
-        failedSubscribed.computeIfAbsent(url, k -> new ConcurrentHashSet<>()).add(listener);
+        failedSubscribed.computeIfAbsent(url, k -> ConcurrentHashMap.newKeySet()).add(listener);
     }
 
     private void addFailedUnsubscribed(URL url, NotifyListener listener) {
-        failedUnsubscribed.computeIfAbsent(url, k -> new ConcurrentHashSet<>()).add(listener);
+        failedUnsubscribed.computeIfAbsent(url, k -> ConcurrentHashMap.newKeySet()).add(listener);
     }
 
     // Package-private for deterministic testing besides the scheduled retry
@@ -225,7 +224,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         retrySubscriptions(failedUnsubscribed, false);
     }
 
-    private void retrySubscriptions(ConcurrentMap<URL, ConcurrentHashSet<NotifyListener>> failedMap,
+    private void retrySubscriptions(ConcurrentMap<URL, Set<NotifyListener>> failedMap,
                                     boolean subscribe) {
         // Drop entries whose listeners have all been handled
         failedMap.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isEmpty());
@@ -234,7 +233,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         }
 
         log.info("[{}] Retry {} {}", registryClassName, subscribe ? "subscribe" : "unsubscribe", failedMap);
-        for (Map.Entry<URL, ConcurrentHashSet<NotifyListener>> entry : failedMap.entrySet()) {
+        for (Map.Entry<URL, Set<NotifyListener>> entry : failedMap.entrySet()) {
             URL url = entry.getKey();
             for (NotifyListener listener : entry.getValue()) {
                 try {
