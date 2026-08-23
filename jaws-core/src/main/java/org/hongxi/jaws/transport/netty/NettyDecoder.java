@@ -23,7 +23,7 @@ import java.util.List;
  * <p>
  * Bodies exceeding {@code maxContentLength} are rejected (answered with an
  * error response if a request) without closing the connection. Valid frames
- * are emitted as zero-copy {@link NettyMessage} holding a retained
+ * are emitted as zero-copy {@link DecodedFrame} holding a retained
  * {@link ByteBuf} slice, which {@link NettyChannelHandler} releases after
  * processing.
  * <p>
@@ -129,7 +129,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         // NettyChannelHandler is responsible for releasing after processing.
         ByteBuf frame = in.readRetainedSlice(Codec.HEADER_LENGTH + bodyLength);
 
-        NettyMessage message = new NettyMessage(isRequest, requestId, frame);
-        out.add(message);
+        DecodedFrame decodedFrame = new DecodedFrame(isRequest, requestId, frame);
+        out.add(decodedFrame);
     }
 }

@@ -53,8 +53,8 @@ class OversizedFrameDecoderTest {
 
         Object msg = ch.readInbound();
         assertNotNull(msg, "frame after oversized frame was lost due to stream desynchronization");
-        assertTrue(msg instanceof NettyMessage, "expected NettyMessage but got: " + msg);
-        assertEquals(2L, ((NettyMessage) msg).requestId());
+        assertTrue(msg instanceof DecodedFrame, "expected DecodedFrame but got: " + msg);
+        assertEquals(2L, ((DecodedFrame) msg).requestId());
         ch.finishAndReleaseAll();
     }
 }

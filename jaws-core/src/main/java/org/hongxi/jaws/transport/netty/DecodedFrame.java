@@ -12,5 +12,5 @@ import io.netty.buffer.ByteBuf;
  * <p>
  * Created by shenhongxi on 2020/7/25.
  */
-public record NettyMessage(boolean isRequest, long requestId, ByteBuf data) {
+public record DecodedFrame(boolean isRequest, long requestId, ByteBuf data) {
 }

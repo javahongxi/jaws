@@ -5,15 +5,15 @@
 ### Jaws 编解码结构
 
 ```
-NettyDecoder      (Netty 层 - 帧检测 + 半包等待，输出 NettyMessage)
+NettyDecoder      (Netty 层 - 帧检测 + 半包等待，输出 DecodedFrame)
         ↕
 NettyChannelHandler (业务层 - 调用 Codec 编解码，服务端线程池调度)
         ↕
 JawsCodec         (协议层 - 业务编解码, magic=0x4A57, 直接操作 ByteBuf)
 ```
 
-- **NettyDecoder**：继承 `ByteToMessageDecoder`，校验 `0x4A57` magic，读取协议帧头（version、flag、requestId、bodyLength），等待完整 body 后通过 `readRetainedSlice()` 提取完整协议帧（header + body）封装为 `NettyMessage` record 传递给下游
-- **NettyChannelHandler**：服务端接收 `NettyMessage`，通过 `threadPoolExecutor` 将 decode 调度到业务线程；客户端在 IO 线程直接 decode。编码时 `Codec.encode()` 直接写入 `ByteBuf`，由 `ctx.channel().writeAndFlush()` 发送
+- **NettyDecoder**：继承 `ByteToMessageDecoder`，校验 `0x4A57` magic，读取协议帧头（version、flag、requestId、bodyLength），等待完整 body 后通过 `readRetainedSlice()` 提取完整协议帧（header + body）封装为 `DecodedFrame` record 传递给下游
+- **NettyChannelHandler**：服务端接收 `DecodedFrame`，通过 `threadPoolExecutor` 将 decode 调度到业务线程；客户端在 IO 线程直接 decode。编码时 `Codec.encode()` 直接写入 `ByteBuf`，由 `ctx.channel().writeAndFlush()` 发送
 - **NettyChannel**：客户端发送请求时分配 `ByteBuf`，调用 `Codec.encode()` 直接写入，通过 `channel.writeAndFlush()` 发送
 - **JawsCodec**：协议层编解码，处理 `0x4A57` 协议帧的业务语义，编码采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式，解码通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化
 
@@ -33,7 +33,7 @@ DubboCodec         (RPC 层 - 覆盖 body 编解码逻辑)
 - **ExchangeCodec**：操作 Dubbo 自建的 `ChannelBuffer` 抽象（`dubbo-remoting-api` 模块，不依赖 Netty），一次完成头解析和 body 流式解码，通过 `decodeBody()` 模板方法留给子类扩展
 - **DubboCodec**：通过继承覆盖 `encodeRequestData`/`decodeBody` 等方法，注入 RPC 语义
 
-**架构对比**：Jaws 的 `Codec` 接口直接操作 Netty `ByteBuf`，编解码全程无桥接开销；Dubbo 的 `Codec2` 操作自建 `ChannelBuffer` 抽象，保持了 `dubbo-remoting-api` 的传输层无关性，但在与 Netty 交互时通过 `NettyCodecAdapter` 桥接，产生额外的分配和拷贝。Jaws 将帧检测（NettyDecoder）与协议语义解析（JawsCodec）分离，中间通过 `NettyMessage` record 解耦，职责边界清晰；Dubbo 通过继承体系在同一个 Codec 类中完成（ExchangeCodec + DubboCodec），少一层间接调用。
+**架构对比**：Jaws 的 `Codec` 接口直接操作 Netty `ByteBuf`，编解码全程无桥接开销；Dubbo 的 `Codec2` 操作自建 `ChannelBuffer` 抽象，保持了 `dubbo-remoting-api` 的传输层无关性，但在与 Netty 交互时通过 `NettyCodecAdapter` 桥接，产生额外的分配和拷贝。Jaws 将帧检测（NettyDecoder）与协议语义解析（JawsCodec）分离，中间通过 `DecodedFrame` record 解耦，职责边界清晰；Dubbo 通过继承体系在同一个 Codec 类中完成（ExchangeCodec + DubboCodec），少一层间接调用。
 
 ## 二、线上数据格式
 
@@ -175,7 +175,7 @@ Jaws 的编解码路径**优于** Dubbo：
 ## 五、Jaws 设计的优点
 
 1. **分层清晰** — NettyDecoder 专注帧检测（magic 校验、body 长度读取、半包等待），NettyChannelHandler 专注消息分发与业务编排（服务端线程池调度、OOM 保护），JawsCodec 专注协议语义解析，职责边界明确
-2. **NettyMessage 解耦** — NettyDecoder 与 NettyChannelHandler 之间通过 `record NettyMessage` 传递，不可变、轻量，天然线程安全
+2. **DecodedFrame 解耦** — NettyDecoder 与 NettyChannelHandler 之间通过 `record DecodedFrame` 传递，不可变、轻量，天然线程安全
 3. **独立 version 字段** — header byte 2 显式声明协议版本，版本不兼容时直接拒绝，无需解析 body。Dubbo 没有此字段
 4. **flag 区分响应类型** — void/exception/normal 在 header 即可判断，无需解析 body 才能知道响应类别
 5. **每消息序列化协议** — flag 高 5 位嵌入 serializationId，编码时写入、解码时提取，支持同一服务端接收不同客户端的序列化方式，通过 `@SpiMeta(number)` + `ExtensionLoader.getExtensionByNumber()` 实现 O(1) 查找
@@ -216,6 +216,6 @@ flag 字节 bit 2 作为 event 标记（`FLAG_EVENT = 0x04`）。`JawsCodec.enco
 
 ## 七、总结
 
-Jaws 的编解码设计**分层合理、代码简洁、健壮性好**。单层帧结构简洁直接；NettyDecoder 专注帧检测、JawsCodec 专注协议语义的分层使职责明确；NettyMessage record 解耦了帧检测与业务处理；独立 version 字段和 flag 区分响应类型是合理的设计选择；flag 高 5 位嵌入 serializationId 实现了每消息独立序列化且全链路闭环；NettyDecoder/NettyChannelHandler 的双向 OOM 保护和编码降级体现了工程上的细致考量。
+Jaws 的编解码设计**分层合理、代码简洁、健壮性好**。单层帧结构简洁直接；NettyDecoder 专注帧检测、JawsCodec 专注协议语义的分层使职责明确；DecodedFrame record 解耦了帧检测与业务处理；独立 version 字段和 flag 区分响应类型是合理的设计选择；flag 高 5 位嵌入 serializationId 实现了每消息独立序列化且全链路闭环；NettyDecoder/NettyChannelHandler 的双向 OOM 保护和编码降级体现了工程上的细致考量。
 
 与 Dubbo 的编解码设计相比，Jaws 在**运行时效率上更优**：直接操作 Netty `ByteBuf` 消除了 Dubbo `ChannelBuffer` 抽象带来的桥接拷贝开销。Dubbo 选择保持 `dubbo-remoting-api` 模块的传输层无关性（通过自建 `ChannelBuffer` 抽象），Jaws 选择让 `jaws-core` 直接依赖 Netty 以换取零桥接开销 — 这是模块纯净性 vs 运行时效率的架构取舍。

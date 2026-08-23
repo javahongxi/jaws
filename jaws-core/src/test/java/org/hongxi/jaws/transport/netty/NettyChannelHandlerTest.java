@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * NettyChannelHandler 引用计数与线程池派发单元测试。
  * <p>
  * 核心回归点：无论消息走异步执行、线程池拒绝还是同步处理路径，
- * {@code NettyMessage.data()} 携带的 ByteBuf 的引用计数在
+ * {@code DecodedFrame.data()} 携带的 ByteBuf 的引用计数在
  * {@code channelRead} 返回后都必须归零——这是 Codec 接口 ByteBuf 化
  * （readRetainedSlice 零拷贝改造）后新增的正确性约束。
  */
@@ -75,7 +75,7 @@ class NettyChannelHandlerTest {
 
         ByteBuf data = Unpooled.buffer();
         encodeSampleRequest(data, 99L);
-        NettyMessage message = new NettyMessage(true, 99L, data);
+        DecodedFrame message = new DecodedFrame(true, 99L, data);
 
         // refCnt == 1 while in flight
         assertEquals(1, data.refCnt());
@@ -114,7 +114,7 @@ class NettyChannelHandlerTest {
 
         ByteBuf data = Unpooled.buffer();
         encodeSampleRequest(data, 100L);
-        NettyMessage message = new NettyMessage(true, 100L, data);
+        DecodedFrame message = new DecodedFrame(true, 100L, data);
 
         embeddedChannel.writeInbound(message);
 
@@ -151,7 +151,7 @@ class NettyChannelHandlerTest {
 
         ByteBuf data = Unpooled.buffer();
         encodeSampleRequest(data, 101L);
-        NettyMessage message = new NettyMessage(true, 101L, data);
+        DecodedFrame message = new DecodedFrame(true, 101L, data);
 
         embeddedChannel.writeInbound(message);
 

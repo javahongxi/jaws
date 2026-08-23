@@ -32,8 +32,8 @@ class EventBitCollisionTest {
 
         Object msg = ch.readInbound();
         assertNotNull(msg, "exception response frame was silently consumed as heartbeat (FLAG_EVENT bit collision)");
-        assertTrue(msg instanceof NettyMessage, "expected NettyMessage but got: " + msg);
-        assertEquals(42L, ((NettyMessage) msg).requestId());
+        assertTrue(msg instanceof DecodedFrame, "expected DecodedFrame but got: " + msg);
+        assertEquals(42L, ((DecodedFrame) msg).requestId());
         ch.finishAndReleaseAll();
     }
 

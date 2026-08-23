@@ -26,7 +26,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Sharable terminal handler of the Netty pipeline that bridges the transport
- * layer and the business layer. Each {@link NettyMessage} frame is decoded
+ * layer and the business layer. Each {@link DecodedFrame} is decoded
  * by the {@link Codec} and dispatched to the {@link MessageHandler}; on the
  * server side this runs on a business {@link ThreadPoolExecutor} so the
  * Netty event loop is never blocked, and a full pool results in an immediate
@@ -63,33 +63,33 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        if (msg instanceof NettyMessage nettyMsg) {
+        if (msg instanceof DecodedFrame frame) {
             try {
                 if (threadPoolExecutor != null) {
                     try {
                         // Retain the ByteBuf for async processing (pipeline may release after this method returns)
-                        nettyMsg.data().retain();
+                        frame.data().retain();
                         threadPoolExecutor.execute(() -> {
                             try {
-                                processMessage(ctx, nettyMsg);
+                                processFrame(ctx, frame);
                             } finally {
-                                nettyMsg.data().release();
+                                frame.data().release();
                             }
                         });
                     } catch (RejectedExecutionException rejectException) {
                         // Release the ByteBuf retained above; the finally block below only releases
                         // the reference acquired by the decoder (readRetainedSlice).
-                        nettyMsg.data().release();
+                        frame.data().release();
                         // Only server-side requests go through the thread pool;
                         // reject and return error response to client when pool is full.
-                        rejectMessage(ctx, nettyMsg);
+                        rejectFrame(ctx, frame);
                     }
                 } else {
-                    processMessage(ctx, nettyMsg);
+                    processFrame(ctx, frame);
                 }
             } finally {
                 // Release the ByteBuf retained by the decoder (readRetainedSlice)
-                nettyMsg.data().release();
+                frame.data().release();
             }
         } else {
             log.error("unsupported message type: class={}", msg.getClass());
@@ -98,8 +98,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         }
     }
 
-    private void rejectMessage(ChannelHandlerContext ctx, NettyMessage msg) {
-        sendResponse(ctx, RpcUtils.buildErrorResponse(msg.requestId(), new JawsServiceException(
+    private void rejectFrame(ChannelHandlerContext ctx, DecodedFrame frame) {
+        sendResponse(ctx, RpcUtils.buildErrorResponse(frame.requestId(), new JawsServiceException(
                 "request rejected by server due to full thread pool: " + ctx.channel().localAddress(),
                                 JawsErrorCode.SERVICE_REJECT)));
 
@@ -107,15 +107,15 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                         "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
                 threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
                 threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
-                threadPoolExecutor.getTaskCount(), msg.requestId());
+                threadPoolExecutor.getTaskCount(), frame.requestId());
         if (channel instanceof NettyServer nettyServer) {
             nettyServer.getRejectCounter().incrementAndGet();
         }
     }
 
-    private void processMessage(ChannelHandlerContext ctx, NettyMessage msg) {
+    private void processFrame(ChannelHandlerContext ctx, DecodedFrame frame) {
         try {
-            Object decoded = codec.decode(channel, msg.data());
+            Object decoded = codec.decode(channel, frame.data());
             if (decoded instanceof Request request) {
                 processRequest(ctx, request);
             } else if (decoded instanceof Response response) {
@@ -123,9 +123,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             }
         } catch (Exception e) {
             log.error("Failed to decode, requestId: {}, size: {}, remote: {}",
-                    msg.requestId(), msg.data().readableBytes(), ctx.channel().remoteAddress(), e);
-            Response response = RpcUtils.buildErrorResponse(msg.requestId(), e);
-            if (msg.isRequest()) {
+                    frame.requestId(), frame.data().readableBytes(), ctx.channel().remoteAddress(), e);
+            Response response = RpcUtils.buildErrorResponse(frame.requestId(), e);
+            if (frame.isRequest()) {
                 sendResponse(ctx, response);
             } else {
                 messageHandler.handleAsync(channel, response);
