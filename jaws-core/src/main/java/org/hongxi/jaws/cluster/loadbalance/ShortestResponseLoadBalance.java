@@ -5,6 +5,7 @@ import org.hongxi.jaws.rpc.AbstractReference;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -39,6 +40,13 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
     private volatile long lastUpdateTime = System.currentTimeMillis();
 
     private final AtomicBoolean resetting = new AtomicBoolean(false);
+
+    @Override
+    public void onRefresh(List<Reference<T>> references) {
+        super.onRefresh(references);
+        // discard statistics of references removed from the list to prevent unbounded growth
+        slideWindowMap.keySet().retainAll(new HashSet<>(references));
+    }
 
     @Override
     protected Reference<T> doSelect(Request request) {
@@ -105,7 +113,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected void doSelectToHolder(Request request, List<Reference<T>> refersHolder) {
+    protected void doSelectCandidates(Request request, List<Reference<T>> candidates) {
         List<Reference<T>> references = getReferences();
         int startIndex = ThreadLocalRandom.current().nextInt(references.size());
         int currentCursor = 0;
@@ -118,7 +126,7 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
                 continue;
             }
             currentAvailableCursor++;
-            refersHolder.add(temp);
+            candidates.add(temp);
         }
     }
 

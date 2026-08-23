@@ -53,7 +53,7 @@
 ### 7. AbstractLoadBalance.references 缺 volatile ✅已修复
 
 - 文件：`jaws-core/.../cluster/loadbalance/AbstractLoadBalance.java`
-- 问题：notify 线程在 `onRefresh` 中写、业务线程在每次 `select`/`selectToHolder` 中读，无任何 happens-before 保证。同层的 `AbstractDirectory.references` 已是 `volatile`，此处明显是遗漏。
+- 问题：notify 线程在 `onRefresh` 中写、业务线程在每次 `select`/`selectCandidates` 中读，无任何 happens-before 保证。同层的 `AbstractDirectory.references` 已是 `volatile`，此处明显是遗漏。
 - 修复：字段加 `volatile`。
 
 ### 8. AbstractCluster.references 缺 volatile ✅已修复

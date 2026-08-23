@@ -9,9 +9,8 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.URL;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -19,7 +18,7 @@ import java.util.List;
  * Base implementation of {@link LoadBalance} providing common reference
  * management, router-chain filtering, and warm-up weight calculation.
  * <p>
- * {@link #select} and {@link #selectToHolder} first shrink the candidate
+ * {@link #select} and {@link #selectCandidates} first shrink the candidate
  * references through the configured {@link RouterChain}, then delegate to
  * {@link #doSelect} when more than one reference survives.
  * Subclasses define the concrete strategy (random, round robin,
@@ -33,8 +32,6 @@ import java.util.List;
  * Created by shenhongxi on 2021/4/23.
  */
 public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
-
-    private static final Logger log = LoggerFactory.getLogger(AbstractLoadBalance.class);
 
     public static final int MAX_REFERENCE_COUNT = 10;
     // volatile: written by the notify thread in onRefresh, read by business threads on every select
@@ -69,7 +66,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
     }
 
     @Override
-    public void selectToHolder(Request request, List<Reference<T>> refersHolder) {
+    public List<Reference<T>> selectCandidates(Request request) {
         List<Reference<T>> references = applyRouter(this.references, request);
 
         if (references == null) {
@@ -77,16 +74,18 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
                     + RpcUtils.toString(request));
         }
 
+        List<Reference<T>> candidates = new ArrayList<>();
         if (references.size() > 1) {
-            doSelectToHolder(request, refersHolder);
+            doSelectCandidates(request, candidates);
 
         } else if (references.size() == 1 && references.get(0).isAvailable()) {
-            refersHolder.add(references.get(0));
+            candidates.add(references.get(0));
         }
-        if (refersHolder.isEmpty()) {
+        if (candidates.isEmpty()) {
             throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call : references_size="
                     + references.size() + " " + RpcUtils.toString(request));
         }
+        return candidates;
     }
 
     protected List<Reference<T>> getReferences() {
@@ -95,7 +94,7 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
     protected abstract Reference<T> doSelect(Request request);
 
-    protected abstract void doSelectToHolder(Request request, List<Reference<T>> refersHolder);
+    protected abstract void doSelectCandidates(Request request, List<Reference<T>> candidates);
 
     /**
      * Set the router chain for filtering references before selection.

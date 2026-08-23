@@ -1,8 +1,10 @@
 package org.hongxi.jaws.cluster.loadbalance;
 
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
+import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -86,6 +88,26 @@ class RandomLoadBalanceTest {
         assertThrows(JawsServiceException.class, () -> lb.select(request));
     }
 
+    @Test
+    void selectShouldApplyWarmupWeight() {
+        URL warmingUrl = new URL("jaws", "127.0.0.1", 8080, "testService");
+        warmingUrl.addParameter(UrlParam.Cluster.WARMUP.getName(), String.valueOf(10 * 60 * 1000));
+        warmingUrl.addParameter(UrlParam.Cluster.TIMESTAMP.getName(), String.valueOf(System.currentTimeMillis()));
+
+        List<Reference<String>> refs = new ArrayList<>();
+        refs.add(new UrlTestReference("warming", warmingUrl));
+        refs.add(new TestReference("normal"));
+        lb.onRefresh(refs);
+
+        boolean hitNormal = false;
+        for (int i = 0; i < 200; i++) {
+            String name = ((TestReference) lb.select(request)).getName();
+            assertTrue(name.equals("warming") || name.equals("normal"));
+            hitNormal |= "normal".equals(name);
+        }
+        assertTrue(hitNormal, "权重路径下应能命中 normal reference");
+    }
+
     private List<Reference<String>> createRefs(String... names) {
         List<Reference<String>> list = new ArrayList<>();
         for (String name : names) {
@@ -108,5 +130,23 @@ class RandomLoadBalanceTest {
             @Override public byte getSerializationNumber() { return 0; }
             @Override public void setSerializationNumber(byte number) {}
         };
+    }
+
+    /**
+     * Reference stub carrying a service URL so that warm-up parameters can be tested.
+     */
+    static class UrlTestReference extends TestReference {
+
+        private final URL serviceUrl;
+
+        UrlTestReference(String name, URL serviceUrl) {
+            super(name);
+            this.serviceUrl = serviceUrl;
+        }
+
+        @Override
+        public URL getServiceUrl() {
+            return serviceUrl;
+        }
     }
 }

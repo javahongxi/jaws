@@ -57,14 +57,14 @@ public class RoundRobinLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected void doSelectToHolder(Request request, List<Reference<T>> refersHolder) {
+    protected void doSelectCandidates(Request request, List<Reference<T>> candidates) {
         List<Reference<T>> references = getReferences();
 
         int index = getNextNonNegative();
         for (int i = 0, count = 0; i < references.size() && count < MAX_REFERENCE_COUNT; i++) {
             Reference<T> reference = references.get((i + index) % references.size());
             if (reference.isAvailable()) {
-                refersHolder.add(reference);
+                candidates.add(reference);
                 count++;
             }
         }

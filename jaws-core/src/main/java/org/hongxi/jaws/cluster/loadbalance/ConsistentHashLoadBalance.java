@@ -50,14 +50,14 @@ public class ConsistentHashLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected void doSelectToHolder(Request request, List<Reference<T>> refersHolder) {
+    protected void doSelectCandidates(Request request, List<Reference<T>> candidates) {
         List<Reference<T>> references = getReferences();
 
         int hash = getHash(request);
         for (int i = 0; i < references.size(); i++) {
             Reference<T> ref = consistentHashReferences.get((hash + i) % consistentHashReferences.size());
             if (ref.isAvailable()) {
-                refersHolder.add(ref);
+                candidates.add(ref);
             }
         }
     }

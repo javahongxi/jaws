@@ -69,7 +69,7 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
     }
 
     @Override
-    protected void doSelectToHolder(Request request, List<Reference<T>> refersHolder) {
+    protected void doSelectCandidates(Request request, List<Reference<T>> candidates) {
         List<Reference<T>> references = getReferences();
 
         int referenceSize = references.size();
@@ -87,10 +87,10 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
 
             currentAvailableCursor++;
 
-            refersHolder.add(temp);
+            candidates.add(temp);
         }
 
-        refersHolder.sort(new LeastActiveComparator<>());
+        candidates.sort(new LeastActiveComparator<>());
     }
 
     private int compare(Reference<T> ref1, int weight1, Reference<T> ref2, int weight2) {

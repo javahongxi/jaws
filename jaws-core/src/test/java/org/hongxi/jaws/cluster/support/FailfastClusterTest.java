@@ -106,8 +106,8 @@ class FailfastClusterTest {
 
         @Override public void onRefresh(List<Reference<String>> references) {}
         @Override public Reference<String> select(Request request) { return selectedRef; }
-        @Override public void selectToHolder(Request request, List<Reference<String>> refersHolder) {
-            refersHolder.add(selectedRef);
+        @Override public List<Reference<String>> selectCandidates(Request request) {
+            return List.of(selectedRef);
         }
     }
 

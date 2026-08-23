@@ -117,8 +117,8 @@ class FailoverClusterTest {
 
         @Override public void onRefresh(List<Reference<String>> references) {}
         @Override public Reference<String> select(Request request) { return refs.get(0); }
-        @Override public void selectToHolder(Request request, List<Reference<String>> refersHolder) {
-            refersHolder.addAll(refs);
+        @Override public List<Reference<String>> selectCandidates(Request request) {
+            return new ArrayList<>(refs);
         }
     }
 

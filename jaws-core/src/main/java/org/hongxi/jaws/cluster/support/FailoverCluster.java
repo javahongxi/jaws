@@ -19,7 +19,6 @@ import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -32,8 +31,6 @@ import java.util.List;
 public class FailoverCluster<T> extends AbstractCluster<T> {
 
     private static final Logger log = LoggerFactory.getLogger(FailoverCluster.class);
-
-    private final ThreadLocal<List<Reference<T>>> referencesHolder = ThreadLocal.withInitial(ArrayList::new);
 
     public FailoverCluster(URL url, LoadBalance<T> loadBalance) {
         super(url, loadBalance);
@@ -103,10 +100,7 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
     }
 
     private List<Reference<T>> selectReferences(Request request) {
-        List<Reference<T>> references = referencesHolder.get();
-        references.clear();
-        loadBalance.selectToHolder(request, references);
-        return references;
+        return loadBalance.selectCandidates(request);
     }
 
     private Response handleException(Request request, Exception e) {
