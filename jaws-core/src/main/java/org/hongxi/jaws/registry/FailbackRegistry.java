@@ -19,9 +19,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Failback registry
- * <p>
- * Created by shenhongxi on 2021/4/23.
+ * Registry base class adding fail-back semantics on top of a concrete
+ * registry implementation: failed register/unregister/subscribe/unsubscribe
+ * operations are tracked and periodically retried, and discovery degrades
+ * to the last successful result when the registry is unreachable.
  */
 public abstract class FailbackRegistry extends AbstractRegistry {
 
@@ -38,6 +39,9 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     private final Set<URL> failedUnregistered = new ConcurrentHashSet<>();
     private final ConcurrentMap<URL, ConcurrentHashSet<NotifyListener>> failedSubscribed = new ConcurrentHashMap<>();
     private final ConcurrentMap<URL, ConcurrentHashSet<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<>();
+
+    /** Last successful discovery result per service URL, used as fallback when the registry is unreachable. */
+    private final ConcurrentMap<URL, List<URL>> discoveryCache = new ConcurrentHashMap<>();
 
     public FailbackRegistry(URL url) {
         super(url);
@@ -121,9 +125,17 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     @Override
     public List<URL> discover(URL url) {
         try {
-            return super.discover(url);
+            List<URL> discovered = super.discover(url);
+            discoveryCache.put(url, discovered);
+            return discovered;
         } catch (Exception e) {
-            log.warn("Failed to discover url:{} in registry ({})", url, getUrl(), e);
+            List<URL> cached = discoveryCache.get(url);
+            if (cached != null) {
+                log.warn("Failed to discover url:{} in registry ({}), falling back to {} cached urls",
+                        url, getUrl(), cached.size(), e);
+                return cached;
+            }
+            log.warn("Failed to discover url:{} in registry ({}), no cached urls available", url, getUrl(), e);
             return List.of();
         }
     }

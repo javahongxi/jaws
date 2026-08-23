@@ -3,7 +3,6 @@ package org.hongxi.jaws.extensions;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
-import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.filter.Filter;
 import org.hongxi.jaws.rpc.Caller;
@@ -22,8 +21,7 @@ import org.slf4j.LoggerFactory;
  * Consumer side: creates span → propagator injects trace context into request attachments.
  * Provider side: propagator extracts trace context → creates child span under same trace.
  */
-@Extension("tracing")
-@Activation(value = {"service", "reference"}, order = 5)
+@Extension(value = "tracing", order = 5, keys = {"service", "reference"})
 public class TracingFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(TracingFilter.class);

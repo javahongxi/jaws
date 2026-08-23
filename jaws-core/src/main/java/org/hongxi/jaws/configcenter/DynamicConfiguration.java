@@ -1,6 +1,5 @@
 package org.hongxi.jaws.configcenter;
 
-import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
 import org.hongxi.jaws.rpc.URL;
 
@@ -23,7 +22,7 @@ import org.hongxi.jaws.rpc.URL;
  *
  * @see LocalDynamicConfiguration
  */
-@Spi(scope = Scope.SINGLETON)
+@Spi(singleton = true)
 public interface DynamicConfiguration {
 
     /**

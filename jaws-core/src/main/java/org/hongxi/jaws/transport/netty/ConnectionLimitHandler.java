@@ -12,25 +12,23 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Sharable Netty handler that tracks all accepted server connections,
- * keyed by local-remote socket address pairs. Enforces the configured
- * maximum connection count by immediately closing connections beyond
- * the limit, and closes every tracked channel on server shutdown.
+ * Sharable Netty handler that guards the server against too many concurrent
+ * connections. It tracks every accepted connection keyed by local-remote
+ * socket address pairs, immediately closes connections beyond the configured
+ * limit, and can close all tracked connections on server shutdown.
  * <p>
  * Placed first in the server pipeline so connections are accounted for
  * before any other handler processes them.
- * <p>
- * Created by shenhongxi on 2020/6/27.
  */
 @ChannelHandler.Sharable
-public class NettyServerChannelManager extends ChannelInboundHandlerAdapter {
-    private static final Logger log = LoggerFactory.getLogger(NettyServerChannelManager.class);
+public class ConnectionLimitHandler extends ChannelInboundHandlerAdapter {
+    private static final Logger log = LoggerFactory.getLogger(ConnectionLimitHandler.class);
 
     private final ConcurrentMap<String, Channel> channels = new ConcurrentHashMap<>();
 
     private final int maxChannels;
 
-    public NettyServerChannelManager(int maxChannels) {
+    public ConnectionLimitHandler(int maxChannels) {
         super();
         this.maxChannels = maxChannels;
     }
@@ -74,7 +72,8 @@ public class NettyServerChannelManager extends ChannelInboundHandlerAdapter {
         return key;
     }
 
-    public void close() {
+    /** Closes all connections currently tracked by this handler. */
+    public void closeAll() {
         channels.forEach((k, v) -> {
             if (v != null) {
                 try {

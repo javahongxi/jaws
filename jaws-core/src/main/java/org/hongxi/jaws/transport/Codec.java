@@ -1,7 +1,6 @@
 package org.hongxi.jaws.transport;
 
 import io.netty.buffer.ByteBuf;
-import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
 
 import java.io.IOException;
@@ -33,14 +32,14 @@ import java.io.IOException;
  * @since 2020-06-25
  * @see org.hongxi.jaws.protocol.jaws.JawsCodec
  */
-@Spi(scope = Scope.PROTOTYPE)
+@Spi
 public interface Codec {
 
     /** Protocol header length in bytes. */
     int HEADER_LENGTH = 16;
 
-    /** Magic number written at the beginning of every protocol frame. */
-    short MAGIC = (short) 0xF0F0;
+    /** Magic number written at the beginning of every protocol frame ('JW'). */
+    short MAGIC = (short) 0x4A57;
 
     /**
      * Bit mask for the data-type portion of the flag byte. Data types use the

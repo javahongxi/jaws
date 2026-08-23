@@ -28,7 +28,7 @@ import java.util.Map;
  * <p>
  * Protocol header layout (16 bytes):
  * <pre>
- * Bytes 0-1   : magic (0xF0F0)
+ * Bytes 0-1   : magic (0x4A57)
  * Byte  2     : version
  * Byte  3     : flag (low 2 bits = data type, bit 2 = event/heartbeat, high 5 bits = serializationId)
  * Bytes 4-11  : request id

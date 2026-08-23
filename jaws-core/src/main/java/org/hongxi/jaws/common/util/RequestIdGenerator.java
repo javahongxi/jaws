@@ -3,32 +3,19 @@ package org.hongxi.jaws.common.util;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Request ID generator that encodes approximate request time.
+ * Generates monotonically increasing, JVM-unique request ids.
  *
- * <pre>
- *     Currently: currentTimeMillis * (2^20) + offset.incrementAndGet()
- *
- *     To get seconds: requestId / (2^20 * 1000)
- * </pre>
- * <p>
- * Created by shenhongxi on 2020/8/22.
+ * <p>Ids are only used to correlate a request with its response on the
+ * same connection, so a plain sequence is sufficient and wrap-around safe.
  */
-public class RequestIdGenerator {
-    protected static final AtomicLong offset = new AtomicLong(0);
-    protected static final int BITS = 20;
-    protected static final long MAX_COUNT_PER_MILLIS = 1 << BITS;
+public final class RequestIdGenerator {
+
+    private static final AtomicLong SEQUENCE = new AtomicLong();
+
+    private RequestIdGenerator() {
+    }
 
     public static long getRequestId() {
-        long currentTime = System.currentTimeMillis();
-        long count = offset.incrementAndGet();
-        while (count >= MAX_COUNT_PER_MILLIS) {
-            synchronized (RequestIdGenerator.class) {
-                if (offset.get() >= MAX_COUNT_PER_MILLIS) {
-                    offset.set(0);
-                }
-            }
-            count = offset.incrementAndGet();
-        }
-        return (currentTime << BITS) + count;
+        return SEQUENCE.incrementAndGet();
     }
 }

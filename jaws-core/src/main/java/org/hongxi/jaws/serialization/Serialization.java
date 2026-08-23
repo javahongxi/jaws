@@ -1,6 +1,5 @@
 package org.hongxi.jaws.serialization;
 
-import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
 
 import java.io.IOException;
@@ -33,7 +32,7 @@ import java.io.OutputStream;
  * @author shenhongxi
  * @since 2020/7/25
  */
-@Spi(scope = Scope.SINGLETON)
+@Spi(singleton = true)
 public interface Serialization {
 
     /**

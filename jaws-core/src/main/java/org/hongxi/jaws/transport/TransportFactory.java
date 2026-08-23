@@ -1,6 +1,5 @@
 package org.hongxi.jaws.transport;
 
-import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
 import org.hongxi.jaws.rpc.URL;
 
@@ -13,7 +12,7 @@ import org.hongxi.jaws.rpc.URL;
  * @see Server
  * @see Client
  */
-@Spi(scope = Scope.SINGLETON)
+@Spi(singleton = true)
 public interface TransportFactory {
 
     /**

@@ -1,6 +1,5 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
 
 /**
@@ -14,7 +13,7 @@ import org.hongxi.jaws.common.extension.Spi;
  *
  * @see AbstractReference
  */
-@Spi(scope = Scope.PROTOTYPE)
+@Spi
 public interface Reference<T> extends Caller<T>, Endpoint {
 
     /**

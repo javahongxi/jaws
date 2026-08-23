@@ -4,7 +4,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.filter.Filter;
 import org.hongxi.jaws.rpc.Caller;
@@ -33,8 +32,7 @@ import java.util.concurrent.TimeUnit;
  * Meter instances are cached per (service, method, side) to avoid
  * repeated builder allocation on the hot path.
  */
-@Extension("metrics")
-@Activation(value = {"service", "reference"}, order = 10)
+@Extension(value = "metrics", order = 10, keys = {"service", "reference"})
 public class MetricsFilter implements Filter {
 
     private static final String METRIC_PREFIX = "jaws.rpc.";

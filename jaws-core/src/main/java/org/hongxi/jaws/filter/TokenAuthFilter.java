@@ -1,7 +1,6 @@
 package org.hongxi.jaws.filter;
 
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Caller;
@@ -20,8 +19,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * If the provider has no token configured, authentication is skipped (backward compatible).
  */
-@Extension("tokenAuth")
-@Activation(value = {"service", "reference"}, order = 1)
+@Extension(value = "tokenAuth", order = 1, keys = {"service", "reference"})
 public class TokenAuthFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(TokenAuthFilter.class);

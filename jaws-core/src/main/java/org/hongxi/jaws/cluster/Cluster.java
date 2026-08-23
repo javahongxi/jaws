@@ -1,6 +1,5 @@
 package org.hongxi.jaws.cluster;
 
-import org.hongxi.jaws.common.extension.Scope;
 import org.hongxi.jaws.common.extension.Spi;
 import org.hongxi.jaws.rpc.Caller;
 import org.hongxi.jaws.rpc.Reference;
@@ -15,7 +14,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Spi(scope = Scope.PROTOTYPE)
+@Spi
 public interface Cluster<T> extends Caller<T> {
 
     @Override

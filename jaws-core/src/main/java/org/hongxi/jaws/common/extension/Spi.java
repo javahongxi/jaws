@@ -17,9 +17,10 @@ import java.lang.annotation.Target;
 public @interface Spi {
 
     /**
-     * Instance scope for extensions of this type: {@link Scope#SINGLETON}
-     * shares one instance per extension name, while {@link Scope#PROTOTYPE}
-     * creates a new instance on every {@link ExtensionLoader#getExtension}.
+     * Whether extensions of this type are singletons. When true, one
+     * instance per extension name is created lazily and cached; when
+     * false, a new instance is created on every
+     * {@link ExtensionLoader#getExtension} call.
      */
-    Scope scope() default Scope.PROTOTYPE;
+    boolean singleton() default false;
 }

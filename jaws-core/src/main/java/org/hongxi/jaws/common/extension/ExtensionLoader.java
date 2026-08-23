@@ -30,10 +30,10 @@ import java.util.concurrent.ConcurrentMap;
  * {@code ExtensionLoader} per extension type.
  * <p>
  * Extension interfaces must be annotated with {@link Spi}, which also
- * determines the {@link Scope} (singleton vs prototype) of the instances
- * handed out by {@link #getExtension(String)}. Extensions may be annotated
- * with {@link Extension} to declare their name and numeric id, and with
- * {@link Activation} for conditional activation and ordering.
+ * determines whether the instances handed out by {@link #getExtension(String)}
+ * are singletons or prototypes. Extensions may be annotated with
+ * {@link Extension} to declare their name, numeric id, activation keys
+ * and relative order.
  * <p>
  * Created by shenhongxi on 2020/6/25.
  */
@@ -43,7 +43,7 @@ public class ExtensionLoader<T> {
     private static final String SERVICES_DIRECTORY = "META-INF/services/";
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> extensionLoaders = new ConcurrentHashMap<>();
     private final Class<T> type;
-    private final Scope scope;
+    private final boolean singleton;
     private final ClassLoader classLoader;
     private ConcurrentMap<String, Class<T>> extensionClasses;
     private ConcurrentMap<String, T> singletonInstances;
@@ -58,7 +58,7 @@ public class ExtensionLoader<T> {
     private ExtensionLoader(Class<T> type, ClassLoader classLoader) {
         this.type = type;
         this.classLoader = classLoader;
-        this.scope = type.getAnnotation(Spi.class).scope();
+        this.singleton = type.getAnnotation(Spi.class).singleton();
     }
 
     public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
@@ -97,7 +97,7 @@ public class ExtensionLoader<T> {
         checkInit();
 
         try {
-            if (scope == Scope.SINGLETON) {
+            if (singleton) {
                 return getSingletonInstance(name);
             }
 
@@ -140,11 +140,11 @@ public class ExtensionLoader<T> {
 
         List<String> names = new ArrayList<>(extensionClasses.size());
         for (Map.Entry<String, Class<T>> entry : extensionClasses.entrySet()) {
-            Activation activation = entry.getValue().getAnnotation(Activation.class);
+            Extension extension = entry.getValue().getAnnotation(Extension.class);
             if (StringUtils.isBlank(key)) {
                 names.add(entry.getKey());
-            } else if (activation != null && activation.value() != null) {
-                for (String k : activation.value()) {
+            } else if (extension != null) {
+                for (String k : extension.keys()) {
                     if (key.equals(k)) {
                         names.add(entry.getKey());
                         break;

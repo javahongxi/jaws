@@ -3,7 +3,6 @@ package org.hongxi.jaws.filter;
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.ActivationComparator;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.Provider;
@@ -12,6 +11,7 @@ import org.hongxi.jaws.rpc.URL;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -102,9 +102,21 @@ class FilterChainBuilder {
             }
         }
 
-        // sort the filters
-        filters.sort(new ActivationComparator<>());
+        // sort the filters by @Extension.order(), unannotated ones last
+        filters.sort(ORDER);
         Collections.reverse(filters);
         return filters;
     }
+
+    private static final Comparator<Filter> ORDER = (f1, f2) -> {
+        Extension e1 = f1.getClass().getAnnotation(Extension.class);
+        Extension e2 = f2.getClass().getAnnotation(Extension.class);
+        if (e1 == null) {
+            return 1;
+        } else if (e2 == null) {
+            return -1;
+        } else {
+            return e1.order() - e2.order();
+        }
+    };
 }

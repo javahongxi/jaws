@@ -2,9 +2,7 @@ package org.hongxi.jaws.filter;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.Activation;
 import org.hongxi.jaws.common.extension.Extension;
-import org.hongxi.jaws.common.util.StringTools;
 import org.hongxi.jaws.rpc.Caller;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
@@ -12,13 +10,15 @@ import org.hongxi.jaws.rpc.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 /**
  * Access log filter that records the execution status of each call.
  * Should be placed at the outermost layer to execute last.
  * Note: this filter has a performance impact; consider disabling it under high request volume.
  */
-@Extension("access")
-@Activation(order = 100)
+@Extension(value = "access", order = 100)
 public class AccessLogFilter implements Filter {
 
     private static final Logger accessLog = LoggerFactory.getLogger("accessLog");
@@ -71,7 +71,7 @@ public class AccessLogFilter implements Filter {
 
     private void append(StringBuilder builder, Object field) {
         if (field != null) {
-            builder.append(StringTools.urlEncode(field.toString()));
+            builder.append(URLEncoder.encode(field.toString(), StandardCharsets.UTF_8));
         }
         builder.append(ACCESS_LOG_SEPARATOR);
     }

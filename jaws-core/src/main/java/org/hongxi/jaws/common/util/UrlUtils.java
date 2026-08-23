@@ -58,7 +58,7 @@ public class UrlUtils {
             defaultProtocol = UrlParam.Transport.PROTOCOL.value();
         }
 
-        int defaultPort = StringTools.parseInteger(defaults == null ? null : defaults.get("port"));
+        int defaultPort = parseIntOrDefault0(defaults == null ? null : defaults.get("port"));
         String defaultPath = defaults == null ? null : defaults.get("path");
 
         // Extract default parameters excluding reserved keys
@@ -112,5 +112,17 @@ public class UrlUtils {
             u = new URL(protocol, host, port, path, parameters);
         }
         return u;
+    }
+
+    /** Lenient integer parsing that falls back to 0 for null or malformed input. */
+    private static int parseIntOrDefault0(String value) {
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 }

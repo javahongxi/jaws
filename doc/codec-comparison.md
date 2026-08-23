@@ -9,13 +9,13 @@ NettyDecoder      (Netty 层 - 帧检测 + 半包等待，输出 NettyMessage)
         ↕
 NettyChannelHandler (业务层 - 调用 Codec 编解码，服务端线程池调度)
         ↕
-JawsCodec         (协议层 - 业务编解码, magic=0xF0F0, 直接操作 ByteBuf)
+JawsCodec         (协议层 - 业务编解码, magic=0x4A57, 直接操作 ByteBuf)
 ```
 
-- **NettyDecoder**：继承 `ByteToMessageDecoder`，校验 `0xF0F0` magic，读取协议帧头（version、flag、requestId、bodyLength），等待完整 body 后通过 `readRetainedSlice()` 提取完整协议帧（header + body）封装为 `NettyMessage` record 传递给下游
+- **NettyDecoder**：继承 `ByteToMessageDecoder`，校验 `0x4A57` magic，读取协议帧头（version、flag、requestId、bodyLength），等待完整 body 后通过 `readRetainedSlice()` 提取完整协议帧（header + body）封装为 `NettyMessage` record 传递给下游
 - **NettyChannelHandler**：服务端接收 `NettyMessage`，通过 `threadPoolExecutor` 将 decode 调度到业务线程；客户端在 IO 线程直接 decode。编码时 `Codec.encode()` 直接写入 `ByteBuf`，由 `ctx.channel().writeAndFlush()` 发送
 - **NettyChannel**：客户端发送请求时分配 `ByteBuf`，调用 `Codec.encode()` 直接写入，通过 `channel.writeAndFlush()` 发送
-- **JawsCodec**：协议层编解码，处理 `0xF0F0` 协议帧的业务语义，编码采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式，解码通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化
+- **JawsCodec**：协议层编解码，处理 `0x4A57` 协议帧的业务语义，编码采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式，解码通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化
 
 > 注：早期版本有独立的 `NettyEncoder`（`MessageToByteEncoder<byte[]>`），Codec 升级为直接操作 `ByteBuf` 后已移除，编码路径减少一次中间层。
 
@@ -39,11 +39,11 @@ DubboCodec         (RPC 层 - 覆盖 body 编解码逻辑)
 
 ```
 ┌──────────── 协议帧 header (16B) ────────────┐┌─────┐
-│ 0xF0F0 │ ver │ flag │ reqId │ bodyLen       ││ body│
+│ 0x4A57 │ ver │ flag │ reqId │ bodyLen       ││ body│
 └──────────────────────────────────────────────┘└─────┘
 ```
 
-- 单层帧结构，`magic=0xF0F0` 既是帧标识也是协议标识
+- 单层帧结构，`magic=0x4A57` 既是帧标识也是协议标识
 - `NettyDecoder` 读取 `bodyLen` 后等待完整 body，然后 `readRetainedSlice(HEADER_LENGTH + bodyLength)` 提取完整协议帧交给 `NettyChannelHandler`
 
 ## 三、协议帧结构对比
@@ -51,7 +51,7 @@ DubboCodec         (RPC 层 - 覆盖 body 编解码逻辑)
 ### Jaws 协议帧 (16 bytes header + body)
 
 ```
-Bytes 0-1   : magic 0xF0F0
+Bytes 0-1   : magic 0x4A57
 Byte  2     : version (当前 = 1)
 Byte  3     : flag (低 2 位 = dataType: 0x00=request, 0x01=response, 0x02=exception, 0x03=void;
                     bit 2 = event (心跳); 高 5 位 = serializationId，最多 32 种序列化协议)
