@@ -40,7 +40,7 @@ public class JawsConstants {
     public static final String PROTOCOL_INJVM = "injvm";
     public static final String PROTOCOL_JAWS = "jaws";
 
-    public static final String METHOD_CONFIG_PREFIX = "methodconfig.";
+    public static final String METHOD_CONFIG_PREFIX = "method-config.";
 
     public static final Pattern REGISTRY_SPLIT_PATTERN = Pattern.compile("\\s*[|;]+\\s*");
 }
