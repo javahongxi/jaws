@@ -1,4 +1,4 @@
-package org.hongxi.jaws.config.configcenter;
+package org.hongxi.jaws.configcenter;
 
 /**
  * Listener for dynamic configuration changes.

@@ -1,8 +1,8 @@
 package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
-import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
+import org.hongxi.jaws.configcenter.DynamicConfiguration;
+import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;

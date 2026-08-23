@@ -1,4 +1,4 @@
-package org.hongxi.jaws.config.configcenter;
+package org.hongxi.jaws.configcenter;
 
 import org.hongxi.jaws.common.extension.Extension;
 

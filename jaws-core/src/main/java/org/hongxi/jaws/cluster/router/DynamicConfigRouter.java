@@ -1,10 +1,10 @@
 package org.hongxi.jaws.cluster.router;
 
 import org.hongxi.jaws.cluster.Router;
-import org.hongxi.jaws.config.configcenter.ConfigurationListener;
-import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
-import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
-import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
+import org.hongxi.jaws.configcenter.ConfigurationListener;
+import org.hongxi.jaws.configcenter.DynamicConfiguration;
+import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
+import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.URL;

@@ -1,9 +1,9 @@
 package org.hongxi.jaws.filter;
 
 import org.hongxi.jaws.common.extension.Extension;
-import org.hongxi.jaws.config.configcenter.DynamicConfiguration;
-import org.hongxi.jaws.config.configcenter.DynamicConfigurationKeys;
-import org.hongxi.jaws.config.configcenter.DynamicConfigurationUtils;
+import org.hongxi.jaws.configcenter.DynamicConfiguration;
+import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
+import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
