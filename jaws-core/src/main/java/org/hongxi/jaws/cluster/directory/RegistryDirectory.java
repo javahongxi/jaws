@@ -1,7 +1,6 @@
 package org.hongxi.jaws.cluster.directory;
 
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
@@ -68,7 +67,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             List<URL> discovered = registry.discover(consumerUrl);
             log.info("init discover: consumerUrl={}, discoveredCount={}",
                     consumerUrl.toSimpleString(), discovered == null ? 0 : discovered.size());
-            if (!CollectionUtils.isEmpty(discovered)) {
+            if (discovered != null && !discovered.isEmpty()) {
                 log.info("discovered urls: {}", formatIdentities(discovered));
                 notify(registryUrl, discovered);
             }
@@ -96,7 +95,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
      */
     @Override
     public synchronized void notify(URL registryUrl, List<URL> urls) {
-        if (CollectionUtils.isEmpty(urls)) {
+        if (urls == null || urls.isEmpty()) {
             log.warn("No service urls from registry={}, service={}", registryUrl.getUri(), url.getIdentity());
             onRegistryEmpty(registryUrl);
             return;
@@ -130,7 +129,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             }
         }
 
-        if (CollectionUtils.isEmpty(newReferences)) {
+        if (newReferences.isEmpty()) {
             onRegistryEmpty(registryUrl);
             return;
         }

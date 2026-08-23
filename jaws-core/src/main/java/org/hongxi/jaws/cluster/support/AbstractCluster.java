@@ -2,7 +2,6 @@ package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.LoadBalance;
-import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.ReferenceDestroyer;
 import org.hongxi.jaws.rpc.URL;
@@ -40,14 +39,14 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
 
     @Override
     public synchronized void onRefresh(List<Reference<T>> references) {
-        if (CollectionUtils.isEmpty(references)) {
+        if (references == null || references.isEmpty()) {
             return;
         }
         loadBalance.onRefresh(references);
         List<Reference<T>> oldReferences = this.references;
         this.references = references;
 
-        if (CollectionUtils.isEmpty(oldReferences)) {
+        if (oldReferences.isEmpty()) {
             return;
         }
 
@@ -104,7 +103,7 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
 
     @Override
     public Class<T> getInterface() {
-        if (CollectionUtils.isEmpty(references)) {
+        if (references.isEmpty()) {
             return null;
         }
         return references.get(0).getInterface();

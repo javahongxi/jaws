@@ -80,7 +80,7 @@ public class NetUtils {
     }
 
     private static InetAddress getLocalAddressBySocket(Map<String, Integer> destHostPorts) {
-        if (CollectionUtils.isEmpty(destHostPorts)) {
+        if (destHostPorts == null || destHostPorts.isEmpty()) {
             return null;
         }
 

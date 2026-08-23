@@ -2,7 +2,6 @@ package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.util.ReflectUtils;
-import org.hongxi.jaws.common.util.RequestIdGenerator;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Reference;
@@ -49,7 +48,6 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         }
 
         DefaultRequest request = new DefaultRequest();
-        request.setRequestId(RequestIdGenerator.getRequestId());
         request.setArguments(args);
         request.setMethodName(method.getName());
         request.setParamDesc(ReflectUtils.getMethodParamDesc(method));

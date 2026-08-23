@@ -7,7 +7,6 @@ import org.hongxi.jaws.cluster.ConsumerCoordinator;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.proxy.ProxyFactory;
 import org.hongxi.jaws.rpc.GenericService;
@@ -104,7 +103,7 @@ public class ReferenceConfig<T> extends AbstractInterfaceConfig {
             interfaceClass = (Class<T>) GenericService.class;
         }
 
-        if (CollectionUtils.isEmpty(protocols)) {
+        if (protocols == null || protocols.isEmpty()) {
             throw new JawsFrameworkException(String.format(
                     "No protocol configured for reference [%s], " +
                     "please configure at least one ProtocolConfig.",

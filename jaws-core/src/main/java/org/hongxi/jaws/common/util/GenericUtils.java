@@ -57,7 +57,7 @@ public class GenericUtils {
 
     /**
      * Build a parameter description string from parameter type names,
-     * matching the format used by {@link ReflectUtils#getMethodDesc(String, Class[])}.
+     * matching the format used by {@link ReflectUtils#getMethodParamDesc(Method)}.
      */
     public static String buildParameterDesc(String[] parameterTypes) {
         if (parameterTypes == null || parameterTypes.length == 0) {

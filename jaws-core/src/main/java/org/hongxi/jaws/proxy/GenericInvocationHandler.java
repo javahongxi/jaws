@@ -2,7 +2,6 @@ package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.util.GenericUtils;
-import org.hongxi.jaws.common.util.RequestIdGenerator;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.GenericService;
@@ -61,7 +60,6 @@ public class GenericInvocationHandler<T> extends AbstractReferenceHandler<T> imp
 
         // Build the request targeting the real interface
         DefaultRequest request = new DefaultRequest();
-        request.setRequestId(RequestIdGenerator.getRequestId());
         request.setInterfaceName(interfaceName);
         request.setMethodName(methodName);
         request.setArguments(arguments);

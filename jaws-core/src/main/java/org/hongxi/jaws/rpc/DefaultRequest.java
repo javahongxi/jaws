@@ -5,6 +5,7 @@ import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Default serializable {@link Request} sent from consumer to provider, identifying the
@@ -19,6 +20,13 @@ public class DefaultRequest implements Request, Serializable {
     @Serial
     private static final long serialVersionUID = -6525078483477733530L;
 
+    /**
+     * Generates monotonically increasing, JVM-unique request ids.
+     * Ids are only used to correlate a request with its response on the
+     * same connection, so a plain sequence is sufficient and wrap-around safe.
+     */
+    private static final AtomicLong SEQUENCE = new AtomicLong();
+
     private String interfaceName;
     private String methodName;
     private String paramDesc;
@@ -28,6 +36,10 @@ public class DefaultRequest implements Request, Serializable {
     private long requestId;
     // default serialization is hessian2
     private byte serializationNumber = 0;
+
+    public DefaultRequest() {
+        this.requestId = SEQUENCE.incrementAndGet();
+    }
 
     @Override
     public String getInterfaceName() {
@@ -87,6 +99,9 @@ public class DefaultRequest implements Request, Serializable {
         return requestId;
     }
 
+    /**
+     * Overwritten with the id carried on the wire when decoded on the server side.
+     */
     public void setRequestId(long requestId) {
         this.requestId = requestId;
     }

@@ -4,7 +4,6 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
-import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -114,7 +113,7 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
             return;
         }
 
-        if (CollectionUtils.isEmpty(protocols)) {
+        if (protocols == null || protocols.isEmpty()) {
             throw new JawsFrameworkException(String.format(
                     "No protocol configured for service [%s], " +
                     "please configure at least one ProtocolConfig.",

@@ -8,7 +8,6 @@ import org.hongxi.jaws.cluster.router.TagRouter;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.filter.ProtocolFilterWrapper;
 import org.hongxi.jaws.rpc.Protocol;
@@ -112,13 +111,13 @@ public class ConsumerCoordinator<T> {
         // For StaticDirectory (directUrl mode), references are set in the constructor
         // before the change listener is registered, so the cluster never receives
         // the initial onRefresh callback. Trigger it explicitly here.
-        if (CollectionUtils.isEmpty(cluster.getReferences()) && !CollectionUtils.isEmpty(directory.getReferences())) {
+        if (cluster.getReferences().isEmpty() && !directory.getReferences().isEmpty()) {
             cluster.onRefresh(directory.getReferences());
         }
 
         cluster.init();
 
-        if (CollectionUtils.isEmpty(cluster.getReferences())) {
+        if (cluster.getReferences().isEmpty()) {
             if (!url.getBoolParameter(UrlParam.Client.CHECK)) {
                 log.warn("No services found for refer {}/{}", url.getPath(), url.getVersion());
             } else {

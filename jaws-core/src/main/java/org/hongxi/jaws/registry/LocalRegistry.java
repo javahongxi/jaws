@@ -2,7 +2,6 @@ package org.hongxi.jaws.registry;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.ConcurrentHashSet;
 import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
@@ -55,7 +54,7 @@ public class LocalRegistry extends AbstractRegistry {
         listeners.add(listener);
 
         List<URL> urls = discover(url);
-        if (!CollectionUtils.isEmpty(urls)) {
+        if (!urls.isEmpty()) {
             listener.notify(getUrl(), urls);
         }
 
@@ -116,7 +115,7 @@ public class LocalRegistry extends AbstractRegistry {
     }
 
     private void remove(URL url, List<URL> urls) {
-        if (CollectionUtils.isEmpty(urls)) {
+        if (urls == null || urls.isEmpty()) {
             return;
         }
         removeCachedUrlByIdentity(url, urls);
@@ -128,7 +127,7 @@ public class LocalRegistry extends AbstractRegistry {
     }
 
     private void removeCachedUrlByIdentity(URL url, List<URL> urls) {
-        if (CollectionUtils.isEmpty(urls)) {
+        if (urls.isEmpty()) {
             return;
         }
         URL oldUrl = null;
