@@ -10,8 +10,6 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.serialization.ObjectInput;
 import org.hongxi.jaws.serialization.ObjectOutput;
 import org.hongxi.jaws.serialization.Serialization;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -42,7 +40,6 @@ import java.util.Map;
  * @author shenhongxi
  */
 class GrpcPayloadCodec {
-    private static final Logger log = LoggerFactory.getLogger(GrpcPayloadCodec.class);
 
     private GrpcPayloadCodec() {
     }

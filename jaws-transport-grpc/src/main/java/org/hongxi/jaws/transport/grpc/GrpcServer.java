@@ -1,6 +1,8 @@
 package org.hongxi.jaws.transport.grpc;
 
 import io.grpc.ServerBuilder;
+import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
+import org.hongxi.jaws.common.threadpool.EagerThreadPoolExecutor;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
@@ -12,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -25,6 +28,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * protocol or {@link Codec}. gRPC/HTTP2 handles
  * all framing; business payloads are serialized via Jaws
  * {@link Serialization} directly.
+ * <p>
+ * A dedicated non-daemon executor is supplied to gRPC so the JVM stays
+ * alive after the main thread exits (gRPC's default executor and grpc-netty
+ * IO threads are all daemon threads). The pool is sized by the same URL
+ * parameters as {@code NettyServer} (minWorkerThreads/maxWorkerThreads/
+ * workerQueueSize), and its pre-started core threads act as the resident
+ * non-daemon anchor.
  *
  * @author shenhongxi
  */
@@ -36,6 +46,7 @@ public class GrpcServer implements org.hongxi.jaws.transport.Server {
     private final Serialization serialization;
 
     private io.grpc.Server grpcServer;
+    private ExecutorService serverExecutor;
     private volatile ChannelState state = ChannelState.UNINIT;
     private final AtomicInteger activeRequests = new AtomicInteger(0);
 
@@ -59,7 +70,30 @@ public class GrpcServer implements org.hongxi.jaws.transport.Server {
         GrpcServerService service = new GrpcServerService(messageHandler, serverChannel, serialization);
 
         try {
+            // Business pool aligned with NettyServer: bounded and config-driven
+            // (minWorkerThreads/maxWorkerThreads/workerQueueSize). Unlike
+            // NettyServer, threads must be non-daemon because gRPC has no
+            // non-daemon event loop to keep the JVM alive; the pre-started
+            // core threads act as the resident anchor.
+            EagerThreadPoolExecutor executor = new EagerThreadPoolExecutor(
+                    url.getIntParameter(UrlParam.Server.MIN_WORKER_THREADS),
+                    url.getIntParameter(UrlParam.Server.MAX_WORKER_THREADS),
+                    EagerThreadPoolExecutor.DEFAULT_MAX_IDLE_TIME, TimeUnit.MILLISECONDS,
+                    url.getIntParameter(UrlParam.Server.WORKER_QUEUE_SIZE),
+                    new DefaultThreadFactory("GrpcServer-" + url.getHostPort(), false),
+                    (command, pool) -> {
+                        // No access to the response observer here, so fall back to
+                        // the transport thread instead of dropping the request.
+                        log.error("thread pool full, running task on transport thread: "
+                                        + "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={}",
+                                pool.getActiveCount(), pool.getPoolSize(),
+                                pool.getCorePoolSize(), pool.getMaximumPoolSize(), pool.getTaskCount());
+                        command.run();
+                    });
+            executor.prestartAllCoreThreads();
+            serverExecutor = executor;
             grpcServer = ServerBuilder.forPort(port)
+                    .executor(serverExecutor)
                     .addService(service)
                     .build()
                     .start();
@@ -94,12 +128,21 @@ public class GrpcServer implements org.hongxi.jaws.transport.Server {
                 }
                 grpcServer = null;
             }
+            // gRPC does not shut down a user-supplied executor; do it here
+            if (serverExecutor != null) {
+                serverExecutor.shutdown();
+                serverExecutor = null;
+            }
             state = ChannelState.CLOSE;
             log.info("gRPC server closed: url={}", url);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             if (grpcServer != null) {
                 grpcServer.shutdownNow();
+            }
+            if (serverExecutor != null) {
+                serverExecutor.shutdownNow();
+                serverExecutor = null;
             }
             state = ChannelState.CLOSE;
         }

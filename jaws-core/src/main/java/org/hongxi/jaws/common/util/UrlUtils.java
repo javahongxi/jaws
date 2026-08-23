@@ -114,7 +114,7 @@ public class UrlUtils {
         return u;
     }
 
-    /** Lenient integer parsing that falls back to 0 for null or malformed input. */
+    /** Lenient integer parsing that falls back to 0 for null or invalid input. */
     private static int parseIntOrDefault0(String value) {
         if (value == null) {
             return 0;
