@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 	   reject if already at maxThread.
  * 	   Suitable for CPU-intensive applications (e.g., operations within JVM like memory copy, compute, etc.)
  *
- * StandardThreadExecutor execute strategy:
+ * EagerThreadPoolExecutor execute strategy:
  *     Priority expand threads to maxThread, then offer to queue,
  * 	   reject if queue is full.
  * 	   Suitable for scenarios where business processing requires remote resources
@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * Created by shenhongxi on 2020/6/27.
  */
-public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
+public class EagerThreadPoolExecutor extends ThreadPoolExecutor {
     public static final int DEFAULT_MIN_THREADS = 20;
     public static final int DEFAULT_MAX_THREADS = 200;
 
@@ -40,37 +40,37 @@ public class StandardThreadPoolExecutor extends ThreadPoolExecutor {
     protected AtomicInteger submittedTasksCount;
     private final int maxSubmittedTasks;
 
-    public StandardThreadPoolExecutor() {
+    public EagerThreadPoolExecutor() {
         this(DEFAULT_MIN_THREADS, DEFAULT_MAX_THREADS);
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize) {
+    public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize) {
         this(corePoolSize, maximumPoolSize, maximumPoolSize);
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit) {
+    public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit) {
         this(corePoolSize, maximumPoolSize, keepAliveTime, unit, maximumPoolSize);
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, int queueCapacity) {
+    public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, int queueCapacity) {
         this(corePoolSize, maximumPoolSize, queueCapacity, Executors.defaultThreadFactory());
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, int queueCapacity, ThreadFactory threadFactory) {
+    public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, int queueCapacity, ThreadFactory threadFactory) {
         this(corePoolSize, maximumPoolSize, DEFAULT_MAX_IDLE_TIME, TimeUnit.MILLISECONDS, queueCapacity, threadFactory);
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueCapacity) {
+    public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueCapacity) {
         this(corePoolSize, maximumPoolSize, keepAliveTime, unit, queueCapacity, Executors.defaultThreadFactory());
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
-                                      int queueCapacity, ThreadFactory threadFactory) {
+    public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
+                                   int queueCapacity, ThreadFactory threadFactory) {
         this(corePoolSize, maximumPoolSize, keepAliveTime, unit, queueCapacity, threadFactory, new AbortPolicy());
     }
 
-    public StandardThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
-                                      int queueCapacity, ThreadFactory threadFactory, RejectedExecutionHandler handler) {
+    public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
+                                   int queueCapacity, ThreadFactory threadFactory, RejectedExecutionHandler handler) {
         super(corePoolSize, maximumPoolSize, keepAliveTime, unit, new ExecutorQueue(), threadFactory, handler);
         ((ExecutorQueue) getQueue()).setThreadPoolExecutor(this);
 

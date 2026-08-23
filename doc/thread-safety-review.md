@@ -5,7 +5,7 @@
 
 对 Jaws 全代码库（core、注册中心扩展、transport、spring-boot starter）中所有涉及并发原语与共享可变状态的类进行系统性审查，按 **缺锁/原子性、可见性、冗余同步、锁粒度** 四类归纳问题与修复建议。
 
-已复核确认无问题的部分：`DefaultResponseFuture` 状态机（wait/notify + volatile state）、`NettyChannel`（volatile 快照 + 锁内状态迁移）、`AbstractTransportFactory`（锁一致）、`NettyServerChannelManager`、`FailbackCluster` DCL、`RequestIdGenerator`、`StandardThreadPoolExecutor`、`NacosRegistry`（lock/unlock 一致）、`MetricsFilter`/`TracingFilter` 等。
+已复核确认无问题的部分：`DefaultResponseFuture` 状态机（wait/notify + volatile state）、`NettyChannel`（volatile 快照 + 锁内状态迁移）、`AbstractTransportFactory`（锁一致）、`NettyServerChannelManager`、`FailbackCluster` DCL、`RequestIdGenerator`、`EagerThreadPoolExecutor`、`NacosRegistry`（lock/unlock 一致）、`MetricsFilter`/`TracingFilter` 等。
 
 ## 一、缺锁 / 原子性缺陷（高）
 

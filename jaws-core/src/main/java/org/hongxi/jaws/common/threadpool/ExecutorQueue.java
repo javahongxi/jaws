@@ -18,13 +18,13 @@ public class ExecutorQueue extends LinkedTransferQueue<Runnable> {
     @Serial
     private static final long serialVersionUID = -3392627914941820087L;
 
-    private StandardThreadPoolExecutor threadPoolExecutor;
+    private EagerThreadPoolExecutor threadPoolExecutor;
 
     public ExecutorQueue() {
         super();
     }
 
-    public void setThreadPoolExecutor(StandardThreadPoolExecutor threadPoolExecutor) {
+    public void setThreadPoolExecutor(EagerThreadPoolExecutor threadPoolExecutor) {
         this.threadPoolExecutor = threadPoolExecutor;
     }
 

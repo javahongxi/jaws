@@ -14,7 +14,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
-import org.hongxi.jaws.common.threadpool.StandardThreadPoolExecutor;
+import org.hongxi.jaws.common.threadpool.EagerThreadPoolExecutor;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractServer;
 import org.hongxi.jaws.transport.MessageHandler;
@@ -77,7 +77,7 @@ public class NettyServer extends AbstractServer {
         connectionLimiter = new ConnectionLimitHandler(maxServerConnections);
 
         if (threadPoolExecutor == null || threadPoolExecutor.isShutdown()) {
-            threadPoolExecutor = new StandardThreadPoolExecutor(
+            threadPoolExecutor = new EagerThreadPoolExecutor(
                     url.getIntParameter(UrlParam.Server.MIN_WORKER_THREADS),
                     url.getIntParameter(UrlParam.Server.MAX_WORKER_THREADS),
                     url.getIntParameter(UrlParam.Server.WORKER_QUEUE_SIZE),
