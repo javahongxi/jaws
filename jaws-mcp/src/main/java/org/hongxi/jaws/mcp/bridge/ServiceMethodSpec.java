@@ -1,4 +1,4 @@
-package org.hongxi.jaws.bridge;
+package org.hongxi.jaws.mcp.bridge;
 
 import org.hongxi.jaws.rpc.Provider;
 

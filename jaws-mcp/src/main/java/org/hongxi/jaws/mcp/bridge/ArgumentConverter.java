@@ -1,4 +1,4 @@
-package org.hongxi.jaws.bridge;
+package org.hongxi.jaws.mcp.bridge;
 
 import com.alibaba.fastjson2.JSON;
 

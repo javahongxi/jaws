@@ -1,6 +1,6 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.lifecycle.ShutdownHook;
+import org.hongxi.jaws.common.lifecycle.ShutdownHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,4 +1,4 @@
-package org.hongxi.jaws.lifecycle;
+package org.hongxi.jaws.common.lifecycle;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

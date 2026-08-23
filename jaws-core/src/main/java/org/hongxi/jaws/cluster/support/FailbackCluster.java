@@ -4,7 +4,7 @@ import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
-import org.hongxi.jaws.lifecycle.ShutdownHook;
+import org.hongxi.jaws.common.lifecycle.ShutdownHook;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;

@@ -1,4 +1,4 @@
-package org.hongxi.jaws.bridge;
+package org.hongxi.jaws.mcp.bridge;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;

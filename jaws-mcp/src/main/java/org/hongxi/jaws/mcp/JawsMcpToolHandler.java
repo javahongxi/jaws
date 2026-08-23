@@ -2,8 +2,8 @@ package org.hongxi.jaws.mcp;
 
 import com.alibaba.fastjson2.JSON;
 import io.modelcontextprotocol.spec.McpSchema;
-import org.hongxi.jaws.bridge.ArgumentConverter;
-import org.hongxi.jaws.bridge.ServiceMethodSpec;
+import org.hongxi.jaws.mcp.bridge.ArgumentConverter;
+import org.hongxi.jaws.mcp.bridge.ServiceMethodSpec;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;

@@ -8,7 +8,7 @@ import org.hongxi.jaws.common.util.CollectionUtils;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
-import org.hongxi.jaws.lifecycle.ShutdownHook;
+import org.hongxi.jaws.common.lifecycle.ShutdownHook;
 import org.hongxi.jaws.filter.ProtocolFilterWrapper;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;

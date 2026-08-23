@@ -1,7 +1,7 @@
 package org.hongxi.jaws.transport.grpc;
 
 import io.grpc.ServerBuilder;
-import org.hongxi.jaws.common.ChannelState;
+import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.serialization.Serialization;

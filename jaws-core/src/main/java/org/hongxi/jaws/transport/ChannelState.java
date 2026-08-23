@@ -1,4 +1,4 @@
-package org.hongxi.jaws.common;
+package org.hongxi.jaws.transport;
 
 /**
  * Lifecycle states of a {@code Channel}, from creation to close:

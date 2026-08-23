@@ -6,7 +6,7 @@ import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.http.HttpServlet;
-import org.hongxi.jaws.bridge.ServiceMethodSpec;
+import org.hongxi.jaws.mcp.bridge.ServiceMethodSpec;
 import org.hongxi.jaws.mcp.JawsMcpServer;
 import org.hongxi.jaws.rpc.Exporter;
 import org.hongxi.jaws.rpc.Provider;

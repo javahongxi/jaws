@@ -1,6 +1,5 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.common.FutureState;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;

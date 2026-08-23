@@ -1,4 +1,4 @@
-package org.hongxi.jaws.common;
+package org.hongxi.jaws.rpc;
 
 /**
  * future task state

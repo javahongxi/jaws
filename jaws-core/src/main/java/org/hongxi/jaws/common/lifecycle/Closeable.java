@@ -1,4 +1,4 @@
-package org.hongxi.jaws.lifecycle;
+package org.hongxi.jaws.common.lifecycle;
 
 /**
  * Lifecycle contract for components that hold resources (connections,
