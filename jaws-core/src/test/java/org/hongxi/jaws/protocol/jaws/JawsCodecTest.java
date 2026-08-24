@@ -112,6 +112,33 @@ class JawsCodecTest {
         assertEquals(new CodecPojo("x", 9), result.getArguments()[0]);
     }
 
+    @Test
+    void requestRoundtripWithProtostuff() throws IOException {
+        // protostuff = number 2: resolved from the serializationId in the flag high 5 bits
+        Map<String, String> params = new HashMap<>();
+        params.put("serialization", "protostuff");
+        Channel protostuffChannel = new FakeChannel(new URL("jaws", "127.0.0.1", 18001, "test", params));
+
+        DefaultRequest request = new DefaultRequest();
+        request.setRequestId(9L);
+        request.setInterfaceName("org.hongxi.jaws.QuxService");
+        request.setMethodName("submit");
+        request.setParamDesc("java.lang.String," + CodecBean.class.getName() + ",java.util.List");
+        request.setArguments(new Object[]{"hi", new CodecBean("x", 9),
+                new java.util.ArrayList<>(java.util.List.of(new CodecBean("y", 7)))});
+
+        ByteBuf buf = Unpooled.buffer();
+        codec.encode(protostuffChannel, request, buf);
+        Object decoded = codec.decode(protostuffChannel, buf);
+
+        Request result = (Request) decoded;
+        assertEquals(2, result.getSerializationNumber()); // protostuff = 2
+        assertEquals("hi", result.getArguments()[0]);
+        assertEquals(new CodecBean("x", 9), result.getArguments()[1]);
+        assertEquals(java.util.List.of(new CodecBean("y", 7)), result.getArguments()[2]);
+        assertEquals(0, buf.readableBytes());
+    }
+
     // ---------- response round-trips ----------
 
     @Test
@@ -314,6 +341,50 @@ class JawsCodecTest {
             if (o == null || getClass() != o.getClass()) return false;
             CodecPojo pojo = (CodecPojo) o;
             return value == pojo.value && Objects.equals(name, pojo.name);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(name, value);
+        }
+    }
+
+    /** Protostuff-compatible POJO: requires an accessible no-arg constructor. */
+    public static class CodecBean implements Serializable {
+        private static final long serialVersionUID = 1L;
+        private String name;
+        private int value;
+
+        public CodecBean() {
+        }
+
+        CodecBean(String name, int value) {
+            this.name = name;
+            this.value = value;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public int getValue() {
+            return value;
+        }
+
+        public void setValue(int value) {
+            this.value = value;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            CodecBean bean = (CodecBean) o;
+            return value == bean.value && Objects.equals(name, bean.name);
         }
 
         @Override

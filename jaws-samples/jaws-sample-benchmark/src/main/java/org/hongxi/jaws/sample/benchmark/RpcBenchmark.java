@@ -11,6 +11,7 @@ import org.hongxi.jaws.sample.injvm.service.DemoServiceImpl;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -55,7 +56,7 @@ public class RpcBenchmark {
      * Error counters keyed by error type (exception simple name or "InvalidResponse"),
      * accumulated across both warmup and measurement phases.
      */
-    private static final ConcurrentHashMap<String, LongAdder> ERROR_COUNTERS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, LongAdder> ERROR_COUNTERS = new ConcurrentHashMap<>();
 
     public static void main(String[] args) throws Exception {
         System.out.println("============================================");

@@ -32,6 +32,7 @@
         <mcp-bom.version>2.0.0</mcp-bom.version>
         <nacos.version>3.2.3</nacos.version>
         <protobuf.version>4.34.1</protobuf.version>
+        <protostuff.version>1.8.0</protostuff.version>
         <zookeeper.version>3.9.5</zookeeper.version>
     </properties>
 
@@ -73,6 +74,16 @@
                 <groupId>com.google.protobuf</groupId>
                 <artifactId>protobuf-java</artifactId>
                 <version>${protobuf.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.protostuff</groupId>
+                <artifactId>protostuff-core</artifactId>
+                <version>${protostuff.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.protostuff</groupId>
+                <artifactId>protostuff-runtime</artifactId>
+                <version>${protostuff.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.google.guava</groupId>

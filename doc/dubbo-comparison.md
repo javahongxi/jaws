@@ -7,7 +7,7 @@
 | 能力维度       | Jaws                                               | Dubbo                                                      | 差距评估   |
 |----------------|----------------------------------------------------|------------------------------------------------------------|------------|
 | **自定义协议** | 16 字节头，零拷贝编解码，flag 嵌入 serializationId | 16 字节头，零拷贝编解码，flag 嵌入 serializationId         | **持平**   |
-| **序列化**     | fastjson2 / hessian2（2 种）                       | hessian2 / protobuf / fastjson2 / kryo / fst 等（10+ 种）  | **差距大** |
+| **序列化**     | fastjson2 / hessian2 / protostuff（3 种）          | hessian2 / protobuf / fastjson2 / kryo / fst 等（10+ 种）  | 中等差距 |
 | **同步调用**   | 支持                                               | 支持                                                       | **持平**   |
 | **异步调用**   | `CompletableFuture` 返回值，Provider 端原生异步    | `CompletableFuture` + `Async` 后缀接口 + `RpcContext` 异步 | **持平**   |
 | **泛化调用**   | `GenericService.$invoke()`                         | `GenericService.$invoke()`                                 | **持平**   |
@@ -129,7 +129,7 @@ Jaws 的 REST 是桥接层，在已有 jaws RPC 服务之上套 HTTP 入口，UR
 
 ## 九、差距最大的 Top 5 领域
 
-1. **序列化协议丰富度** — Jaws 仅 2 种（fastjson2/hessian2），Dubbo 10+ 种（含 protobuf、kryo 等高性能选项）
+1. **序列化协议丰富度** — Jaws 3 种（fastjson2/hessian2/protostuff），Dubbo 10+ 种（含 protobuf、kryo 等更多高性能选项）
 2. **流量治理深度** — 缺少限流、熔断、降级能力（Dubbo 集成 Sentinel/Resilience4j）
 3. **多协议支持** — 已支持 gRPC/HTTP2 传输，但尚未实现 Triple 协议的全部能力（如 IDL 服务定义、流式调用），跨语言互通能力已有基础
 4. **应用级服务发现** — 仅支持接口级发现，Dubbo 已支持应用级 + 接口级双模型，大规模场景下内存和推送效率差距明显
