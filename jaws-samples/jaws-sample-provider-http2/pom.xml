@@ -19,11 +19,6 @@
         </dependency>
         <dependency>
             <groupId>org.hongxi</groupId>
-            <artifactId>jaws-transport-http2</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.hongxi</groupId>
             <artifactId>jaws-registry-nacos</artifactId>
             <version>${project.version}</version>
         </dependency>
