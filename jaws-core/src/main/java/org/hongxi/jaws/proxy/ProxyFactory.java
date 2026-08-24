@@ -8,7 +8,8 @@ import java.util.List;
 /**
  * SPI for creating client-side proxies bound to one or more
  * {@link Cluster} instances, so that interface method calls are routed
- * as remote invocations.
+ * as remote invocations. Implementations must be stateless and thread-safe,
+ * since one singleton instance per extension name is shared by all references.
  * <p>
  * Built-in implementations include a JDK dynamic proxy factory and a
  * generic-invocation factory.
@@ -19,7 +20,7 @@ import java.util.List;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-@Spi
+@Spi(singleton = true)
 public interface ProxyFactory {
 
     <T> T getProxy(Class<T> interfaceClass, List<Cluster<T>> clusters);

@@ -1,7 +1,5 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.common.extension.Spi;
-
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 
@@ -11,11 +9,11 @@ import java.util.concurrent.CompletableFuture;
  * {@link #lookupMethod(String, String)} and exposes the backing implementation through
  * {@link #getImpl()}. The default {@link #callAsync(Request)} bridges synchronous
  * {@link #call(Request)} results into a {@link CompletableFuture}.
- * Registered as a prototype-scoped SPI so each service URL gets its own instance.
+ * Instances are stateful and bound to one service URL, so they are created
+ * per URL by the protocol rather than loaded as an SPI extension.
  *
  * <p>Created by shenhongxi on 2021/3/6.
  */
-@Spi
 public interface Provider<T> extends Caller<T> {
 
     Method lookupMethod(String methodName, String paramDesc);

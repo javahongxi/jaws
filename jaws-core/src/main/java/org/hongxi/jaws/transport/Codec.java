@@ -13,8 +13,9 @@ import java.io.IOException;
  * arrays back into objects.
  *
  * <p>The codec is selected via the {@code codec} URL parameter and loaded
- * through {@link org.hongxi.jaws.common.extension.ExtensionLoader}. Each
- * lookup returns a new prototype-scoped instance.
+ * through {@link org.hongxi.jaws.common.extension.ExtensionLoader}. Codec
+ * implementations must be stateless and thread-safe; the same singleton
+ * instance is shared across all channels.
  *
  * <p><b>Usage scenarios:</b>
  * <ul>
@@ -32,7 +33,7 @@ import java.io.IOException;
  * @since 2020-06-25
  * @see org.hongxi.jaws.protocol.jaws.JawsCodec
  */
-@Spi
+@Spi(singleton = true)
 public interface Codec {
 
     /** Protocol header length in bytes. */

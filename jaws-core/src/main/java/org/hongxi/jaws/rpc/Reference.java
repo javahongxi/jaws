@@ -1,19 +1,18 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.common.extension.Spi;
-
 /**
  * Client-side invocation abstraction representing a reference to a remote service
  * (roughly the consumer-side {@code Invoker} in Dubbo). In addition to issuing calls
  * via {@link Caller#call(Request)}, it reports {@link #activeReferenceCount()} so that
  * load-balancing strategies can estimate in-flight load per endpoint, and exposes the
- * service URL through {@link #getServiceUrl()}. Registered as a prototype-scoped SPI.
+ * service URL through {@link #getServiceUrl()}. Instances are stateful and bound to
+ * one service URL, so they are created per URL by the protocol rather than loaded
+ * as an SPI extension.
  *
  * <p>Created by shenhongxi on 2021/4/21.
  *
  * @see AbstractReference
  */
-@Spi
 public interface Reference<T> extends Caller<T>, Endpoint {
 
     /**
