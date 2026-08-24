@@ -6,7 +6,7 @@ package org.hongxi.jaws.exception;
  * <p>Error code ranges:
  * <ul>
  *   <li>40xxx - Service errors (service not found, timeout, reject, etc.)</li>
- *   <li>50xxx - Framework errors (encode/decode, init, export, register, etc.)</li>
+ *   <li>50xxx - Framework errors (default, register, etc.)</li>
  *   <li>60xxx - Business errors (provider-side business exceptions)</li>
  * </ul>
  */
@@ -20,18 +20,12 @@ public final class JawsErrorCode {
     public static final int SERVICE_DEFAULT = 40001;
     public static final int SERVICE_REJECT = 40002;
     public static final int SERVICE_TIMEOUT = 40003;
-    public static final int SERVICE_TASK_CANCEL = 40004;
     public static final int SERVICE_NOT_FOUND = 40101;
     public static final int SERVICE_METHOD_NOT_FOUND = 40102;
-    public static final int SERVICE_REQUEST_LENGTH_OUT_OF_LIMIT = 40201;
 
     // ---- Framework errors (50xxx) ----
 
     public static final int FRAMEWORK_DEFAULT = 50001;
-    public static final int FRAMEWORK_ENCODE = 50002;
-    public static final int FRAMEWORK_DECODE = 50003;
-    public static final int FRAMEWORK_INIT = 50004;
-    public static final int FRAMEWORK_EXPORT = 50005;
     public static final int FRAMEWORK_REGISTER = 50008;
 
     // ---- Biz errors (60xxx) ----
