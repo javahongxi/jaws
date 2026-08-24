@@ -30,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
  * asynchronous invocation via {@code CompletableFuture}.
  *
  * @see ReferenceInvocationHandler
+ * @see GenericInvocationHandler
  *
  * <p>
  * Created by shenhongxi on 2021/4/23.
@@ -91,8 +92,8 @@ public class AbstractReferenceHandler<T> {
                 }
             }
         }
-        throw new JawsServiceException("Reference call failed: no cluster found for interface=" + interfaceName + " "
-                + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
+        throw new JawsServiceException("Reference call failed: no cluster found for interface=" +
+                interfaceName + " " + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
     }
 
     /**

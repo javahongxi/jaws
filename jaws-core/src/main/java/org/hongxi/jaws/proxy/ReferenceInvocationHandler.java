@@ -4,22 +4,21 @@ import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
-import org.hongxi.jaws.rpc.Reference;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * JDK dynamic proxy {@link InvocationHandler} that turns local interface
  * method calls into remote {@link DefaultRequest} invocations dispatched
  * through the {@link Cluster} layer.
  * <p>
- * Methods declared only on {@code Object} (toString, equals, hashCode) are
- * handled locally unless the interface re-declares them, and methods
- * returning {@link CompletableFuture} are invoked asynchronously.
+ * Methods matching the {@code Object} signatures (toString, equals, hashCode)
+ * are always handled locally, even if the interface re-declares them, and
+ * methods returning {@link CompletableFuture} are invoked asynchronously.
  *
  * @see AbstractReferenceHandler
  * @see JdkProxyFactory
@@ -29,16 +28,13 @@ import java.util.concurrent.CompletableFuture;
  */
 public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> implements InvocationHandler {
 
-    private final Class<T> interfaceClass;
-
     public ReferenceInvocationHandler(Class<T> interfaceClass, List<Cluster<T>> clusters) {
         super(clusters, interfaceClass.getName());
-        this.interfaceClass = interfaceClass;
     }
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        if (isLocalMethod(method)) {
+        if (isObjectMethod(method)) {
             return switch (method.getName()) {
                 case "toString" -> clustersToString();
                 case "equals" -> proxy == args[0];
@@ -60,33 +56,24 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
     }
 
     /**
-     * Methods not declared in the interface (toString, equals, hashCode, etc.) are not invoked remotely
+     * toString, equals and hashCode carry local object semantics and are never
+     * invoked remotely, even if the interface re-declares them.
      */
-    private boolean isLocalMethod(Method method) {
-        if (method.getDeclaringClass().equals(Object.class)) {
-            for (Method m : interfaceClass.getMethods()) {
-                if (m.getName().equals(method.getName())
-                        && Arrays.equals(m.getParameterTypes(), method.getParameterTypes())) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        return false;
+    private boolean isObjectMethod(Method method) {
+        return switch (method.getName()) {
+            case "toString", "hashCode" -> method.getParameterCount() == 0;
+            case "equals" -> method.getParameterCount() == 1
+                    && method.getParameterTypes()[0] == Object.class;
+            default -> false;
+        };
     }
 
     private String clustersToString() {
-        StringBuilder sb = new StringBuilder();
-        for (Cluster<T> cluster : clusters) {
-            sb.append("{protocol:").append(cluster.getUrl().getProtocol());
-            List<Reference<T>> references = cluster.getReferences();
-            if (references != null) {
-                for (Reference<T> refer : references) {
-                    sb.append("[").append(refer.getUrl().toSimpleString()).append(", available:").append(refer.isAvailable()).append("]");
-                }
-            }
-            sb.append("}");
+        if (clusters == null || clusters.isEmpty()) {
+            return interfaceName;
         }
-        return sb.toString();
+        return clusters.stream()
+                .map(cluster -> cluster.getUrl().toSimpleString())
+                .collect(Collectors.joining(", ", interfaceName + " [", "]"));
     }
 }
