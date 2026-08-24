@@ -23,6 +23,8 @@
         <module>jaws-sample-provider-mcp</module>
         <module>jaws-sample-provider-direct</module>
         <module>jaws-sample-consumer-direct</module>
+        <module>jaws-sample-provider-stream</module>
+        <module>jaws-sample-consumer-stream</module>
         <module>jaws-sample-provider-http2</module>
         <module>jaws-sample-consumer-http2</module>
         <module>jaws-sample-gray</module>
