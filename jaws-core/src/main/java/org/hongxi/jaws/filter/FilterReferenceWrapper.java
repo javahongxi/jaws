@@ -9,6 +9,8 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 
+import java.util.concurrent.Flow;
+
 /**
  * A concrete reference node in the filter chain that wraps an original {@link Reference}
  * with a {@link Filter}. Each node delegates all interface methods to the original reference,
@@ -37,6 +39,11 @@ class FilterReferenceWrapper<T> implements Reference<T> {
             return original.call(request);
         }
         return filter.filter(original, request);
+    }
+
+    @Override
+    public Flow.Publisher<Object> callStream(Request request) {
+        return original.callStream(request);
     }
 
     @Override
