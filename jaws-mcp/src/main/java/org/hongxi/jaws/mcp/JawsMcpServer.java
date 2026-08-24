@@ -180,6 +180,11 @@ public class JawsMcpServer {
         List<McpServerFeatures.SyncToolSpecification> specifications = new ArrayList<>();
 
         for (ServiceMethodSpec spec : methodSpecs) {
+            // Skip streaming methods — MCP tools are unary request-response only
+            if (spec.isStreamingMethod()) {
+                log.info("[JawsMcp] Skipping streaming method for MCP tool: {}", spec.getActionName());
+                continue;
+            }
             // Generate JSON Schema for the method's input
             Map<String, Object> inputSchema = JsonSchemaGenerator.generateMethodSchema(spec.getParameters());
 

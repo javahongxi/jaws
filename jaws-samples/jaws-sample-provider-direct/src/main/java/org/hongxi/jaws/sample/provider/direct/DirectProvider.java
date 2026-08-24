@@ -23,7 +23,7 @@ import org.hongxi.jaws.sample.provider.direct.service.OrderServiceImpl;
 public class DirectProvider {
 
     private static final int PORT = Integer.parseInt(System.getProperty("port", "10000"));
-    private static final String TRANSPORT_FACTORY = System.getProperty("transport", "netty");
+    private static final String TRANSPORT_FACTORY = System.getProperty("transport", "http2");
     private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
 
     public static void main(String[] args) {

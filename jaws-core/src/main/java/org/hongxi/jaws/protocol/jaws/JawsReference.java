@@ -2,6 +2,7 @@ package org.hongxi.jaws.protocol.jaws;
 
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.AbstractReference;
 import org.hongxi.jaws.rpc.Future;
 import org.hongxi.jaws.rpc.Request;
@@ -12,6 +13,7 @@ import org.hongxi.jaws.transport.TransportFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -44,6 +46,16 @@ public class JawsReference<T> extends AbstractReference<T> {
     protected Response doCall(Request request) {
         request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
         return client.request(request);
+    }
+
+    @Override
+    public Flow.Publisher<Object> callStream(Request request) {
+        if (!isAvailable()) {
+            throw new JawsServiceException(this.getClass().getSimpleName() +
+                    " callStream failed: endpoint is not available, url=" + url.getUri());
+        }
+        request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
+        return client.requestStream(request);
     }
 
     @Override

@@ -18,6 +18,7 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.transport.Server;
 import org.hongxi.jaws.transport.netty.ConnectionLimitHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +43,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * are provided by Netty, while business payloads keep using the Jaws
  * {@link org.hongxi.jaws.serialization.Serialization} SPI.
  * <p>
+ * Supports both unary and streaming invocations. Streaming methods (server/client/
+ * bidirectional) are detected via the {@code x-jaws-streaming} header and dispatched
+ * to the provider's {@code callStream()} method.
+ * <p>
  * Boss/worker event loop threads are created as non-daemon (via
  * {@link DefaultThreadFactory}) so the JVM stays alive after the main thread
  * exits, playing the same anchor role the gRPC module used to rely on
@@ -49,7 +54,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * @author shenhongxi
  */
-public class Http2Server implements org.hongxi.jaws.transport.Server {
+public class Http2Server implements Server {
     private static final Logger log = LoggerFactory.getLogger(Http2Server.class);
 
     private final URL url;
@@ -152,7 +157,7 @@ public class Http2Server implements org.hongxi.jaws.transport.Server {
                                         protected void initChannel(io.netty.channel.Channel streamChannel) {
                                             streamChannel.pipeline().addLast(new Http2ServerStreamHandler(
                                                     messageHandler, serverChannelFacade, serverExecutor,
-                                                    activeRequests, serializationName, maxContentLength));
+                                                    serializationName, activeRequests, maxContentLength));
                                         }
                                     }));
                         }

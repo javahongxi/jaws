@@ -10,6 +10,8 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 
 /**
  * A concrete provider node in the filter chain that wraps an original {@link Provider}
@@ -79,6 +81,16 @@ class FilterProviderWrapper<T> implements Provider<T> {
     @Override
     public String desc() {
         return original.desc();
+    }
+
+    @Override
+    public CompletableFuture<Response> callAsync(Request request) {
+        return original.callAsync(request);
+    }
+
+    @Override
+    public Flow.Publisher<Object> callStream(Request request) {
+        return original.callStream(request);
     }
 
     /**

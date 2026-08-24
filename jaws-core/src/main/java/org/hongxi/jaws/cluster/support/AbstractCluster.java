@@ -2,12 +2,17 @@ package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.cluster.LoadBalance;
+import org.hongxi.jaws.exception.JawsErrorCode;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.ReferenceDestroyer;
+import org.hongxi.jaws.rpc.Request;
+import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -33,6 +38,20 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
     protected AbstractCluster(URL url, LoadBalance<T> loadBalance) {
         this.url = url;
         this.loadBalance = loadBalance;
+    }
+
+    /**
+     * Streaming calls do not support retry — select a single reference and delegate directly.
+     */
+    @Override
+    public Flow.Publisher<Object> callStream(Request request) {
+        if (!available.get()) {
+            throw new JawsServiceException("Cluster not available, interface=" + getInterface(),
+                    JawsErrorCode.SERVICE_NOT_FOUND, false);
+        }
+        Reference<T> refer = loadBalance.select(request);
+        RpcContext.getContext().setServerUrl(refer.getUrl());
+        return refer.callStream(request);
     }
 
     @Override

@@ -1,6 +1,7 @@
 package org.hongxi.jaws.transport;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 
 /**
  * Callback interface for handling messages received on a {@link Channel}.
@@ -21,4 +22,20 @@ public interface MessageHandler {
      * @return a CompletableFuture representing the async processing result
      */
     CompletableFuture<Object> handleAsync(Channel channel, Object message);
+
+    /**
+     * Handle a server-streaming request, returning a {@link Flow.Publisher}
+     * that emits stream items.
+     * <p>
+     * Only provider-side handlers need to override this; client-side handlers
+     * never receive streaming requests and can rely on the default
+     * {@link UnsupportedOperationException}.
+     *
+     * @param channel the channel on which the message was received
+     * @param message the incoming RPC request
+     * @return a {@link Flow.Publisher} emitting the stream items
+     */
+    default Flow.Publisher<Object> handleStream(Channel channel, Object message) {
+        throw new UnsupportedOperationException("Streaming not supported by this handler");
+    }
 }

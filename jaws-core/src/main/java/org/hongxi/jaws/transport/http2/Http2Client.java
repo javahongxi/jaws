@@ -2,9 +2,7 @@ package org.hongxi.jaws.transport.http2;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.ChannelPipeline;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -39,6 +37,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -149,8 +149,7 @@ public class Http2Client implements Client {
                         if (!f.isSuccess()) {
                             ResponseFuture future = removeCallback(request.getRequestId());
                             if (future != null) {
-                                DefaultResponse errorResponse =
-                                        new DefaultResponse(request.getRequestId());
+                                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
                                 errorResponse.setException(new JawsServiceException(
                                         "HTTP/2 stream write failed", f.cause()));
                                 future.onFailure(errorResponse);
@@ -161,8 +160,7 @@ public class Http2Client implements Client {
             // write path failed before/as the callback was registered
             ResponseFuture future = removeCallback(request.getRequestId());
             if (future != null) {
-                DefaultResponse errorResponse =
-                        new DefaultResponse(request.getRequestId());
+                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
                 errorResponse.setException(new JawsServiceException("HTTP/2 request error", e));
                 future.onFailure(errorResponse);
             }
@@ -177,6 +175,72 @@ public class Http2Client implements Client {
 
         return async ? responseFuture : new DefaultResponse(responseFuture);
     }
+
+    /**
+     * Open a server-streaming request: send one request and receive a
+     * {@link Flow.Publisher} that emits each response item as it arrives.
+     * <p>
+     * The caller subscribes to the returned publisher to consume the stream.
+     *
+     * @param request the RPC request
+     * @return a publisher emitting streamed response items
+     */
+    public Flow.Publisher<Object> requestStream(Request request) {
+        if (!isAvailable()) {
+            throw new JawsServiceException("HTTP/2 channel is not available: url="
+                    + url.getUri() + RpcUtils.toString(request));
+        }
+
+        try {
+            if (!channel.isActive()) {
+                reconnect();
+            }
+            if (!channel.isActive()) {
+                throw new JawsServiceException("HTTP/2 channel is not active: url="
+                        + url.getUri() + RpcUtils.toString(request));
+            }
+
+            // Create the streaming handler which doubles as a Flow.Publisher
+            Http2StreamClientHandler streamHandler = new Http2StreamClientHandler(serialization);
+
+            io.netty.channel.Channel streamChannel =
+                    new Http2StreamChannelBootstrap(channel)
+                            .handler(streamHandler)
+                            .open().syncUninterruptibly().getNow();
+
+            // Send request headers with streaming mode
+            byte[] payload = Http2PayloadCodec.encodeRequest(request, serialization);
+            Http2Headers headers = new DefaultHttp2Headers()
+                    .method("POST")
+                    .scheme("http")
+                    .path(Http2Constants.PATH)
+                    .authority(url.getHostPort())
+                    .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
+                    .set(Http2Constants.HEADER_SERIALIZATION,
+                            url.getParameter(UrlParam.Transport.SERIALIZATION))
+                    .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getWireValue());
+            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                    Unpooled.wrappedBuffer(payload), true)).addListener(f -> {
+                if (!f.isSuccess()) {
+                    log.error("HTTP/2 stream write failed for streaming request", f.cause());
+                    streamChannel.close();
+                }
+            });
+
+            return streamHandler;
+        } catch (Exception e) {
+            log.error("HTTP/2 streaming request failed: url={} {}, {}", url.getUri(),
+                    RpcUtils.toString(request), e.getMessage());
+            if (e instanceof JawsAbstractException jae) {
+                throw jae;
+            }
+            throw new JawsServiceException("Http2Client streaming request failed: url="
+                    + url.getUri() + " " + RpcUtils.toString(request), e);
+        }
+    }
+
+
 
     @Override
     public synchronized boolean open() {
@@ -214,8 +278,7 @@ public class Http2Client implements Client {
     }
 
     private void doConnect() {
-        io.netty.channel.ChannelFuture future = bootstrap
-                .connect(url.getHost(), url.getPort()).syncUninterruptibly();
+        ChannelFuture future = bootstrap.connect(url.getHost(), url.getPort()).syncUninterruptibly();
         if (!future.isSuccess()) {
             throw new JawsServiceException("Http2Client connect failed: url=" + url.getUri(), future.cause());
         }

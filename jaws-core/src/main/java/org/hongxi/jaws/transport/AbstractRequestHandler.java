@@ -18,6 +18,7 @@ import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Flow;
 
 /**
  * Abstract base class for provider-side message handling.
@@ -100,5 +101,37 @@ public abstract class AbstractRequestHandler implements MessageHandler {
         String serviceKey = RpcUtils.getServiceKey(provider.getUrl());
         providers.remove(serviceKey);
         log.info("{} removeProvider: url={}", this.getClass().getSimpleName(), provider.getUrl());
+    }
+
+    /**
+     * Handle a server-streaming request: look up the provider, resolve the
+     * method, and delegate to {@link Provider#callStream(Request)}.
+     *
+     * @param channel the transport channel
+     * @param message the incoming RPC request
+     * @return a {@link Flow.Publisher} emitting the stream items
+     */
+    public Flow.Publisher<Object> handleStream(Channel channel, Object message) {
+        if (channel == null || message == null) {
+            throw new JawsFrameworkException("handler(channel, message): channel and message must not be null");
+        }
+        if (!(message instanceof Request request)) {
+            throw new JawsFrameworkException("unsupported message type: " + message.getClass());
+        }
+
+        String serviceKey = RpcUtils.getServiceKey(request);
+        Provider<?> provider = providers.get(serviceKey);
+
+        if (provider == null) {
+            log.error("{} no provider found for serviceKey={} {}",
+                    this.getClass().getSimpleName(), serviceKey, RpcUtils.toString(request));
+            throw new JawsServiceException(
+                    this.getClass().getSimpleName() + " no provider found for serviceKey="
+                            + serviceKey + " " + RpcUtils.toString(request));
+        }
+
+        Method method = provider.lookupMethod(request.getMethodName(), request.getParamDesc());
+        fillParamDesc(request, method);
+        return provider.callStream(request);
     }
 }

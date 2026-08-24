@@ -1,5 +1,7 @@
 package org.hongxi.jaws.rpc;
 
+import java.util.concurrent.Flow;
+
 /**
  * Common invocation abstraction shared by both sides of an RPC call: a
  * {@link Provider} on the server side and a {@link Reference} on the client side both
@@ -17,4 +19,15 @@ public interface Caller<T> extends Endpoint {
     Class<T> getInterface();
 
     Response call(Request request);
+
+    /**
+     * Open a server-streaming call and return a {@link Flow.Publisher} that emits
+     * response items. Only supported by callers that back streaming transports.
+     *
+     * @param request the RPC request
+     * @return a publisher emitting streamed response items
+     */
+    default Flow.Publisher<Object> callStream(Request request) {
+        throw new UnsupportedOperationException("Streaming not supported by this caller");
+    }
 }

@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 
 /**
  * Base invocation handler for consumer proxies, holding the per-protocol
@@ -163,6 +164,44 @@ public class AbstractReferenceHandler<T> {
                 "Reference call failed: no cluster found for interface=" + interfaceName + " "
                         + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false));
         return resultFuture;
+    }
+
+    /**
+     * Invoke a server-streaming call: select a cluster, delegate to its
+     * {@code callStream} method, and return the resulting {@link Flow.Publisher}.
+     */
+    Flow.Publisher<Object> invokeStream(Request request) throws Throwable {
+        RpcContext context = RpcContext.getContext();
+
+        Map<String, String> attachments = context.getRpcAttachments();
+        if (!attachments.isEmpty()) {
+            for (Map.Entry<String, String> entry : attachments.entrySet()) {
+                request.setAttachment(entry.getKey(), entry.getValue());
+            }
+        }
+
+        for (Cluster<T> cluster : clusters) {
+            request.setAttachment(UrlParam.Identity.VERSION.getName(), cluster.getUrl().getVersion());
+            request.setAttachment(UrlParam.Identity.APPLICATION.getName(), cluster.getUrl().getApplication());
+            request.setAttachment(UrlParam.Identity.MODULE.getName(), cluster.getUrl().getModule());
+
+            try {
+                return cluster.callStream(request);
+            } catch (RuntimeException e) {
+                if (ExceptionUtils.isBizException(e)) {
+                    Throwable t = e.getCause();
+                    if (t instanceof Exception) {
+                        throw t;
+                    }
+                    throw new JawsServiceException("biz exception in streaming call: " + e.getMessage());
+                }
+                log.error("Streaming invocation failed: uri={} {}",
+                        cluster.getUrl().getUri(), RpcUtils.toString(request), e);
+                throw e;
+            }
+        }
+        throw new JawsServiceException("Reference callStream failed: no cluster found for interface=" +
+                interfaceName + " " + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
     }
 
     private static class PrimitiveDefault {

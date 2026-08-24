@@ -2,6 +2,7 @@ package org.hongxi.jaws.rpc;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 
 /**
  * Server-side invocation abstraction wrapping a service implementation (roughly the
@@ -26,5 +27,22 @@ public interface Provider<T> extends Caller<T> {
      */
     default CompletableFuture<Response> callAsync(Request request) {
         return CompletableFuture.completedFuture(call(request));
+    }
+
+    /**
+     * Streaming invocation that returns a Publisher of response items.
+     * <p>
+     * Used for server streaming and bidirectional streaming calls where the
+     * service method returns a {@link Flow.Publisher}. The default implementation
+     * throws {@link UnsupportedOperationException} - implementations must override
+     * this method to support streaming.
+     *
+     * @param request the RPC request
+     * @return a Publisher emitting response items
+     * @throws UnsupportedOperationException if streaming is not supported
+     */
+    default Flow.Publisher<Object> callStream(Request request) {
+        throw new UnsupportedOperationException(
+                "Streaming not supported by this provider. Override callStream() to enable.");
     }
 }

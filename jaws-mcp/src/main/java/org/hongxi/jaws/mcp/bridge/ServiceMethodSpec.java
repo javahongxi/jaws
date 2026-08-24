@@ -4,6 +4,7 @@ import org.hongxi.jaws.rpc.Provider;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.concurrent.Flow;
 
 /**
  * Holds metadata for a single service method, shared across protocol bridges
@@ -76,5 +77,22 @@ public class ServiceMethodSpec {
 
     public Parameter[] getParameters() {
         return parameters;
+    }
+
+    /**
+     * Whether this method involves streaming (has {@link Flow.Publisher} as
+     * parameter type or return type).  Streaming methods are not suitable for
+     * MCP tool registration since MCP tools are unary request-response.
+     */
+    public boolean isStreamingMethod() {
+        if (Flow.Publisher.class.isAssignableFrom(method.getReturnType())) {
+            return true;
+        }
+        for (Class<?> paramType : method.getParameterTypes()) {
+            if (Flow.Publisher.class.isAssignableFrom(paramType)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

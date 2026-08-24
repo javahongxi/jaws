@@ -4,11 +4,13 @@ import org.hongxi.jaws.cluster.Cluster;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
+import org.hongxi.jaws.rpc.Response;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 import java.util.stream.Collectors;
 
 /**
@@ -44,13 +46,16 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         }
 
         DefaultRequest request = new DefaultRequest();
-        request.setArguments(args);
+        request.setInterfaceName(interfaceName);
         request.setMethodName(method.getName());
         request.setParamDesc(ReflectUtils.getMethodParamDesc(method));
-        request.setInterfaceName(interfaceName);
+        request.setArguments(args);
 
         if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
             return invokeAsync(request, method.getReturnType());
+        }
+        if (Flow.Publisher.class.isAssignableFrom(method.getReturnType())) {
+            return invokeStream(request);
         }
         return invoke(request, method.getReturnType());
     }

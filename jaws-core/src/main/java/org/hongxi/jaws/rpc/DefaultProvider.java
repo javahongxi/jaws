@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -22,6 +23,9 @@ import java.util.concurrent.TimeoutException;
  * per-method timeout, converts declared/business exceptions carefully (optionally
  * stripping stack traces before transferring), and turns {@link Error} throwables into
  * exceptions so a provider crash never takes down the caller.
+ * <p>
+ * Also supports server-streaming methods that return {@link Flow.Publisher}
+ * via {@link #callStream(Request)}.
  *
  * <p>Created by shenhongxi on 2021/3/7.
  */
@@ -129,5 +133,30 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
         }
         response.setAttachments(request.getAttachments());
         return CompletableFuture.completedFuture(response);
+    }
+
+    @Override
+    public Flow.Publisher<Object> callStream(Request request) {
+        Method method = lookupMethod(request.getMethodName(), request.getParamDesc());
+
+        if (method == null) {
+            throw new JawsServiceException("Service method not found: " + request.getInterfaceName() + "."
+                    + request.getMethodName() + "(" + request.getParamDesc() + ")",
+                    JawsErrorCode.SERVICE_METHOD_NOT_FOUND);
+        }
+
+        try {
+            Object result = method.invoke(ref, request.getArguments());
+            if (result instanceof Flow.Publisher<?> publisher) {
+                //noinspection unchecked
+                return (Flow.Publisher<Object>) publisher;
+            }
+            throw new JawsBizException("server-streaming method must return Flow.Publisher: "
+                    + request.getInterfaceName() + "." + request.getMethodName());
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new JawsBizException("provider stream call failed",
+                    ExceptionUtils.toSerializableException(cause, method, interfaceClass));
+        }
     }
 }

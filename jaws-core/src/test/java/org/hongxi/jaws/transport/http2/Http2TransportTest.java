@@ -1,9 +1,10 @@
 package org.hongxi.jaws.transport.http2;
 
 import org.hongxi.jaws.rpc.DefaultRequest;
+import org.hongxi.jaws.rpc.DefaultProvider;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.transport.ProviderMessageHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,8 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class Http2TransportTest {
 
-    private static final String ECHO_INTERFACE = "org.hongxi.jaws.test.EchoService";
-    private static final String PARAM_DESC = "Ljava/lang/String;";
+    private static final String ECHO_INTERFACE = EchoService.class.getName();
+    private static final String PARAM_DESC = "java.lang.String";
 
     private Http2Server server;
     private Http2Client client;
@@ -38,16 +39,16 @@ class Http2TransportTest {
     @BeforeEach
     void setUp() throws IOException {
         int port = findFreePort();
-        URL url = new URL("jaws", "127.0.0.1", port, "");
+        URL url = new URL("jaws", "127.0.0.1", port, EchoService.class.getName());
         url.addParameter("serialization", "hessian2");
 
-        MessageHandler handler = (channel, message) -> {
-            DefaultRequest request = (DefaultRequest) message;
-            if ("boom".equals(request.getMethodName())) {
-                return CompletableFuture.failedFuture(new RuntimeException("boom"));
-            }
-            return CompletableFuture.completedFuture(request.getArguments()[0]);
-        };
+        // Create a simple echo service implementation
+        EchoServiceImpl echoImpl = new EchoServiceImpl();
+        DefaultProvider<EchoService> provider =
+                new DefaultProvider<>(EchoService.class, url, echoImpl);
+
+        ProviderMessageHandler handler = new ProviderMessageHandler();
+        handler.addProvider(provider);
 
         server = new Http2Server(url, handler);
         assertTrue(server.open());
@@ -79,7 +80,10 @@ class Http2TransportTest {
             Response response = client.request(newRequest("boom", "anything"));
             response.getValue();
         });
-        assertTrue(ex.getMessage().contains("boom"));
+        // The provider wraps the original exception in a JawsBizException;
+        // the original "boom" RuntimeException is the cause.
+        Throwable cause = ex.getCause();
+        assertTrue(cause != null && cause.getMessage().contains("boom"));
     }
 
     @Test
@@ -124,6 +128,26 @@ class Http2TransportTest {
     private static int findFreePort() throws IOException {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
+        }
+    }
+
+    /**
+     * Simple echo service for testing.
+     */
+    public interface EchoService {
+        String echo(String message);
+        String boom(String message);
+    }
+
+    public static class EchoServiceImpl implements EchoService {
+        @Override
+        public String echo(String message) {
+            return message;
+        }
+
+        @Override
+        public String boom(String message) {
+            throw new RuntimeException("boom");
         }
     }
 }

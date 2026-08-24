@@ -20,8 +20,7 @@ import org.hongxi.jaws.transport.Server;
  * service mesh sidecars). Jaws serialization and the message handler pipeline
  * are fully preserved; only the framing layer changes.
  * <p>
- * Currently supports unary invocation only; server/client/bidirectional
- * streaming can be layered on top of the same stream abstraction later.
+ * Supports both unary and server-streaming invocations.
  *
  * @author shenhongxi
  */

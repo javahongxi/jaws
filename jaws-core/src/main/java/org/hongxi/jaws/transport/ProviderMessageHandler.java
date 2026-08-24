@@ -4,6 +4,7 @@ import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 
 /**
  * Composite message handler that dispatches requests to the appropriate
@@ -36,5 +37,16 @@ public class ProviderMessageHandler implements MessageHandler {
     public void removeProvider(Provider<?> provider) {
         normalHandler.removeProvider(provider);
         genericHandler.removeProvider(provider);
+    }
+
+    /**
+     * Handle a server-streaming request by delegating to the normal handler.
+     *
+     * @param channel the transport channel
+     * @param message the incoming RPC request
+     * @return a {@link Flow.Publisher} emitting the stream items
+     */
+    public Flow.Publisher<Object> handleStream(Channel channel, Object message) {
+        return normalHandler.handleStream(channel, message);
     }
 }

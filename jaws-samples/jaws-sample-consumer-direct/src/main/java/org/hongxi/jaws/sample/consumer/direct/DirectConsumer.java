@@ -33,7 +33,7 @@ import java.util.Map;
 public class DirectConsumer {
 
     private static final String DIRECT_URL = System.getProperty("directUrl", "127.0.0.1:10000");
-    private static final String TRANSPORT_FACTORY = System.getProperty("transport", "netty");
+    private static final String TRANSPORT_FACTORY = System.getProperty("transport", "http2");
     private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
 
     public static void main(String[] args) {

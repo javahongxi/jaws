@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
@@ -27,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Flow;
 
 /**
  * Servlet that exposes Jaws RPC services via REST API.
@@ -214,6 +216,19 @@ public class RestInvokeServlet extends HttpServlet {
             return;
         }
 
+        // Route to streaming or unary handler
+        if (spec.isStreamingMethod()) {
+            handleStreamingInvoke(spec, req, resp);
+        } else {
+            handleUnaryInvoke(spec, req, resp);
+        }
+    }
+
+    /**
+     * Handle a unary method invocation (traditional request-response).
+     */
+    private void handleUnaryInvoke(ServiceMethodSpec spec, HttpServletRequest req,
+                                   HttpServletResponse resp) throws IOException {
         // Read request body
         Map<String, Object> arguments = readRequestBody(req);
 
@@ -250,6 +265,87 @@ public class RestInvokeServlet extends HttpServlet {
         }
 
         JSON.writeTo(resp.getOutputStream(), result);
+    }
+
+    /**
+     * Handle a streaming method invocation.
+     * Only server streaming is supported: response is SSE (text/event-stream).
+     */
+    private void handleStreamingInvoke(ServiceMethodSpec spec, HttpServletRequest req,
+                                       HttpServletResponse resp) throws IOException {
+        Method method = spec.getMethod();
+        boolean returnsPublisher = Flow.Publisher.class.isAssignableFrom(method.getReturnType());
+
+        if (returnsPublisher) {
+            handleServerStreamingSSE(spec, req, resp);
+        } else {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST,
+                    "Only server-streaming (return type = Flow.Publisher) is supported via REST");
+        }
+    }
+
+    /**
+     * Server streaming via SSE: each stream item is sent as an SSE event.
+     */
+    private void handleServerStreamingSSE(ServiceMethodSpec spec, HttpServletRequest req,
+                                          HttpServletResponse resp) throws IOException {
+        Map<String, Object> arguments = readRequestBody(req);
+        Object[] args = ArgumentConverter.convertArguments(spec.getParameters(), arguments);
+
+        DefaultRequest jawsRequest = new DefaultRequest();
+        jawsRequest.setInterfaceName(spec.getInterfaceName());
+        jawsRequest.setMethodName(spec.getMethodName());
+        jawsRequest.setParamDesc(buildParametersDesc(spec.getParameterTypes()));
+        jawsRequest.setArguments(args);
+
+        resp.setContentType("text/event-stream;charset=UTF-8");
+        resp.setHeader("Cache-Control", "no-cache");
+        resp.setHeader("Connection", "keep-alive");
+        resp.setStatus(HttpServletResponse.SC_OK);
+
+        OutputStream out = resp.getOutputStream();
+        Flow.Publisher<Object> publisher = spec.getProvider().callStream(jawsRequest);
+
+        final Throwable[] error = {null};
+        publisher.subscribe(new Flow.Subscriber<>() {
+            private Flow.Subscription subscription;
+
+            @Override
+            public void onSubscribe(Flow.Subscription s) {
+                this.subscription = s;
+                s.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(Object item) {
+                try {
+                    String json = (item instanceof String s) ? s : JSON.toJSONString(item);
+                    out.write(("data: " + json + "\n\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    out.flush();
+                    subscription.request(1);
+                } catch (IOException e) {
+                    subscription.cancel();
+                }
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                error[0] = throwable;
+                try {
+                    out.write(("event: error\ndata: " + throwable.getMessage() + "\n\n")
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    out.flush();
+                } catch (IOException ignored) { }
+            }
+
+            @Override
+            public void onComplete() {
+                try {
+                    out.write("event: complete\ndata: []\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    out.flush();
+                } catch (IOException ignored) { }
+            }
+        });
     }
 
     private ServiceMethodSpec findMethodSpec(String interfaceName, String methodName) {
@@ -303,6 +399,9 @@ public class RestInvokeServlet extends HttpServlet {
         // Return type
         Class<?> returnType = spec.getMethod().getReturnType();
         methodInfo.put("returnType", returnType.getName());
+
+        // Streaming info
+        methodInfo.put("streaming", spec.isStreamingMethod());
 
         return methodInfo;
     }
