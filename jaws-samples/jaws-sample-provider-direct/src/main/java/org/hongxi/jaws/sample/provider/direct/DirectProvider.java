@@ -23,6 +23,8 @@ import org.hongxi.jaws.sample.provider.direct.service.OrderServiceImpl;
 public class DirectProvider {
 
     private static final int PORT = Integer.parseInt(System.getProperty("port", "10000"));
+    private static final String TRANSPORT_FACTORY = System.getProperty("transport", "netty");
+    private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
 
     public static void main(String[] args) throws Exception {
         ProtocolConfig protocolConfig = createProtocolConfig();
@@ -59,8 +61,8 @@ public class DirectProvider {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName(JawsConstants.PROTOCOL_JAWS);
         protocolConfig.setId(protocolConfig.getName());
-        protocolConfig.setTransportFactory("netty");
-        protocolConfig.setSerialization("fastjson2");
+        protocolConfig.setTransportFactory(TRANSPORT_FACTORY);
+        protocolConfig.setSerialization(SERIALIZATION);
         protocolConfig.setPort(PORT);
         return protocolConfig;
     }
