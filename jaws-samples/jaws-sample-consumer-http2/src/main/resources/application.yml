@@ -1,0 +1,16 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: sample-consumer-http2
+
+jaws:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: jaws
+    transport-factory: http2
+    serialization: fastjson2
+  registry:
+    address: nacos://127.0.0.1:8848

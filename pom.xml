@@ -15,7 +15,7 @@
         <module>jaws-mcp</module>
         <module>jaws-spring-boot</module>
         <module>jaws-extensions</module>
-        <module>jaws-transport-grpc</module>
+        <module>jaws-transport-http2</module>
         <module>jaws-samples</module>
     </modules>
 
@@ -26,12 +26,10 @@
 
         <curator.version>5.9.0</curator.version>
         <fastjson2.version>2.0.63</fastjson2.version>
-        <grpc.version>1.81.0</grpc.version>
         <guava.version>33.6.0-jre</guava.version>
         <hessian-lite.version>4.0.5</hessian-lite.version>
         <mcp-bom.version>2.0.0</mcp-bom.version>
         <nacos.version>3.2.3</nacos.version>
-        <protobuf.version>4.34.1</protobuf.version>
         <protostuff.version>1.8.0</protostuff.version>
         <zookeeper.version>3.9.5</zookeeper.version>
     </properties>
@@ -53,14 +51,6 @@
                 <version>${mcp-bom.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.grpc</groupId>
-                <artifactId>grpc-bom</artifactId>
-                <version>${grpc.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-
-            <dependency>
                 <groupId>org.apache.dubbo</groupId>
                 <artifactId>hessian-lite</artifactId>
                 <version>${hessian-lite.version}</version>
@@ -69,11 +59,6 @@
                 <groupId>com.alibaba.fastjson2</groupId>
                 <artifactId>fastjson2</artifactId>
                 <version>${fastjson2.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.google.protobuf</groupId>
-                <artifactId>protobuf-java</artifactId>
-                <version>${protobuf.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.protostuff</groupId>

@@ -75,7 +75,7 @@ Jaws 已实现标签路由能力：
 | 能力维度           | Jaws                        | Dubbo                                            | 差距评估        |
 |--------------------|-----------------------------|--------------------------------------------------|-----------------|
 | **自有协议**       | jaws（二进制）              | dubbo（二进制）                                  | **持平**        |
-| **传输层**         | Netty（默认）/ gRPC（可选） | Netty                                            | **Jaws 更灵活** |
+| **传输层**         | Netty（默认）/ HTTP/2（可选，基于 Netty 自研） | Netty                                            | **Jaws 更灵活** |
 | **应用层协议**     | jaws（二进制）              | dubbo（二进制）/ Triple（兼容 gRPC，IDL + 流式） | **有差距**      |
 | **REST/HTTP**      | REST 桥接（Servlet）        | 原生 rest 协议（JAX-RS）                         | **差距较大**    |
 | **Injvm**          | 支持                        | 支持                                             | **持平**        |
@@ -103,7 +103,7 @@ Jaws 的 REST 是桥接层，在已有 jaws RPC 服务之上套 HTTP 入口，UR
 | **Spring Boot Starter** | `@EnableJaws` + `@JawsService` / `@JawsReference`                | `@DubboService` / `@DubboReference` + 自动配置 | **持平**     |
 | **SPI 扩展**            | 11 个 SPI 扩展点                                                 | 100+ 个 SPI 扩展点                             | **差距大**   |
 | **Filter 链**           | 2 个内置（AccessLog + TokenAuth）+ 2 个扩展（Metrics + Tracing） | 20+ 个内置 Filter                              | **差距较大** |
-| **代码生成**            | protobuf 代码生成（`protobuf-maven-plugin`，gRPC 传输使用）      | 支持 IDL 代码生成（protobuf/thrift）           | 小幅差距     |
+| **代码生成**            | 不支持（HTTP/2 传输纯 Java 实现，无需代码生成）      | 支持 IDL 代码生成（protobuf/thrift）           | 中等差距     |
 | **Admin 控制台**        | 不支持                                                           | Dubbo Admin（服务治理、测试、监控）            | **差距大**   |
 | **文档与社区**          | 个人项目                                                         | 庞大社区 + Apache 顶级项目                     | **差距极大** |
 
@@ -131,17 +131,17 @@ Jaws 的 REST 是桥接层，在已有 jaws RPC 服务之上套 HTTP 入口，UR
 
 1. **序列化协议丰富度** — Jaws 3 种（fastjson2/hessian2/protostuff），Dubbo 10+ 种（含 protobuf、kryo 等更多高性能选项）
 2. **流量治理深度** — 缺少限流、熔断、降级能力（Dubbo 集成 Sentinel/Resilience4j）
-3. **多协议支持** — 已支持 gRPC/HTTP2 传输，但尚未实现 Triple 协议的全部能力（如 IDL 服务定义、流式调用），跨语言互通能力已有基础
+3. **多协议支持** — 已支持 HTTP/2 传输（基于 Netty 自研，无 grpc/protobuf 依赖），但尚未实现 Triple 协议的全部能力（如 IDL 服务定义、流式调用、gRPC 线格式兼容），跨语言互通能力待补齐
 4. **应用级服务发现** — 仅支持接口级发现，Dubbo 已支持应用级 + 接口级双模型，大规模场景下内存和推送效率差距明显
 5. **生态与运维工具** — 缺少 Admin 控制台、缺少 IDL 代码生成、SPI 扩展点数量有限
 
 ## 十、Jaws 的领先点
 
 - **MCP 桥接** — Dubbo 目前没有此能力，Jaws 可将 RPC 服务直接暴露为 AI Agent 可调用的 MCP Tools
-- **gRPC 传输可插拔** — 通过 `TransportFactory` SPI 零侵入接入 gRPC/HTTP2 传输，复用 Jaws 序列化体系，无需切换协议栈即可获得 HTTP2 多路复用、流控等能力
+- **HTTP/2 传输可插拔** — 通过 `TransportFactory` SPI 零侵入接入 HTTP/2 传输（基于 Netty `Http2FrameCodec` + `Http2MultiplexHandler` 自研，无 grpc-java/protobuf 依赖），复用 Jaws 序列化体系，无需切换协议栈即可获得 HTTP/2 多路复用、流控、网关穿透等能力
 - **编解码设计简洁性** — JawsCodec 分层清晰，Dubbo 的继承体系更复杂
 - **独立 version 字段** — header 层即可做版本校验，Dubbo 需解析 body
 
 ## 总结
 
-Jaws 在**核心 RPC 链路**（协议、编解码、零拷贝、心跳、优雅停机、异步调用）上已与 Dubbo **基本持平**，在**标签路由/灰度发布**、**多注册中心**和 **gRPC 传输**能力上已补齐。但在**生态广度**（序列化种类、注册中心种类、Triple 协议完整度、运维工具）和**流量治理深度**（限流熔断）上差距较大。这些差距本质上是 Dubbo 多年社区积累的结果。
+Jaws 在**核心 RPC 链路**（协议、编解码、零拷贝、心跳、优雅停机、异步调用）上已与 Dubbo **基本持平**，在**标签路由/灰度发布**、**多注册中心**和 **HTTP/2 传输**能力上已补齐。但在**生态广度**（序列化种类、注册中心种类、Triple 协议完整度、运维工具）和**流量治理深度**（限流熔断）上差距较大。这些差距本质上是 Dubbo 多年社区积累的结果。

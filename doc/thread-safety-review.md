@@ -62,11 +62,10 @@
 - 问题：写端在 `synchronized onRefresh` 内，但 `destroy()`/`getReferences()`/`getInterface()`/`toString()` 无锁读；`destroy()` 与 `onRefresh` 之间也无互斥。
 - 修复：字段加 `volatile`；`destroy()` 建议也加 `synchronized` 与 `onRefresh` 互斥。
 
-### 9. NettyClient.channel / GrpcClient 连接字段缺 volatile ✅已修复
+### 9. NettyClient.channel 连接字段缺 volatile ✅已修复
 
 - 文件：
   - `jaws-core/.../transport/netty/NettyClient.java`（`channel` 字段）
-  - `jaws-transport-grpc/.../GrpcClient.java`（`managedChannel`/`asyncStub`）
 - 问题：`open()` 内写（有锁）、`request()` 无锁读。目前靠 `AbstractTransportFactory` 的锁链式发布"碰巧"安全，但十分脆弱。
 - 修复：字段加 `volatile`。
 
