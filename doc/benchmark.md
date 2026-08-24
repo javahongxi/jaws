@@ -8,7 +8,7 @@
 # injvm 协议基准（框架纯开销）
 ./run-sample.sh bench-injvm
 
-# jaws + Netty 网络传输基准
+# jaws + Netty 网络传输基准（同进程，默认）
 ./run-sample.sh bench-jaws
 
 # 自定义参数
@@ -19,6 +19,10 @@ SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
 
 # 模拟业务耗时（Provider 端每次调用 sleep 5ms）
 SLEEP=5 ./run-sample.sh bench-jaws
+
+# 分进程压测：两个终端分别执行 provider 与 consumer
+ROLE=provider ./run-sample.sh bench-jaws
+ROLE=consumer THREADS=20 ./run-sample.sh bench-jaws
 ```
 
 ## Benchmark 环境变量
@@ -31,6 +35,20 @@ SLEEP=5 ./run-sample.sh bench-jaws
 | `PORT`      | jaws 协议端口    | 10010     | 仅 bench-jaws |
 | `SERIALIZATION` | 序列化方式（fastjson2 / hessian2 / protostuff） | fastjson2 | 仅 bench-jaws |
 | `SLEEP`       | Provider 端模拟业务耗时（毫秒）      | 0         | bench-injvm / bench-jaws |
+| `ROLE`        | 运行角色：`all` 同进程；`provider` / `consumer` 分进程 | all | 仅 bench-jaws |
+| `HOST`        | provider 地址，consumer 直连目标 | 127.0.0.1 | 仅分进程模式 |
+
+### 分进程模式说明（仅 bench-jaws）
+
+`ROLE=all`（默认）时，provider 与 consumer 在同一 JVM 内，使用进程内 `local` 注册中心；
+`ROLE=provider` / `ROLE=consumer` 时，两端分属独立 JVM，通过 `direct` 直连注册中心对接：
+consumer 直接指向 provider 的 `HOST:PORT`，无需外部注册中心。用法：
+
+1. 终端 A：`ROLE=provider PORT=10010 ./run-sample.sh bench-jaws`，等待输出 `Provider is ready`；
+2. 终端 B：`ROLE=consumer PORT=10010 THREADS=20 ./run-sample.sh bench-jaws` 执行压测；
+3. 压测结束后 Ctrl+C 停止 provider。
+
+分进程模式下两侧必须保持 `PORT`、`SERIALIZATION`、group/version 一致（后两者为固定值）。
 
 ## 参数选择建议
 
@@ -45,7 +63,7 @@ SLEEP=5 ./run-sample.sh bench-jaws
 
 ## 性能基线（2026-08-23）
 
-环境：macOS aarch64，8 核，单 JVM（provider + consumer 同进程），jaws + netty，fastjson2，WARMUP=5s，DURATION=10s。同进程内仍走真实 TCP 回环（经本机网卡 IP，非进程内直调），且所有请求共享单条连接多路复用（lsof 可见同一 PID 同时持有 LISTEN 与连接两端）。
+环境：macOS aarch64，8 核，单 JVM（provider + consumer 同进程，`ROLE=all`），jaws + netty，fastjson2，WARMUP=5s，DURATION=10s。同进程内仍走真实 TCP 回环（经本机网卡 IP，非进程内直调），且所有请求共享单条连接多路复用（lsof 可见同一 PID 同时持有 LISTEN 与连接两端）。
 
 | 线程数 | QPS | 说明 |
 |------|-------|---------|

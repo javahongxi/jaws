@@ -24,12 +24,19 @@ import java.util.concurrent.atomic.LongAdder;
  * - injvm：JVM 内部调用，测量框架纯开销
  * - jaws ：Netty 网络传输，测量端到端性能
  *
+ * 支持两种部署形态：
+ * - role=all（默认）：provider + consumer 同进程，使用进程内 local 注册中心
+ * - role=provider / role=consumer：分进程，通过 direct 直连注册中心对接，
+ *   consumer 直接指向 provider 的 host:port（无需外部注册中心）
+ *
  * 系统属性参数（通过 -D 传入）：
  *   protocol  - 协议类型，injvm（默认）或 jaws
- *   threads   - 并发线程数，默认 4
- *   warmup    - 预热秒数，默认 5
- *   duration  - 测量秒数，默认 10
+ *   role      - 运行角色：all（默认，同进程）/ provider / consumer（仅 jaws 协议支持）
+ *   threads   - 并发线程数，默认 4（仅 all / consumer 生效）
+ *   warmup    - 预热秒数，默认 5（仅 all / consumer 生效）
+ *   duration  - 测量秒数，默认 10（仅 all / consumer 生效）
  *   port      - jaws 协议端口，默认 10010
+ *   host      - provider 地址，consumer 直连目标，默认 127.0.0.1（仅分进程模式生效）
  *   serialization - 序列化方式，默认 fastjson2（仅 jaws 协议生效）
  *   sleep       - Provider 端模拟业务耗时（毫秒），默认 0（不模拟）
  *
@@ -37,15 +44,20 @@ import java.util.concurrent.atomic.LongAdder;
  *   java -Dprotocol=injvm -Dthreads=8 -Dwarmup=5 -Dduration=10 ...
  *   java -Dprotocol=jaws -Dthreads=8 -Dport=10010 -Dserialization=hessian2 ...
  *   java -Dprotocol=jaws -Dthreads=8 -Dsleep=5 ...
+ *   # 分进程：先起 provider，再跑 consumer 压测
+ *   java -Dprotocol=jaws -Drole=provider -Dport=10010 ...
+ *   java -Dprotocol=jaws -Drole=consumer -Dport=10010 -Dthreads=20 ...
  * </pre>
  */
 public class RpcBenchmark {
 
     private static final String PROTOCOL = System.getProperty("protocol", "injvm");
+    private static final String ROLE = System.getProperty("role", "all");
     private static final int THREADS = Integer.parseInt(System.getProperty("threads", "4"));
     private static final int WARMUP_SECONDS = Integer.parseInt(System.getProperty("warmup", "5"));
     private static final int DURATION_SECONDS = Integer.parseInt(System.getProperty("duration", "10"));
     private static final int PORT = Integer.parseInt(System.getProperty("port", "10010"));
+    private static final String HOST = System.getProperty("host", "127.0.0.1");
     private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
     private static final int SLEEP_MS = Integer.parseInt(System.getProperty("sleep", "0"));
 
@@ -59,10 +71,13 @@ public class RpcBenchmark {
     private static final ConcurrentMap<String, LongAdder> ERROR_COUNTERS = new ConcurrentHashMap<>();
 
     public static void main(String[] args) throws Exception {
+        checkRole();
+
         System.out.println("============================================");
         System.out.println("  Jaws RPC Benchmark");
         System.out.println("============================================");
         System.out.println("  protocol : " + PROTOCOL);
+        System.out.println("  role     : " + ROLE);
         System.out.println("  threads  : " + THREADS);
         System.out.println("  warmup   : " + WARMUP_SECONDS + "s");
         System.out.println("  duration : " + DURATION_SECONDS + "s");
@@ -70,11 +85,24 @@ public class RpcBenchmark {
         if ("jaws".equals(PROTOCOL)) {
             System.out.println("  port     : " + PORT);
             System.out.println("  serialize: " + SERIALIZATION);
+            if (!"all".equals(ROLE)) {
+                System.out.println("  host     : " + HOST);
+            }
         }
         System.out.println("============================================\n");
 
-        // 1. 发布服务
-        exportService();
+        // 1. 发布服务（consumer 角色跳过）
+        if (!"consumer".equals(ROLE)) {
+            exportService();
+        }
+
+        // provider 角色：发布服务后常驻等待，压测由独立 consumer 进程发起
+        if ("provider".equals(ROLE)) {
+            System.out.println("Provider is ready at " + HOST + ":" + PORT
+                    + ", waiting for consumer... (Ctrl+C to stop)");
+            new CountDownLatch(1).await();
+            return;
+        }
 
         // 2. 创建引用
         ReferenceConfig<DemoService> ref = createReference();
@@ -133,7 +161,6 @@ public class RpcBenchmark {
         serviceConfig.setRegistry(createRegistryConfig());
 
         serviceConfig.export();
-        System.out.println("DemoService exported (" + PROTOCOL + ").");
     }
 
     /*
@@ -165,11 +192,28 @@ public class RpcBenchmark {
 
     private static RegistryConfig createRegistryConfig() {
         RegistryConfig registry = new RegistryConfig();
-        registry.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
-        registry.setId("localRegistry");
-        registry.setAddress("127.0.0.1");
-        registry.setPort(0);
+        registry.setId("benchmarkRegistry");
+        if ("all".equals(ROLE)) {
+            // 同进程：进程内 local 注册中心
+            registry.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
+            registry.setAddress("127.0.0.1");
+            registry.setPort(0);
+        } else {
+            // 分进程：direct 直连，consumer 直接指向 provider 的 host:port
+            registry.setProtocol("direct");
+            registry.setAddress(HOST + ":" + PORT);
+        }
         return registry;
+    }
+
+    private static void checkRole() {
+        boolean validRole = "all".equals(ROLE) || "provider".equals(ROLE) || "consumer".equals(ROLE);
+        if (!validRole) {
+            throw new IllegalArgumentException("Invalid role: " + ROLE + ", expected all / provider / consumer");
+        }
+        if (!"all".equals(ROLE) && !"jaws".equals(PROTOCOL)) {
+            throw new IllegalArgumentException("role=" + ROLE + " requires protocol=jaws, injvm does not work cross-process");
+        }
     }
 
     /*

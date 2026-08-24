@@ -48,6 +48,8 @@ usage() {
     PORT               jaws 协议端口（默认 10010，仅 bench-jaws）
     SERIALIZATION      序列化方式（默认 fastjson2，仅 bench-jaws）
     SLEEP              Provider 端模拟业务耗时毫秒数（默认 0，不模拟）
+    ROLE               运行角色（默认 all 同进程；provider/consumer 分进程，仅 bench-jaws）
+    HOST               provider 地址（默认 127.0.0.1，仅分进程模式）
 
   Examples:
     ./run-sample.sh build
@@ -64,6 +66,9 @@ usage() {
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     SLEEP=5 ./run-sample.sh bench-jaws       # 模拟 5ms 业务耗时
+    # 分进程压测：两个终端分别执行（仅 bench-jaws）
+    ROLE=provider ./run-sample.sh bench-jaws
+    ROLE=consumer THREADS=20 ./run-sample.sh bench-jaws
 
 EOF
 }
@@ -288,17 +293,21 @@ cmd_bench_jaws() {
     local port="${PORT:-10010}"
     local serialization="${SERIALIZATION:-fastjson2}"
     local sleep_ms="${SLEEP:-0}"
-    echo "运行 Benchmark [jaws+netty] threads=$threads warmup=${warmup}s duration=${duration}s port=$port serialization=$serialization sleep=${sleep_ms}ms"
+    local role="${ROLE:-all}"
+    local host="${HOST:-127.0.0.1}"
+    echo "运行 Benchmark [jaws+netty] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port serialization=$serialization sleep=${sleep_ms}ms host=$host"
     echo "--------------------------------------------"
     $MVN exec:java -pl "$BENCHMARK_MODULE" \
         -Dexec.mainClass="$BENCHMARK_MAIN" \
         -Dprotocol=jaws \
+        -Drole="$role" \
         -Dthreads="$threads" \
         -Dwarmup="$warmup" \
         -Dduration="$duration" \
         -Dport="$port" \
         -Dserialization="$serialization" \
         -Dsleep="$sleep_ms" \
+        -Dhost="$host" \
         -q
 }
 
