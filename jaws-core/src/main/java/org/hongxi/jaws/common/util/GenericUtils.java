@@ -5,10 +5,10 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -23,37 +23,6 @@ import java.util.Map;
 public class GenericUtils {
 
     private static final Logger log = LoggerFactory.getLogger(GenericUtils.class);
-
-    private static final Map<String, Class<?>> PRIMITIVE_TYPES = new HashMap<>();
-
-    static {
-        PRIMITIVE_TYPES.put("boolean", boolean.class);
-        PRIMITIVE_TYPES.put("byte", byte.class);
-        PRIMITIVE_TYPES.put("char", char.class);
-        PRIMITIVE_TYPES.put("short", short.class);
-        PRIMITIVE_TYPES.put("int", int.class);
-        PRIMITIVE_TYPES.put("long", long.class);
-        PRIMITIVE_TYPES.put("float", float.class);
-        PRIMITIVE_TYPES.put("double", double.class);
-        PRIMITIVE_TYPES.put("void", void.class);
-    }
-
-    /**
-     * Convert a parameter type name to its Class.
-     */
-    public static Class<?> forName(String className) throws ClassNotFoundException {
-        Class<?> primitive = PRIMITIVE_TYPES.get(className);
-        if (primitive != null) {
-            return primitive;
-        }
-        // Handle array types like "java.lang.String[]"
-        if (className.endsWith("[]")) {
-            String componentType = className.substring(0, className.length() - 2);
-            Class<?> componentClass = forName(componentType);
-            return Array.newInstance(componentClass, 0).getClass();
-        }
-        return Class.forName(className);
-    }
 
     /**
      * Build a parameter description string from parameter type names,
@@ -94,6 +63,7 @@ public class GenericUtils {
 
         // Map -> POJO conversion
         if (arg instanceof Map && !Map.class.isAssignableFrom(expectedType)) {
+            //noinspection unchecked
             return convertMapToPojo((Map<String, Object>) arg, expectedType);
         }
 
@@ -131,8 +101,7 @@ public class GenericUtils {
         }
 
         // List/Collection conversion
-        if (arg instanceof Collection && expectedType.isArray()) {
-            Collection<?> coll = (Collection<?>) arg;
+        if (arg instanceof Collection<?> coll && expectedType.isArray()) {
             Class<?> componentType = expectedType.getComponentType();
             Object array = Array.newInstance(componentType, coll.size());
             int i = 0;
@@ -203,7 +172,7 @@ public class GenericUtils {
         return null;
     }
 
-    private static java.lang.reflect.Field findField(Class<?> clazz, String fieldName) {
+    private static Field findField(Class<?> clazz, String fieldName) {
         Class<?> current = clazz;
         while (current != null && current != Object.class) {
             try {
@@ -218,7 +187,7 @@ public class GenericUtils {
     /**
      * Convert a POJO result to a Map for generic invocation response.
      */
-    public static Object convertResult(Object result) {
+    public static Object toGenericResult(Object result) {
         if (result == null) {
             return null;
         }

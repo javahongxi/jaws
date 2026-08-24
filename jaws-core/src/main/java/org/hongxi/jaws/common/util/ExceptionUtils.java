@@ -30,10 +30,6 @@ public class ExceptionUtils {
         return t instanceof JawsBizException;
     }
 
-    public static boolean isJawsException(Throwable t) {
-        return t instanceof JawsAbstractException;
-    }
-
     /**
      * Replace the stack trace of the given exception with a mock one
      * to hide server-side stack details from the consumer.

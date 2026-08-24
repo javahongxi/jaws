@@ -73,22 +73,6 @@ public final class RpcUtils {
         return key.toString();
     }
 
-    /**
-     * Get the full method descriptor in the form of interface.method(paramDesc).
-     * <p>
-     * <pre>
-     * 		For example:
-     * 			package org.hongxi.jaws;
-     *
-     * 			interface A { public hello(int age); }
-     *
-     * 			Then return "org.hongxi.jaws.A.hell(int)"
-     * </pre>
-     */
-    public static String getFullMethodString(Request request) {
-        return request.getInterfaceName() + "." + request.getMethodName() + "(" + request.getParamDesc() + ")";
-    }
-
     public static String toString(Request request) {
         return "requestId=" + request.getRequestId() +
                 " interface=" + request.getInterfaceName() +

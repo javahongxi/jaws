@@ -7,11 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Reflection utility class
- *
- * @author maijunsheng
- * @version Created: 2013-5-23
- *
+ * Reflection utility
  */
 public class ReflectUtils {
     public static final String PARAM_CLASS_SPLIT = ",";
@@ -41,11 +37,8 @@ public class ReflectUtils {
 
         StringBuilder builder = new StringBuilder();
 
-        Class<?>[] clazzes = method.getParameterTypes();
-
-        for (Class<?> clazz : clazzes) {
-            String className = getName(clazz);
-            builder.append(className).append(PARAM_CLASS_SPLIT);
+        for (Class<?> paramType : method.getParameterTypes()) {
+            builder.append(getName(paramType)).append(PARAM_CLASS_SPLIT);
         }
 
         return builder.substring(0, builder.length() - 1);

@@ -78,6 +78,6 @@ public class GenericInvocationHandler<T> extends AbstractReferenceHandler<T> imp
 
         // Invoke through the cluster and convert the result for generic response
         Object result = invoke(request, Object.class);
-        return GenericUtils.convertResult(result);
+        return GenericUtils.toGenericResult(result);
     }
 }

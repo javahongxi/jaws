@@ -50,7 +50,7 @@ public class GenericRequestHandler extends AbstractRequestHandler {
         return callAsync(request, provider).thenApply(response -> {
             // Convert the result for generic response
             if (response.getException() == null && response.getValue() != null) {
-                Object convertedResult = GenericUtils.convertResult(response.getValue());
+                Object convertedResult = GenericUtils.toGenericResult(response.getValue());
                 if (response instanceof DefaultResponse dr) {
                     dr.setValue(convertedResult);
                 }

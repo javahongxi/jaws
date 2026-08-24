@@ -28,6 +28,10 @@ public class NetUtils {
     private static final Pattern IP_PATTERN = Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3,5}$");
     private static volatile InetAddress LOCAL_ADDRESS = null;
 
+    public static boolean isValidLocalHost(String host) {
+        return !isInvalidLocalHost(host);
+    }
+
     public static boolean isInvalidLocalHost(String host) {
         return host == null || host.isEmpty()
                 || host.equalsIgnoreCase("localhost")
@@ -35,16 +39,14 @@ public class NetUtils {
                 || (LOCAL_IP_PATTERN.matcher(host).matches());
     }
 
-    public static boolean isValidLocalHost(String host) {
-        return !isInvalidLocalHost(host);
-    }
-
     /**
      * <pre>
      * Lookup strategy: cached ip -> hostname-resolved ip -> socket-connected local ip -> network interface scan
      * </pre>
      *
-     * @return loca ip
+     * @param destHostPorts destination host:port pairs used by socket-connected lookup to determine
+     *                      the local address that would actually be routed to them, may be null
+     * @return the preferred local address, or null if all lookup strategies failed
      */
     public static InetAddress getLocalAddress(Map<String, Integer> destHostPorts) {
         if (LOCAL_ADDRESS != null) {
@@ -131,9 +133,13 @@ public class NetUtils {
     }
 
     public static boolean isValidAddress(InetAddress address) {
-        if (address == null || address.isLoopbackAddress()) return false;
+        if (address == null || address.isLoopbackAddress()) {
+            return false;
+        }
         String name = address.getHostAddress();
-        return (name != null && !ANY_HOST.equals(name) && !LOCALHOST.equals(name) && IP_PATTERN.matcher(name).matches());
+        return (name != null && !ANY_HOST.equals(name) &&
+                !LOCALHOST.equals(name) &&
+                IP_PATTERN.matcher(name).matches());
     }
 
     public static String getHostName(SocketAddress socketAddress) {
