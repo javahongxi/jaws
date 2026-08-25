@@ -107,7 +107,7 @@ public interface DemoService {
 ```yaml
 spring:
   application:
-    name: sample-provider-boot
+    name: sample-boot-provider
 
 jaws:
   application:

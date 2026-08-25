@@ -26,7 +26,7 @@ Phase 4: unexport() → destroy()    关闭连接、释放 EventLoopGroup 和线
 ./run-sample.sh consumer
 
 # 4. 在 Provider 运行期间发送 SIGTERM（不要用 kill -9）
-jps | grep SampleProvider   # 找到 PID
+jps | grep ZkProvider   # 找到 PID
 kill -TERM <PID>
 
 # 5. 观察 Provider 日志，应依次输出：

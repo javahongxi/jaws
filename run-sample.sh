@@ -13,12 +13,12 @@ cd "$SCRIPT_DIR"
 MVN="./mvnw"
 BENCHMARK_MODULE="jaws-samples/jaws-sample-benchmark"
 INJVM_MODULE="jaws-samples/jaws-sample-injvm"
-PROVIDER_MODULE="jaws-samples/jaws-sample-provider"
-CONSUMER_MODULE="jaws-samples/jaws-sample-consumer"
+PROVIDER_MODULE="jaws-samples/jaws-sample-zk-provider"
+CONSUMER_MODULE="jaws-samples/jaws-sample-zk-consumer"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
-PROVIDER_MAIN="org.hongxi.jaws.sample.provider.SampleProvider"
-CONSUMER_MAIN="org.hongxi.jaws.sample.consumer.SampleConsumer"
+PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
+CONSUMER_MAIN="org.hongxi.jaws.sample.zk.consumer.ZkConsumer"
 BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.RpcBenchmark"
 
 usage() {
@@ -31,13 +31,13 @@ usage() {
   Commands:
     build              编译项目
     injvm              运行 InjvmRpcDemo（injvm 协议，无需 ZK）
-    provider [port]    启动 SampleProvider（需要 ZK 在 127.0.0.1:2181）
+    provider [port]    启动 ZkProvider（需要 ZK 在 127.0.0.1:2181）
                        port 默认 10000，设为 -1 则从 10000 开始自动分配
     provider-bg [port] 后台启动 Provider，PID/日志按端口区分（如 .provider-10000.pid）
                        port 为 -1 时自动分配端口，文件后缀为 auto-{序号}
     stop               停止所有后台进程并清理 pid/log 文件
     run                一次性运行：启动 provider → 运行 consumer → 停止 provider
-    consumer           运行 SampleConsumer（需要先启动 provider）
+    consumer           运行 ZkConsumer（需要先启动 provider）
     bench-injvm        性能测试 - injvm 协议
     bench-jaws         性能测试 - jaws+netty 协议
 
@@ -111,7 +111,7 @@ cmd_injvm() {
 cmd_provider() {
     ensure_built
     local port="${1:-10000}"
-    echo "启动 SampleProvider（jaws + ZooKeeper）port=$port"
+    echo "启动 ZkProvider（jaws + ZooKeeper）port=$port"
     echo "请确保 ZooKeeper 已在 127.0.0.1:2181 运行"
     echo "--------------------------------------------"
     $MVN exec:java -pl "$PROVIDER_MODULE" \
@@ -140,7 +140,7 @@ cmd_provider_bg() {
     local pid_file=".provider-${suffix}.pid"
     local log_file="provider-${suffix}.log"
 
-    echo "后台启动 SampleProvider port=$port ..."
+    echo "后台启动 ZkProvider port=$port ..."
     java -cp "$cp:$PROVIDER_MODULE/target/classes" \
         -Dport="$port" \
         "$PROVIDER_MAIN" > "$log_file" 2>&1 &
@@ -262,7 +262,7 @@ cmd_run() {
 
 cmd_consumer() {
     ensure_built
-    echo "运行 SampleConsumer..."
+    echo "运行 ZkConsumer..."
     echo "--------------------------------------------"
     $MVN exec:java -pl "$CONSUMER_MODULE" -Dexec.mainClass="$CONSUMER_MAIN" -q
 }

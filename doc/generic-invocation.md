@@ -21,4 +21,4 @@ Object result = demoService.$invoke(
 );
 ```
 
-完整示例请参考 `jaws-sample-consumer` 中的 `GenericSampleConsumer`。
+完整示例请参考 `jaws-sample-zk-consumer` 中的 `GenericSampleConsumer`。

@@ -1,0 +1,27 @@
+server:
+  port: 8081
+spring:
+  application:
+    name: sample-boot-consumer
+
+jaws:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: jaws
+    serialization: fastjson2
+  registry:
+    address: nacos://127.0.0.1:8848
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    sampling:
+      probability: 1.0

@@ -56,7 +56,7 @@ jaws:
 启动示例（需要 Nacos 在 `127.0.0.1:8848` 运行）：
 
 ```bash
-./mvnw spring-boot:run -pl jaws-samples/jaws-sample-provider-mcp
+./mvnw spring-boot:run -pl jaws-samples/jaws-sample-mcp
 ```
 
 服务启动后，MCP 端点可用：`http://localhost:8082/mcp`
@@ -192,4 +192,4 @@ JawsMcpServer mcpServer = JawsMcpServer.builder()
 mcpServer.stop();
 ```
 
-完整示例参考 `jaws-samples/jaws-sample-provider-mcp`。
+完整示例参考 `jaws-samples/jaws-sample-mcp`。

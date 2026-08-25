@@ -13,20 +13,22 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>jaws-sample-provider</module>
-        <module>jaws-sample-consumer</module>
+        <module>jaws-sample-zk-provider</module>
+        <module>jaws-sample-zk-consumer</module>
+        <module>jaws-sample-nacos-provider</module>
+        <module>jaws-sample-nacos-consumer</module>
         <module>jaws-sample-api</module>
         <module>jaws-sample-injvm</module>
         <module>jaws-sample-benchmark</module>
-        <module>jaws-sample-provider-boot</module>
-        <module>jaws-sample-consumer-boot</module>
-        <module>jaws-sample-provider-mcp</module>
-        <module>jaws-sample-provider-direct</module>
-        <module>jaws-sample-consumer-direct</module>
-        <module>jaws-sample-provider-stream</module>
-        <module>jaws-sample-consumer-stream</module>
-        <module>jaws-sample-provider-http2</module>
-        <module>jaws-sample-consumer-http2</module>
+        <module>jaws-sample-boot-provider</module>
+        <module>jaws-sample-boot-consumer</module>
+        <module>jaws-sample-mcp</module>
+        <module>jaws-sample-netty-provider</module>
+        <module>jaws-sample-netty-consumer</module>
+        <module>jaws-sample-stream-provider</module>
+        <module>jaws-sample-stream-consumer</module>
+        <module>jaws-sample-http2-provider</module>
+        <module>jaws-sample-http2-consumer</module>
         <module>jaws-sample-gray</module>
     </modules>
 
