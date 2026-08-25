@@ -24,7 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -64,7 +64,7 @@ public class Http2Server extends AbstractServer {
     // volatile: written under the instance lock in open(), read lock-free in stopAccept()
     private volatile io.netty.channel.Channel serverChannel;
     private ConnectionLimitHandler connectionLimiter;
-    private ExecutorService serverExecutor;
+    private ThreadPoolExecutor serverExecutor;
 
     private final AtomicInteger activeRequests = new AtomicInteger(0);
 
@@ -111,7 +111,7 @@ public class Http2Server extends AbstractServer {
 
         // Business pool aligned with NettyServer: bounded and config-driven
         // (minWorkerThreads/maxWorkerThreads/workerQueueSize).
-        EagerThreadPoolExecutor executor = new EagerThreadPoolExecutor(
+        serverExecutor = new EagerThreadPoolExecutor(
                 url.getIntParameter(UrlParam.Server.MIN_WORKER_THREADS),
                 url.getIntParameter(UrlParam.Server.MAX_WORKER_THREADS),
                 EagerThreadPoolExecutor.DEFAULT_MAX_IDLE_TIME, TimeUnit.MILLISECONDS,
@@ -126,8 +126,7 @@ public class Http2Server extends AbstractServer {
                             pool.getCorePoolSize(), pool.getMaximumPoolSize(), pool.getTaskCount());
                     command.run();
                 });
-        executor.prestartAllCoreThreads();
-        serverExecutor = executor;
+        serverExecutor.prestartAllCoreThreads();
 
         // Non-daemon event loops keep the JVM alive after main() exits,
         // mirroring NettyServer's behavior.

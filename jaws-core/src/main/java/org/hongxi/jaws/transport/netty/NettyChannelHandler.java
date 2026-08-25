@@ -47,7 +47,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private final Channel channel;
     private final MessageHandler messageHandler;
     private final Codec codec;
-    private ThreadPoolExecutor threadPoolExecutor;
+    private ThreadPoolExecutor serverExecutor;
 
     public NettyChannelHandler(Channel channel, MessageHandler messageHandler) {
         this.channel = channel;
@@ -56,20 +56,20 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 channel.getUrl().getParameter(UrlParam.Transport.CODEC.getName(), UrlParam.Transport.CODEC.value()));
     }
 
-    public NettyChannelHandler(Channel channel, MessageHandler messageHandler, ThreadPoolExecutor threadPoolExecutor) {
+    public NettyChannelHandler(Channel channel, MessageHandler messageHandler, ThreadPoolExecutor serverExecutor) {
         this(channel, messageHandler);
-        this.threadPoolExecutor = threadPoolExecutor;
+        this.serverExecutor = serverExecutor;
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (msg instanceof DecodedFrame frame) {
             try {
-                if (threadPoolExecutor != null) {
+                if (serverExecutor != null) {
                     try {
                         // Retain the ByteBuf for async processing (pipeline may release after this method returns)
                         frame.data().retain();
-                        threadPoolExecutor.execute(() -> {
+                        serverExecutor.execute(() -> {
                             try {
                                 processFrame(ctx, frame);
                             } finally {
@@ -105,9 +105,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
         log.error("request rejected due to full thread pool, " +
                         "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
-                threadPoolExecutor.getActiveCount(), threadPoolExecutor.getPoolSize(),
-                threadPoolExecutor.getCorePoolSize(), threadPoolExecutor.getMaximumPoolSize(),
-                threadPoolExecutor.getTaskCount(), frame.requestId());
+                serverExecutor.getActiveCount(), serverExecutor.getPoolSize(),
+                serverExecutor.getCorePoolSize(), serverExecutor.getMaximumPoolSize(),
+                serverExecutor.getTaskCount(), frame.requestId());
         if (channel instanceof NettyServer nettyServer) {
             nettyServer.getRejectCounter().incrementAndGet();
         }

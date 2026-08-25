@@ -54,7 +54,7 @@ public class NettyServer extends AbstractServer {
     private volatile Channel serverChannel;
     protected ConnectionLimitHandler connectionLimiter;
     private final MessageHandler messageHandler;
-    private ThreadPoolExecutor threadPoolExecutor;
+    private ThreadPoolExecutor serverExecutor;
 
     private final AtomicInteger activeRequests = new AtomicInteger(0);
     private final AtomicInteger rejectCounter = new AtomicInteger(0);
@@ -82,16 +82,16 @@ public class NettyServer extends AbstractServer {
         int maxServerConnections = url.getIntParameter(UrlParam.Server.MAX_CONNECTIONS);
         connectionLimiter = new ConnectionLimitHandler(maxServerConnections);
 
-        if (threadPoolExecutor == null || threadPoolExecutor.isShutdown()) {
-            threadPoolExecutor = new EagerThreadPoolExecutor(
+        if (serverExecutor == null || serverExecutor.isShutdown()) {
+            serverExecutor = new EagerThreadPoolExecutor(
                     url.getIntParameter(UrlParam.Server.MIN_WORKER_THREADS),
                     url.getIntParameter(UrlParam.Server.MAX_WORKER_THREADS),
                     url.getIntParameter(UrlParam.Server.WORKER_QUEUE_SIZE),
                     new DefaultThreadFactory("NettyServer-" + url.getHostPort(), true));
         }
-        threadPoolExecutor.prestartAllCoreThreads();
+        serverExecutor.prestartAllCoreThreads();
         NettyChannelHandler channelHandler = new NettyChannelHandler(
-                NettyServer.this, messageHandler, threadPoolExecutor);
+                NettyServer.this, messageHandler, serverExecutor);
 
         int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
 
@@ -161,8 +161,8 @@ public class NettyServer extends AbstractServer {
         if (connectionLimiter != null) {
             connectionLimiter.closeAll();
         }
-        if (threadPoolExecutor != null) {
-            threadPoolExecutor.shutdownNow();
+        if (serverExecutor != null) {
+            serverExecutor.shutdownNow();
         }
     }
 
