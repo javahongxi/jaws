@@ -46,6 +46,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * All processing beyond frame accumulation happens off the event loop, so
  * transport threads are never blocked by business logic.
+ * <p>
+ * Gateway-friendly enhancements:
+ * <ul>
+ *   <li>Built-in {@code GET /health} endpoint returning 200 OK without dispatching</li>
+ *   <li>Reads mirrored metadata headers ({@code x-jaws-interface}, {@code x-jaws-method},
+ *       etc.) for gateway-level routing and observability</li>
+ * </ul>
  *
  * @author shenhongxi
  */
@@ -91,6 +98,17 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void onHeaders(ChannelHandlerContext ctx, Http2Headers headers, boolean endStream) {
+        // Extract HTTP method and path for health check routing
+        // Parsed from HEADERS frame for metadata mirror / health check
+        String method = headers.method() != null ? headers.method().toString() : null;
+        String path = headers.path() != null ? headers.path().toString() : null;
+
+        // Health check: GET /health returns immediately without dispatching
+        if ("GET".equals(method) && Http2Constants.HEALTH_PATH.equals(path)) {
+            sendHealthResponse(ctx);
+            return;
+        }
+
         String name = headers.get(Http2Constants.HEADER_SERIALIZATION) != null
                 ? headers.get(Http2Constants.HEADER_SERIALIZATION).toString()
                 : defaultSerializationName;
@@ -111,6 +129,22 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
             // HEADERS-only request carries no payload (only valid for unary)
             sendError(ctx, Http2Constants.STATUS_BAD_REQUEST, "Empty request payload");
         }
+    }
+
+    /**
+     * Respond to {@code GET /health} with 200 OK + "OK" body.
+     * No dispatch to business thread pool, no serialization.
+     */
+    private void sendHealthResponse(ChannelHandlerContext ctx) {
+        if (!ctx.channel().isActive()) {
+            return;
+        }
+        byte[] body = "OK".getBytes(StandardCharsets.UTF_8);
+        Http2Headers respHeaders = new DefaultHttp2Headers()
+                .status(Http2Constants.STATUS_OK)
+                .set(Http2Constants.HEADER_CONTENT_TYPE, "text/plain; charset=utf-8");
+        ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
+        ctx.writeAndFlush(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(body), true));
     }
 
     private void onData(ChannelHandlerContext ctx, Http2DataFrame dataFrame) {

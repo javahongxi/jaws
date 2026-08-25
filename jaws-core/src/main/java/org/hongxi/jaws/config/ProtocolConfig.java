@@ -86,6 +86,33 @@ public class ProtocolConfig extends AbstractConfig {
      */
     protected Long heartbeat;
 
+    // ---- TLS ----
+
+    /**
+     * Path to the X.509 certificate chain PEM file (server-side, or client mutual TLS).
+     */
+    protected String sslCertChain;
+
+    /**
+     * Path to the PKCS#8 private key PEM file.
+     */
+    protected String sslPrivateKey;
+
+    /**
+     * Path to the trusted CA certificate PEM file (client-side TLS).
+     * When set, the client verifies the server certificate against this CA.
+     */
+    protected String sslTrustCert;
+
+    // ---- Client multi-connection ----
+
+    /**
+     * Number of HTTP/2 connections to maintain per remote URL.
+     * Default 1 (single multiplexed connection). Increasing this value
+     * can help distribute load across backends behind an L4 load balancer.
+     */
+    protected Integer connections;
+
     @Override
     protected void collectParams(Map<String, String> params) {
         putIfPresent(params, "protocol", name);
@@ -98,6 +125,10 @@ public class ProtocolConfig extends AbstractConfig {
         putIfPresent(params, "workerQueueSize", workerQueueSize);
         putIfPresent(params, "maxContentLength", maxContentLength);
         putIfPresent(params, "heartbeat", heartbeat);
+        putIfPresent(params, "sslCertChain", sslCertChain);
+        putIfPresent(params, "sslPrivateKey", sslPrivateKey);
+        putIfPresent(params, "sslTrustCert", sslTrustCert);
+        putIfPresent(params, "connections", connections);
     }
 
     public String getName() {
@@ -198,5 +229,41 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setHeartbeat(Long heartbeat) {
         this.heartbeat = heartbeat;
+    }
+
+    // --- TLS getter/setter ---
+
+    public String getSslCertChain() {
+        return sslCertChain;
+    }
+
+    public void setSslCertChain(String sslCertChain) {
+        this.sslCertChain = sslCertChain;
+    }
+
+    public String getSslPrivateKey() {
+        return sslPrivateKey;
+    }
+
+    public void setSslPrivateKey(String sslPrivateKey) {
+        this.sslPrivateKey = sslPrivateKey;
+    }
+
+    public String getSslTrustCert() {
+        return sslTrustCert;
+    }
+
+    public void setSslTrustCert(String sslTrustCert) {
+        this.sslTrustCert = sslTrustCert;
+    }
+
+    // --- Client multi-connection getter/setter ---
+
+    public Integer getConnections() {
+        return connections;
+    }
+
+    public void setConnections(Integer connections) {
+        this.connections = connections;
     }
 }

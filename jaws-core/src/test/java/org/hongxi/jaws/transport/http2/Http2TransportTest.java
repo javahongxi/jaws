@@ -116,6 +116,51 @@ class Http2TransportTest {
         server.awaitInactiveRequests(1000);
     }
 
+    @Test
+    void multiConnectionClient() throws Exception {
+        // Create a new client with 3 connections
+        int port = findFreePort();
+        URL url = new URL("jaws", "127.0.0.1", port, EchoService.class.getName());
+        url.addParameter("serialization", "hessian2");
+        url.addParameter("connections", "3");
+
+        EchoServiceImpl echoImpl = new EchoServiceImpl();
+        DefaultProvider<EchoService> provider =
+                new DefaultProvider<>(EchoService.class, url, echoImpl);
+        ProviderMessageHandler handler = new ProviderMessageHandler();
+        handler.addProvider(provider);
+
+        Http2Server multiServer = new Http2Server(url, handler);
+        assertTrue(multiServer.open());
+
+        Http2Client multiClient = new Http2Client(url);
+        assertTrue(multiClient.open());
+
+        try {
+            // Send multiple concurrent requests - they should be distributed across connections
+            int concurrency = 50;
+            ExecutorService pool = Executors.newFixedThreadPool(10);
+            try {
+                List<CompletableFuture<String>> futures = new ArrayList<>();
+                for (int i = 0; i < concurrency; i++) {
+                    String arg = "multi-" + i;
+                    futures.add(CompletableFuture.supplyAsync(
+                            () -> (String) multiClient.request(newRequest("echo", arg)).getValue(), pool));
+                }
+                CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                        .get(10, TimeUnit.SECONDS);
+                for (int i = 0; i < concurrency; i++) {
+                    assertEquals("multi-" + i, futures.get(i).get());
+                }
+            } finally {
+                pool.shutdown();
+            }
+        } finally {
+            multiClient.close();
+            multiServer.close();
+        }
+    }
+
     private DefaultRequest newRequest(String method, String arg) {
         DefaultRequest request = new DefaultRequest();
         request.setInterfaceName(ECHO_INTERFACE);

@@ -98,6 +98,14 @@ public final class UrlParam {
         public static final Def<Long> HEARTBEAT = new Def<>("heartbeat", 0L);
         public static final Def<Boolean> TRANSFER_EXCEPTION_STACK = new Def<>("transferExceptionStack", true);
 
+        // TLS
+        public static final Def<String> SSL_CERT_CHAIN = new Def<>("sslCertChain", "");
+        public static final Def<String> SSL_PRIVATE_KEY = new Def<>("sslPrivateKey", "");
+        public static final Def<String> SSL_TRUST_CERT = new Def<>("sslTrustCert", "");
+
+        // Multi-connection (client side)
+        public static final Def<Integer> CONNECTIONS = new Def<>("connections", 1);
+
         private Transport() {
         }
     }

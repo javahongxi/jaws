@@ -36,6 +36,26 @@ public final class Http2Constants {
     /** Request path for all Jaws RPC invocations; routing is done inside the payload. */
     public static final String PATH = "/jaws/rpc";
 
+    /** Health check endpoint path. */
+    public static final String HEALTH_PATH = "/health";
+
+    // ---- Metadata mirror headers (mirrored from payload for gateway visibility) ----
+
+    /** Service interface fully-qualified name. */
+    public static final String HEADER_INTERFACE = "x-jaws-interface";
+
+    /** Invocation method name. */
+    public static final String HEADER_METHOD = "x-jaws-method";
+
+    /** Parameter signature descriptor. */
+    public static final String HEADER_PARAM_DESC = "x-jaws-param-desc";
+
+    /** Service group. */
+    public static final String HEADER_GROUP = "x-jaws-group";
+
+    /** Service version. */
+    public static final String HEADER_VERSION = "x-jaws-version";
+
     public static final String STATUS_OK = "200";
     public static final String STATUS_BAD_REQUEST = "400";
     public static final String STATUS_INTERNAL_ERROR = "500";

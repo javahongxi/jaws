@@ -6,11 +6,21 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.group.ChannelGroup;
+import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.http2.DefaultHttp2GoAwayFrame;
+import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
 import io.netty.handler.codec.http2.Http2MultiplexHandler;
+import io.netty.handler.ssl.ApplicationProtocolConfig;
+import io.netty.handler.ssl.ApplicationProtocolNames;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProvider;
+import io.netty.util.concurrent.GlobalEventExecutor;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.EagerThreadPoolExecutor;
@@ -23,6 +33,7 @@ import org.hongxi.jaws.transport.netty.ConnectionLimitHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -51,6 +62,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@link DefaultThreadFactory}) so the JVM stays alive after the main thread
  * exits, playing the same anchor role the gRPC module used to rely on
  * pre-started pool threads for.
+ * <p>
+ * Gateway-friendly enhancements:
+ * <ul>
+ *   <li>Sends GOAWAY on {@link #stopAccept()} so clients migrate to new connections</li>
+ *   <li>Built-in {@code GET /health} endpoint for LB HTTP probes</li>
+ *   <li>Optional TLS with ALPN (h2 over TLS) when {@code sslCertChain} and
+ *       {@code sslPrivateKey} are configured</li>
+ * </ul>
  *
  * @author shenhongxi
  */
@@ -67,6 +86,12 @@ public class Http2Server extends AbstractServer {
     private ThreadPoolExecutor serverExecutor;
 
     private final AtomicInteger activeRequests = new AtomicInteger(0);
+
+    /** Tracks all active connection channels for GOAWAY on graceful shutdown. */
+    private final ChannelGroup connectionChannels = new DefaultChannelGroup(
+            "http2-connections", GlobalEventExecutor.INSTANCE);
+
+    private SslContext sslContext;
 
     /** Lightweight Channel facade passed to MessageHandler for server-side context. */
     private final Channel serverChannelFacade = new Channel() {
@@ -138,6 +163,9 @@ public class Http2Server extends AbstractServer {
         int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
         String serializationName = url.getParameter(UrlParam.Transport.SERIALIZATION);
 
+        // Initialize TLS if configured
+        sslContext = buildSslContext();
+
         try {
             ServerBootstrap bootstrap = new ServerBootstrap();
             bootstrap.group(bossGroup, workerGroup)
@@ -147,6 +175,12 @@ public class Http2Server extends AbstractServer {
                         protected void initChannel(SocketChannel ch) {
                             ChannelPipeline pipeline = ch.pipeline();
                             pipeline.addLast("connection_limit", connectionLimiter);
+
+                            // Add TLS if configured
+                            if (sslContext != null) {
+                                pipeline.addLast("ssl", sslContext.newHandler(ch.alloc()));
+                            }
+
                             pipeline.addLast("http2_codec", Http2FrameCodecBuilder.forServer().build());
                             pipeline.addLast("http2_multiplex", new Http2MultiplexHandler(
                                     new ChannelInitializer<io.netty.channel.Channel>() {
@@ -157,6 +191,9 @@ public class Http2Server extends AbstractServer {
                                                     serializationName, activeRequests, maxContentLength));
                                         }
                                     }));
+
+                            // Track connection channel for GOAWAY on shutdown
+                            connectionChannels.add(ch);
                         }
                     });
             bootstrap.childOption(ChannelOption.TCP_NODELAY, true);
@@ -166,13 +203,42 @@ public class Http2Server extends AbstractServer {
             channelFuture.syncUninterruptibly();
             serverChannel = channelFuture.channel();
             state = ChannelState.ALIVE;
-            log.info("HTTP/2 server started on port {}: url={}", url.getPort(), url);
+
+            String tlsInfo = sslContext != null ? " with TLS" : "";
+            log.info("HTTP/2 server started on port {}{}: url={}", url.getPort(), tlsInfo, url);
         } catch (Exception e) {
             cleanup();
             throw new RuntimeException("Failed to start HTTP/2 server on port " + url.getPort(), e);
         }
 
         return true;
+    }
+
+    /**
+     * Build an {@link SslContext} for TLS if cert and key are configured.
+     * Uses ALPN to negotiate HTTP/2.
+     *
+     * @return the SslContext, or null if TLS is not configured
+     */
+    private SslContext buildSslContext() {
+        String certChain = url.getParameter(UrlParam.Transport.SSL_CERT_CHAIN);
+        String privateKey = url.getParameter(UrlParam.Transport.SSL_PRIVATE_KEY);
+        if (certChain == null || certChain.isEmpty() || privateKey == null || privateKey.isEmpty()) {
+            return null;
+        }
+        try {
+            return SslContextBuilder.forServer(new File(certChain), new File(privateKey))
+                    .sslProvider(SslProvider.JDK)
+                    .applicationProtocolConfig(new ApplicationProtocolConfig(
+                            ApplicationProtocolConfig.Protocol.ALPN,
+                            ApplicationProtocolConfig.SelectorFailureBehavior.NO_ADVERTISE,
+                            ApplicationProtocolConfig.SelectedListenerFailureBehavior.ACCEPT,
+                            ApplicationProtocolNames.HTTP_2))
+                    .build();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build SSL context: certChain=" + certChain
+                    + ", privateKey=" + privateKey, e);
+        }
     }
 
     @Override
@@ -237,6 +303,19 @@ public class Http2Server extends AbstractServer {
             // streams are left untouched so they can drain naturally.
             serverChannel.close();
             log.info("HTTP/2 server stopAccept: no longer accepting new connections, url={}", url);
+        }
+
+        // Send GOAWAY to all active connections so clients stop opening new
+        // streams on this server and migrate to other backends.
+        if (!connectionChannels.isEmpty()) {
+            int count = 0;
+            for (io.netty.channel.Channel conn : connectionChannels) {
+                if (conn.isActive()) {
+                    conn.writeAndFlush(new DefaultHttp2GoAwayFrame(Http2Error.NO_ERROR));
+                    count++;
+                }
+            }
+            log.info("HTTP/2 server sent GOAWAY to {} active connections, url={}", count, url);
         }
     }
 
