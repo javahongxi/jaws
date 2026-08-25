@@ -49,4 +49,9 @@ public class ProviderMessageHandler implements MessageHandler {
     public Flow.Publisher<Object> handleStream(Channel channel, Object message) {
         return normalHandler.handleStream(channel, message);
     }
+
+    @Override
+    public Provider<?> findProviderByInterface(String interfaceName) {
+        return normalHandler.findProviderByInterface(interfaceName);
+    }
 }

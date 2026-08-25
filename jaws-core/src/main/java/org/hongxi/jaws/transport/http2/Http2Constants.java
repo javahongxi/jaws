@@ -59,4 +59,30 @@ public final class Http2Constants {
     public static final String STATUS_OK = "200";
     public static final String STATUS_BAD_REQUEST = "400";
     public static final String STATUS_INTERNAL_ERROR = "500";
+
+    // ---- gRPC compatibility ----
+
+    /** gRPC content type prefix (binary protobuf). */
+    public static final String GRPC_CONTENT_TYPE = "application/grpc";
+
+    /** gRPC+JSON content type prefix. */
+    public static final String GRPC_JSON_CONTENT_TYPE = "application/grpc+json";
+
+    /** gRPC status trailer key. */
+    public static final String GRPC_STATUS = "grpc-status";
+
+    /** gRPC status message trailer key. */
+    public static final String GRPC_MESSAGE = "grpc-message";
+
+    /** gRPC status OK. */
+    public static final String GRPC_STATUS_OK = "0";
+
+    /** gRPC status INTERNAL. */
+    public static final String GRPC_STATUS_INTERNAL = "13";
+
+    /** gRPC status INVALID_ARGUMENT. */
+    public static final String GRPC_STATUS_INVALID_ARGUMENT = "3";
+
+    /** gRPC status UNIMPLEMENTED. */
+    public static final String GRPC_STATUS_UNIMPLEMENTED = "12";
 }
