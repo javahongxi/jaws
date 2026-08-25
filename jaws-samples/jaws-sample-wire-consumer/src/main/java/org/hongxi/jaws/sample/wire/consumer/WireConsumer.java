@@ -7,6 +7,9 @@ import org.hongxi.jaws.sample.wire.proto.GreeterService;
 import org.hongxi.jaws.sample.wire.proto.HelloReply;
 import org.hongxi.jaws.sample.wire.proto.HelloRequest;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Flow;
+
 /**
  * Wire (gRPC wire format) consumer sample with Nacos registry.
  * <p>
@@ -23,7 +26,7 @@ import org.hongxi.jaws.sample.wire.proto.HelloRequest;
  */
 public class WireConsumer {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName("wire");
         protocolConfig.setId("wire");
@@ -55,6 +58,39 @@ public class WireConsumer {
         HelloReply reply2 = greeterService.sayHello(
                 HelloRequest.newBuilder().setName("jaws-wire").build());
         System.out.println("Response: " + reply2.getMessage());
+
+        // Server streaming call
+        System.out.println("\n--- Server Streaming ---");
+        CountDownLatch latch = new CountDownLatch(1);
+        greeterService.sayHelloStream(
+                HelloRequest.newBuilder().setName("StreamUser").build()
+        ).subscribe(new Flow.Subscriber<HelloReply>() {
+            private Flow.Subscription subscription;
+
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                this.subscription = subscription;
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(HelloReply item) {
+                System.out.println("Stream item: " + item.getMessage());
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("Stream error: " + throwable.getMessage());
+                latch.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                System.out.println("Stream completed.");
+                latch.countDown();
+            }
+        });
+        latch.await();
 
         System.out.println("Done.");
 

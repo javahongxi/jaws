@@ -2,7 +2,6 @@ package org.hongxi.jaws.wire;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
-import com.google.protobuf.Parser;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.transport.MessageHandler;
@@ -27,11 +26,11 @@ class WireMessageHandler implements MessageHandler {
     private static final Logger log = LoggerFactory.getLogger(WireMessageHandler.class);
 
     private final MessageHandler delegate;
-    private final Parser<? extends Message> requestParser;
+    private final WireProtoTypes protoTypes;
 
-    WireMessageHandler(MessageHandler delegate, Parser<? extends Message> requestParser) {
+    WireMessageHandler(MessageHandler delegate, WireProtoTypes protoTypes) {
         this.delegate = delegate;
-        this.requestParser = requestParser;
+        this.protoTypes = protoTypes;
     }
 
     @Override
@@ -46,9 +45,19 @@ class WireMessageHandler implements MessageHandler {
             return delegate.handleAsync(channel, message);
         }
 
+        // Look up per-method request parser
+        WireProtoTypes.MethodInfo methodInfo;
+        try {
+            methodInfo = protoTypes.getMethodInfo(request.getMethodName());
+        } catch (IllegalArgumentException e) {
+            CompletableFuture<Object> failed = new CompletableFuture<>();
+            failed.completeExceptionally(e);
+            return failed;
+        }
+
         try {
             // Parse raw protobuf bytes into typed Message
-            Message requestMessage = requestParser.parseFrom(bytes);
+            Message requestMessage = methodInfo.requestParser().parseFrom(bytes);
 
             // Build a new request with the typed Message as argument
             DefaultRequest typedRequest = new DefaultRequest();
@@ -63,8 +72,9 @@ class WireMessageHandler implements MessageHandler {
             }
 
             // Delegate to the filter chain / provider.
-            // The response Message passes through without conversion —
-            // WireSpiServerStreamHandler handles gRPC frame encoding.
+            // For unary: the response Message passes through directly.
+            // For streaming: the response is a Flow.Publisher, passed through as-is.
+            // WireSpiServerStreamHandler handles gRPC frame encoding for both cases.
             return delegate.handleAsync(channel, typedRequest);
         } catch (InvalidProtocolBufferException e) {
             log.error("Wire message decode failed: interface={} method={}",

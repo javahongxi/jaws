@@ -33,6 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -310,6 +311,84 @@ public class WireClient extends AbstractClient {
                 throw jae;
             }
             throw new JawsServiceException("WireClient request failed: url="
+                    + url.getUri() + " path=" + grpcPath, e);
+        }
+    }
+
+    /**
+     * Send a server-streaming gRPC request and return a {@link Response} whose
+     * value is a {@link Flow.Publisher Publisher&lt;Message&gt;} that emits
+     * each streamed response item.
+     *
+     * @param request        the RPC request; {@code arguments[0]} must be a protobuf {@link Message}
+     * @param responseParser the parser for the expected response message type
+     * @return the response containing a streaming publisher
+     */
+    public Response requestStream(Request request, Parser<? extends Message> responseParser) {
+        if (!isAvailable()) {
+            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
+        }
+
+        Object[] args = request.getArguments();
+        if (args == null || args.length == 0 || !(args[0] instanceof Message)) {
+            throw new JawsServiceException(
+                    "WireClient requestStream argument must be a protobuf Message; got: "
+                            + (args != null && args.length > 0 ? args[0].getClass().getName() : "null"));
+        }
+        Message requestMessage = (Message) args[0];
+
+        String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
+
+        StreamingMessagePublisher publisher = new StreamingMessagePublisher();
+
+        try {
+            io.netty.channel.Channel connChannel = channel;
+            if (connChannel == null || !connChannel.isActive()) {
+                reconnect();
+                connChannel = channel;
+            }
+            if (connChannel == null || !connChannel.isActive()) {
+                throw new JawsServiceException("Wire channel is not active: url=" + url.getUri());
+            }
+
+            // Open a new HTTP/2 stream with the streaming handler
+            io.netty.channel.Channel streamChannel =
+                    new Http2StreamChannelBootstrap(connChannel)
+                            .handler(new WireClientStreamingHandler(responseParser, publisher))
+                            .open().syncUninterruptibly().getNow();
+
+            // Build gRPC request headers
+            Http2Headers headers = new DefaultHttp2Headers()
+                    .method("POST")
+                    .scheme("http")
+                    .path(grpcPath)
+                    .authority(url.getHostPort())
+                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC);
+
+            // Encode request as gRPC frame
+            ByteBuf frame = WireFrameCodec.encode(requestMessage, streamChannel.alloc());
+
+            // Send HEADERS + DATA(END_STREAM)
+            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, true))
+                    .addListener(f -> {
+                        if (!f.isSuccess()) {
+                            publisher.completeExceptionally(
+                                    new JawsServiceException("Wire stream write failed", f.cause()));
+                        }
+                    });
+
+            DefaultResponse response = new DefaultResponse(request.getRequestId());
+            response.setValue(publisher);
+            return response;
+
+        } catch (Exception e) {
+            log.error("Wire streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
+            publisher.completeExceptionally(e);
+            if (e instanceof JawsAbstractException jae) {
+                throw jae;
+            }
+            throw new JawsServiceException("WireClient requestStream failed: url="
                     + url.getUri() + " path=" + grpcPath, e);
         }
     }

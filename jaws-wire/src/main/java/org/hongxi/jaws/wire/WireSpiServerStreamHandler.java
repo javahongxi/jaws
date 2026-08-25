@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Flow;
 
 /**
  * SPI-mode per-stream handler for the gRPC server.
@@ -160,14 +161,28 @@ class WireSpiServerStreamHandler extends ChannelInboundHandlerAdapter {
                 CompletableFuture<Object> future = messageHandler.handleAsync(serverChannel, jawsRequest);
                 Object result = future.join();
 
-                // Extract protobuf Message from response
-                Message responseMessage = extractMessage(result);
+                // The result is typically a Response wrapping the business return value.
+                // For streaming methods, the wrapped value is a Flow.Publisher.
+                Object value = result;
+                if (result instanceof org.hongxi.jaws.rpc.Response response) {
+                    if (response.getException() != null) {
+                        throw new RuntimeException("Provider error", response.getException());
+                    }
+                    value = response.getRawValue();
+                }
 
-                if (ctx.channel().isActive()) {
-                    sendResponseHeaders(ctx);
-                    ByteBuf responseFrame = WireFrameCodec.encode(responseMessage, ctx.alloc());
-                    ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
-                    sendTrailers(ctx, WireConstants.STATUS_OK, null);
+                if (value instanceof Flow.Publisher<?> publisher) {
+                    // Server streaming: subscribe and emit each Message as a DATA frame
+                    dispatchStreaming(ctx, publisher);
+                } else {
+                    // Unary: single response Message
+                    Message responseMessage = extractMessage(result);
+                    if (ctx.channel().isActive()) {
+                        sendResponseHeaders(ctx);
+                        ByteBuf responseFrame = WireFrameCodec.encode(responseMessage, ctx.alloc());
+                        ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
+                        sendTrailers(ctx, WireConstants.STATUS_OK, null);
+                    }
                 }
             } catch (Exception e) {
                 log.error("Wire SPI invoke failed: path={}", path, e);
@@ -181,6 +196,50 @@ class WireSpiServerStreamHandler extends ChannelInboundHandlerAdapter {
                 }
                 if (frameData != null) {
                     frameData.release();
+                }
+            }
+        });
+    }
+
+    /**
+     * Subscribe to the streaming publisher and write each emitted protobuf
+     * {@link Message} as a gRPC DATA frame. On completion, send trailers
+     * with {@code grpc-status: OK}.
+     */
+    @SuppressWarnings("unchecked")
+    private void dispatchStreaming(ChannelHandlerContext ctx, Flow.Publisher<?> publisher) {
+        publisher.subscribe(new Flow.Subscriber<Object>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(Object item) {
+                if (!ctx.channel().isActive()) return;
+                if (item instanceof Message msg) {
+                    sendResponseHeaders(ctx);
+                    ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc());
+                    ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
+                } else {
+                    log.warn("Wire SPI streaming: expected protobuf Message but got: {}",
+                            item != null ? item.getClass().getName() : "null");
+                }
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                log.error("Wire SPI streaming error: path={}", path, throwable);
+                if (ctx.channel().isActive()) {
+                    sendTrailers(ctx, WireConstants.STATUS_INTERNAL,
+                            "Stream failed: " + throwable.getMessage());
+                }
+            }
+
+            @Override
+            public void onComplete() {
+                if (ctx.channel().isActive()) {
+                    sendTrailers(ctx, WireConstants.STATUS_OK, null);
                 }
             }
         });

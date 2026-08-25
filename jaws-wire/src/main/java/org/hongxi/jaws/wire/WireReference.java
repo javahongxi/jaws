@@ -5,6 +5,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.AbstractReference;
+import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Future;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
@@ -14,6 +15,7 @@ import org.hongxi.jaws.transport.TransportFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -66,9 +68,47 @@ public class WireReference<T> extends AbstractReference<T> {
         // Convert Message to raw protobuf bytes for the wire transport
         byte[] requestBytes = requestMessage.toByteArray();
 
+        WireProtoTypes.MethodInfo methodInfo = protoTypes.getMethodInfo(request.getMethodName());
         WireClient wireClient = (WireClient) client;
         return wireClient.sendRawBytes(
-                request, requestBytes, protoTypes.getResponseParser());
+                request, requestBytes, methodInfo.responseParser());
+    }
+
+    @Override
+    public Flow.Publisher<Object> callStream(Request request) {
+        if (!isAvailable()) {
+            throw new JawsServiceException(
+                    "WireReference callStream failed: endpoint is not available, url=" + url.getUri());
+        }
+        request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
+
+        Object[] args = request.getArguments();
+        if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
+            throw new JawsServiceException(
+                    "WireReference callStream failed: argument must be a protobuf Message, url="
+                            + url.getUri());
+        }
+
+        WireProtoTypes.MethodInfo methodInfo = protoTypes.getMethodInfo(request.getMethodName());
+
+        // Build a request with the typed Message as argument for WireClient.requestStream
+        DefaultRequest streamRequest = new DefaultRequest();
+        streamRequest.setInterfaceName(request.getInterfaceName());
+        streamRequest.setMethodName(request.getMethodName());
+        streamRequest.setParamDesc(request.getParamDesc());
+        streamRequest.setArguments(new Object[]{requestMessage});
+        streamRequest.setRequestId(request.getRequestId());
+        for (var entry : request.getAttachments().entrySet()) {
+            streamRequest.setAttachment(entry.getKey(), entry.getValue());
+        }
+
+        WireClient wireClient = (WireClient) client;
+        Response response = wireClient.requestStream(streamRequest, methodInfo.responseParser());
+
+        // The response value is a Flow.Publisher<Message>; cast to Flow.Publisher<Object>
+        @SuppressWarnings("unchecked")
+        Flow.Publisher<Object> publisher = (Flow.Publisher<Object>) response.getValue();
+        return publisher;
     }
 
     @Override

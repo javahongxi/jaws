@@ -46,7 +46,7 @@ public class WireExporter<T> extends AbstractExporter<T> {
         WireProtoTypes protoTypes = WireProtoTypes.fromServiceInterface(
                 provider.getInterface());
         WireMessageHandler wireHandler = new WireMessageHandler(
-                baseHandler, protoTypes.getRequestParser());
+                baseHandler, protoTypes);
 
         server = ExtensionLoader.getExtensionLoader(TransportFactory.class)
                 .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY))

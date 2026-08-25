@@ -5,44 +5,69 @@ import com.google.protobuf.Parser;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
-import java.util.Optional;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.Flow;
 
 /**
  * Utility to extract protobuf {@link Message} types from a service interface.
  * <p>
- * Scans the first declared method of the interface to determine the request
- * message type (first parameter extending {@code Message}) and the response
- * message type (return type extending {@code Message}). Each type's static
- * {@code parser()} method is invoked reflectively to obtain the protobuf
- * {@link Parser}.
+ * Scans all declared methods of the interface to build per-method metadata:
+ * the request message type (first parameter extending {@code Message}) and the
+ * response message type (return type extending {@code Message}, or the generic
+ * type argument of {@code Flow.Publisher<Message>} for server-streaming methods).
+ * Each type's static {@code parser()} method is invoked reflectively to obtain
+ * the protobuf {@link Parser}.
  * <p>
  * Convention: every service interface method has exactly one protobuf
- * {@code Message} parameter and returns a protobuf {@code Message}.
+ * {@code Message} parameter and returns either a protobuf {@code Message}
+ * (unary) or a {@code Flow.Publisher<Message>} (server streaming).
  *
  * @author shenhongxi
  */
 public final class WireProtoTypes {
 
-    private final Parser<? extends Message> requestParser;
-    private final Parser<? extends Message> responseParser;
+    private final Map<String, MethodInfo> methodInfoMap;
 
-    private WireProtoTypes(Parser<? extends Message> requestParser,
-                           Parser<? extends Message> responseParser) {
-        this.requestParser = requestParser;
-        this.responseParser = responseParser;
-    }
-
-    public Parser<? extends Message> getRequestParser() {
-        return requestParser;
-    }
-
-    public Parser<? extends Message> getResponseParser() {
-        return responseParser;
+    private WireProtoTypes(Map<String, MethodInfo> methodInfoMap) {
+        this.methodInfoMap = methodInfoMap;
     }
 
     /**
-     * Extract protobuf types from the first declared method of the given
-     * service interface.
+     * Per-method protobuf type metadata.
+     */
+    public record MethodInfo(Parser<? extends Message> requestParser,
+                             Parser<? extends Message> responseParser,
+                             boolean streaming) {}
+
+    /**
+     * @return the method info for the given method name
+     * @throws IllegalArgumentException if no info is registered for the method
+     */
+    public MethodInfo getMethodInfo(String methodName) {
+        MethodInfo info = methodInfoMap.get(methodName);
+        if (info == null) {
+            throw new IllegalArgumentException(
+                    "No method info registered for: " + methodName);
+        }
+        return info;
+    }
+
+    /**
+     * @return the response parser for the single-method case (backward compatible)
+     */
+    public Parser<? extends Message> getResponseParser() {
+        if (methodInfoMap.size() != 1) {
+            throw new IllegalStateException(
+                    "getResponseParser() requires exactly one method, but found: " + methodInfoMap.size());
+        }
+        return methodInfoMap.values().iterator().next().responseParser();
+    }
+
+    /**
+     * Extract protobuf types from all declared methods of the given service interface.
      *
      * @param serviceInterface the service interface class
      * @return the extracted types
@@ -50,47 +75,71 @@ public final class WireProtoTypes {
      *         the protobuf Message convention
      */
     public static WireProtoTypes fromServiceInterface(Class<?> serviceInterface) {
-        Method method = findRpcMethod(serviceInterface);
-
-        // Request type: first parameter that extends Message
-        Class<?> requestType = null;
-        for (Parameter param : method.getParameters()) {
-            if (Message.class.isAssignableFrom(param.getType())) {
-                requestType = param.getType();
-                break;
-            }
-        }
-        if (requestType == null) {
-            throw new IllegalArgumentException(
-                    "Wire service interface method has no protobuf Message parameter: "
-                            + serviceInterface.getName() + "." + method.getName());
-        }
-
-        // Response type: return type extending Message
-        Class<?> responseType = method.getReturnType();
-        if (!Message.class.isAssignableFrom(responseType)) {
-            throw new IllegalArgumentException(
-                    "Wire service interface method return type is not a protobuf Message: "
-                            + serviceInterface.getName() + "." + method.getName()
-                            + " returns " + responseType.getName());
-        }
-
-        return new WireProtoTypes(resolveParser(requestType), resolveParser(responseType));
-    }
-
-    private static Method findRpcMethod(Class<?> serviceInterface) {
         Method[] methods = serviceInterface.getMethods();
         if (methods.length == 0) {
             throw new IllegalArgumentException(
                     "Wire service interface has no methods: " + serviceInterface.getName());
         }
-        // Return the first non-default, non-object method
-        for (Method m : methods) {
-            if (!m.isDefault() && m.getDeclaringClass() == serviceInterface) {
-                return m;
+
+        Map<String, MethodInfo> map = new HashMap<>();
+        for (Method method : methods) {
+            if (method.isDefault() || method.getDeclaringClass() != serviceInterface) {
+                continue;
+            }
+
+            // Request type: first parameter that extends Message
+            Class<?> requestType = null;
+            for (Parameter param : method.getParameters()) {
+                if (Message.class.isAssignableFrom(param.getType())) {
+                    requestType = param.getType();
+                    break;
+                }
+            }
+            if (requestType == null) {
+                throw new IllegalArgumentException(
+                        "Wire service interface method has no protobuf Message parameter: "
+                                + serviceInterface.getName() + "." + method.getName());
+            }
+
+            // Response type: return type extending Message, or Flow.Publisher<Message>
+            boolean streaming = false;
+            Class<?> responseType;
+            if (Flow.Publisher.class.isAssignableFrom(method.getReturnType())) {
+                streaming = true;
+                responseType = resolvePublisherTypeArgument(method);
+            } else if (Message.class.isAssignableFrom(method.getReturnType())) {
+                responseType = method.getReturnType();
+            } else {
+                throw new IllegalArgumentException(
+                        "Wire service interface method return type must be Message or Flow.Publisher<Message>: "
+                                + serviceInterface.getName() + "." + method.getName()
+                                + " returns " + method.getReturnType().getName());
+            }
+
+            map.put(method.getName(), new MethodInfo(
+                    resolveParser(requestType), resolveParser(responseType), streaming));
+        }
+
+        return new WireProtoTypes(map);
+    }
+
+    /**
+     * Resolve the type argument of {@code Flow.Publisher<T>} from the method's
+     * generic return type.
+     */
+    private static Class<?> resolvePublisherTypeArgument(Method method) {
+        Type genericReturn = method.getGenericReturnType();
+        if (genericReturn instanceof ParameterizedType pt) {
+            Type[] typeArgs = pt.getActualTypeArguments();
+            if (typeArgs.length > 0 && typeArgs[0] instanceof Class<?> clazz
+                    && Message.class.isAssignableFrom(clazz)) {
+                return clazz;
             }
         }
-        return methods[0];
+        throw new IllegalArgumentException(
+                "Cannot resolve Flow.Publisher type argument for streaming method: "
+                        + method.getDeclaringClass().getName() + "." + method.getName()
+                        + ". The type argument must be a concrete protobuf Message class.");
     }
 
     /**
@@ -106,14 +155,5 @@ public final class WireProtoTypes {
             throw new IllegalArgumentException(
                     "Failed to obtain protobuf parser for: " + messageClass.getName(), e);
         }
-    }
-
-    /**
-     * Look up the request parser for a specific method name. Currently all
-     * methods share the same parser (extracted from the first method), but
-     * this API allows future per-method resolution.
-     */
-    public Optional<Parser<? extends Message>> getRequestParser(String methodName) {
-        return Optional.ofNullable(requestParser);
     }
 }

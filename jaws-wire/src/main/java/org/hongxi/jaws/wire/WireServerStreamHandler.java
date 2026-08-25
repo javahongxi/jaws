@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Flow;
 
 /**
  * Per-stream inbound handler for the gRPC server ({@link WireServer}).
@@ -129,15 +130,20 @@ class WireServerStreamHandler extends ChannelInboundHandlerAdapter {
                     return;
                 }
                 Message request = WireFrameCodec.decode(frame, methodHandler.getRequestParser());
-                Message response = methodHandler.handle(request);
 
-                if (ctx.channel().isActive()) {
-                    sendResponseHeaders(ctx);
-                    ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc());
-                    // Send response DATA (not end stream)
-                    ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
-                    // Send trailers with END_STREAM
-                    sendTrailers(ctx, WireConstants.STATUS_OK, null);
+                try {
+                    // Try streaming first; falls back to UnsupportedOperationException
+                    Flow.Publisher<Message> publisher = methodHandler.handleStream(request);
+                    dispatchStreaming(ctx, publisher);
+                } catch (UnsupportedOperationException e) {
+                    // Unary fallback
+                    Message response = methodHandler.handle(request);
+                    if (ctx.channel().isActive()) {
+                        sendResponseHeaders(ctx);
+                        ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc());
+                        ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
+                        sendTrailers(ctx, WireConstants.STATUS_OK, null);
+                    }
                 }
             } catch (Exception e) {
                 log.error("Wire server invoke failed: path={}", path, e);
@@ -151,6 +157,43 @@ class WireServerStreamHandler extends ChannelInboundHandlerAdapter {
                 }
                 if (frameData != null) {
                     frameData.release();
+                }
+            }
+        });
+    }
+
+    /**
+     * Subscribe to the streaming publisher and write each emitted protobuf
+     * {@link Message} as a gRPC DATA frame. On completion, send trailers.
+     */
+    private void dispatchStreaming(ChannelHandlerContext ctx, Flow.Publisher<Message> publisher) {
+        publisher.subscribe(new Flow.Subscriber<Message>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(Message item) {
+                if (!ctx.channel().isActive()) return;
+                sendResponseHeaders(ctx);
+                ByteBuf responseFrame = WireFrameCodec.encode(item, ctx.alloc());
+                ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                log.error("Wire server streaming error: path={}", path, throwable);
+                if (ctx.channel().isActive()) {
+                    sendTrailers(ctx, WireConstants.STATUS_INTERNAL,
+                            "Stream failed: " + throwable.getMessage());
+                }
+            }
+
+            @Override
+            public void onComplete() {
+                if (ctx.channel().isActive()) {
+                    sendTrailers(ctx, WireConstants.STATUS_OK, null);
                 }
             }
         });
