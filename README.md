@@ -1,5 +1,7 @@
 # Jaws Framework 🦈
 
+![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
+[![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://adoptium.net/zh-CN/temurin/releases)
 ![CI](https://github.com/javahongxi/jaws/actions/workflows/ci.yml/badge.svg)
 
 Jaws 是一个基于 Java 17 和 Netty 的**轻量级、高性能** RPC 框架，提供服务注册与发现、负载均衡、高可用容错等完整的微服务通信能力。
