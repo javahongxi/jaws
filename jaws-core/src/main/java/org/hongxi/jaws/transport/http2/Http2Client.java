@@ -13,13 +13,10 @@ import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
 import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2MultiplexHandler;
 import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timeout;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
-import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -30,16 +27,14 @@ import org.hongxi.jaws.rpc.ResponseFuture;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.serialization.Serialization;
+import org.hongxi.jaws.transport.AbstractClient;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.transport.Client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
-import java.util.concurrent.TimeUnit;
 
 /**
  * HTTP/2-based {@link Client} implementation maintaining a single multiplexed
@@ -58,37 +53,19 @@ import java.util.concurrent.TimeUnit;
  *
  * @author shenhongxi
  */
-public class Http2Client implements Client {
+public class Http2Client extends AbstractClient {
     private static final Logger log = LoggerFactory.getLogger(Http2Client.class);
-
-    private static final int HTTP2_CLIENT_MAX_REQUEST = 20000;
 
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
 
-    /**
-     * Per-request timeout scheduler, same pattern as NettyClient.
-     */
-    private static final HashedWheelTimer timeoutTimer = new HashedWheelTimer(
-            new io.netty.util.concurrent.DefaultThreadFactory("jaws-http2-client-timeout", true),
-            30, TimeUnit.MILLISECONDS);
-
-    private final URL url;
     private final Serialization serialization;
 
     private Bootstrap bootstrap;
     // volatile: written under the instance lock in open()/close(), read lock-free in request()
     private volatile io.netty.channel.Channel channel;
-    private volatile ChannelState state = ChannelState.UNINIT;
-
-    /**
-     * Async requests need to register a callback future.
-     * Removal triggers: 1) response received  2) timeout task cancels it  3) close().
-     */
-    private final ConcurrentMap<Long, ResponseFuture> callbackMap = new ConcurrentHashMap<>();
-    private final ConcurrentMap<Long, Timeout> timeoutMap = new ConcurrentHashMap<>();
 
     public Http2Client(URL url) {
-        this.url = url;
+        super(url);
         this.serialization = Http2PayloadCodec.resolveSerialization(
                 url.getParameter(UrlParam.Transport.SERIALIZATION));
     }
@@ -309,113 +286,15 @@ public class Http2Client implements Client {
     }
 
     @Override
-    public synchronized void close() {
-        close(0);
-    }
-
-    @Override
-    public synchronized void close(int timeout) {
-        if (state.isCloseState()) {
-            return;
-        }
-
-        try {
-            // Graceful drain: give in-flight requests a chance to complete
-            if (timeout > 0) {
-                awaitPendingRequests(timeout);
-            }
-            cleanup();
-            state = ChannelState.CLOSE;
-            log.info("Http2Client closed successfully: url={}", url.getUri());
-        } catch (Exception e) {
-            log.error("Http2Client failed to close: url={}", url.getUri(), e);
-        }
-    }
-
-    private void cleanup() {
-        // Cancel all pending timeout tasks
-        timeoutMap.values().forEach(Timeout::cancel);
-        timeoutMap.clear();
-        // Fail pending futures so callers get an immediate error instead of
-        // waiting for request timeout after the connection is torn down
-        for (ResponseFuture future : callbackMap.values()) {
-            try {
-                future.cancel();
-            } catch (Exception e) {
-                log.error("failed to cancel pending request: uri={} requestId={}",
-                        url.getUri(), future.getRequestId(), e);
-            }
-        }
-        callbackMap.clear();
+    protected void doClose() {
         if (channel != null) {
             channel.close();
             channel = null;
         }
     }
 
-    /**
-     * Wait for in-flight requests to complete, up to the given timeout.
-     */
-    private void awaitPendingRequests(long timeout) {
-        long deadline = System.currentTimeMillis() + timeout;
-        while (!callbackMap.isEmpty() && System.currentTimeMillis() < deadline) {
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-        if (!callbackMap.isEmpty()) {
-            log.warn("Http2Client closed while {} pending requests not completed: url={}",
-                    callbackMap.size(), url.getUri());
-        }
-    }
-
     @Override
     public boolean isAvailable() {
-        return state.isAliveState() && channel != null && channel.isOpen();
-    }
-
-    @Override
-    public URL getUrl() {
-        return url;
-    }
-
-    /**
-     * Register a callback for an async request and schedule a per-request timeout.
-     * Rejects the request if the concurrent count exceeds the limit to prevent OOM.
-     */
-    private void registerCallback(long requestId, ResponseFuture responseFuture) {
-        if (callbackMap.size() >= HTTP2_CLIENT_MAX_REQUEST) {
-            throw new JawsServiceException("Http2Client exceeded max concurrent requests, request rejected, url: "
-                    + url.getUri() + " requestId=" + requestId, JawsErrorCode.SERVICE_REJECT);
-        }
-
-        callbackMap.put(requestId, responseFuture);
-
-        int timeout = responseFuture.getTimeout();
-        if (timeout > 0) {
-            Timeout timerTimeout = timeoutTimer.newTimeout(t -> {
-                ResponseFuture future = callbackMap.remove(requestId);
-                if (future != null) {
-                    timeoutMap.remove(requestId);
-                    try {
-                        future.cancel();
-                    } catch (Exception e) {
-                        log.error("failed to cancel timeout task: uri={} requestId={}", url.getUri(), requestId, e);
-                    }
-                }
-            }, timeout, TimeUnit.MILLISECONDS);
-            timeoutMap.put(requestId, timerTimeout);
-        }
-    }
-
-    ResponseFuture removeCallback(long requestId) {
-        Timeout timeout = timeoutMap.remove(requestId);
-        if (timeout != null) {
-            timeout.cancel();
-        }
-        return callbackMap.remove(requestId);
+        return super.isAvailable() && channel != null && channel.isOpen();
     }
 }

@@ -13,10 +13,12 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.EagerThreadPoolExecutor;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractServer;
+import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +46,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class NettyServer extends AbstractServer {
     private static final Logger log = LoggerFactory.getLogger(NettyServer.class);
 
+    private final Codec codec;
+
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     // volatile: written under the instance lock in open(), read lock-free in stopAccept()
@@ -58,6 +62,8 @@ public class NettyServer extends AbstractServer {
     public NettyServer(URL url, MessageHandler messageHandler) {
         super(url);
         this.messageHandler = messageHandler;
+        this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
+                .getExtension(url.getParameter(UrlParam.Transport.CODEC));
     }
 
     @Override
@@ -161,11 +167,6 @@ public class NettyServer extends AbstractServer {
     }
 
     @Override
-    public boolean isAvailable() {
-        return state.isAliveState();
-    }
-
-    @Override
     public void stopAccept() {
         if (serverChannel != null && serverChannel.isOpen()) {
             serverChannel.close();
@@ -202,10 +203,5 @@ public class NettyServer extends AbstractServer {
         } else {
             log.info("All in-flight requests completed before shutdown, uri={}", url.getUri());
         }
-    }
-
-    @Override
-    public URL getUrl() {
-        return url;
     }
 }

@@ -15,10 +15,10 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.common.threadpool.EagerThreadPoolExecutor;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.transport.AbstractServer;
 import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.transport.MessageHandler;
-import org.hongxi.jaws.transport.Server;
 import org.hongxi.jaws.transport.netty.ConnectionLimitHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,10 +54,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * @author shenhongxi
  */
-public class Http2Server implements Server {
+public class Http2Server extends AbstractServer {
     private static final Logger log = LoggerFactory.getLogger(Http2Server.class);
 
-    private final URL url;
     private final MessageHandler messageHandler;
 
     private EventLoopGroup bossGroup;
@@ -66,7 +65,6 @@ public class Http2Server implements Server {
     private volatile io.netty.channel.Channel serverChannel;
     private ConnectionLimitHandler connectionLimiter;
     private ExecutorService serverExecutor;
-    private volatile ChannelState state = ChannelState.UNINIT;
 
     private final AtomicInteger activeRequests = new AtomicInteger(0);
 
@@ -97,7 +95,7 @@ public class Http2Server implements Server {
     };
 
     public Http2Server(URL url, MessageHandler messageHandler) {
-        this.url = url;
+        super(url);
         this.messageHandler = messageHandler;
     }
 
@@ -231,16 +229,6 @@ public class Http2Server implements Server {
             serverExecutor.shutdownNow();
             serverExecutor = null;
         }
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return state.isAliveState();
-    }
-
-    @Override
-    public URL getUrl() {
-        return url;
     }
 
     @Override
