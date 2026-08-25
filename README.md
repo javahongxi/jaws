@@ -49,11 +49,15 @@ Server Streaming、gRPC 协议兼容、自适应负载均衡与高可用容错�
 项目提供 `run-sample.sh` 脚本统一管理示例：
 
 ```bash
-# injvm 协议示例（无需 ZK，开箱即用）
-./run-sample.sh injvm
+# 一键运行（启动 provider → 运行 consumer → 停止 provider）
+./run-sample.sh netty              # Netty 直连（无需注册中心）
+./run-sample.sh http2              # HTTP/2 直连（无需注册中心）
+./run-sample.sh stream             # HTTP/2 流式 Server Streaming（无需注册中心）
+./run-sample.sh run                # ZooKeeper 注册中心（需要 ZK 在 127.0.0.1:2181）
+./run-sample.sh nacos              # Nacos 注册中心（需要 Nacos 在 127.0.0.1:8848）
 
-# 一键运行：启动 provider → 运行 consumer → 停止 provider（需要 ZK）
-./run-sample.sh run
+# injvm 协议示例（进程内直调，不走网络）
+./run-sample.sh injvm
 
 # 分步运行
 ./run-sample.sh provider           # 前台启动 provider（需要 ZK 在 127.0.0.1:2181 运行）
@@ -62,6 +66,9 @@ Server Streaming、gRPC 协议兼容、自适应负载均衡与高可用容错�
 ./run-sample.sh provider-bg -1     # 后台启动，自动分配端口
 ./run-sample.sh consumer           # 运行 consumer（需要先启动 provider）
 ./run-sample.sh stop               # 停止所有后台 provider 并清理
+
+# 性能测试（8 核实测 10 万 QPS，详见 doc/benchmark.md）
+THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws
 ```
 
 ## 代码示例
