@@ -5,7 +5,7 @@ Jaws 是一个基于 Java 17 和 Netty 的**轻量级、高性能** RPC 框架�
 ## 特性
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，编解码全链路零拷贝（零额外 byte[] 分配）
-- **HTTP/2 传输** — 基于 Netty HTTP/2 的可选传输实现，支持 Server Streaming 流式调用（`Flow.Publisher`）
+- **HTTP/2 传输** — 基于 Netty HTTP/2 的可选传输实现，支持 Server Stream 以及兼容 gRPC 请求
 - **多种序列化** — 内置 fastjson2 / hessian2 / protostuff，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
