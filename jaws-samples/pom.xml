@@ -29,6 +29,9 @@
         <module>jaws-sample-stream-consumer</module>
         <module>jaws-sample-http2-provider</module>
         <module>jaws-sample-http2-consumer</module>
+        <module>jaws-sample-wire-api</module>
+        <module>jaws-sample-wire-provider</module>
+        <module>jaws-sample-wire-consumer</module>
         <module>jaws-sample-gray</module>
     </modules>
 
