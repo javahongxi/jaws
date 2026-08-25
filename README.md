@@ -5,24 +5,19 @@ Jaws 是一个基于 Java 17 和 Netty 的**轻量级、高性能** RPC 框架�
 ## 特性
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，编解码全链路零拷贝（零额外 byte[] 分配）
-- **HTTP/2 传输** — 基于 Netty HTTP/2 的可选传输实现，提供多路复用与网关穿透能力，验证传输层 SPI 可插拔性
+- **HTTP/2 传输** — 基于 Netty HTTP/2 的可选传输实现，支持 Server Streaming 流式调用（`Flow.Publisher`）
 - **多种序列化** — 内置 fastjson2 / hessian2 / protostuff，消费端指定序列化方式，协议头携带序列化标识
-- **连接心跳** — 双向心跳检测，Provider 与 Consumer 自动对齐心跳间隔，防止 NAT / LB 超时断连
+- **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
-- **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、consistentHash
+- **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、adaptive、consistentHash
 - **高可用容错** — failover（失败切换）、failfast（快速失败）、failback（异步重试）
-- **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
-- **优雅停机** — 四阶段停机（停止接收 → 等待在途请求 → 注销注册中心 → 关闭连接），零损伤发布
-- **泛化调用** — 无需依赖接口 JAR 包即可发起 RPC 调用，适用于网关、测试平台等场景
-- **可观测性** — 内置 Micrometer 指标采集和 OpenTelemetry 链路追踪，通过 Filter SPI 自动生效
-- **方法级别配置** — 可为单个方法设置独立的超时、重试策略
-- **RpcContext** — 消费端可获取实际调用的服务端地址，提供端可获取调用方 IP
-- **动态端口** — 端口设为 -1 时自动从 10000 递增分配，避免冲突
-- **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
-- **服务鉴权 / Token** — 基于 Token 的服务认证，防止未授权调用，通过 Filter 自动生效
 - **路由链 / Router** — 可扩展的调用时路由过滤链，内置标签路由（灰度发布）与动态配置路由
+- **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
+- **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
+- **优雅停机** — 四阶段停机（停止接收 → 等待在途请求 → 注销注册中心 → 关闭连接），零损伤发布
+- **可观测性** — 可选 Micrometer 指标采集和 OpenTelemetry 链路追踪，通过 Filter SPI 自动生效
 - **动态配置** — 支持全局/服务级/方法级三层热更新（超时、重试、路由规则、Filter 开关等）
-- **Spring Boot Starter** — `@EnableJaws` + `@JawsService` / `@JawsReference` 注解，开箱即用
+- **泛化调用** — 无需依赖接口 JAR 包即可发起 RPC 调用，适用于网关、测试平台等场景
 - **MCP 桥接** — 将 Jaws RPC 服务自动暴露为 MCP Tools，AI Agent 可直接调用后端服务
 
 ## 快速开始
@@ -159,30 +154,19 @@ public class MyRunner implements CommandLineRunner {
 
 ## 深入了解更多
 
-| 主题                                  | 说明                                     |
-|---------------------------------------|------------------------------------------|
-| [泛化调用](doc/generic-invocation.md) | 无需接口 JAR 包即可发起 RPC 调用         |
-| [优雅停机](doc/graceful-shutdown.md)  | 四阶段零损伤发布                         |
-| [服务鉴权](doc/token-auth.md)         | 基于 Token 的服务认证                    |
-| [连接预热](doc/warm-up.md)            | Provider 冷启动权重渐增                  |
-| [可观测性](doc/observability.md)      | Micrometer 指标 + OpenTelemetry 链路追踪 |
-| [动态配置](doc/dynamic-config.md)     | 全局/服务级/方法级三层热更新             |
-| [MCP 桥接](doc/mcp-bridge.md)         | 将 RPC 服务自动暴露为 MCP Tools          |
-| [编解码设计](doc/codec-comparison.md) | Jaws 与 Dubbo 编解码架构对比分析         |
-| [性能测试](doc/benchmark.md)          | Benchmark 环境变量与参数选择建议         |
-
-## 技术栈
-
-| 组件     | 技术                       | 版本           |
-|----------|----------------------------|----------------|
-| 语言     | Java                       | 17             |
-| 网络     | Netty                      | 4.1.132        |
-| 注册中心 | ZooKeeper + Curator        | 3.9 / 5.9      |
-| 注册中心 | Nacos                      | 3.2.3          |
-| 序列化   | fastjson2 / hessian-lite / protostuff | 2.0.62 / 4.0.5 / 1.8.0 |
-| 框架集成 | Spring Boot                | 3.5            |
-| MCP 协议 | MCP Java SDK               | 2.0.0          |
-| 可观测性 | Micrometer + OpenTelemetry | -              |
+| 主题                                       | 说明                                     |
+|--------------------------------------------|------------------------------------------|
+| [泛化调用](doc/generic-invocation.md)      | 无需接口 JAR 包即可发起 RPC 调用         |
+| [优雅停机](doc/graceful-shutdown.md)       | 四阶段零损伤发布                         |
+| [服务鉴权](doc/token-auth.md)              | 基于 Token 的服务认证                    |
+| [连接预热](doc/warm-up.md)                 | Provider 冷启动权重渐增                  |
+| [可观测性](doc/observability.md)           | Micrometer 指标 + OpenTelemetry 链路追踪 |
+| [动态配置](doc/dynamic-config.md)          | 全局/服务级/方法级三层热更新             |
+| [MCP 桥接](doc/mcp-bridge.md)              | 将 RPC 服务自动暴露为 MCP Tools          |
+| [与 Dubbo 对比](doc/dubbo-comparison.md)   | 八个维度的系统性能力对比                 |
+| [注册中心对比](doc/registry-comparison.md) | Nacos 与 ZooKeeper 实现对比              |
+| [编解码设计](doc/codec-comparison.md)      | Jaws 与 Dubbo 编解码架构对比分析         |
+| [性能测试](doc/benchmark.md)               | Benchmark 环境变量与参数选择建议         |
 
 
 &copy; [hongxi.org](http://hongxi.org)
