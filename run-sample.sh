@@ -15,11 +15,27 @@ BENCHMARK_MODULE="jaws-samples/jaws-sample-benchmark"
 INJVM_MODULE="jaws-samples/jaws-sample-injvm"
 PROVIDER_MODULE="jaws-samples/jaws-sample-zk-provider"
 CONSUMER_MODULE="jaws-samples/jaws-sample-zk-consumer"
+NACOS_PROVIDER_MODULE="jaws-samples/jaws-sample-nacos-provider"
+NACOS_CONSUMER_MODULE="jaws-samples/jaws-sample-nacos-consumer"
+NETTY_PROVIDER_MODULE="jaws-samples/jaws-sample-netty-provider"
+NETTY_CONSUMER_MODULE="jaws-samples/jaws-sample-netty-consumer"
+HTTP2_PROVIDER_MODULE="jaws-samples/jaws-sample-http2-provider"
+HTTP2_CONSUMER_MODULE="jaws-samples/jaws-sample-http2-consumer"
+STREAM_PROVIDER_MODULE="jaws-samples/jaws-sample-stream-provider"
+STREAM_CONSUMER_MODULE="jaws-samples/jaws-sample-stream-consumer"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
 CONSUMER_MAIN="org.hongxi.jaws.sample.zk.consumer.ZkConsumer"
 BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.RpcBenchmark"
+NACOS_PROVIDER_MAIN="org.hongxi.jaws.sample.nacos.provider.NacosProvider"
+NACOS_CONSUMER_MAIN="org.hongxi.jaws.sample.nacos.consumer.NacosConsumer"
+NETTY_PROVIDER_MAIN="org.hongxi.jaws.sample.netty.provider.NettyProvider"
+NETTY_CONSUMER_MAIN="org.hongxi.jaws.sample.netty.consumer.NettyConsumer"
+HTTP2_PROVIDER_MAIN="org.hongxi.jaws.sample.http2.provider.Http2Provider"
+HTTP2_CONSUMER_MAIN="org.hongxi.jaws.sample.http2.consumer.Http2Consumer"
+STREAM_PROVIDER_MAIN="org.hongxi.jaws.sample.stream.provider.StreamProvider"
+STREAM_CONSUMER_MAIN="org.hongxi.jaws.sample.stream.consumer.StreamConsumer"
 
 usage() {
     cat <<'EOF'
@@ -36,7 +52,11 @@ usage() {
     provider-bg [port] 后台启动 Provider，PID/日志按端口区分（如 .provider-10000.pid）
                        port 为 -1 时自动分配端口，文件后缀为 auto-{序号}
     stop               停止所有后台进程并清理 pid/log 文件
-    run                一次性运行：启动 provider → 运行 consumer → 停止 provider
+    run [port]         一次性运行 ZK 示例：启动 provider → 运行 consumer → 停止 provider
+    nacos [port]       一次性运行 Nacos 示例（需要 Nacos 在 127.0.0.1:8848）
+    netty [port]       一次性运行 Netty 直连示例（无需注册中心）
+    http2 [port]       一次性运行 HTTP/2 直连示例（无需注册中心）
+    stream [port]      一次性运行 HTTP/2 流式示例（无需注册中心）
     consumer           运行 ZkConsumer（需要先启动 provider）
     bench-injvm        性能测试 - injvm 协议
     bench-jaws         性能测试 - jaws+netty 协议
@@ -60,7 +80,11 @@ usage() {
     ./run-sample.sh provider-bg 10001  # 后台启动，端口 10001
     ./run-sample.sh provider-bg -1     # 后台启动，自动分配端口
     ./run-sample.sh stop               # 停止所有后台进程
-    ./run-sample.sh run                # 一键运行 provider + consumer
+    ./run-sample.sh run                # 一键运行 ZK provider + consumer
+    ./run-sample.sh nacos              # 一键运行 Nacos provider + consumer
+    ./run-sample.sh netty              # 一键运行 Netty 直连 provider + consumer
+    ./run-sample.sh http2              # 一键运行 HTTP/2 直连 provider + consumer
+    ./run-sample.sh stream             # 一键运行 HTTP/2 流式 provider + consumer
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
@@ -74,11 +98,21 @@ EOF
 }
 
 ensure_built() {
-    # mvn exec:java resolves dependencies from ~/.m2, so we need install (not just compile).
-    # Re-install only when sources are newer than the installed JAR.
+    # mvn exec:java / java -cp rely on installed JARs and module target/classes,
+    # so re-install whenever any module's sources are newer than the installed jaws-core JAR.
     local jar="$HOME/.m2/repository/org/hongxi/jaws-core/1.0.0-SNAPSHOT/jaws-core-1.0.0-SNAPSHOT.jar"
-    local src="jaws-core/src/main/java"
-    if [ ! -f "$jar" ] || [ "$(find "$src" -newer "$jar" -print -quit 2>/dev/null)" ]; then
+    local need_build=0
+    if [ ! -f "$jar" ]; then
+        need_build=1
+    else
+        for src in jaws-core/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
+            if [ "$(find $src -newer "$jar" -print -quit 2>/dev/null)" ]; then
+                need_build=1
+                break
+            fi
+        done
+    fi
+    if [ $need_build -eq 1 ]; then
         echo "项目未编译或源码已更新，正在编译安装..."
         $MVN install -DskipTests -q
     fi
@@ -92,7 +126,12 @@ build_classpath() {
     local module="$1"
     local deps
     deps=$($MVN -pl "$module" dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=/dev/stdout -DexcludeGroupIds=org.hongxi -q 2>/dev/null)
-    echo "jaws-core/target/classes:jaws-registry-zookeeper/target/classes:jaws-samples/jaws-sample-api/target/classes:$deps"
+    # Only include registry modules whose client jars are present in deps,
+    # otherwise their SPI classes fail to load with NoClassDefFoundError.
+    local project_cp="jaws-core/target/classes:jaws-samples/jaws-sample-api/target/classes"
+    case "$deps" in *curator*) project_cp="$project_cp:jaws-registry-zookeeper/target/classes" ;; esac
+    case "$deps" in *nacos-client*) project_cp="$project_cp:jaws-registry-nacos/target/classes" ;; esac
+    echo "$project_cp:$deps"
 }
 
 cmd_build() {
@@ -194,35 +233,43 @@ cmd_stop() {
     fi
 }
 
-cmd_run() {
-    ensure_built
-    local port="${1:-10000}"
-    local cp
-    cp=$(build_classpath "$PROVIDER_MODULE")
-    local pid_file=".provider-run.pid"
-    local log_file="provider-run.log"
+#
+# Generic one-shot run: start provider -> run consumer -> stop provider.
+# $1 name  $2 provider module  $3 provider main  $4 consumer module  $5 consumer main
+# $6 default port  $7 expected "exported" log lines  $8 prerequisite hint  $9 port
+#
+run_pair() {
+    local name="$1" provider_module="$2" provider_main="$3" consumer_module="$4" consumer_main="$5"
+    local default_port="$6" expected_exports="$7" hint="$8" port="${9:-}"
+    [ -z "$port" ] && port="$default_port"
 
-    echo "=== 一键运行 (jaws+netty) ==="
+    ensure_built
+    local cp
+    cp=$(build_classpath "$provider_module")
+    local pid_file=".provider-${name}.pid"
+    local log_file="provider-${name}.log"
+
+    echo "=== 一键运行 ($name) ==="
+    [ -n "$hint" ] && echo "$hint"
     echo ""
 
     # 1. 后台启动 provider
     echo "[1/4] 启动 Provider port=$port ..."
-    java -cp "$cp:$PROVIDER_MODULE/target/classes" \
+    java -cp "$cp:$provider_module/target/classes" \
         -Dport="$port" \
-        "$PROVIDER_MAIN" > "$log_file" 2>&1 &
+        "$provider_main" > "$log_file" 2>&1 &
     local pid=$!
     echo "$pid" > "$pid_file"
 
-    # 2. 等待 provider 注册到 ZK（轮询日志，最多等 15 秒）
-    echo -n "[2/4] 等待 Provider 注册 "
+    # 2. 等待 provider 完成服务发布（轮询日志，最多等 15 秒）
+    echo -n "[2/4] 等待 Provider 就绪 "
     local max_wait=15
     local waited=0
     while [ $waited -lt $max_wait ]; do
         if grep -q "exported" "$log_file" 2>/dev/null; then
-            # 确保所有服务都发布完成（两个 exported）
             local count
             count=$(grep -c "exported" "$log_file")
-            if [ "$count" -ge 2 ]; then
+            if [ "$count" -ge "$expected_exports" ]; then
                 echo " 就绪 (${waited}s)"
                 break
             fi
@@ -239,9 +286,10 @@ cmd_run() {
     echo "[3/4] 运行 Consumer ..."
     echo "--------------------------------------------"
     local consumer_cp
-    consumer_cp=$(build_classpath "$CONSUMER_MODULE")
-    java -cp "$consumer_cp:$CONSUMER_MODULE/target/classes" \
-        "$CONSUMER_MAIN"
+    consumer_cp=$(build_classpath "$consumer_module")
+    java -cp "$consumer_cp:$consumer_module/target/classes" \
+        -DdirectUrl="127.0.0.1:$port" \
+        "$consumer_main"
     local consumer_exit=$?
     echo "--------------------------------------------"
 
@@ -258,6 +306,31 @@ cmd_run() {
         exit $consumer_exit
     fi
     echo "=== 完成 ==="
+}
+
+cmd_run() {
+    run_pair "zk" "$PROVIDER_MODULE" "$PROVIDER_MAIN" "$CONSUMER_MODULE" "$CONSUMER_MAIN" \
+        10000 2 "请确保 ZooKeeper 已在 127.0.0.1:2181 运行" "${1:-}"
+}
+
+cmd_run_nacos() {
+    run_pair "nacos" "$NACOS_PROVIDER_MODULE" "$NACOS_PROVIDER_MAIN" "$NACOS_CONSUMER_MODULE" "$NACOS_CONSUMER_MAIN" \
+        10000 2 "请确保 Nacos 已在 127.0.0.1:8848 运行" "${1:-}"
+}
+
+cmd_run_netty() {
+    run_pair "netty" "$NETTY_PROVIDER_MODULE" "$NETTY_PROVIDER_MAIN" "$NETTY_CONSUMER_MODULE" "$NETTY_CONSUMER_MAIN" \
+        10000 2 "" "${1:-}"
+}
+
+cmd_run_http2() {
+    run_pair "http2" "$HTTP2_PROVIDER_MODULE" "$HTTP2_PROVIDER_MAIN" "$HTTP2_CONSUMER_MODULE" "$HTTP2_CONSUMER_MAIN" \
+        10000 2 "" "${1:-}"
+}
+
+cmd_run_stream() {
+    run_pair "stream" "$STREAM_PROVIDER_MODULE" "$STREAM_PROVIDER_MAIN" "$STREAM_CONSUMER_MODULE" "$STREAM_CONSUMER_MAIN" \
+        10000 1 "" "${1:-}"
 }
 
 cmd_consumer() {
@@ -319,6 +392,10 @@ case "${1:-}" in
     provider-bg) cmd_provider_bg "${2:-}" ;;
     stop)          cmd_stop ;;
     run)           cmd_run "${2:-}" ;;
+    nacos)         cmd_run_nacos "${2:-}" ;;
+    netty)         cmd_run_netty "${2:-}" ;;
+    http2)         cmd_run_http2 "${2:-}" ;;
+    stream)        cmd_run_stream "${2:-}" ;;
     consumer)    cmd_consumer ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;

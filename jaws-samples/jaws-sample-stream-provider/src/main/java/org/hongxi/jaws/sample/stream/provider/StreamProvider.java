@@ -16,11 +16,11 @@ import org.hongxi.jaws.sample.stream.provider.service.StreamServiceImpl;
  * 3. directUrl mode - no registry dependency
  * </pre>
  *
- * <p>Run with: {@code java -Dport=10002 StreamProvider}
+ * <p>Run with: {@code java -Dport=10000 StreamProvider}
  */
 public class StreamProvider {
 
-    private static final int PORT = Integer.parseInt(System.getProperty("port", "10002"));
+    private static final int PORT = Integer.parseInt(System.getProperty("port", "10000"));
     private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
 
     public static void main(String[] args) {

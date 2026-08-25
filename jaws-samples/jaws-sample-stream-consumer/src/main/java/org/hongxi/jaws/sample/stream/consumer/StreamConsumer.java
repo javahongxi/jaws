@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class StreamConsumer {
 
-    private static final String DIRECT_URL = System.getProperty("directUrl", "127.0.0.1:10002");
+    private static final String DIRECT_URL = System.getProperty("directUrl", "127.0.0.1:10000");
     private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
 
     public static void main(String[] args) throws Exception {
