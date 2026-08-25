@@ -89,6 +89,10 @@ public class JawsAutoConfiguration {
         if (registryProps.getRegistryRetryPeriod() != null) {
             registryConfig.setRegistryRetryPeriod(registryProps.getRegistryRetryPeriod());
         }
+        registryConfig.setCacheEnabled(registryProps.isCacheEnabled());
+        if (registryProps.getCacheFile() != null) {
+            registryConfig.setCacheFile(registryProps.getCacheFile());
+        }
         return registryConfig;
     }
 

@@ -96,6 +96,14 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         try {
             super.subscribe(url, listener);
         } catch (Exception e) {
+            // Try to notify listener with cached URLs from file cache
+            List<URL> cachedUrls = getCacheUrls(url);
+            if (cachedUrls != null && !cachedUrls.isEmpty()) {
+                log.warn("[{}] Failed to subscribe {}, falling back to {} cached urls from file",
+                        registryClassName, url, cachedUrls.size(), e);
+                listener.notify(getUrl(), cachedUrls);
+            }
+
             // If the startup detection is opened, the Exception is thrown directly.
             if (shouldCheck(url)) {
                 throw new JawsFrameworkException(String.format("[%s] Failed to subscribe %s from %s",
@@ -126,13 +134,23 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         try {
             List<URL> discovered = super.discover(url);
             discoveryCache.put(url, discovered);
+            // Persist to file cache for disaster recovery
+            saveCacheUrls(url, discovered);
             return discovered;
         } catch (Exception e) {
+            // Try in-memory cache first
             List<URL> cached = discoveryCache.get(url);
-            if (cached != null) {
+            if (cached != null && !cached.isEmpty()) {
                 log.warn("Failed to discover url:{} in registry ({}), falling back to {} cached urls",
                         url, getUrl(), cached.size(), e);
                 return cached;
+            }
+            // Fall back to file cache
+            List<URL> fileCached = getCacheUrls(url);
+            if (fileCached != null && !fileCached.isEmpty()) {
+                log.warn("Failed to discover url:{} in registry ({}), falling back to {} file-cached urls",
+                        url, getUrl(), fileCached.size(), e);
+                return fileCached;
             }
             log.warn("Failed to discover url:{} in registry ({}), no cached urls available", url, getUrl(), e);
             return List.of();

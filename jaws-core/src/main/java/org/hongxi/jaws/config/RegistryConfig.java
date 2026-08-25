@@ -63,6 +63,19 @@ public class RegistryConfig extends AbstractConfig {
      */
     private Integer registryRetryPeriod;
 
+    /**
+     * Whether to enable local file cache for registry disaster recovery.
+     * When enabled, discovered service URLs are persisted to a local file so that
+     * consumers can still find providers when the registry center is unavailable.
+     */
+    private boolean cacheEnabled = true;
+
+    /**
+     * Custom path for the registry local cache file.
+     * If not set, defaults to ~/.jaws/registry/{app}-{address}.cache.
+     */
+    private String cacheFile;
+
     @Override
     protected void collectParams(Map<String, String> params) {
         putIfPresent(params, "protocol", protocol);
@@ -73,6 +86,8 @@ public class RegistryConfig extends AbstractConfig {
         putIfPresent(params, "connectTimeout", connectTimeout);
         putIfPresent(params, "registrySessionTimeout", registrySessionTimeout);
         putIfPresent(params, "registryRetryPeriod", registryRetryPeriod);
+        putIfPresent(params, "cacheEnabled", cacheEnabled);
+        putIfPresent(params, "cacheFile", cacheFile);
     }
 
     public String getProtocol() {
@@ -137,5 +152,21 @@ public class RegistryConfig extends AbstractConfig {
 
     public void setRegistryRetryPeriod(Integer registryRetryPeriod) {
         this.registryRetryPeriod = registryRetryPeriod;
+    }
+
+    public boolean isCacheEnabled() {
+        return cacheEnabled;
+    }
+
+    public void setCacheEnabled(boolean cacheEnabled) {
+        this.cacheEnabled = cacheEnabled;
+    }
+
+    public String getCacheFile() {
+        return cacheFile;
+    }
+
+    public void setCacheFile(String cacheFile) {
+        this.cacheFile = cacheFile;
     }
 }
