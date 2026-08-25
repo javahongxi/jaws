@@ -1,7 +1,5 @@
 package org.hongxi.jaws.transport;
 
-import org.hongxi.jaws.rpc.Provider;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 
@@ -41,15 +39,4 @@ public interface MessageHandler {
         throw new UnsupportedOperationException("Streaming not supported by this handler");
     }
 
-    /**
-     * Find a registered provider by its interface name alone, without requiring
-     * group or version. Used by protocol adapters (e.g. gRPC compatibility) that
-     * do not carry Jaws-specific routing metadata.
-     *
-     * @param interfaceName the fully-qualified service interface name
-     * @return the matching provider, or {@code null} if none is registered
-     */
-    default Provider<?> findProviderByInterface(String interfaceName) {
-        return null;
-    }
 }

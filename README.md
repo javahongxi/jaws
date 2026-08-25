@@ -14,7 +14,7 @@ Server Streaming、gRPC 协议兼容、自适应负载均衡与高可用容错�
 ## 特性
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，编解码全链路零拷贝（零额外 byte[] 分配）
-- **HTTP/2 传输** — 基于 Netty HTTP/2 的可选传输实现，支持 Server Stream 以及兼容 gRPC+JSON 请求
+- **HTTP/2 传输** — 基于 Netty HTTP/2 的可选传输实现，多连接适配四层负载均衡，支持 Server Streaming
 - **多种序列化** — 内置 fastjson2 / hessian2 / protostuff，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连

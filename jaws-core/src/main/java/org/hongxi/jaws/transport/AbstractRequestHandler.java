@@ -103,16 +103,6 @@ public abstract class AbstractRequestHandler implements MessageHandler {
         log.info("{} removeProvider: url={}", this.getClass().getSimpleName(), provider.getUrl());
     }
 
-    @Override
-    public Provider<?> findProviderByInterface(String interfaceName) {
-        for (Provider<?> provider : providers.values()) {
-            if (interfaceName.equals(provider.getInterface().getName())) {
-                return provider;
-            }
-        }
-        return null;
-    }
-
     /**
      * Handle a server-streaming request: look up the provider, resolve the
      * method, and delegate to {@link Provider#callStream(Request)}.

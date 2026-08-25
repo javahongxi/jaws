@@ -131,17 +131,17 @@ Jaws 的 REST 是桥接层，在已有 jaws RPC 服务之上套 HTTP 入口，UR
 
 1. **序列化协议丰富度** — Jaws 3 种（fastjson2/hessian2/protostuff），Dubbo 10+ 种（含 protobuf、kryo 等更多高性能选项）
 2. **流量治理深度** — 缺少限流、熔断、降级能力（Dubbo 集成 Sentinel/Resilience4j）
-3. **多协议支持** — 已支持 HTTP/2 传输（基于 Netty 自研，无 grpc/protobuf 依赖）与 Server Streaming，但尚未实现 Triple 协议的 IDL 服务定义与 gRPC 线格式兼容，跨语言互通能力待补齐
+3. **多协议支持** — 已支持 HTTP/2 传输（基于 Netty 自研，无 grpc/protobuf 依赖）与 Server Streaming，不追求 gRPC 线格式兼容
 4. **应用级服务发现** — 仅支持接口级发现，Dubbo 已支持应用级 + 接口级双模型，大规模场景下内存和推送效率差距明显
 5. **生态与运维工具** — 缺少 Admin 控制台、缺少 IDL 代码生成、SPI 扩展点数量有限
 
 ## 十、Jaws 的差异化点
 
 - **MCP 桥接（领先）** — Dubbo 目前没有此能力，Jaws 可将 RPC 服务直接暴露为 AI Agent 可调用的 MCP Tools
-- **HTTP/2 传输轻量可插拔（设计取舍）** — 通过 `TransportFactory` SPI 零侵入接入基于 Netty `Http2FrameCodec` + `Http2MultiplexHandler` 自研的 HTTP/2 传输，无 grpc-java/protobuf 依赖，复用 Jaws 序列化体系，可获得多路复用、流控、网关穿透与 Server Streaming 能力；代价是不具备 Triple 的 gRPC 线格式兼容与 IDL 能力，跨语言互通弱于 Dubbo
+- **HTTP/2 传输轻量可插拔（设计取舍）** — 通过 `TransportFactory` SPI 零侵入接入基于 Netty `Http2FrameCodec` + `Http2MultiplexHandler` 自研的 HTTP/2 传输，无 grpc-java/protobuf 依赖，复用 Jaws 序列化体系，可获得多路复用、流控、网关穿透与 Server Streaming 能力
 - **编解码设计简洁性** — JawsCodec 分层清晰，Dubbo 的继承体系更复杂
 - **独立 version 字段** — header 层即可做版本校验，Dubbo 需解析 body
 
 ## 总结
 
-Jaws 在**核心 RPC 链路**（协议、编解码、零拷贝、心跳、优雅停机、异步调用）上已与 Dubbo **基本持平**，在**标签路由/灰度发布**、**多注册中心**、**HTTP/2 传输（含 Server Streaming）**能力上已补齐。但在**生态广度**（序列化种类、注册中心种类、Triple 协议完整度、运维工具）和**流量治理深度**（限流熔断）上差距较大。这些差距本质上是 Dubbo 多年社区积累的结果。
+Jaws 在**核心 RPC 链路**（协议、编解码、零拷贝、心跳、优雅停机、异步调用）上已与 Dubbo **基本持平**，在**标签路由/灰度发布**、**多注册中心**、**HTTP/2 传输（含 Server Streaming）**能力上已补齐。不在传输层追求 gRPC 线格式兼容。但在**生态广度**（序列化种类、注册中心种类、运维工具）和**流量治理深度**（限流熔断）上差距较大。这些差距本质上是 Dubbo 多年社区积累的结果。
