@@ -451,6 +451,11 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                 // Copy gRPC metadata headers as attachments
                 // (timeout, custom metadata, etc.)
 
+                // Backfill group/version from the resolved provider so that
+                // handleAsync can match the correct serviceKey
+                request.setAttachment("group", provider.getUrl().getGroup());
+                request.setAttachment("version", provider.getUrl().getVersion());
+
                 RpcContext.init(request);
 
                 // Invoke via message handler
