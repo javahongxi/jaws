@@ -458,7 +458,13 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
 
                 RpcContext.init(request);
 
-                // Invoke via message handler
+                // Detect server-streaming by return type
+                if (Flow.Publisher.class.isAssignableFrom(javaMethod.getReturnType())) {
+                    dispatchGrpcStream(ctx, request);
+                    return;
+                }
+
+                // Invoke via message handler (unary)
                 CompletableFuture<Object> future = messageHandler.handleAsync(serverChannel, request);
                 future.whenComplete((result, throwable) -> {
                     try {
@@ -545,6 +551,85 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
+     * Dispatch a gRPC server-streaming request: invoke via {@code handleStream},
+     * subscribe to the {@link Flow.Publisher}, and write each item as a separate
+     * gRPC length-prefixed DATA frame. On completion, send trailers with
+     * {@code grpc-status=0}.
+     */
+    private void dispatchGrpcStream(ChannelHandlerContext ctx, Request request) {
+        try {
+            Flow.Publisher<Object> publisher = messageHandler.handleStream(serverChannel, request);
+
+            // Send response headers (HTTP 200, gRPC content-type) without END_STREAM
+            if (ctx.channel().isActive()) {
+                Http2Headers respHeaders = new DefaultHttp2Headers()
+                        .status(Http2Constants.STATUS_OK)
+                        .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.GRPC_JSON_CONTENT_TYPE);
+                ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
+            }
+
+            publisher.subscribe(new Flow.Subscriber<>() {
+                private Flow.Subscription subscription;
+
+                @Override
+                public void onSubscribe(Flow.Subscription s) {
+                    this.subscription = s;
+                    s.request(Long.MAX_VALUE);
+                }
+
+                @Override
+                public void onNext(Object item) {
+                    if (!ctx.channel().isActive()) {
+                        subscription.cancel();
+                        return;
+                    }
+                    try {
+                        String json = JSON.toJSONString(item);
+                        byte[] messageBytes = json.getBytes(StandardCharsets.UTF_8);
+                        byte[] grpcFrame = GrpcCodec.encodeFrame(messageBytes);
+                        ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                Unpooled.wrappedBuffer(grpcFrame), false));
+                    } catch (Exception e) {
+                        log.error("gRPC stream item encoding failed", e);
+                        subscription.cancel();
+                        sendGrpcStreamError(ctx, e);
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("gRPC server streaming error: {}.{}",
+                            grpcServiceName, grpcMethodName, throwable);
+                    sendGrpcStreamError(ctx, throwable);
+                    finishGrpcStream();
+                }
+
+                @Override
+                public void onComplete() {
+                    // Send trailers with grpc-status=0 (END_STREAM)
+                    if (ctx.channel().isActive()) {
+                        Http2Headers trailers = new DefaultHttp2Headers();
+                        trailers.set(Http2Constants.GRPC_STATUS, Http2Constants.GRPC_STATUS_OK);
+                        ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
+                    }
+                    finishGrpcStream();
+                }
+
+                private void finishGrpcStream() {
+                    RpcContext.destroy();
+                    activeRequests.decrementAndGet();
+                }
+            });
+        } catch (Exception e) {
+            log.error("gRPC stream dispatch failed", e);
+            sendGrpcError(ctx, Http2Constants.GRPC_STATUS_INTERNAL,
+                    "Stream dispatch failed: " + e.getMessage());
+            RpcContext.destroy();
+            activeRequests.decrementAndGet();
+        }
+    }
+
+    /**
      * Send a gRPC error: HTTP 200 + TRAILERS with non-zero grpc-status.
      */
     private void sendGrpcError(ChannelHandlerContext ctx, String grpcStatusCode, String message) {
@@ -566,6 +651,21 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
         if (message != null) {
             trailers.set(Http2Constants.GRPC_MESSAGE, message);
         }
+        ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
+    }
+
+    /**
+     * Send gRPC trailers with INTERNAL error status for a streaming error
+     * that occurred after response headers have already been sent.
+     */
+    private void sendGrpcStreamError(ChannelHandlerContext ctx, Throwable error) {
+        if (!ctx.channel().isActive()) {
+            return;
+        }
+        String message = error.getMessage() != null ? error.getMessage() : error.getClass().getName();
+        Http2Headers trailers = new DefaultHttp2Headers();
+        trailers.set(Http2Constants.GRPC_STATUS, Http2Constants.GRPC_STATUS_INTERNAL);
+        trailers.set(Http2Constants.GRPC_MESSAGE, message);
         ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
     }
 }
