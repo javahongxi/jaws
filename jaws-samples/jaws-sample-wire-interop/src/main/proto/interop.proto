@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "org.hongxi.jaws.sample.wire.interop";
+option java_outer_classname = "InteropProto";
+
+package interop;
+
+// Service definition used by the standard grpc-java server.
+// WireClient will call this server using the gRPC wire format.
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply) {}
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}

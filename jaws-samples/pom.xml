@@ -32,6 +32,7 @@
         <module>jaws-sample-wire-api</module>
         <module>jaws-sample-wire-provider</module>
         <module>jaws-sample-wire-consumer</module>
+        <module>jaws-sample-wire-interop</module>
         <module>jaws-sample-gray</module>
     </modules>
 
