@@ -4,6 +4,8 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://adoptium.net/zh-CN/temurin/releases)
 ![CI](https://github.com/javahongxi/jaws/actions/workflows/ci.yml/badge.svg)
 
+> 取名自《大白鲨》(*Jaws*)——**J**ava **A**sync **W**ire **S**ervice：Java 生态、异步调用、线级协议、服务治理，四个词正是一个 RPC 框架的四层解剖。
+
 Jaws 是一个**核心不到 2 万行、可以从头读到尾**的轻量级 RPC 框架。它用不到 Dubbo 十分之一的代码量，
 完整实现了一个工业级 RPC 的核心机制：双传输(Netty TCP 全链路零拷贝 + 自研 HTTP/2 消除队头阻塞)、
 Server Streaming、gRPC 协议兼容、自适应负载均衡与高可用容错，实测 10 万 QPS、155 个测试全绿。
