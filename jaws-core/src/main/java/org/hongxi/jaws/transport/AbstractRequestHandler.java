@@ -48,6 +48,13 @@ public abstract class AbstractRequestHandler implements MessageHandler {
         Provider<?> provider = providers.get(serviceKey);
 
         if (provider == null) {
+            // Fallback: protocol bridges (e.g. gRPC wire format) may use a
+            // service name that differs from the Java interface name.
+            // Try to find a provider that declares the requested method.
+            provider = findProviderByMethodName(request.getMethodName());
+        }
+
+        if (provider == null) {
             log.error("{} no provider found for serviceKey={} {}",
                     this.getClass().getSimpleName(), serviceKey, RpcUtils.toString(request));
             JawsServiceException exception = new JawsServiceException(
@@ -104,6 +111,26 @@ public abstract class AbstractRequestHandler implements MessageHandler {
     }
 
     /**
+     * Fallback provider lookup: find a provider that declares the given method.
+     * <p>
+     * This is used by protocol bridges (e.g. gRPC wire format) where the
+     * service name in the request ({@code greeter.Greeter}) differs from the
+     * Java interface name ({@code org.hongxi.jaws.sample.wire.proto.GreeterService})
+     * registered in the provider map.
+     *
+     * @param methodName the Java method name to match
+     * @return the first provider that declares the method, or {@code null}
+     */
+    public Provider<?> findProviderByMethodName(String methodName) {
+        for (Provider<?> provider : providers.values()) {
+            if (provider.lookupMethod(methodName, null) != null) {
+                return provider;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Handle a server-streaming request: look up the provider, resolve the
      * method, and delegate to {@link Provider#callStream(Request)}.
      *
@@ -121,6 +148,10 @@ public abstract class AbstractRequestHandler implements MessageHandler {
 
         String serviceKey = RpcUtils.getServiceKey(request);
         Provider<?> provider = providers.get(serviceKey);
+
+        if (provider == null) {
+            provider = findProviderByMethodName(request.getMethodName());
+        }
 
         if (provider == null) {
             log.error("{} no provider found for serviceKey={} {}",

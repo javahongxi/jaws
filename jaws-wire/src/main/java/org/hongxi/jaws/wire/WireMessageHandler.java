@@ -59,10 +59,12 @@ class WireMessageHandler implements MessageHandler {
             // Parse raw protobuf bytes into typed Message
             Message requestMessage = methodInfo.requestParser().parseFrom(bytes);
 
-            // Build a new request with the typed Message as argument
+            // Build a new request with the typed Message as argument.
+            // Convert gRPC PascalCase method name (SayHello) back to Java
+            // camelCase (sayHello) so that the Provider can find the method.
             DefaultRequest typedRequest = new DefaultRequest();
             typedRequest.setInterfaceName(request.getInterfaceName());
-            typedRequest.setMethodName(request.getMethodName());
+            typedRequest.setMethodName(toJavaMethodName(request.getMethodName()));
             typedRequest.setParamDesc(request.getParamDesc());
             typedRequest.setArguments(new Object[]{requestMessage});
             typedRequest.setRequestId(request.getRequestId());
@@ -83,5 +85,16 @@ class WireMessageHandler implements MessageHandler {
             failed.completeExceptionally(e);
             return failed;
         }
+    }
+
+    /**
+     * Convert a gRPC PascalCase method name (e.g. {@code SayHello}) back to
+     * Java camelCase (e.g. {@code sayHello}) for provider method lookup.
+     */
+    private static String toJavaMethodName(String grpcMethodName) {
+        if (grpcMethodName == null || grpcMethodName.isEmpty()) {
+            return grpcMethodName;
+        }
+        return Character.toLowerCase(grpcMethodName.charAt(0)) + grpcMethodName.substring(1);
     }
 }

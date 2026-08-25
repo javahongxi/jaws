@@ -116,11 +116,27 @@ public final class WireProtoTypes {
                                 + " returns " + method.getReturnType().getName());
             }
 
-            map.put(method.getName(), new MethodInfo(
-                    resolveParser(requestType), resolveParser(responseType), streaming));
+            MethodInfo info = new MethodInfo(
+                    resolveParser(requestType), resolveParser(responseType), streaming);
+            // Register under the Java method name (camelCase: sayHello)
+            map.put(method.getName(), info);
+            // Also register under the gRPC method name (PascalCase: SayHello)
+            // so that lookups from the gRPC path /service/Method succeed.
+            map.put(toGrpcMethodName(method.getName()), info);
         }
 
         return new WireProtoTypes(map);
+    }
+
+    /**
+     * Convert a Java method name to its gRPC PascalCase equivalent.
+     * e.g. {@code sayHello} → {@code SayHello}
+     */
+    static String toGrpcMethodName(String javaMethodName) {
+        if (javaMethodName == null || javaMethodName.isEmpty()) {
+            return javaMethodName;
+        }
+        return Character.toUpperCase(javaMethodName.charAt(0)) + javaMethodName.substring(1);
     }
 
     /**
