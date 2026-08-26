@@ -53,8 +53,8 @@ gRPC 线格式跨语言互通)、 Server Streaming、自适应负载均衡与高
 ```bash
 # 一键运行（启动 provider → 运行 consumer → 停止 provider）
 ./run-sample.sh netty              # Netty 直连（无需注册中心）
-./run-sample.sh http2              # HTTP/2 直连（无需注册中心）
-./run-sample.sh stream             # HTTP/2 流式 Server Streaming（无需注册中心）
+./run-sample.sh http2              # HTTP/2 直连（含 Server Streaming，无需注册中心）
+./run-sample.sh wire               # Wire gRPC 线格式直连（无需注册中心，兼容 grpcurl）
 ./run-sample.sh run                # ZooKeeper 注册中心（需要 ZK 在 127.0.0.1:2181）
 ./run-sample.sh nacos              # Nacos 注册中心（需要 Nacos 在 127.0.0.1:8848）
 

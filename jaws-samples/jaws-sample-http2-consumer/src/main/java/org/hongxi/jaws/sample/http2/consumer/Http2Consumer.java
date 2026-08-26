@@ -8,6 +8,7 @@ import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.OrderService;
+import org.hongxi.jaws.sample.api.StreamService;
 import org.hongxi.jaws.sample.api.model.Contacts;
 import org.hongxi.jaws.sample.api.model.Order;
 import org.hongxi.jaws.sample.api.model.Phone;
@@ -16,6 +17,9 @@ import org.hongxi.jaws.sample.api.model.User;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
 
 /**
  * HTTP/2 transport consumer - same as netty sample but with {@code transportFactory=http2}.
@@ -23,9 +27,10 @@ import java.util.Map;
  * <pre>
  * Demo scenario:
  * 1. jaws protocol + directUrl (bypasses registry discovery)
- * 2. Multi-Service reference - DemoService + OrderService
+ * 2. Multi-Service reference - DemoService + OrderService + StreamService
  * 3. Various parameter types - String, POJO, List, Map, nested objects
  * 4. group/version configuration
+ * 5. Server streaming over HTTP/2 (subscribe to Flow.Publisher)
  * </pre>
  *
  * <p>Run {@code Http2Provider} first before starting this consumer.
@@ -131,6 +136,53 @@ public class Http2Consumer {
         if (serverUrl2 != null) {
             System.out.println("server => " + serverUrl2.getHost() + ":" + serverUrl2.getPort());
         }
+
+        /* Reference StreamService with directUrl */
+        System.out.println("\n--- StreamService server streaming ---");
+        ReferenceConfig<StreamService> streamRef = new ReferenceConfig<>();
+        streamRef.setInterface(StreamService.class);
+        streamRef.setApplication("sample-http2-consumer");
+        streamRef.setModule("sample-http2");
+        streamRef.setGroup("test");
+        streamRef.setVersion("2.0");
+        streamRef.setProtocol(protocolConfig);
+        streamRef.setDirectUrl(DIRECT_URL);
+
+        StreamService streamService = streamRef.getRef();
+
+        /* Server-streaming invocation */
+        Flow.Publisher<String> publisher = streamService.greetStream("hello", 5);
+        CountDownLatch streamLatch = new CountDownLatch(1);
+
+        publisher.subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription s) {
+                s.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(String item) {
+                System.out.println("stream item => " + item);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("stream error => " + throwable.getMessage());
+                streamLatch.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                streamLatch.countDown();
+            }
+        });
+
+        try {
+            streamLatch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        System.out.println("stream completed.");
 
         /* Exit forcibly (Netty non-daemon threads would prevent JVM from exiting) */
         System.exit(0);

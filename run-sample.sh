@@ -21,8 +21,8 @@ NETTY_PROVIDER_MODULE="jaws-samples/jaws-sample-netty-provider"
 NETTY_CONSUMER_MODULE="jaws-samples/jaws-sample-netty-consumer"
 HTTP2_PROVIDER_MODULE="jaws-samples/jaws-sample-http2-provider"
 HTTP2_CONSUMER_MODULE="jaws-samples/jaws-sample-http2-consumer"
-STREAM_PROVIDER_MODULE="jaws-samples/jaws-sample-stream-provider"
-STREAM_CONSUMER_MODULE="jaws-samples/jaws-sample-stream-consumer"
+WIRE_PROVIDER_MODULE="jaws-samples/jaws-sample-wire-provider"
+WIRE_CONSUMER_MODULE="jaws-samples/jaws-sample-wire-consumer"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -34,8 +34,8 @@ NETTY_PROVIDER_MAIN="org.hongxi.jaws.sample.netty.provider.NettyProvider"
 NETTY_CONSUMER_MAIN="org.hongxi.jaws.sample.netty.consumer.NettyConsumer"
 HTTP2_PROVIDER_MAIN="org.hongxi.jaws.sample.http2.provider.Http2Provider"
 HTTP2_CONSUMER_MAIN="org.hongxi.jaws.sample.http2.consumer.Http2Consumer"
-STREAM_PROVIDER_MAIN="org.hongxi.jaws.sample.stream.provider.StreamProvider"
-STREAM_CONSUMER_MAIN="org.hongxi.jaws.sample.stream.consumer.StreamConsumer"
+WIRE_PROVIDER_MAIN="org.hongxi.jaws.sample.wire.provider.WireProvider"
+WIRE_CONSUMER_MAIN="org.hongxi.jaws.sample.wire.consumer.WireConsumer"
 
 usage() {
     cat <<'EOF'
@@ -55,8 +55,8 @@ usage() {
     run [port]         一次性运行 ZK 示例：启动 provider → 运行 consumer → 停止 provider
     nacos [port]       一次性运行 Nacos 示例（需要 Nacos 在 127.0.0.1:8848）
     netty [port]       一次性运行 Netty 直连示例（无需注册中心）
-    http2 [port]       一次性运行 HTTP/2 直连示例（无需注册中心）
-    stream [port]      一次性运行 HTTP/2 流式示例（无需注册中心）
+    http2 [port]       一次性运行 HTTP/2 直连示例（含 Server Streaming，无需注册中心）
+    wire [port]        一次性运行 Wire (gRPC wire format) 直连示例（无需注册中心，默认端口 50051）
     consumer           运行 ZkConsumer（需要先启动 provider）
     bench-injvm        性能测试 - injvm 协议
     bench-jaws         性能测试 - jaws+netty 协议
@@ -83,8 +83,8 @@ usage() {
     ./run-sample.sh run                # 一键运行 ZK provider + consumer
     ./run-sample.sh nacos              # 一键运行 Nacos provider + consumer
     ./run-sample.sh netty              # 一键运行 Netty 直连 provider + consumer
-    ./run-sample.sh http2              # 一键运行 HTTP/2 直连 provider + consumer
-    ./run-sample.sh stream             # 一键运行 HTTP/2 流式 provider + consumer
+    ./run-sample.sh http2              # 一键运行 HTTP/2 直连（含流式）provider + consumer
+    ./run-sample.sh wire               # 一键运行 Wire 直连 provider + consumer
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
@@ -105,7 +105,7 @@ ensure_built() {
     if [ ! -f "$jar" ]; then
         need_build=1
     else
-        for src in jaws-core/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
+        for src in jaws-core/src/main/java jaws-wire/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
             if [ "$(find $src -newer "$jar" -print -quit 2>/dev/null)" ]; then
                 need_build=1
                 break
@@ -131,6 +131,7 @@ build_classpath() {
     local project_cp="jaws-core/target/classes:jaws-samples/jaws-sample-api/target/classes"
     case "$deps" in *curator*) project_cp="$project_cp:jaws-registry-zookeeper/target/classes" ;; esac
     case "$deps" in *nacos-client*) project_cp="$project_cp:jaws-registry-nacos/target/classes" ;; esac
+    case "$deps" in *protobuf-java*) project_cp="$project_cp:jaws-wire/target/classes:jaws-samples/jaws-sample-wire-api/target/classes" ;; esac
     echo "$project_cp:$deps"
 }
 
@@ -325,12 +326,12 @@ cmd_run_netty() {
 
 cmd_run_http2() {
     run_pair "http2" "$HTTP2_PROVIDER_MODULE" "$HTTP2_PROVIDER_MAIN" "$HTTP2_CONSUMER_MODULE" "$HTTP2_CONSUMER_MAIN" \
-        10000 2 "" "${1:-}"
+        10000 3 "" "${1:-}"
 }
 
-cmd_run_stream() {
-    run_pair "stream" "$STREAM_PROVIDER_MODULE" "$STREAM_PROVIDER_MAIN" "$STREAM_CONSUMER_MODULE" "$STREAM_CONSUMER_MAIN" \
-        10000 1 "" "${1:-}"
+cmd_run_wire() {
+    run_pair "wire" "$WIRE_PROVIDER_MODULE" "$WIRE_PROVIDER_MAIN" "$WIRE_CONSUMER_MODULE" "$WIRE_CONSUMER_MAIN" \
+        50051 1 "" "${1:-}"
 }
 
 cmd_consumer() {
@@ -395,7 +396,7 @@ case "${1:-}" in
     nacos)         cmd_run_nacos "${2:-}" ;;
     netty)         cmd_run_netty "${2:-}" ;;
     http2)         cmd_run_http2 "${2:-}" ;;
-    stream)        cmd_run_stream "${2:-}" ;;
+    wire)          cmd_run_wire "${2:-}" ;;
     consumer)    cmd_consumer ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;

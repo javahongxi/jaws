@@ -1,21 +1,22 @@
 package org.hongxi.jaws.sample.wire.provider;
 
 import org.hongxi.jaws.config.ProtocolConfig;
-import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.wire.proto.GreeterService;
 import org.hongxi.jaws.sample.wire.provider.service.GreeterServiceImpl;
 
 /**
- * Wire (gRPC wire format) provider sample with Nacos registry.
+ * Wire (gRPC wire format) provider sample in direct mode.
  * <p>
- * Demonstrates the full Jaws framework pipeline with the wire protocol:
+ * Demonstrates the Jaws framework pipeline with the wire protocol:
  * <ol>
  *   <li>Configure {@code WireProtocol} (protocol name = "wire")</li>
- *   <li>Configure Nacos registry for service discovery</li>
+ *   <li>No registry (export only, skip registration)</li>
  *   <li>Export {@link GreeterService} via {@link ServiceConfig}</li>
  *   <li>The service is available to both Jaws wire consumers and grpcurl</li>
  * </ol>
+ * <p>
+ * The consumer connects directly via {@code directUrl} without registry discovery.
  * <p>
  * Test with grpcurl:
  * <pre>
@@ -34,12 +35,6 @@ public class WireProvider {
         protocolConfig.setTransportFactory("wire");
         protocolConfig.setPort(PORT);
 
-        RegistryConfig registryConfig = new RegistryConfig();
-        registryConfig.setProtocol("nacos");
-        registryConfig.setId("defaultRegistry");
-        registryConfig.setAddress("127.0.0.1");
-        registryConfig.setPort(8848);
-
         ServiceConfig<GreeterService> serviceConfig = new ServiceConfig<>();
         serviceConfig.setInterface(GreeterService.class);
         serviceConfig.setRef(new GreeterServiceImpl());
@@ -47,11 +42,9 @@ public class WireProvider {
         serviceConfig.setModule("sample-wire");
         serviceConfig.setCheck(true);
         serviceConfig.setProtocol(protocolConfig);
-        serviceConfig.setRegistry(registryConfig);
         serviceConfig.export();
-
-        System.out.println("GreeterService exported via WireProtocol on port " + PORT);
-        System.out.println("Registry: nacos://127.0.0.1:8848");
+        System.out.println("GreeterService exported via WireProtocol (direct mode, no registry).");
+        System.out.println("Provider listening on port " + PORT + ". Consumer should use directUrl=127.0.0.1:" + PORT);
         System.out.println();
         System.out.println("Test with grpcurl:");
         System.out.println("  grpcurl -plaintext -import-path <proto-dir> -proto greeter.proto \\");

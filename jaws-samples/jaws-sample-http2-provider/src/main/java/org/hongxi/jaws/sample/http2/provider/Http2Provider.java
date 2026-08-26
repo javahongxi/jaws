@@ -5,8 +5,10 @@ import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.OrderService;
+import org.hongxi.jaws.sample.api.StreamService;
 import org.hongxi.jaws.sample.http2.provider.service.DemoServiceImpl;
 import org.hongxi.jaws.sample.http2.provider.service.OrderServiceImpl;
+import org.hongxi.jaws.sample.http2.provider.service.StreamServiceImpl;
 
 /**
  * HTTP/2 transport provider - same as netty sample but with {@code transportFactory=http2}.
@@ -14,8 +16,9 @@ import org.hongxi.jaws.sample.http2.provider.service.OrderServiceImpl;
  * <pre>
  * Demo scenario:
  * 1. jaws protocol, no registry (export only, skip registration)
- * 2. Multi-Service publishing - DemoService + OrderService
+ * 2. Multi-Service publishing - DemoService + OrderService + StreamService
  * 3. group/version configuration
+ * 4. Server streaming over HTTP/2 (StreamService with Flow.Publisher)
  * </pre>
  *
  * <p>The consumer connects directly via {@code directUrl} without registry discovery.
@@ -52,6 +55,18 @@ public class Http2Provider {
         orderServiceConfig.setProtocol(protocolConfig);
         orderServiceConfig.export();
         System.out.println("OrderService exported (direct mode, no registry).");
+
+        /* Export StreamService (server streaming over HTTP/2) */
+        ServiceConfig<StreamService> streamServiceConfig = new ServiceConfig<>();
+        streamServiceConfig.setRef(new StreamServiceImpl());
+        streamServiceConfig.setApplication("sample-http2-provider");
+        streamServiceConfig.setModule("sample-http2");
+        streamServiceConfig.setInterface(StreamService.class);
+        streamServiceConfig.setGroup("test");
+        streamServiceConfig.setVersion("2.0");
+        streamServiceConfig.setProtocol(protocolConfig);
+        streamServiceConfig.export();
+        System.out.println("StreamService exported (server streaming over HTTP/2).");
 
         System.out.println("Provider listening on port " + PORT + ". Consumer should use directUrl=127.0.0.1:" + PORT);
     }

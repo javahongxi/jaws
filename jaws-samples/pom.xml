@@ -24,8 +24,6 @@
         <module>jaws-sample-boot-consumer</module>
         <module>jaws-sample-netty-provider</module>
         <module>jaws-sample-netty-consumer</module>
-        <module>jaws-sample-stream-provider</module>
-        <module>jaws-sample-stream-consumer</module>
         <module>jaws-sample-http2-provider</module>
         <module>jaws-sample-http2-consumer</module>
         <module>jaws-sample-wire-api</module>

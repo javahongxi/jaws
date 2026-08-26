@@ -1,11 +1,11 @@
-package org.hongxi.jaws.sample.stream.provider.service;
+package org.hongxi.jaws.sample.http2.provider.service;
 
 import org.hongxi.jaws.sample.api.StreamService;
 
 import java.util.concurrent.Flow;
 
 /**
- * StreamService implementation for stream-mode provider.
+ * StreamService implementation for the HTTP/2 provider sample.
  */
 public class StreamServiceImpl implements StreamService {
 

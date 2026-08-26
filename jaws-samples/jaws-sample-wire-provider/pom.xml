@@ -24,11 +24,6 @@
         </dependency>
         <dependency>
             <groupId>org.hongxi</groupId>
-            <artifactId>jaws-registry-nacos</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.hongxi</groupId>
             <artifactId>jaws-sample-wire-api</artifactId>
             <version>${project.version}</version>
         </dependency>
