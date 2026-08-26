@@ -24,23 +24,29 @@ public class GreeterServiceImpl implements GreeterService {
     public Flow.Publisher<HelloReply> sayHelloStream(HelloRequest request) {
         System.out.println("Received streaming request: " + request.getName());
         SubmissionPublisher<HelloReply> publisher = new SubmissionPublisher<>();
-        // Emit 3 greeting messages asynchronously
-        Thread thread = new Thread(() -> {
-            for (int i = 1; i <= 3; i++) {
-                publisher.submit(HelloReply.newBuilder()
-                        .setMessage("Hello #" + i + ", " + request.getName() + "! (from jaws-wire stream)")
-                        .build());
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
+        // Defer emission until subscription: SubmissionPublisher drops items
+        // submitted while there are no subscribers, and the framework only
+        // subscribes after this method returns. Emitting first would race
+        // the framework's subscribe and could drop early items.
+        return subscriber -> {
+            publisher.subscribe(subscriber);
+            // Emission starts after the subscription is registered
+            Thread thread = new Thread(() -> {
+                for (int i = 1; i <= 3; i++) {
+                    publisher.submit(HelloReply.newBuilder()
+                            .setMessage("Hello #" + i + ", " + request.getName() + "! (from jaws-wire stream)")
+                            .build());
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
-            }
-            publisher.close();
-        });
-        thread.setDaemon(true);
-        thread.start();
-        return publisher;
+                publisher.close();
+            });
+            thread.setDaemon(true);
+            thread.start();
+        };
     }
 }

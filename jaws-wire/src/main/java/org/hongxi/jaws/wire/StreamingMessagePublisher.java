@@ -12,8 +12,10 @@ import java.util.concurrent.Flow;
  * <p>
  * Items are produced by the Netty event loop (via {@link #addItem(Message)})
  * and consumed by the application subscriber. The publisher buffers all items
- * internally; each subscriber independently tracks its consumption index so
- * that multiple subscribers can iterate the stream at their own pace.
+ * internally; every subscriber receives the full stream from the beginning —
+ * including items that were buffered before it subscribed (the application
+ * subscribes only after the RPC call returns, so early items commonly race
+ * ahead of subscription).
  * <p>
  * Thread-safety: all mutable state is guarded by {@code synchronized} blocks
  * on this instance. A {@code draining} flag ensures that at most one thread
@@ -69,7 +71,12 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
     public void subscribe(Flow.Subscriber<? super Message> subscriber) {
         StreamingSubscription sub;
         synchronized (this) {
-            sub = new StreamingSubscription(subscriber, items.size());
+            // Start from index 0: a subscriber must receive the full stream,
+            // including items that arrived (and were buffered) before it
+            // subscribed. In the RPC flow the application subscribes only
+            // after requestStream() returns, so the first items typically
+            // race ahead of subscription.
+            sub = new StreamingSubscription(subscriber, 0);
             subscribers.add(sub);
         }
         subscriber.onSubscribe(sub);

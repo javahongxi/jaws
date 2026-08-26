@@ -14,6 +14,13 @@ import java.util.concurrent.Flow;
  * {@link com.google.protobuf.Message} subclasses — this is the Protobuf
  * Message mode only; the TripleRequestWrapper mode is not supported.
  * <p>
+ * Contract for streaming publishers: the framework subscribes only after the
+ * provider method returns, so the returned publisher must not drop items
+ * emitted before subscription. Note that {@link java.util.concurrent.SubmissionPublisher}
+ * drops items submitted while it has no subscribers — defer emission until
+ * {@code subscribe()} is called (see the wire provider sample for the safe
+ * pattern), or return a cold publisher.
+ * <p>
  * Typical usage: implement this interface directly, or use a helper that
  * extracts the handler from protoc-generated service base classes.
  *
