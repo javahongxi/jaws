@@ -9,6 +9,8 @@ import org.hongxi.jaws.transport.Server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Set;
+
 /**
  * {@link org.hongxi.jaws.transport.TransportFactory} SPI implementation for the
  * wire (gRPC wire format) transport, registered as {@code @Extension("wire")}.
@@ -34,9 +36,9 @@ public class WireTransportFactory extends AbstractTransportFactory {
     private static final Logger log = LoggerFactory.getLogger(WireTransportFactory.class);
 
     @Override
-    public java.util.Set<String> supportedProtocols() {
+    public Set<String> supportedProtocols() {
         // gRPC wire format is bound to HTTP/2 framing by definition
-        return java.util.Set.of("wire");
+        return Set.of("wire");
     }
 
     @Override

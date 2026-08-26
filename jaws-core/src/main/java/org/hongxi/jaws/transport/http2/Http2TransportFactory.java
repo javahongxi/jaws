@@ -7,6 +7,8 @@ import org.hongxi.jaws.transport.Client;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.Server;
 
+import java.util.Set;
+
 /**
  * {@link org.hongxi.jaws.transport.TransportFactory} implementation backed by
  * raw Netty HTTP/2 (h2c prior-knowledge), without any gRPC/protobuf dependency.
@@ -28,9 +30,9 @@ import org.hongxi.jaws.transport.Server;
 public class Http2TransportFactory extends AbstractTransportFactory {
 
     @Override
-    public java.util.Set<String> supportedProtocols() {
+    public Set<String> supportedProtocols() {
         // The jaws protocol re-encoded onto HTTP/2 HEADERS + DATA frames
-        return java.util.Set.of("jaws");
+        return Set.of("jaws");
     }
 
     @Override

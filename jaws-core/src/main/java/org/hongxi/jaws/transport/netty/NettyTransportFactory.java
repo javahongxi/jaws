@@ -7,6 +7,8 @@ import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.Server;
 import org.hongxi.jaws.transport.AbstractTransportFactory;
 
+import java.util.Set;
+
 /**
  * {@code netty} {@link org.hongxi.jaws.common.extension.Extension} of
  * {@link AbstractTransportFactory} that instantiates the Netty transport
@@ -22,9 +24,9 @@ import org.hongxi.jaws.transport.AbstractTransportFactory;
 public class NettyTransportFactory extends AbstractTransportFactory {
 
     @Override
-    public java.util.Set<String> supportedProtocols() {
+    public Set<String> supportedProtocols() {
         // The jaws binary protocol (0x4A57 magic framing) over Netty TCP
-        return java.util.Set.of("jaws");
+        return Set.of("jaws");
     }
 
     @Override

@@ -3,6 +3,8 @@ package org.hongxi.jaws.transport;
 import org.hongxi.jaws.common.extension.Spi;
 import org.hongxi.jaws.rpc.URL;
 
+import java.util.Set;
+
 /**
  * SPI for creating transport-level {@link Server} and {@link Client} instances.
  * <p>
@@ -25,7 +27,7 @@ public interface TransportFactory {
      *
      * @return the supported protocol names, or null for "any protocol"
      */
-    default java.util.Set<String> supportedProtocols() {
+    default Set<String> supportedProtocols() {
         return null;
     }
 
