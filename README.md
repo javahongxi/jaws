@@ -14,7 +14,7 @@ gRPC 线格式跨语言互通)、 Server Streaming、自适应负载均衡与高
 ## 特性
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，编解码全链路零拷贝（零额外 byte[] 分配）
-- **HTTP/2 传输** — 基于 Netty 自研 HTTP/2 传输，支持 Server Streaming 流式调用
+- **HTTP/2 传输** — 自研 HTTP/2 传输，支持 Server Streaming，元数据头镜像与 /health 探活，网关友好
 - **gRPC 线格式** — `jaws-wire` 模块支持标准 gRPC 线格式与 protobuf 序列化，兼容 grpcurl 等标准工具
 - **多种序列化** — 内置 fastjson2 / hessian2 / protostuff，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
