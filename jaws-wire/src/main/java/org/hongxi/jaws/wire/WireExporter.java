@@ -8,6 +8,7 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.ProviderMessageHandler;
 import org.hongxi.jaws.transport.Server;
 import org.hongxi.jaws.transport.TransportFactory;
+import org.hongxi.jaws.transport.TransportResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,9 +49,7 @@ public class WireExporter<T> extends AbstractExporter<T> {
         WireMessageHandler wireHandler = new WireMessageHandler(
                 baseHandler, protoTypes);
 
-        server = ExtensionLoader.getExtensionLoader(TransportFactory.class)
-                .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY))
-                .createServer(url, wireHandler);
+        server = TransportResolver.resolve(url).createServer(url, wireHandler);
     }
 
     @Override

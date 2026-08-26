@@ -34,6 +34,12 @@ public class WireTransportFactory extends AbstractTransportFactory {
     private static final Logger log = LoggerFactory.getLogger(WireTransportFactory.class);
 
     @Override
+    public java.util.Set<String> supportedProtocols() {
+        // gRPC wire format is bound to HTTP/2 framing by definition
+        return java.util.Set.of("wire");
+    }
+
+    @Override
     protected Server innerCreateServer(URL url, MessageHandler messageHandler) {
         return new WireServer(url, messageHandler);
     }

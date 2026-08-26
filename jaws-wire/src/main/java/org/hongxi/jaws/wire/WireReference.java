@@ -12,6 +12,7 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Client;
 import org.hongxi.jaws.transport.TransportFactory;
+import org.hongxi.jaws.transport.TransportResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,8 +45,7 @@ public class WireReference<T> extends AbstractReference<T> {
         super(interfaceClass, url);
         this.protoTypes = WireProtoTypes.fromServiceInterface(interfaceClass);
 
-        transportFactory = ExtensionLoader.getExtensionLoader(TransportFactory.class)
-                .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY));
+        transportFactory = TransportResolver.resolve(url);
         client = transportFactory.createClient(url);
     }
 

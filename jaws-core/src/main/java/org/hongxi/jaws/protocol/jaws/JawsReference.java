@@ -10,6 +10,7 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Client;
 import org.hongxi.jaws.transport.TransportFactory;
+import org.hongxi.jaws.transport.TransportResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,8 +33,7 @@ public class JawsReference<T> extends AbstractReference<T> {
 
     public JawsReference(Class<T> interfaceClass, URL url) {
         super(interfaceClass, url);
-        transportFactory = ExtensionLoader.getExtensionLoader(TransportFactory.class)
-                .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY));
+        transportFactory = TransportResolver.resolve(url);
         client = transportFactory.createClient(url);
     }
 

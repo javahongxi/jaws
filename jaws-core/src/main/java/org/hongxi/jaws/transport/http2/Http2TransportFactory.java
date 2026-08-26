@@ -28,6 +28,12 @@ import org.hongxi.jaws.transport.Server;
 public class Http2TransportFactory extends AbstractTransportFactory {
 
     @Override
+    public java.util.Set<String> supportedProtocols() {
+        // The jaws protocol re-encoded onto HTTP/2 HEADERS + DATA frames
+        return java.util.Set.of("jaws");
+    }
+
+    @Override
     protected Server innerCreateServer(URL url, MessageHandler messageHandler) {
         return new Http2Server(url, messageHandler);
     }

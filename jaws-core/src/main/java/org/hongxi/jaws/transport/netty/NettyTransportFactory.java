@@ -20,6 +20,13 @@ import org.hongxi.jaws.transport.AbstractTransportFactory;
  */
 @Extension("netty")
 public class NettyTransportFactory extends AbstractTransportFactory {
+
+    @Override
+    public java.util.Set<String> supportedProtocols() {
+        // The jaws binary protocol (0x4A57 magic framing) over Netty TCP
+        return java.util.Set.of("jaws");
+    }
+
     @Override
     protected Server innerCreateServer(URL url, MessageHandler messageHandler) {
         return new NettyServer(url, messageHandler);

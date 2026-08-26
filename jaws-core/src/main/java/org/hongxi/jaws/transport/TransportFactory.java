@@ -16,6 +16,20 @@ import org.hongxi.jaws.rpc.URL;
 public interface TransportFactory {
 
     /**
+     * The RPC protocol names this transport can carry. Used at assembly time
+     * to validate the protocol × transport combination and to pick a default
+     * transport for a protocol when none is configured explicitly.
+     * <p>
+     * Returns {@code null} (legacy behavior) to skip validation — transports
+     * that predate this method keep working unconditionally.
+     *
+     * @return the supported protocol names, or null for "any protocol"
+     */
+    default java.util.Set<String> supportedProtocols() {
+        return null;
+    }
+
+    /**
      * Create a {@link Server} bound to the address specified by the URL.
      * <p>
      * The returned server listens for incoming connections and dispatches

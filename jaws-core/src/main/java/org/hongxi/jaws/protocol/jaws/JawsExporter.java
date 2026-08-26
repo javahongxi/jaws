@@ -8,6 +8,7 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.ProviderMessageHandler;
 import org.hongxi.jaws.transport.Server;
 import org.hongxi.jaws.transport.TransportFactory;
+import org.hongxi.jaws.transport.TransportResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,9 +33,7 @@ public class JawsExporter<T> extends AbstractExporter<T> {
                 url.getHostPort(), key -> new ProviderMessageHandler());
         messageHandler.addProvider(provider);
 
-        server = ExtensionLoader.getExtensionLoader(TransportFactory.class)
-                .getExtension(url.getParameter(UrlParam.Transport.TRANSPORT_FACTORY))
-                .createServer(url, messageHandler);
+        server = TransportResolver.resolve(url).createServer(url, messageHandler);
     }
 
     @Override
