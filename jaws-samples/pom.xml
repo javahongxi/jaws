@@ -22,7 +22,6 @@
         <module>jaws-sample-benchmark</module>
         <module>jaws-sample-boot-provider</module>
         <module>jaws-sample-boot-consumer</module>
-        <module>jaws-sample-mcp</module>
         <module>jaws-sample-netty-provider</module>
         <module>jaws-sample-netty-consumer</module>
         <module>jaws-sample-stream-provider</module>

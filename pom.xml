@@ -12,7 +12,6 @@
         <module>jaws-core</module>
         <module>jaws-registry-zookeeper</module>
         <module>jaws-registry-nacos</module>
-        <module>jaws-mcp</module>
         <module>jaws-wire</module>
         <module>jaws-spring-boot</module>
         <module>jaws-extensions</module>

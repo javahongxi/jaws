@@ -28,7 +28,6 @@ gRPC 线格式跨语言互通)、 Server Streaming、自适应负载均衡与高
 - **可观测性** — 可选 Micrometer 指标采集和 OpenTelemetry 链路追踪，通过 Filter SPI 自动生效
 - **动态配置** — 支持全局/服务级/方法级三层热更新（超时、重试、路由规则、Filter 开关等）
 - **泛化调用** — 无需依赖接口 JAR 包即可发起 RPC 调用，适用于网关、测试平台等场景
-- **MCP 桥接** — 将 Jaws RPC 服务自动暴露为 MCP Tools，AI Agent 可直接调用后端服务
 
 ## 快速开始
 
@@ -179,7 +178,6 @@ public class MyRunner implements CommandLineRunner {
 | [连接预热](doc/warm-up.md)                 | Provider 冷启动权重渐增                  |
 | [可观测性](doc/observability.md)           | Micrometer 指标 + OpenTelemetry 链路追踪 |
 | [动态配置](doc/dynamic-config.md)          | 全局/服务级/方法级三层热更新             |
-| [MCP 桥接](doc/mcp-bridge.md)              | 将 RPC 服务自动暴露为 MCP Tools          |
 | [与 Dubbo 对比](doc/dubbo-comparison.md)   | 八个维度的系统性能力对比                 |
 | [注册中心对比](doc/registry-comparison.md) | Nacos 与 ZooKeeper 实现对比              |
 | [编解码设计](doc/codec-comparison.md)      | Jaws 与 Dubbo 编解码架构对比分析         |
