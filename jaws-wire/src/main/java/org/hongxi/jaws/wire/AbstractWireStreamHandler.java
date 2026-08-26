@@ -89,7 +89,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
             return;
         }
 
-        onHeadersResolved(ctx, path, endStream);
+        onHeadersResolved(ctx, headers, path, endStream);
 
         if (endStream) {
             sendTrailers(ctx, WireConstants.STATUS_INTERNAL, "Missing request payload");
@@ -97,15 +97,18 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Handle the resolved {@code :path}. Called once, after the path has been
-     * extracted and validated, before the "missing payload" check for
-     * END_STREAM-only headers.
+     * Handle the resolved request HEADERS. Called once, after the path has
+     * been extracted and validated, before the "missing payload" check for
+     * END_STREAM-only headers. Implementations typically route the path and
+     * may read protocol headers relevant to dispatch (e.g. grpc-timeout).
      *
      * @param ctx        the stream channel context
+     * @param headers    the full request headers (path included)
      * @param path       the request path (never null here)
      * @param endStream  whether the HEADERS frame already ended the stream
      */
-    protected abstract void onHeadersResolved(ChannelHandlerContext ctx, String path, boolean endStream);
+    protected abstract void onHeadersResolved(ChannelHandlerContext ctx, Http2Headers headers,
+                                              String path, boolean endStream);
 
     private void onData(ChannelHandlerContext ctx, Http2DataFrame dataFrame) {
         try {
@@ -175,7 +178,8 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
             public void onError(Throwable throwable) {
                 log.error("{} streaming error: path={}", logPrefix, path, throwable);
                 if (ctx.channel().isActive()) {
-                    sendTrailers(ctx, WireConstants.STATUS_INTERNAL,
+                    // Map failure class to grpc-status (retryable/deadline semantics)
+                    sendTrailers(ctx, WireStatus.fromThrowable(throwable),
                             "Stream failed: " + throwable.getMessage());
                 }
             }

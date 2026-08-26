@@ -106,11 +106,10 @@ class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
 
     private void completeOrFail() {
         if (grpcStatus != WireConstants.STATUS_OK && grpcStatus >= 0) {
-            String errorMsg = "gRPC error: status=" + grpcStatus;
-            if (grpcMessage != null) {
-                errorMsg += ", message=" + grpcMessage;
-            }
-            publisher.completeExceptionally(new RuntimeException(errorMsg));
+            // Surface a semantically typed exception: DEADLINE_EXCEEDED carries the
+            // jaws timeout error code, UNAVAILABLE is flagged retryable
+            publisher.completeExceptionally(
+                    WireStatus.toException(grpcStatus, grpcMessage));
             return;
         }
         publisher.complete();

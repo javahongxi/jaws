@@ -4,6 +4,7 @@ import com.google.protobuf.Message;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
+import io.netty.handler.codec.http2.Http2Headers;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
@@ -36,7 +37,7 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
     }
 
     @Override
-    protected void onHeadersResolved(ChannelHandlerContext ctx, String path, boolean endStream) {
+    protected void onHeadersResolved(ChannelHandlerContext ctx, Http2Headers headers, String path, boolean endStream) {
         handler = registry.resolve(path);
         if (handler == null) {
             sendTrailers(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + path);
@@ -88,7 +89,8 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
             } catch (Exception e) {
                 log.error("Wire server invoke failed: path={}", path, e);
                 if (ctx.channel().isActive()) {
-                    sendTrailers(ctx, WireConstants.STATUS_INTERNAL,
+                    // Map failure class to grpc-status (retryable/deadline semantics)
+                    sendTrailers(ctx, WireStatus.fromThrowable(e),
                             "Invoke failed: " + e.getMessage());
                 }
             } finally {

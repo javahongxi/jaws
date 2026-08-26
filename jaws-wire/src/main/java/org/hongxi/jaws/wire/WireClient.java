@@ -121,7 +121,10 @@ public class WireClient extends AbstractHttp2Client {
                     .scheme(getSslContext() != null ? "https" : "http")
                     .path(grpcPath)
                     .authority(url.getHostPort())
-                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC);
+                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
+                    // Propagate the caller's deadline so the server can honor it
+                    // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
+                    .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
 
             // Encode request as gRPC frame
             ByteBuf frame = WireFrameCodec.encode(requestMessage, streamChannel.alloc());
@@ -192,7 +195,10 @@ public class WireClient extends AbstractHttp2Client {
                     .scheme(getSslContext() != null ? "https" : "http")
                     .path(grpcPath)
                     .authority(url.getHostPort())
-                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC);
+                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
+                    // Propagate the caller's deadline so the server can honor it
+                    // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
+                    .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
 
             // Wrap raw protobuf bytes into a gRPC frame
             ByteBuf frame = WireFrameCodec.encodeRawBytes(rawBytes, streamChannel.alloc());
@@ -249,6 +255,11 @@ public class WireClient extends AbstractHttp2Client {
 
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
+        int timeout = url.getMethodParameter(
+                request.getMethodName(), request.getParamDesc(),
+                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
+                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+
         StreamingMessagePublisher publisher = new StreamingMessagePublisher();
 
         try {
@@ -266,7 +277,10 @@ public class WireClient extends AbstractHttp2Client {
                     .scheme(getSslContext() != null ? "https" : "http")
                     .path(grpcPath)
                     .authority(url.getHostPort())
-                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC);
+                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
+                    // Propagate the caller's deadline so the server can honor it
+                    // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
+                    .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
 
             // Encode request as gRPC frame
             ByteBuf frame = WireFrameCodec.encode(requestMessage, streamChannel.alloc());

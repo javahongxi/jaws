@@ -4,6 +4,7 @@ import com.google.protobuf.Message;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
+import io.netty.handler.codec.http2.Http2Headers;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Response;
@@ -44,6 +45,9 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
     private String serviceName;
     private String methodName;
 
+    /** Caller's deadline parsed from the grpc-timeout header, in ms; 0 = none. */
+    private long grpcTimeoutMs;
+
     WireSpiServerStreamHandler(MessageHandler messageHandler, Channel serverChannel,
                                ExecutorService executor) {
         super("Wire SPI", executor);
@@ -52,7 +56,7 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
     }
 
     @Override
-    protected void onHeadersResolved(ChannelHandlerContext ctx, String path, boolean endStream) {
+    protected void onHeadersResolved(ChannelHandlerContext ctx, Http2Headers headers, String path, boolean endStream) {
         // Parse gRPC path: /{serviceName}/{methodName}
         if (path.startsWith("/")) {
             String trimmed = path.substring(1);
@@ -60,6 +64,16 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
             if (slashIdx > 0) {
                 serviceName = trimmed.substring(0, slashIdx);
                 methodName = trimmed.substring(slashIdx + 1);
+            }
+        }
+
+        // Honor the caller's deadline (gRPC timeout propagation): grpc-timeout header
+        CharSequence timeoutSeq = headers.get(WireStatus.GRPC_TIMEOUT);
+        if (timeoutSeq != null) {
+            grpcTimeoutMs = WireStatus.decodeTimeout(timeoutSeq.toString());
+            if (grpcTimeoutMs == -1) {
+                log.warn("Wire SPI malformed grpc-timeout header: {}", timeoutSeq);
+                grpcTimeoutMs = 0;
             }
         }
     }
@@ -97,6 +111,11 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
                 jawsRequest.setArguments(new Object[]{protobufBytes});
 
                 CompletableFuture<Object> future = messageHandler.handleAsync(serverChannel, jawsRequest);
+                if (grpcTimeoutMs > 0) {
+                    // Honor the caller's deadline: on expiry fail the stream with the
+                    // jaws timeout error code, which maps to grpc-status DEADLINE_EXCEEDED
+                    future = future.orTimeout(grpcTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                }
                 Object result = future.join();
 
                 // The result is typically a Response wrapping the business return value.
@@ -125,7 +144,10 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
             } catch (Exception e) {
                 log.error("Wire SPI invoke failed: path={}", path, e);
                 if (ctx.channel().isActive()) {
-                    sendTrailers(ctx, WireConstants.STATUS_INTERNAL,
+                    // Map the failure class to grpc-status so standard gRPC clients
+                    // see retryable (UNAVAILABLE) / deadline (DEADLINE_EXCEEDED)
+                    // semantics instead of a blanket INTERNAL
+                    sendTrailers(ctx, WireStatus.fromThrowable(e),
                             "Invoke failed: " + e.getMessage());
                 }
             } finally {
