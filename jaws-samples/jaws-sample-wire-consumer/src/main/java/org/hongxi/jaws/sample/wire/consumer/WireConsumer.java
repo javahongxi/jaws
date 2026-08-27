@@ -2,6 +2,7 @@ package org.hongxi.jaws.sample.wire.consumer;
 
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ReferenceConfig;
+import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.sample.wire.proto.GreeterService;
 import org.hongxi.jaws.sample.wire.proto.HelloReply;
 import org.hongxi.jaws.sample.wire.proto.HelloRequest;
@@ -23,6 +24,14 @@ import java.util.concurrent.Flow;
  * The pipeline is exercised: cluster → load balance → filter chain
  * → WireReference → WireClient → gRPC wire format.
  * <p>
+ * Also demonstrates the newer gRPC semantics:
+ * <ul>
+ *   <li>Metadata: {@link RpcContext} attachments travel as custom HTTP/2
+ *       headers and reach the provider as request attachments</li>
+ *   <li>Compression: requests are gzip-compressed on the wire
+ *       ({@code compression=gzip})</li>
+ * </ul>
+ * <p>
  * Run {@code WireProvider} first before starting this consumer.
  */
 public class WireConsumer {
@@ -34,6 +43,8 @@ public class WireConsumer {
         protocolConfig.setName("wire");
         protocolConfig.setId("wire");
         protocolConfig.setTransportFactory("wire");
+        // Compress request messages with gzip (grpc-encoding: gzip)
+        protocolConfig.setCompression("gzip");
 
         ReferenceConfig<GreeterService> ref = new ReferenceConfig<>();
         ref.setInterface(GreeterService.class);
@@ -45,6 +56,10 @@ public class WireConsumer {
         ref.setDirectUrl(DIRECT_URL);
 
         GreeterService greeterService = ref.getRef();
+
+        // Metadata: RpcContext attachments are sent as gRPC custom headers
+        // (x-trace-id) and surfaced to the provider as request attachments
+        RpcContext.getContext().setRpcAttachment("x-trace-id", "trace-demo-001");
 
         // First call
         HelloReply reply1 = greeterService.sayHello(

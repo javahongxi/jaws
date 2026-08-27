@@ -64,6 +64,9 @@ public class JawsAutoConfiguration {
         if (protocolProps.getHeartbeat() != null) {
             protocolConfig.setHeartbeat(protocolProps.getHeartbeat());
         }
+        if (protocolProps.getCompression() != null) {
+            protocolConfig.setCompression(protocolProps.getCompression());
+        }
         return protocolConfig;
     }
 

@@ -35,6 +35,11 @@ public class WireServer extends AbstractHttp2Server {
     private final WireServiceRegistry registry;
     private final MessageHandler messageHandler;
 
+    /** Max size of a single inbound gRPC message in bytes. */
+    private final int maxMessageSize;
+    /** Configured response compression encoding (identity or gzip). */
+    private final String compression;
+
     /**
      * Direct API mode: use a {@link WireServiceRegistry} for path-based routing
      * to typed {@link WireMethodHandler} instances.
@@ -43,6 +48,8 @@ public class WireServer extends AbstractHttp2Server {
         super(url, "WireServer");
         this.registry = registry;
         this.messageHandler = null;
+        this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
+        this.compression = normalizeCompression(url);
     }
 
     /**
@@ -53,6 +60,14 @@ public class WireServer extends AbstractHttp2Server {
         super(url, "WireServer");
         this.registry = null;
         this.messageHandler = messageHandler;
+        this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
+        this.compression = normalizeCompression(url);
+    }
+
+    private static String normalizeCompression(URL url) {
+        String configured = url.getParameter(UrlParam.Transport.COMPRESSION);
+        return configured != null && WireCompression.isSupported(configured)
+                ? configured : WireConstants.ENCODING_IDENTITY;
     }
 
     @Override
@@ -68,10 +83,11 @@ public class WireServer extends AbstractHttp2Server {
     protected void initStreamChannel(io.netty.channel.Channel streamChannel) {
         if (registry != null) {
             streamChannel.pipeline().addLast(
-                    new WireServerStreamHandler(registry, serverExecutor));
+                    new WireServerStreamHandler(registry, serverExecutor, maxMessageSize, compression));
         } else {
             streamChannel.pipeline().addLast(
-                    new WireSpiServerStreamHandler(messageHandler, this, serverExecutor));
+                    new WireSpiServerStreamHandler(messageHandler, this, serverExecutor,
+                            maxMessageSize, compression));
         }
     }
 }

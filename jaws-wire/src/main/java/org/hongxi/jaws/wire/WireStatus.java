@@ -17,7 +17,8 @@ import org.hongxi.jaws.exception.JawsServiceException;
  * <ul>
  *   <li>{@code SERVICE_TIMEOUT} (40003) → DEADLINE_EXCEEDED (4)</li>
  *   <li>Connection / transport failures → UNAVAILABLE (14) — retryable</li>
- *   <li>{@code SERVICE_METHOD_NOT_FOUND} (40102) / unknown path → NOT_FOUND (5)</li>
+ *   <li>{@code SERVICE_NOT_FOUND} (40101) / {@code SERVICE_METHOD_NOT_FOUND} (40102)
+ *       / unknown path → NOT_FOUND (5)</li>
  *   <li>Unsupported feature / method → UNIMPLEMENTED (12)</li>
  *   <li>{@link JawsBizException} → UNKNOWN (2) — business logic outcome, not a transport fault</li>
  *   <li>Everything else → INTERNAL (13)</li>
@@ -60,7 +61,8 @@ public final class WireStatus {
         if (jse != null && jse.getErrorCode() == JawsErrorCode.SERVICE_TIMEOUT) {
             return STATUS_DEADLINE_EXCEEDED;
         }
-        if (jse != null && jse.getErrorCode() == JawsErrorCode.SERVICE_METHOD_NOT_FOUND) {
+        if (jse != null && (jse.getErrorCode() == JawsErrorCode.SERVICE_METHOD_NOT_FOUND
+                || jse.getErrorCode() == JawsErrorCode.SERVICE_NOT_FOUND)) {
             return WireConstants.STATUS_NOT_FOUND;
         }
         if (isConnectivityFailure(e)) {

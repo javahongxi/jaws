@@ -161,6 +161,11 @@ public class JawsProperties {
          */
         private Long heartbeat;
 
+        /**
+         * Message compression encoding for the wire protocol (identity or gzip).
+         */
+        private String compression;
+
         public String getName() {
             return name;
         }
@@ -215,6 +220,14 @@ public class JawsProperties {
 
         public void setHeartbeat(Long heartbeat) {
             this.heartbeat = heartbeat;
+        }
+
+        public String getCompression() {
+            return compression;
+        }
+
+        public void setCompression(String compression) {
+            this.compression = compression;
         }
     }
 

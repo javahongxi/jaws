@@ -5,7 +5,9 @@ import com.google.protobuf.Parser;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.codec.http2.DefaultHttp2ResetFrame;
 import io.netty.handler.codec.http2.Http2DataFrame;
+import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
@@ -20,10 +22,11 @@ import org.slf4j.LoggerFactory;
  * decodes each incoming gRPC frame and feeds it to a
  * {@link StreamingMessagePublisher} that implements {@link java.util.concurrent.Flow.Publisher}.
  * <p>
- * The handler accumulates DATA frame bytes, extracts complete gRPC frames via
- * {@link WireFrameCodec#tryExtractFrame(ByteBuf)}, decodes each protobuf
- * message, and publishes it. When the trailers HEADERS frame (END_STREAM)
- * arrives, the publisher is completed.
+ * The handler accumulates DATA frame bytes (guarded by the max-inbound
+ * message size), extracts complete gRPC frames via
+ * {@link WireFrameCodec#tryExtractFrame(ByteBuf)}, decompresses and decodes
+ * each protobuf message, and publishes it. When the trailers HEADERS frame
+ * (END_STREAM) arrives, the publisher is completed.
  *
  * @author shenhongxi
  */
@@ -32,15 +35,19 @@ class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
 
     private final Parser<? extends Message> responseParser;
     private final StreamingMessagePublisher publisher;
+    private final int maxMessageSize;
 
     private ByteBuf accumulator;
     private int grpcStatus = -1;
     private String grpcMessage;
+    private String responseEncoding = WireConstants.ENCODING_IDENTITY;
 
     WireClientStreamingHandler(Parser<? extends Message> responseParser,
-                               StreamingMessagePublisher publisher) {
+                               StreamingMessagePublisher publisher,
+                               int maxMessageSize) {
         this.responseParser = responseParser;
         this.publisher = publisher;
+        this.maxMessageSize = maxMessageSize;
     }
 
     @Override
@@ -53,6 +60,12 @@ class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
                     CharSequence messageSeq = headersFrame.headers().get(WireConstants.GRPC_MESSAGE);
                     if (messageSeq != null) {
                         grpcMessage = messageSeq.toString();
+                    }
+                } else {
+                    // Initial response HEADERS: capture the response message encoding
+                    CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
+                    if (encodingSeq != null) {
+                        responseEncoding = encodingSeq.toString();
                     }
                 }
                 if (headersFrame.isEndStream()) {
@@ -79,6 +92,16 @@ class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
             }
             accumulator.writeBytes(content);
 
+            // Guard against oversized responses: fail the stream and reset
+            // instead of buffering unbounded data
+            if (accumulator.readableBytes() > maxMessageSize + WireConstants.GRPC_HEADER_SIZE) {
+                publisher.completeExceptionally(new RuntimeException(
+                        "gRPC response exceeds maxInboundMessageSize: " + maxMessageSize));
+                ctx.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
+                ctx.close();
+                return;
+            }
+
             // Extract and decode all complete gRPC frames from the accumulator
             while (true) {
                 ByteBuf frame = WireFrameCodec.tryExtractFrame(accumulator);
@@ -86,7 +109,7 @@ class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
                     break;
                 }
                 try {
-                    Message response = WireFrameCodec.decode(frame, responseParser);
+                    Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
                     publisher.addItem(response);
                 } catch (Exception e) {
                     log.error("Wire streaming decode failed", e);

@@ -6,6 +6,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
 import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
+import io.netty.handler.codec.http2.DefaultHttp2ResetFrame;
+import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
 import org.hongxi.jaws.common.UrlParam;
@@ -19,9 +21,12 @@ import org.hongxi.jaws.transport.http2.AbstractHttp2Client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 /**
  * gRPC client implementation based on Netty HTTP/2. The Netty bootstrap
@@ -32,7 +37,19 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * The request argument must be a protobuf {@link Message} (the first element
  * of {@link Request#getArguments()}). The response is decoded as a protobuf
- * {@link Message} and placed into a {@link DefaultResponse}.
+ * {@link Message} and placed into a {@link DefaultResponse}; custom metadata
+ * returned in the gRPC trailers is placed into the response attachments.
+ * <p>
+ * Request attachments are sent as gRPC metadata (custom HTTP/2 headers), see
+ * {@link WireMetadata}. The caller's deadline is propagated via the
+ * {@code grpc-timeout} header; a local timeout additionally cancels the
+ * stream with RST_STREAM(CANCEL) so the server stops work (gRPC
+ * cancellation semantics).
+ * <p>
+ * Message compression is controlled by the URL parameter {@code compression}
+ * ({@code identity} or {@code gzip}); compressed responses are always accepted.
+ * Inbound messages larger than {@code maxInboundMessageSize} (default 4MiB,
+ * same as grpc-java) fail the call.
  * <p>
  * The response parser is provided via the {@code responseParser} parameter
  * in the {@link #request(Request, Parser)} method, or via the URL parameter
@@ -49,8 +66,22 @@ public class WireClient extends AbstractHttp2Client {
      */
     private volatile Parser<? extends Message> responseParser;
 
+    /** Max size of a single inbound gRPC message in bytes. */
+    private final int maxMessageSize;
+    /** Outbound message compression encoding: identity or gzip. */
+    private final String compression;
+
     public WireClient(URL url) {
         super(url, "WireClient");
+        this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
+        String configured = url.getParameter(UrlParam.Transport.COMPRESSION);
+        if (configured != null
+                && !WireConstants.ENCODING_IDENTITY.equals(configured)
+                && !WireCompression.isSupported(configured)) {
+            log.warn("Unsupported wire compression '{}', falling back to identity", configured);
+            configured = WireConstants.ENCODING_IDENTITY;
+        }
+        this.compression = configured;
     }
 
     /**
@@ -95,68 +126,8 @@ public class WireClient extends AbstractHttp2Client {
                             + (args != null && args.length > 0 ? args[0].getClass().getName() : "null"));
         }
         Message requestMessage = (Message) args[0];
-
-        // Build gRPC path: /{interfaceName}/{methodName}
-        String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
-
-        int timeout = url.getMethodParameter(
-                request.getMethodName(), request.getParamDesc(),
-                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
-                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
-
-        CompletableFuture<Message> resultFuture = new CompletableFuture<>();
-
-        try {
-            io.netty.channel.Channel connChannel = activeConnection();
-
-            // Open a new HTTP/2 stream
-            io.netty.channel.Channel streamChannel =
-                    new Http2StreamChannelBootstrap(connChannel)
-                            .handler(new WireClientStreamHandler(responseParser, resultFuture))
-                            .open().syncUninterruptibly().getNow();
-
-            // Build gRPC request headers
-            Http2Headers headers = new DefaultHttp2Headers()
-                    .method("POST")
-                    .scheme(getSslContext() != null ? "https" : "http")
-                    .path(grpcPath)
-                    .authority(url.getHostPort())
-                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
-                    // Propagate the caller's deadline so the server can honor it
-                    // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
-                    .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
-
-            // Encode request as gRPC frame
-            ByteBuf frame = WireFrameCodec.encode(requestMessage, streamChannel.alloc());
-
-            // Send HEADERS + DATA(END_STREAM)
-            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, true))
-                    .addListener(f -> {
-                        if (!f.isSuccess()) {
-                            resultFuture.completeExceptionally(
-                                    new JawsServiceException("Wire stream write failed", f.cause()));
-                        }
-                    });
-
-            // Wait for response synchronously
-            Message responseMessage = resultFuture.get(timeout, TimeUnit.MILLISECONDS);
-
-            DefaultResponse response = new DefaultResponse(request.getRequestId());
-            response.setValue(responseMessage);
-            return response;
-
-        } catch (java.util.concurrent.TimeoutException e) {
-            throw new JawsServiceException("Wire request timeout: url=" + url.getUri()
-                    + " path=" + grpcPath + " timeout=" + timeout + "ms");
-        } catch (Exception e) {
-            log.error("Wire request failed: url={} path={}", url.getUri(), grpcPath, e);
-            if (e instanceof JawsAbstractException jae) {
-                throw jae;
-            }
-            throw new JawsServiceException("WireClient request failed: url="
-                    + url.getUri() + " path=" + grpcPath, e);
-        }
+        return doUnaryCall(request, responseParser,
+                alloc -> WireFrameCodec.encode(requestMessage, alloc, compression));
     }
 
     /**
@@ -173,37 +144,40 @@ public class WireClient extends AbstractHttp2Client {
         if (!isAvailable()) {
             throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
         }
+        return doUnaryCall(request, responseParser,
+                alloc -> WireFrameCodec.encodeRawBytes(rawBytes, alloc, compression));
+    }
 
+    /**
+     * Shared unary call flow: open a stream, send HEADERS + DATA(END_STREAM),
+     * and wait for the response within the request timeout. The request frame
+     * is encoded with the stream channel's allocator right before writing.
+     */
+    private Response doUnaryCall(Request request, Parser<? extends Message> responseParser,
+                                Function<io.netty.buffer.ByteBufAllocator, ByteBuf> frameEncoder) {
+        // Build gRPC path: /{interfaceName}/{methodName}
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
+
         int timeout = url.getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),
                 UrlParam.Transport.REQUEST_TIMEOUT.getName(),
                 UrlParam.Transport.REQUEST_TIMEOUT.intValue());
 
         CompletableFuture<Message> resultFuture = new CompletableFuture<>();
+        Map<String, String> trailerMetadata = new HashMap<>();
+        io.netty.channel.Channel streamChannel = null;
 
         try {
             io.netty.channel.Channel connChannel = activeConnection();
 
-            io.netty.channel.Channel streamChannel =
-                    new Http2StreamChannelBootstrap(connChannel)
-                            .handler(new WireClientStreamHandler(responseParser, resultFuture))
-                            .open().syncUninterruptibly().getNow();
+            // Open a new HTTP/2 stream
+            streamChannel = new Http2StreamChannelBootstrap(connChannel)
+                    .handler(new WireClientStreamHandler(responseParser, resultFuture,
+                            maxMessageSize, trailerMetadata))
+                    .open().syncUninterruptibly().getNow();
 
-            Http2Headers headers = new DefaultHttp2Headers()
-                    .method("POST")
-                    .scheme(getSslContext() != null ? "https" : "http")
-                    .path(grpcPath)
-                    .authority(url.getHostPort())
-                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
-                    // Propagate the caller's deadline so the server can honor it
-                    // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
-                    .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
-
-            // Wrap raw protobuf bytes into a gRPC frame
-            ByteBuf frame = WireFrameCodec.encodeRawBytes(rawBytes, streamChannel.alloc());
-
-            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+            ByteBuf frame = frameEncoder.apply(streamChannel.alloc());
+            streamChannel.write(new DefaultHttp2HeadersFrame(buildRequestHeaders(request, grpcPath, timeout)));
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
@@ -212,13 +186,20 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
 
+            // Wait for response synchronously
             Message responseMessage = resultFuture.get(timeout, TimeUnit.MILLISECONDS);
 
             DefaultResponse response = new DefaultResponse(request.getRequestId());
             response.setValue(responseMessage);
+            if (!trailerMetadata.isEmpty()) {
+                response.setAttachments(trailerMetadata);
+            }
             return response;
 
         } catch (java.util.concurrent.TimeoutException e) {
+            // Cancel the call: RST_STREAM(CANCEL) tells the server to stop
+            // working on it (gRPC cancellation semantics)
+            cancelStream(streamChannel);
             throw new JawsServiceException("Wire request timeout: url=" + url.getUri()
                     + " path=" + grpcPath + " timeout=" + timeout + "ms");
         } catch (Exception e) {
@@ -234,7 +215,8 @@ public class WireClient extends AbstractHttp2Client {
     /**
      * Send a server-streaming gRPC request and return a {@link Response} whose
      * value is a {@link Flow.Publisher Publisher&lt;Message&gt;} that emits
-     * each streamed response item.
+     * each streamed response item. Cancelling the returned subscription sends
+     * RST_STREAM(CANCEL) to abort the stream on the server.
      *
      * @param request        the RPC request; {@code arguments[0]} must be a protobuf {@link Message}
      * @param responseParser the parser for the expected response message type
@@ -268,25 +250,18 @@ public class WireClient extends AbstractHttp2Client {
             // Open a new HTTP/2 stream with the streaming handler
             io.netty.channel.Channel streamChannel =
                     new Http2StreamChannelBootstrap(connChannel)
-                            .handler(new WireClientStreamingHandler(responseParser, publisher))
+                            .handler(new WireClientStreamingHandler(responseParser, publisher, maxMessageSize))
                             .open().syncUninterruptibly().getNow();
 
-            // Build gRPC request headers
-            Http2Headers headers = new DefaultHttp2Headers()
-                    .method("POST")
-                    .scheme(getSslContext() != null ? "https" : "http")
-                    .path(grpcPath)
-                    .authority(url.getHostPort())
-                    .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
-                    // Propagate the caller's deadline so the server can honor it
-                    // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
-                    .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
+            // Subscriber cancel() → RST_STREAM(CANCEL): the server observes the
+            // reset and stops producing (gRPC cancellation semantics)
+            publisher.setCancelAction(() -> cancelStream(streamChannel));
 
             // Encode request as gRPC frame
-            ByteBuf frame = WireFrameCodec.encode(requestMessage, streamChannel.alloc());
+            ByteBuf frame = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
 
             // Send HEADERS + DATA(END_STREAM)
-            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel.write(new DefaultHttp2HeadersFrame(buildRequestHeaders(request, grpcPath, timeout)));
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
@@ -308,5 +283,44 @@ public class WireClient extends AbstractHttp2Client {
             throw new JawsServiceException("WireClient requestStream failed: url="
                     + url.getUri() + " path=" + grpcPath, e);
         }
+    }
+
+    /**
+     * Build the gRPC request HEADERS: pseudo-headers, content-type, the
+     * mandatory {@code te: trailers}, user-agent, encoding advertisement, the
+     * caller's deadline, and the request attachments as custom metadata.
+     */
+    private Http2Headers buildRequestHeaders(Request request, String grpcPath, int timeout) {
+        Http2Headers headers = new DefaultHttp2Headers()
+                .method("POST")
+                .scheme(getSslContext() != null ? "https" : "http")
+                .path(grpcPath)
+                .authority(url.getHostPort())
+                .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
+                .set(WireConstants.HEADER_TE, WireConstants.TE_TRAILERS)
+                .set(WireConstants.HEADER_USER_AGENT, WireConstants.USER_AGENT)
+                // Advertise that compressed responses are accepted
+                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ACCEPT_ENCODINGS)
+                // Propagate the caller's deadline so the server can honor it
+                // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
+                .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
+        if (compression != null && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
+            headers.set(WireConstants.GRPC_ENCODING, compression);
+        }
+        // Request attachments → gRPC metadata (custom headers)
+        WireMetadata.writeToHeaders(headers, request.getAttachments());
+        return headers;
+    }
+
+    /**
+     * Reset a stream with CANCEL (gRPC call cancellation) and close it.
+     * Best-effort: a null or already closed channel is ignored.
+     */
+    private static void cancelStream(io.netty.channel.Channel streamChannel) {
+        if (streamChannel == null || !streamChannel.isActive()) {
+            return;
+        }
+        streamChannel.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL))
+                .addListener(f -> streamChannel.close());
     }
 }

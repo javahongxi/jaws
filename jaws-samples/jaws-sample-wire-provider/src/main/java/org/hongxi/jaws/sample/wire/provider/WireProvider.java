@@ -16,6 +16,11 @@ import org.hongxi.jaws.sample.wire.provider.service.GreeterServiceImpl;
  *   <li>The service is available to both Jaws wire consumers and grpcurl</li>
  * </ol>
  * <p>
+ * Responses are gzip-compressed on the wire ({@code compression=gzip});
+ * callers that do not advertise gzip in grpc-accept-encoding get identity
+ * responses automatically. Request attachments (gRPC metadata) are surfaced
+ * to the service via {@code RpcContext}.
+ * <p>
  * The consumer connects directly via {@code directUrl} without registry discovery.
  * <p>
  * Test with grpcurl:
@@ -34,6 +39,8 @@ public class WireProvider {
         protocolConfig.setId("wire");
         protocolConfig.setTransportFactory("wire");
         protocolConfig.setPort(PORT);
+        // Compress response messages with gzip for callers that accept it
+        protocolConfig.setCompression("gzip");
 
         ServiceConfig<GreeterService> serviceConfig = new ServiceConfig<>();
         serviceConfig.setInterface(GreeterService.class);
@@ -44,6 +51,7 @@ public class WireProvider {
         serviceConfig.setProtocol(protocolConfig);
         serviceConfig.export();
         System.out.println("GreeterService exported via WireProtocol (direct mode, no registry).");
+        System.out.println("Responses compressed with gzip for callers advertising grpc-accept-encoding.");
         System.out.println("Provider listening on port " + PORT + ". Consumer should use directUrl=127.0.0.1:" + PORT);
         System.out.println();
         System.out.println("Test with grpcurl:");

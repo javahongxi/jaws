@@ -1,5 +1,6 @@
 package org.hongxi.jaws.sample.wire.provider.service;
 
+import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.sample.wire.proto.GreeterService;
 import org.hongxi.jaws.sample.wire.proto.HelloReply;
 import org.hongxi.jaws.sample.wire.proto.HelloRequest;
@@ -14,7 +15,10 @@ public class GreeterServiceImpl implements GreeterService {
 
     @Override
     public HelloReply sayHello(HelloRequest request) {
-        System.out.println("Received: " + request.getName());
+        // gRPC metadata sent by the caller arrives as request attachments
+        String traceId = RpcContext.getContext().getRpcAttachment("x-trace-id");
+        System.out.println("Received: " + request.getName()
+                + (traceId != null ? ", x-trace-id=" + traceId : ""));
         return HelloReply.newBuilder()
                 .setMessage("Hello, " + request.getName() + "! (from jaws-wire)")
                 .build();

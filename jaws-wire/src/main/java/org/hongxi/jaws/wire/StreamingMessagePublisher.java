@@ -34,6 +34,23 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
     private final List<StreamingSubscription> subscribers = new ArrayList<>();
 
     /**
+     * Invoked once when a subscriber cancels the stream; wired by the client
+     * to send RST_STREAM(CANCEL) so the server stops producing (gRPC
+     * cancellation semantics). Runs at most once.
+     */
+    private volatile Runnable cancelAction;
+    private boolean cancelActionFired;
+
+    /**
+     * Set the action to run when the stream is cancelled by the application.
+     * Must be called before the stream can be cancelled (right after the
+     * RPC is issued).
+     */
+    void setCancelAction(Runnable action) {
+        this.cancelAction = action;
+    }
+
+    /**
      * Called from the Netty event loop to add a decoded protobuf message.
      */
     synchronized void addItem(Message message) {
@@ -108,6 +125,19 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
         @Override
         public void cancel() {
             cancelled = true;
+            // Notify the transport once: the caller no longer wants the
+            // stream (sends RST_STREAM CANCEL so the server stops work)
+            synchronized (StreamingMessagePublisher.this) {
+                if (cancelActionFired || cancelAction == null) {
+                    return;
+                }
+                cancelActionFired = true;
+            }
+            try {
+                cancelAction.run();
+            } catch (Exception e) {
+                // Cancellation is best-effort; never surface to the subscriber
+            }
         }
 
         /**

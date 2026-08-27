@@ -113,6 +113,13 @@ public class ProtocolConfig extends AbstractConfig {
      */
     protected Integer connections;
 
+    /**
+     * Message compression encoding for the wire protocol ({@code identity}
+     * or {@code gzip}). Applied to outbound messages; inbound compressed
+     * messages are always accepted. Ignored by non-wire protocols.
+     */
+    protected String compression;
+
     @Override
     protected void collectParams(Map<String, String> params) {
         putIfPresent(params, "protocol", name);
@@ -129,6 +136,7 @@ public class ProtocolConfig extends AbstractConfig {
         putIfPresent(params, "sslPrivateKey", sslPrivateKey);
         putIfPresent(params, "sslTrustCert", sslTrustCert);
         putIfPresent(params, "connections", connections);
+        putIfPresent(params, "compression", compression);
     }
 
     public String getName() {
@@ -265,5 +273,15 @@ public class ProtocolConfig extends AbstractConfig {
 
     public void setConnections(Integer connections) {
         this.connections = connections;
+    }
+
+    // --- Wire compression getter/setter ---
+
+    public String getCompression() {
+        return compression;
+    }
+
+    public void setCompression(String compression) {
+        this.compression = compression;
     }
 }

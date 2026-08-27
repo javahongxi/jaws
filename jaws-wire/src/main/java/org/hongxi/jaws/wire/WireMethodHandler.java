@@ -37,6 +37,19 @@ public interface WireMethodHandler {
     Message handle(Message request);
 
     /**
+     * Handle a unary gRPC call with the per-call context (inbound metadata).
+     * The default implementation delegates to {@link #handle(Message)} for
+     * handlers that do not need the metadata.
+     *
+     * @param request the decoded protobuf request message
+     * @param context the call context carrying inbound gRPC metadata
+     * @return the protobuf response message
+     */
+    default Message handle(Message request, WireCallContext context) {
+        return handle(request);
+    }
+
+    /**
      * Handle a server-streaming gRPC call. The default implementation throws
      * {@link UnsupportedOperationException}; override for streaming methods.
      *
@@ -45,6 +58,19 @@ public interface WireMethodHandler {
      */
     default Flow.Publisher<Message> handleStream(Message request) {
         throw new UnsupportedOperationException("Not a streaming method");
+    }
+
+    /**
+     * Handle a server-streaming gRPC call with the per-call context (inbound
+     * metadata). The default implementation delegates to
+     * {@link #handleStream(Message)}.
+     *
+     * @param request the decoded protobuf request message
+     * @param context the call context carrying inbound gRPC metadata
+     * @return a publisher emitting response messages
+     */
+    default Flow.Publisher<Message> handleStream(Message request, WireCallContext context) {
+        return handleStream(request);
     }
 
     /**

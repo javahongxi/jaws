@@ -114,6 +114,21 @@ public final class UrlParam {
          */
         public static final Def<Long> PERMIT_PING_INTERVAL_MS = new Def<>("permitPingIntervalMs", 300_000L);
 
+        /**
+         * Maximum size of a single inbound gRPC message in bytes (wire
+         * transport, both client and server). Oversized messages are rejected
+         * with RESOURCE_EXHAUSTED, same default as grpc-java.
+         */
+        public static final Def<Integer> MAX_INBOUND_MESSAGE_SIZE =
+                new Def<>("maxInboundMessageSize", 4 * 1024 * 1024);
+
+        /**
+         * gRPC message compression encoding for outbound messages (wire
+         * transport, client side): {@code identity} (no compression) or
+         * {@code gzip}. Inbound compressed messages are always accepted.
+         */
+        public static final Def<String> COMPRESSION = new Def<>("compression", "identity");
+
         private Transport() {
         }
     }

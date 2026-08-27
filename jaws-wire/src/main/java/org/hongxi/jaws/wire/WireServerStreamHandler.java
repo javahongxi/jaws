@@ -14,13 +14,14 @@ import java.util.concurrent.Flow;
  * <p>
  * One instance is created per HTTP/2 stream by {@code Http2MultiplexHandler}.
  * It resolves the {@code :path} against the {@link WireServiceRegistry},
- * decodes the protobuf request, dispatches to the {@link WireMethodHandler}
- * on the business executor (streaming first, unary fallback), and encodes
- * the protobuf response as a gRPC frame.
+ * decodes the protobuf request (decompressing per {@code grpc-encoding}),
+ * dispatches to the {@link WireMethodHandler} on the business executor
+ * (streaming first, unary fallback) with the inbound metadata exposed via
+ * {@link WireCallContext}, and encodes the protobuf response as a gRPC frame.
  * <p>
  * The gRPC wire mechanics (DATA accumulation, frame extraction, response
- * writing, streaming dispatch, lifecycle) are provided by
- * {@link AbstractWireStreamHandler}.
+ * writing, deadline/cancellation handling, streaming dispatch, lifecycle)
+ * are provided by {@link AbstractWireStreamHandler}.
  *
  * @author shenhongxi
  */
@@ -31,8 +32,9 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
 
     private WireMethodHandler handler;
 
-    WireServerStreamHandler(WireServiceRegistry registry, ExecutorService executor) {
-        super("Wire server", executor);
+    WireServerStreamHandler(WireServiceRegistry registry, ExecutorService executor,
+                            int maxMessageSize, String responseEncoding) {
+        super("Wire server", executor, maxMessageSize, responseEncoding);
         this.registry = registry;
     }
 
@@ -40,7 +42,7 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
     protected void onHeadersResolved(ChannelHandlerContext ctx, Http2Headers headers, String path, boolean endStream) {
         handler = registry.resolve(path);
         if (handler == null) {
-            sendTrailers(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + path);
+            sendError(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + path);
         }
     }
 
@@ -61,36 +63,57 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
 
         final WireMethodHandler methodHandler = this.handler;
         final ByteBuf frameData = this.accumulator;
+        final WireCallContext callContext = attachments.isEmpty()
+                ? WireCallContext.EMPTY : new WireCallContext(attachments);
 
         executor.execute(() -> {
             ByteBuf frame = null;
             try {
-                frame = WireFrameCodec.tryExtractFrame(frameData);
-                if (frame == null) {
-                    sendTrailers(ctx, WireConstants.STATUS_INTERNAL, "Incomplete gRPC frame");
+                // Honor the caller's deadline before doing any work
+                if (isDeadlineExceeded()) {
+                    sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
                     return;
                 }
-                Message request = WireFrameCodec.decode(frame, methodHandler.getRequestParser());
+
+                frame = WireFrameCodec.tryExtractFrame(frameData);
+                if (frame == null) {
+                    sendError(ctx, WireConstants.STATUS_INTERNAL, "Incomplete gRPC frame");
+                    return;
+                }
+                Message request;
+                try {
+                    request = WireFrameCodec.decode(frame, methodHandler.getRequestParser(), requestEncoding);
+                } catch (IllegalArgumentException e) {
+                    sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, e.getMessage());
+                    return;
+                }
 
                 try {
                     // Try streaming first; falls back to UnsupportedOperationException
-                    Flow.Publisher<Message> publisher = methodHandler.handleStream(request);
+                    Flow.Publisher<Message> publisher = methodHandler.handleStream(request, callContext);
                     dispatchStreaming(ctx, publisher);
                 } catch (UnsupportedOperationException e) {
                     // Unary fallback
-                    Message response = methodHandler.handle(request);
-                    if (ctx.channel().isActive()) {
-                        sendResponseHeaders(ctx);
-                        ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc());
-                        ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
-                        sendTrailers(ctx, WireConstants.STATUS_OK, null);
+                    Message response = methodHandler.handle(request, callContext);
+                    if (cancelled || !ctx.channel().isActive()) {
+                        return;
                     }
+                    if (isDeadlineExceeded()) {
+                        // The deadline passed while the handler was running; do
+                        // not send the result, report DEADLINE_EXCEEDED instead
+                        sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
+                        return;
+                    }
+                    sendResponseHeaders(ctx);
+                    ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), responseEncoding);
+                    ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
+                    sendTrailers(ctx, WireConstants.STATUS_OK, null);
                 }
             } catch (Exception e) {
                 log.error("Wire server invoke failed: path={}", path, e);
-                if (ctx.channel().isActive()) {
+                if (!cancelled && ctx.channel().isActive()) {
                     // Map failure class to grpc-status (retryable/deadline semantics)
-                    sendTrailers(ctx, WireStatus.fromThrowable(e),
+                    sendError(ctx, WireStatus.fromThrowable(e),
                             "Invoke failed: " + e.getMessage());
                 }
             } finally {

@@ -48,6 +48,12 @@
             <artifactId>grpc-protobuf</artifactId>
             <version>${grpc.version}</version>
         </dependency>
+        <!-- grpc.health.v1 stubs (HealthGrpc, HealthCheckRequest/Response) -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-services</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
