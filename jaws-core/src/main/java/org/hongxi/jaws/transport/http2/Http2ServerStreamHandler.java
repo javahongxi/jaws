@@ -252,7 +252,13 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                             .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE);
                     ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
                     ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                            Unpooled.wrappedBuffer(responseBytes), true));
+                            Unpooled.wrappedBuffer(responseBytes), true))
+                            .addListener(f -> {
+                                if (!f.isSuccess()) {
+                                    log.error("Failed to write unary response: requestId={}",
+                                            request.getRequestId(), f.cause());
+                                }
+                            });
                 }
             } catch (Exception e) {
                 log.error("HTTP/2 response serialization failed: requestId={}",
@@ -340,7 +346,12 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                 String errorMsg = error.getMessage() != null ? error.getMessage() : error.getClass().getName();
                 byte[] errorBytes = errorMsg.getBytes(StandardCharsets.UTF_8);
                 ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                        Unpooled.wrappedBuffer(errorBytes), true));
+                        Unpooled.wrappedBuffer(errorBytes), true))
+                        .addListener(f -> {
+                            if (!f.isSuccess()) {
+                                log.error("Failed to send stream error", f.cause());
+                            }
+                        });
             } catch (Exception e) {
                 log.error("Failed to send stream error", e);
             }
@@ -356,6 +367,11 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                 .set(Http2Constants.HEADER_CONTENT_TYPE, "text/plain; charset=utf-8");
         ctx.write(new DefaultHttp2HeadersFrame(headers));
         ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                Unpooled.copiedBuffer(message, StandardCharsets.UTF_8), true));
+                Unpooled.copiedBuffer(message, StandardCharsets.UTF_8), true))
+                .addListener(f -> {
+                    if (!f.isSuccess()) {
+                        log.error("Failed to send error response: status={}", status, f.cause());
+                    }
+                });
     }
 }

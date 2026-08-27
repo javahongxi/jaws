@@ -31,15 +31,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Netty-based {@link org.hongxi.jaws.transport.Server} implementation built on
  * boss/worker {@link io.netty.channel.EventLoopGroup} NIO transport. Each child
- * channel runs the pipeline connection_limit → IdleStateHandler → HeartbeatHandler
+ * channel runs the pipeline IdleStateHandler → HeartbeatHandler
  * → {@link NettyDecoder} → {@link NettyChannelHandler}, the last of which
  * dispatches decoded requests to a dedicated business thread pool.
  * <p>
  * Supports graceful shutdown via {@link #stopAccept()} and
  * {@link #awaitInactiveRequests(long)}, which stop taking new connections
  * and wait for in-flight requests to drain.
- *
- * @see ConnectionLimitHandler
  * <p>
  * Created by shenhongxi on 2020/6/27.
  */
@@ -52,7 +50,6 @@ public class NettyServer extends AbstractServer {
     private EventLoopGroup workerGroup;
     // volatile: written under the instance lock in open(), read lock-free in stopAccept()
     private volatile Channel serverChannel;
-    protected ConnectionLimitHandler connectionLimiter;
     private final MessageHandler messageHandler;
     private ThreadPoolExecutor serverExecutor;
 
@@ -79,8 +76,6 @@ public class NettyServer extends AbstractServer {
         }
 
         log.info("server channel start open, url={}", url);
-        int maxServerConnections = url.getIntParameter(UrlParam.Server.MAX_CONNECTIONS);
-        connectionLimiter = new ConnectionLimitHandler(maxServerConnections);
 
         if (serverExecutor == null || serverExecutor.isShutdown()) {
             serverExecutor = new EagerThreadPoolExecutor(
@@ -102,7 +97,6 @@ public class NettyServer extends AbstractServer {
                     @Override
                     protected void initChannel(SocketChannel socketChannel) throws Exception {
                         ChannelPipeline pipeline = socketChannel.pipeline();
-                        pipeline.addLast("connection_limit", connectionLimiter);
                         long heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
                         if (heartbeat > 0) {
                             pipeline.addLast("idle_state",
@@ -157,9 +151,6 @@ public class NettyServer extends AbstractServer {
         if (workerGroup != null) {
             workerGroup.shutdownGracefully();
             workerGroup = null;
-        }
-        if (connectionLimiter != null) {
-            connectionLimiter.closeAll();
         }
         if (serverExecutor != null) {
             serverExecutor.shutdownNow();

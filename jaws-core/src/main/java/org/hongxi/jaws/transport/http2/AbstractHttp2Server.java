@@ -27,7 +27,6 @@ import org.hongxi.jaws.common.threadpool.EagerThreadPoolExecutor;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractServer;
 import org.hongxi.jaws.transport.ChannelState;
-import org.hongxi.jaws.transport.netty.ConnectionLimitHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +48,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * live (jaws payload encoding for {@link Http2Server}, gRPC wire format for
  * the wire module's server). The pipeline assembled here is:
  * <pre>
- *   connection_limit → [ssl] → http2_codec → http2_multiplex → (per-stream handler)
+ *   [ssl] → http2_codec → http2_multiplex → (per-stream handler)
  * </pre>
  * <p>
  * Speaking plain h2c (HTTP/2 prior-knowledge) by default; TLS is enabled when
@@ -79,7 +78,6 @@ public abstract class AbstractHttp2Server extends AbstractServer {
     /** Tracks all active connection channels for GOAWAY on graceful shutdown. */
     private final ChannelGroup connectionChannels;
 
-    private ConnectionLimitHandler connectionLimiter;
     private SslContext sslContext;
 
     protected AbstractHttp2Server(URL url, String serverName) {
@@ -119,9 +117,6 @@ public abstract class AbstractHttp2Server extends AbstractServer {
             return true;
         }
 
-        int maxServerConnections = url.getIntParameter(UrlParam.Server.MAX_CONNECTIONS);
-        connectionLimiter = new ConnectionLimitHandler(maxServerConnections);
-
         // Business pool aligned with NettyServer: bounded and config-driven
         // (minWorkerThreads/maxWorkerThreads/workerQueueSize).
         serverExecutor = new EagerThreadPoolExecutor(
@@ -160,7 +155,6 @@ public abstract class AbstractHttp2Server extends AbstractServer {
                         @Override
                         protected void initChannel(SocketChannel ch) {
                             ChannelPipeline pipeline = ch.pipeline();
-                            pipeline.addLast("connection_limit", connectionLimiter);
 
                             // Add TLS if configured
                             if (sslContext != null) {
@@ -254,8 +248,8 @@ public abstract class AbstractHttp2Server extends AbstractServer {
                 workerGroup.shutdownGracefully(0, waitMs, TimeUnit.MILLISECONDS).syncUninterruptibly();
                 workerGroup = null;
             }
-            if (connectionLimiter != null) {
-                connectionLimiter.closeAll();
+            if (connectionChannels != null) {
+                connectionChannels.close();
             }
             if (serverExecutor != null) {
                 serverExecutor.shutdown();

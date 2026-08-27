@@ -21,7 +21,6 @@ import org.hongxi.jaws.transport.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 
@@ -76,11 +75,15 @@ public class NettyChannel implements Channel {
         // Snapshot the volatile field so this request uses a single channel
         // reference even if a reconnect swaps it mid-flight
         io.netty.channel.Channel ch = channel;
-        ByteBuf buf = ch.alloc().buffer();
+        ByteBuf buf = null;
         try {
+            buf = ch.alloc().buffer();
             codec.encode(this, request, buf);
-        } catch (IOException e) {
-            buf.release();
+        } catch (Exception e) {
+            if (buf != null) {
+                buf.release();
+            }
+            nettyClient.removeCallback(request.getRequestId());
             throw new JawsServiceException("encode request error: url=" + getUrl().getUri(), e);
         }
         ChannelFuture writeFuture = ch.writeAndFlush(buf);
