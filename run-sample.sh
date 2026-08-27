@@ -27,7 +27,7 @@ WIRE_CONSUMER_MODULE="jaws-samples/jaws-sample-wire-consumer"
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
 CONSUMER_MAIN="org.hongxi.jaws.sample.zk.consumer.ZkConsumer"
-BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.RpcBenchmark"
+BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.JawsBenchmark"
 NACOS_PROVIDER_MAIN="org.hongxi.jaws.sample.nacos.provider.NacosProvider"
 NACOS_CONSUMER_MAIN="org.hongxi.jaws.sample.nacos.consumer.NacosConsumer"
 NETTY_PROVIDER_MAIN="org.hongxi.jaws.sample.netty.provider.NettyProvider"
@@ -36,6 +36,7 @@ HTTP2_PROVIDER_MAIN="org.hongxi.jaws.sample.http2.provider.Http2Provider"
 HTTP2_CONSUMER_MAIN="org.hongxi.jaws.sample.http2.consumer.Http2Consumer"
 WIRE_PROVIDER_MAIN="org.hongxi.jaws.sample.wire.provider.WireProvider"
 WIRE_CONSUMER_MAIN="org.hongxi.jaws.sample.wire.consumer.WireConsumer"
+WIRE_BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.WireBenchmark"
 
 usage() {
     cat <<'EOF'
@@ -59,16 +60,19 @@ usage() {
     wire [port]        一次性运行 Wire (gRPC wire format) 直连示例（无需注册中心，默认端口 50051）
     consumer           运行 ZkConsumer（需要先启动 provider）
     bench-injvm        性能测试 - injvm 协议
-    bench-jaws         性能测试 - jaws+netty 协议
+    bench-jaws         性能测试 - jaws 协议（默认 netty 传输）
+    bench-wire         性能测试 - wire 协议（gRPC wire format over HTTP/2）
 
   Benchmark Options (通过环境变量传入):
     THREADS            并发线程数（默认 4）
     WARMUP             预热秒数（默认 5）
     DURATION           测量秒数（默认 10）
-    PORT               jaws 协议端口（默认 10010，仅 bench-jaws）
+    PORT               协议端口（bench-jaws 默认 10010，bench-wire 默认 50051）
     SERIALIZATION      序列化方式（默认 fastjson2，仅 bench-jaws）
-    SLEEP              Provider 端模拟业务耗时毫秒数（默认 0，不模拟）
-    ROLE               运行角色（默认 all 同进程；provider/consumer 分进程，仅 bench-jaws）
+    TRANSPORT          传输层：netty（默认）或 http2（仅 bench-jaws）
+    COMPRESSION        压缩方式（默认空，仅 bench-wire）
+    SLEEP              Provider 端模拟业务耗时毫秒数（默认 0，不模拟，仅 bench-jaws）
+    ROLE               运行角色（默认 all 同进程；provider/consumer 分进程）
     HOST               provider 地址（默认 127.0.0.1，仅分进程模式）
 
   Examples:
@@ -89,7 +93,10 @@ usage() {
     ./run-sample.sh bench-injvm
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
+    TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
     SLEEP=5 ./run-sample.sh bench-jaws       # 模拟 5ms 业务耗时
+    THREADS=20 DURATION=40 ./run-sample.sh bench-wire
+    COMPRESSION=gzip ./run-sample.sh bench-wire
     # 分进程压测：两个终端分别执行（仅 bench-jaws）
     ROLE=provider ./run-sample.sh bench-jaws
     ROLE=consumer THREADS=20 ./run-sample.sh bench-jaws
@@ -366,14 +373,18 @@ cmd_bench_jaws() {
     local duration="${DURATION:-10}"
     local port="${PORT:-10010}"
     local serialization="${SERIALIZATION:-fastjson2}"
+    local transport="${TRANSPORT:-netty}"
     local sleep_ms="${SLEEP:-0}"
     local role="${ROLE:-all}"
     local host="${HOST:-127.0.0.1}"
-    echo "运行 Benchmark [jaws+netty] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port serialization=$serialization sleep=${sleep_ms}ms host=$host"
+    local cp
+    cp=$(build_classpath "$BENCHMARK_MODULE")
+    cp="$cp:$BENCHMARK_MODULE/target/classes:jaws-samples/jaws-sample-injvm/target/classes"
+    echo "运行 Benchmark [jaws+$transport] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port serialization=$serialization transport=$transport sleep=${sleep_ms}ms host=$host"
     echo "--------------------------------------------"
-    $MVN exec:java -pl "$BENCHMARK_MODULE" \
-        -Dexec.mainClass="$BENCHMARK_MAIN" \
+    java -cp "$cp" \
         -Dprotocol=jaws \
+        -Dtransport="$transport" \
         -Drole="$role" \
         -Dthreads="$threads" \
         -Dwarmup="$warmup" \
@@ -382,7 +393,32 @@ cmd_bench_jaws() {
         -Dserialization="$serialization" \
         -Dsleep="$sleep_ms" \
         -Dhost="$host" \
-        -q
+        "$BENCHMARK_MAIN"
+}
+
+cmd_bench_wire() {
+    ensure_built
+    local threads="${THREADS:-4}"
+    local warmup="${WARMUP:-5}"
+    local duration="${DURATION:-10}"
+    local port="${PORT:-50051}"
+    local compression="${COMPRESSION:-}"
+    local role="${ROLE:-all}"
+    local host="${HOST:-127.0.0.1}"
+    local cp
+    cp=$(build_classpath "$BENCHMARK_MODULE")
+    cp="$cp:$BENCHMARK_MODULE/target/classes:jaws-samples/jaws-sample-injvm/target/classes"
+    echo "运行 Benchmark [wire] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port compression=${compression:-none} host=$host"
+    echo "--------------------------------------------"
+    java -cp "$cp" \
+        -Drole="$role" \
+        -Dthreads="$threads" \
+        -Dwarmup="$warmup" \
+        -Dduration="$duration" \
+        -Dport="$port" \
+        -Dcompression="$compression" \
+        -Dhost="$host" \
+        "$WIRE_BENCHMARK_MAIN"
 }
 
 # 主入口
@@ -400,6 +436,7 @@ case "${1:-}" in
     consumer)    cmd_consumer ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
+    bench-wire)  cmd_bench_wire ;;
     -h|--help|help|"") usage ;;
     *)
         echo "未知命令: $1"

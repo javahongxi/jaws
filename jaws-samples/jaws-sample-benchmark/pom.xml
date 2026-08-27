@@ -27,6 +27,16 @@
             <artifactId>jaws-sample-injvm</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-wire</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-sample-wire-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -36,7 +46,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.5.0</version>
                 <configuration>
-                    <mainClass>org.hongxi.jaws.sample.benchmark.RpcBenchmark</mainClass>
+                    <mainClass>org.hongxi.jaws.sample.benchmark.JawsBenchmark</mainClass>
                     <classpathScope>runtime</classpathScope>
                 </configuration>
             </plugin>

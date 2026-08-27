@@ -1,12 +1,11 @@
 package org.hongxi.jaws.sample.benchmark;
 
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ReferenceConfig;
-import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
-import org.hongxi.jaws.sample.api.DemoService;
-import org.hongxi.jaws.sample.injvm.service.DemoServiceImpl;
+import org.hongxi.jaws.sample.wire.proto.GreeterService;
+import org.hongxi.jaws.sample.wire.proto.HelloReply;
+import org.hongxi.jaws.sample.wire.proto.HelloRequest;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,52 +16,41 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * Jaws RPC 性能基准测试
+ * Wire (gRPC wire format) 性能基准测试
+ *
+ * <p>与 {@link JawsBenchmark} 结构相同，但使用 protobuf GreeterService
+ * 和 wire 协议（gRPC 5 字节前缀线格式 over HTTP/2）。
  *
  * <pre>
- * 支持两种协议：
- * - injvm：JVM 内部调用，测量框架纯开销
- * - jaws ：Netty 网络传输，测量端到端性能
- *
- * 支持两种部署形态：
- * - role=all（默认）：provider + consumer 同进程，使用进程内 local 注册中心
- * - role=provider / role=consumer：分进程，通过 direct 直连注册中心对接，
- *   consumer 直接指向 provider 的 host:port（无需外部注册中心）
- *
  * 系统属性参数（通过 -D 传入）：
- *   protocol  - 协议类型，injvm（默认）或 jaws
- *   role      - 运行角色：all（默认，同进程）/ provider / consumer（仅 jaws 协议支持）
+ *   role      - 运行角色：all（默认，同进程）/ provider / consumer
  *   threads   - 并发线程数，默认 4（仅 all / consumer 生效）
- *   warmup    - 预热秒数，默认 5（仅 all / consumer 生效）
- *   duration  - 测量秒数，默认 10（仅 all / consumer 生效）
- *   port      - jaws 协议端口，默认 10010
- *   host      - provider 地址，consumer 直连目标，默认 127.0.0.1（仅分进程模式生效）
- *   serialization - 序列化方式，默认 fastjson2（仅 jaws 协议生效）
- *   sleep       - Provider 端模拟业务耗时（毫秒），默认 0（不模拟）
+ *   warmup    - 预热秒数，默认 5
+ *   duration  - 测量秒数，默认 10
+ *   port      - wire 协议端口，默认 50051
+ *   host      - provider 地址，consumer 直连目标，默认 127.0.0.1（仅分进程模式）
+ *   compression - 压缩方式，默认空（不压缩），可选 gzip
  *
  * 示例：
- *   java -Dprotocol=injvm -Dthreads=8 -Dwarmup=5 -Dduration=10 ...
- *   java -Dprotocol=jaws -Dthreads=8 -Dport=10010 -Dserialization=hessian2 ...
- *   java -Dprotocol=jaws -Dthreads=8 -Dsleep=5 ...
+ *   java -Dthreads=20 -Dduration=40 ...
  *   # 分进程：先起 provider，再跑 consumer 压测
- *   java -Dprotocol=jaws -Drole=provider -Dport=10010 ...
- *   java -Dprotocol=jaws -Drole=consumer -Dport=10010 -Dthreads=20 ...
+ *   java -Drole=provider -Dport=50051 ...
+ *   java -Drole=consumer -Dport=50051 -Dthreads=20 ...
  * </pre>
  */
-public class RpcBenchmark {
+public class WireBenchmark {
 
-    private static final String PROTOCOL = System.getProperty("protocol", "injvm");
     private static final String ROLE = System.getProperty("role", "all");
     private static final int THREADS = Integer.parseInt(System.getProperty("threads", "4"));
     private static final int WARMUP_SECONDS = Integer.parseInt(System.getProperty("warmup", "5"));
     private static final int DURATION_SECONDS = Integer.parseInt(System.getProperty("duration", "10"));
-    private static final int PORT = Integer.parseInt(System.getProperty("port", "10010"));
+    private static final int PORT = Integer.parseInt(System.getProperty("port", "50051"));
     private static final String HOST = System.getProperty("host", "127.0.0.1");
-    private static final String SERIALIZATION = System.getProperty("serialization", "fastjson2");
-    private static final int SLEEP_MS = Integer.parseInt(System.getProperty("sleep", "0"));
+    private static final String COMPRESSION = System.getProperty("compression", "");
 
-    private static final String BENCHMARK_RESULT = "benchmark";
-    private static final String EXPECTED_RESULT = "Hello, " + BENCHMARK_RESULT;
+    private static final String BENCHMARK_NAME = "benchmark";
+    private static final HelloRequest REQUEST =
+            HelloRequest.newBuilder().setName(BENCHMARK_NAME).build();
 
     /**
      * Error counters keyed by error type (exception simple name or "InvalidResponse"),
@@ -74,20 +62,16 @@ public class RpcBenchmark {
         checkRole();
 
         System.out.println("============================================");
-        System.out.println("  Jaws RPC Benchmark");
+        System.out.println("  Jaws Wire Benchmark");
         System.out.println("============================================");
-        System.out.println("  protocol : " + PROTOCOL);
-        System.out.println("  role     : " + ROLE);
-        System.out.println("  threads  : " + THREADS);
-        System.out.println("  warmup   : " + WARMUP_SECONDS + "s");
-        System.out.println("  duration : " + DURATION_SECONDS + "s");
-        System.out.println("  sleep    : " + (SLEEP_MS > 0 ? SLEEP_MS + "ms" : "N/A"));
-        if ("jaws".equals(PROTOCOL)) {
-            System.out.println("  port     : " + PORT);
-            System.out.println("  serialize: " + SERIALIZATION);
-            if (!"all".equals(ROLE)) {
-                System.out.println("  host     : " + HOST);
-            }
+        System.out.println("  role      : " + ROLE);
+        System.out.println("  threads   : " + THREADS);
+        System.out.println("  warmup    : " + WARMUP_SECONDS + "s");
+        System.out.println("  duration  : " + DURATION_SECONDS + "s");
+        System.out.println("  port      : " + PORT);
+        System.out.println("  compress  : " + (COMPRESSION.isEmpty() ? "none" : COMPRESSION));
+        if (!"all".equals(ROLE)) {
+            System.out.println("  host      : " + HOST);
         }
         System.out.println("============================================\n");
 
@@ -96,7 +80,7 @@ public class RpcBenchmark {
             exportService();
         }
 
-        // provider 角色：发布服务后常驻等待，压测由独立 consumer 进程发起
+        // provider 角色：发布服务后常驻等待
         if ("provider".equals(ROLE)) {
             System.out.println("Provider is ready at " + HOST + ":" + PORT
                     + ", waiting for consumer... (Ctrl+C to stop)");
@@ -105,23 +89,23 @@ public class RpcBenchmark {
         }
 
         // 2. 创建引用
-        ReferenceConfig<DemoService> ref = createReference();
-        DemoService demoService = ref.getRef();
+        ReferenceConfig<GreeterService> ref = createReference();
+        GreeterService greeterService = ref.getRef();
 
         // 验证调用正常
-        String testResult = demoService.hello(BENCHMARK_RESULT);
-        if (!testResult.contains(BENCHMARK_RESULT)) {
-            throw new RuntimeException("Sanity check failed: " + testResult);
+        HelloReply testReply = greeterService.sayHello(REQUEST);
+        if (!testReply.getMessage().contains(BENCHMARK_NAME)) {
+            throw new RuntimeException("Sanity check failed: " + testReply.getMessage());
         }
-        System.out.println("Sanity check passed: " + testResult + "\n");
+        System.out.println("Sanity check passed: " + testReply.getMessage() + "\n");
 
         // 3. 预热
         System.out.println("Warming up (" + WARMUP_SECONDS + "s)...");
-        runPhase(demoService, WARMUP_SECONDS, true);
+        runPhase(greeterService, WARMUP_SECONDS, true);
 
         // 4. 正式测量
         System.out.println("Measuring (" + DURATION_SECONDS + "s, " + THREADS + " threads)...");
-        BenchmarkResult result = runPhase(demoService, DURATION_SECONDS, false);
+        BenchmarkResult result = runPhase(greeterService, DURATION_SECONDS, false);
 
         // 5. 输出结果
         printResult(result);
@@ -131,7 +115,6 @@ public class RpcBenchmark {
         System.out.println("  Benchmark Done (" + (totalErrors == 0 ? "PASSED" : "FAILED") + ")");
         System.out.println("============================================");
 
-        /* 基准测试完毕，强制退出（Netty/Curator 的非守护线程会阻止 JVM 自动退出） */
         System.exit(totalErrors > 0 ? 1 : 0);
     }
 
@@ -143,67 +126,39 @@ public class RpcBenchmark {
         return ERROR_COUNTERS.values().stream().mapToLong(LongAdder::sum).sum();
     }
 
-    /*
-     * 发布 DemoService
-     */
     private static void exportService() {
-        ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
-        DemoService impl = new DemoServiceImpl();
-        if (SLEEP_MS > 0) {
-            impl = new SleepDemoServiceImpl(impl, SLEEP_MS);
-        }
-        serviceConfig.setRef(impl);
-        serviceConfig.setApplication("benchmark-provider");
-        serviceConfig.setInterface(DemoService.class);
+        ServiceConfig<GreeterService> serviceConfig = new ServiceConfig<>();
+        serviceConfig.setRef(new GreeterServiceImpl());
+        serviceConfig.setApplication("wire-benchmark-provider");
+        serviceConfig.setInterface(GreeterService.class);
         serviceConfig.setGroup("benchmark");
         serviceConfig.setVersion("1.0");
         serviceConfig.setProtocol(createProtocolConfig());
-        serviceConfig.setRegistry(createRegistryConfig());
-
         serviceConfig.export();
     }
 
-    /*
-     * 创建 ReferenceConfig
-     */
-    private static ReferenceConfig<DemoService> createReference() {
-        ReferenceConfig<DemoService> ref = new ReferenceConfig<>();
-        ref.setInterface(DemoService.class);
-        ref.setApplication("benchmark-consumer");
+    private static ReferenceConfig<GreeterService> createReference() {
+        ReferenceConfig<GreeterService> ref = new ReferenceConfig<>();
+        ref.setInterface(GreeterService.class);
+        ref.setApplication("wire-benchmark-consumer");
         ref.setGroup("benchmark");
         ref.setVersion("1.0");
         ref.setProtocol(createProtocolConfig());
-        ref.setRegistry(createRegistryConfig());
+        ref.setDirectUrl(HOST + ":" + PORT);
         ref.setRequestTimeout(30000);
         return ref;
     }
 
     private static ProtocolConfig createProtocolConfig() {
         ProtocolConfig protocol = new ProtocolConfig();
-        protocol.setName(PROTOCOL);
-        protocol.setId(PROTOCOL);
-        if ("jaws".equals(PROTOCOL)) {
-            protocol.setTransportFactory("netty");
-            protocol.setSerialization(SERIALIZATION);
-            protocol.setPort(PORT);
+        protocol.setName("wire");
+        protocol.setId("wire");
+        protocol.setTransportFactory("wire");
+        protocol.setPort(PORT);
+        if (!COMPRESSION.isEmpty()) {
+            protocol.setCompression(COMPRESSION);
         }
         return protocol;
-    }
-
-    private static RegistryConfig createRegistryConfig() {
-        RegistryConfig registry = new RegistryConfig();
-        registry.setId("benchmarkRegistry");
-        if ("all".equals(ROLE)) {
-            // 同进程：进程内 local 注册中心
-            registry.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
-            registry.setAddress("127.0.0.1");
-            registry.setPort(0);
-        } else {
-            // 分进程：direct 直连，consumer 直接指向 provider 的 host:port
-            registry.setProtocol("direct");
-            registry.setAddress(HOST + ":" + PORT);
-        }
-        return registry;
     }
 
     private static void checkRole() {
@@ -211,15 +166,27 @@ public class RpcBenchmark {
         if (!validRole) {
             throw new IllegalArgumentException("Invalid role: " + ROLE + ", expected all / provider / consumer");
         }
-        if (!"all".equals(ROLE) && !"jaws".equals(PROTOCOL)) {
-            throw new IllegalArgumentException("role=" + ROLE + " requires protocol=jaws, injvm does not work cross-process");
+    }
+
+    /**
+     * Simple GreeterService implementation for benchmarking.
+     * Returns "Hello, {name}! (from wire)" without any logging overhead.
+     */
+    private static class GreeterServiceImpl implements GreeterService {
+        @Override
+        public HelloReply sayHello(HelloRequest request) {
+            return HelloReply.newBuilder()
+                    .setMessage("Hello, " + request.getName() + "! (from wire)")
+                    .build();
+        }
+
+        @Override
+        public java.util.concurrent.Flow.Publisher<HelloReply> sayHelloStream(HelloRequest request) {
+            throw new UnsupportedOperationException("Streaming not used in benchmark");
         }
     }
 
-    /*
-     * 运行一个测试阶段（预热或测量）
-     */
-    private static BenchmarkResult runPhase(DemoService demoService, int durationSeconds, boolean warmup)
+    private static BenchmarkResult runPhase(GreeterService greeterService, int durationSeconds, boolean warmup)
             throws InterruptedException {
         AtomicLong totalCalls = new AtomicLong(0);
         List<List<Long>> perThreadLatencies = new ArrayList<>(THREADS);
@@ -248,8 +215,8 @@ public class RpcBenchmark {
                 while (System.nanoTime() < deadline) {
                     long start = System.nanoTime();
                     try {
-                        String result = demoService.hello(BENCHMARK_RESULT);
-                        if (!EXPECTED_RESULT.equals(result)) {
+                        HelloReply reply = greeterService.sayHello(REQUEST);
+                        if (!reply.getMessage().contains(BENCHMARK_NAME)) {
                             recordError("InvalidResponse");
                         } else if (!warmup) {
                             long elapsed = System.nanoTime() - start;
@@ -262,16 +229,14 @@ public class RpcBenchmark {
                 }
                 totalCalls.addAndGet(calls);
                 doneLatch.countDown();
-            }, "bench-worker-" + i);
+            }, "wire-bench-worker-" + i);
             workers[i].setDaemon(true);
             workers[i].start();
         }
 
-        // 设定截止时间并释放起跑信号
         deadlineNanos.set(System.nanoTime() + durationSeconds * 1_000_000_000L);
         startLatch.countDown();
 
-        // 等待所有线程完成
         doneLatch.await();
 
         if (warmup) {
@@ -279,7 +244,6 @@ public class RpcBenchmark {
             return null;
         }
 
-        // 合并所有线程的延迟数据
         List<Long> allLatencies = new ArrayList<>();
         for (List<Long> list : perThreadLatencies) {
             allLatencies.addAll(list);
@@ -288,9 +252,6 @@ public class RpcBenchmark {
         return new BenchmarkResult(allLatencies.size(), durationSeconds, allLatencies);
     }
 
-    /*
-     * 打印统计结果
-     */
     private static void printResult(BenchmarkResult result) {
         if (result == null || result.latencies().isEmpty()) {
             System.out.println("No data collected.");
@@ -318,10 +279,10 @@ public class RpcBenchmark {
         System.out.println("\n--------------------------------------------");
         System.out.println("  Results");
         System.out.println("--------------------------------------------");
-        System.out.println("  Protocol     : " + PROTOCOL);
-        System.out.println("  Serialization: " + ("jaws".equals(PROTOCOL) ? SERIALIZATION : "N/A"));
+        System.out.println("  Protocol     : wire");
+        System.out.println("  Transport    : wire (gRPC wire format)");
+        System.out.println("  Compression  : " + (COMPRESSION.isEmpty() ? "none" : COMPRESSION));
         System.out.printf("  Threads      : %,d%n", THREADS);
-        System.out.println("  Sleep        : " + (SLEEP_MS > 0 ? SLEEP_MS + "ms" : "N/A"));
         System.out.printf("  Total calls  : %,d%n", count);
         System.out.printf("  Duration     : %,ds%n", result.durationSeconds());
         System.out.printf("  QPS          : %,.0f%n", qps);
