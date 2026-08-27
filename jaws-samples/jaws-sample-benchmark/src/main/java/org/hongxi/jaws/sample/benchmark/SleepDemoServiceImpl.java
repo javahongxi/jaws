@@ -9,11 +9,12 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 模拟业务耗时的 DemoService 装饰器
+ * DemoService decorator that simulates business processing time.
  *
  * <pre>
- * 在每次调用前 sleep 指定毫秒数，模拟真实业务处理时间。
- * 仅装饰 hello 方法（benchmark 只调用此方法）。
+ * Sleeps the specified number of milliseconds before each invocation
+ * to simulate real business processing latency.
+ * Only decorates the hello method (benchmark only calls this method).
  * </pre>
  */
 public class SleepDemoServiceImpl implements DemoService {

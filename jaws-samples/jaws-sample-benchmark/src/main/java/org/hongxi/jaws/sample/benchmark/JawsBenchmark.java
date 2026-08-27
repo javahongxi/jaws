@@ -17,36 +17,36 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * Jaws RPC 性能基准测试
+ * Jaws RPC performance benchmark.
  *
  * <pre>
- * 支持两种协议：
- * - injvm：JVM 内部调用，测量框架纯开销
- * - jaws ：Netty 网络传输，测量端到端性能
+ * Supported protocols:
+ * - injvm: in-JVM invocation, measures pure framework overhead
+ * - jaws: Netty network transport, measures end-to-end performance
  *
- * 支持两种部署形态：
- * - role=all（默认）：provider + consumer 同进程，使用进程内 local 注册中心
- * - role=provider / role=consumer：分进程，通过 direct 直连注册中心对接，
- *   consumer 直接指向 provider 的 host:port（无需外部注册中心）
+ * Deployment modes:
+ * - role=all (default): provider + consumer in the same process, using in-process local registry
+ * - role=provider / role=consumer: separate processes, connected via direct registry,
+ *   consumer points directly to provider's host:port (no external registry needed)
  *
- * 系统属性参数（通过 -D 传入）：
- *   protocol  - 协议类型，injvm（默认）或 jaws
- *   role      - 运行角色：all（默认，同进程）/ provider / consumer（仅 jaws 协议支持）
- *   threads   - 并发线程数，默认 4（仅 all / consumer 生效）
- *   warmup    - 预热秒数，默认 5（仅 all / consumer 生效）
- *   duration  - 测量秒数，默认 10（仅 all / consumer 生效）
- *   port      - jaws 协议端口，默认 10010
- *   host      - provider 地址，consumer 直连目标，默认 127.0.0.1（仅分进程模式生效）
- *   serialization - 序列化方式，默认 fastjson2（仅 jaws 协议生效）
- *   transport   - 传输层，netty（默认 TCP）或 http2（仅 jaws 协议生效）
- *   sleep       - Provider 端模拟业务耗时（毫秒），默认 0（不模拟）
+ * System properties (passed via -D):
+ *   protocol      - Protocol type: injvm (default) or jaws
+ *   role          - Run role: all (default, same process) / provider / consumer (jaws protocol only)
+ *   threads       - Concurrency thread count, default 4 (only for all / consumer)
+ *   warmup        - Warm-up seconds, default 5 (only for all / consumer)
+ *   duration      - Measurement seconds, default 10 (only for all / consumer)
+ *   port          - jaws protocol port, default 10010
+ *   host          - Provider address, consumer direct-connect target, default 127.0.0.1 (separate-process mode only)
+ *   serialization - Serialization method, default fastjson2 (jaws protocol only)
+ *   transport     - Transport layer: netty (default TCP) or http2 (jaws protocol only)
+ *   sleep         - Simulated business processing time on provider side (ms), default 0 (no simulation)
  *
- * 示例：
+ * Examples:
  *   java -Dprotocol=injvm -Dthreads=8 -Dwarmup=5 -Dduration=10 ...
  *   java -Dprotocol=jaws -Dthreads=8 -Dport=10010 -Dserialization=hessian2 ...
  *   java -Dprotocol=jaws -Dtransport=http2 -Dthreads=20 -Dduration=40 ...
  *   java -Dprotocol=jaws -Dthreads=8 -Dsleep=5 ...
- *   # 分进程：先起 provider，再跑 consumer 压测
+ *   # Separate processes: start provider first, then run consumer benchmark
  *   java -Dprotocol=jaws -Drole=provider -Dport=10010 ...
  *   java -Dprotocol=jaws -Drole=consumer -Dport=10010 -Dthreads=20 ...
  * </pre>
@@ -95,12 +95,12 @@ public class JawsBenchmark {
         }
         System.out.println("============================================\n");
 
-        // 1. 发布服务（consumer 角色跳过）
+        // 1. Export service (skip for consumer role)
         if (!"consumer".equals(ROLE)) {
             exportService();
         }
 
-        // provider 角色：发布服务后常驻等待，压测由独立 consumer 进程发起
+        // provider role: export service then block, benchmark is driven by a separate consumer process
         if ("provider".equals(ROLE)) {
             System.out.println("Provider is ready at " + HOST + ":" + PORT
                     + ", waiting for consumer... (Ctrl+C to stop)");
@@ -108,26 +108,26 @@ public class JawsBenchmark {
             return;
         }
 
-        // 2. 创建引用
+        // 2. Create reference
         ReferenceConfig<DemoService> ref = createReference();
         DemoService demoService = ref.getRef();
 
-        // 验证调用正常
+        // Verify invocation works
         String testResult = demoService.hello(BENCHMARK_RESULT);
         if (!testResult.contains(BENCHMARK_RESULT)) {
             throw new RuntimeException("Sanity check failed: " + testResult);
         }
         System.out.println("Sanity check passed: " + testResult + "\n");
 
-        // 3. 预热
+        // 3. Warm-up
         System.out.println("Warming up (" + WARMUP_SECONDS + "s)...");
         runPhase(demoService, WARMUP_SECONDS, true);
 
-        // 4. 正式测量
+        // 4. Measurement
         System.out.println("Measuring (" + DURATION_SECONDS + "s, " + THREADS + " threads)...");
         BenchmarkResult result = runPhase(demoService, DURATION_SECONDS, false);
 
-        // 5. 输出结果
+        // 5. Print results
         printResult(result);
 
         long totalErrors = totalErrors();
@@ -135,7 +135,7 @@ public class JawsBenchmark {
         System.out.println("  Benchmark Done (" + (totalErrors == 0 ? "PASSED" : "FAILED") + ")");
         System.out.println("============================================");
 
-        /* 基准测试完毕，强制退出（Netty/Curator 的非守护线程会阻止 JVM 自动退出） */
+        /* Force exit after benchmark (non-daemon threads from Netty/Curator would prevent JVM shutdown) */
         System.exit(totalErrors > 0 ? 1 : 0);
     }
 
@@ -148,7 +148,7 @@ public class JawsBenchmark {
     }
 
     /*
-     * 发布 DemoService
+     * Export DemoService
      */
     private static void exportService() {
         ServiceConfig<DemoService> serviceConfig = new ServiceConfig<>();
@@ -168,7 +168,7 @@ public class JawsBenchmark {
     }
 
     /*
-     * 创建 ReferenceConfig
+     * Create ReferenceConfig
      */
     private static ReferenceConfig<DemoService> createReference() {
         ReferenceConfig<DemoService> ref = new ReferenceConfig<>();
@@ -198,12 +198,12 @@ public class JawsBenchmark {
         RegistryConfig registry = new RegistryConfig();
         registry.setId("benchmarkRegistry");
         if ("all".equals(ROLE)) {
-            // 同进程：进程内 local 注册中心
+            // Same process: in-process local registry
             registry.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
             registry.setAddress("127.0.0.1");
             registry.setPort(0);
         } else {
-            // 分进程：direct 直连，consumer 直接指向 provider 的 host:port
+            // Separate processes: direct connect, consumer points to provider's host:port
             registry.setProtocol("direct");
             registry.setAddress(HOST + ":" + PORT);
         }
@@ -221,7 +221,7 @@ public class JawsBenchmark {
     }
 
     /*
-     * 运行一个测试阶段（预热或测量）
+     * Run a test phase (warm-up or measurement)
      */
     private static BenchmarkResult runPhase(DemoService demoService, int durationSeconds, boolean warmup)
             throws InterruptedException {
@@ -271,11 +271,11 @@ public class JawsBenchmark {
             workers[i].start();
         }
 
-        // 设定截止时间并释放起跑信号
+        // Set deadline and release the start signal
         deadlineNanos.set(System.nanoTime() + durationSeconds * 1_000_000_000L);
         startLatch.countDown();
 
-        // 等待所有线程完成
+        // Wait for all threads to finish
         doneLatch.await();
 
         if (warmup) {
@@ -283,7 +283,7 @@ public class JawsBenchmark {
             return null;
         }
 
-        // 合并所有线程的延迟数据
+        // Merge latency data from all threads
         List<Long> allLatencies = new ArrayList<>();
         for (List<Long> list : perThreadLatencies) {
             allLatencies.addAll(list);
@@ -293,7 +293,7 @@ public class JawsBenchmark {
     }
 
     /*
-     * 打印统计结果
+     * Print statistics
      */
     private static void printResult(BenchmarkResult result) {
         if (result == null || result.latencies().isEmpty()) {

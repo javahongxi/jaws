@@ -16,24 +16,24 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * Wire (gRPC wire format) 性能基准测试
+ * Wire (gRPC wire format) performance benchmark.
  *
- * <p>与 {@link JawsBenchmark} 结构相同，但使用 protobuf GreeterService
- * 和 wire 协议（gRPC 5 字节前缀线格式 over HTTP/2）。
+ * <p>Same structure as {@link JawsBenchmark}, but uses protobuf GreeterService
+ * and the wire protocol (gRPC 5-byte-prefix wire format over HTTP/2).
  *
  * <pre>
- * 系统属性参数（通过 -D 传入）：
- *   role      - 运行角色：all（默认，同进程）/ provider / consumer
- *   threads   - 并发线程数，默认 4（仅 all / consumer 生效）
- *   warmup    - 预热秒数，默认 5
- *   duration  - 测量秒数，默认 10
- *   port      - wire 协议端口，默认 50051
- *   host      - provider 地址，consumer 直连目标，默认 127.0.0.1（仅分进程模式）
- *   compression - 压缩方式，默认空（不压缩），可选 gzip
+ * System properties (passed via -D):
+ *   role        - Run role: all (default, same process) / provider / consumer
+ *   threads     - Concurrency thread count, default 4 (only for all / consumer)
+ *   warmup      - Warm-up seconds, default 5
+ *   duration    - Measurement seconds, default 10
+ *   port        - Wire protocol port, default 50051
+ *   host        - Provider address, consumer direct-connect target, default 127.0.0.1 (separate-process mode only)
+ *   compression - Compression method, default empty (none), optional: gzip
  *
- * 示例：
+ * Examples:
  *   java -Dthreads=20 -Dduration=40 ...
- *   # 分进程：先起 provider，再跑 consumer 压测
+ *   # Separate processes: start provider first, then run consumer benchmark
  *   java -Drole=provider -Dport=50051 ...
  *   java -Drole=consumer -Dport=50051 -Dthreads=20 ...
  * </pre>
@@ -75,12 +75,12 @@ public class WireBenchmark {
         }
         System.out.println("============================================\n");
 
-        // 1. 发布服务（consumer 角色跳过）
+        // 1. Export service (skip for consumer role)
         if (!"consumer".equals(ROLE)) {
             exportService();
         }
 
-        // provider 角色：发布服务后常驻等待
+        // provider role: export service then block
         if ("provider".equals(ROLE)) {
             System.out.println("Provider is ready at " + HOST + ":" + PORT
                     + ", waiting for consumer... (Ctrl+C to stop)");
@@ -88,26 +88,26 @@ public class WireBenchmark {
             return;
         }
 
-        // 2. 创建引用
+        // 2. Create reference
         ReferenceConfig<GreeterService> ref = createReference();
         GreeterService greeterService = ref.getRef();
 
-        // 验证调用正常
+        // Verify invocation works
         HelloReply testReply = greeterService.sayHello(REQUEST);
         if (!testReply.getMessage().contains(BENCHMARK_NAME)) {
             throw new RuntimeException("Sanity check failed: " + testReply.getMessage());
         }
         System.out.println("Sanity check passed: " + testReply.getMessage() + "\n");
 
-        // 3. 预热
+        // 3. Warm-up
         System.out.println("Warming up (" + WARMUP_SECONDS + "s)...");
         runPhase(greeterService, WARMUP_SECONDS, true);
 
-        // 4. 正式测量
+        // 4. Measurement
         System.out.println("Measuring (" + DURATION_SECONDS + "s, " + THREADS + " threads)...");
         BenchmarkResult result = runPhase(greeterService, DURATION_SECONDS, false);
 
-        // 5. 输出结果
+        // 5. Print results
         printResult(result);
 
         long totalErrors = totalErrors();

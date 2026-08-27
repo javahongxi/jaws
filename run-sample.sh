@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Jaws RPC Samples 启动脚本
+# Jaws RPC Samples launcher script
 #
 # Usage: ./run-sample.sh <command> [options]
 #
@@ -46,58 +46,58 @@ usage() {
   Usage: ./run-sample.sh <command> [options]
 
   Commands:
-    build              编译项目
-    injvm              运行 InjvmRpcDemo（injvm 协议，无需 ZK）
-    provider [port]    启动 ZkProvider（需要 ZK 在 127.0.0.1:2181）
-                       port 默认 10000，设为 -1 则从 10000 开始自动分配
-    provider-bg [port] 后台启动 Provider，PID/日志按端口区分（如 .provider-10000.pid）
-                       port 为 -1 时自动分配端口，文件后缀为 auto-{序号}
-    stop               停止所有后台进程并清理 pid/log 文件
-    run [port]         一次性运行 ZK 示例：启动 provider → 运行 consumer → 停止 provider
-    nacos [port]       一次性运行 Nacos 示例（需要 Nacos 在 127.0.0.1:8848）
-    netty [port]       一次性运行 Netty 直连示例（无需注册中心）
-    http2 [port]       一次性运行 HTTP/2 直连示例（含 Server Streaming，无需注册中心）
-    wire [port]        一次性运行 Wire (gRPC wire format) 直连示例（无需注册中心，默认端口 50051）
-    consumer           运行 ZkConsumer（需要先启动 provider）
-    bench-injvm        性能测试 - injvm 协议
-    bench-jaws         性能测试 - jaws 协议（默认 netty 传输）
-    bench-wire         性能测试 - wire 协议（gRPC wire format over HTTP/2）
+    build              Build the project
+    injvm              Run InjvmRpcDemo (injvm protocol, no ZK required)
+    provider [port]    Start ZkProvider (requires ZK at 127.0.0.1:2181)
+                       port defaults to 10000, set to -1 for auto-allocation starting from 10000
+    provider-bg [port] Start Provider in background, PID/log distinguished by port (e.g. .provider-10000.pid)
+                       port -1 triggers auto-allocation, file suffix becomes auto-{seq}
+    stop               Stop all background processes and clean up pid/log files
+    run [port]         One-shot ZK sample: start provider -> run consumer -> stop provider
+    nacos [port]       One-shot Nacos sample (requires Nacos at 127.0.0.1:8848)
+    netty [port]       One-shot Netty direct-connect sample (no registry required)
+    http2 [port]       One-shot HTTP/2 direct-connect sample (incl. Server Streaming, no registry required)
+    wire [port]        One-shot Wire (gRPC wire format) direct-connect sample (no registry required, default port 50051)
+    consumer           Run ZkConsumer (provider must be started first)
+    bench-injvm        Benchmark - injvm protocol
+    bench-jaws         Benchmark - jaws protocol (default netty transport)
+    bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
 
-  Benchmark Options (通过环境变量传入):
-    THREADS            并发线程数（默认 4）
-    WARMUP             预热秒数（默认 5）
-    DURATION           测量秒数（默认 10）
-    PORT               协议端口（bench-jaws 默认 10010，bench-wire 默认 50051）
-    SERIALIZATION      序列化方式（默认 fastjson2，仅 bench-jaws）
-    TRANSPORT          传输层：netty（默认）或 http2（仅 bench-jaws）
-    COMPRESSION        压缩方式（默认空，仅 bench-wire）
-    SLEEP              Provider 端模拟业务耗时毫秒数（默认 0，不模拟，仅 bench-jaws）
-    ROLE               运行角色（默认 all 同进程；provider/consumer 分进程）
-    HOST               provider 地址（默认 127.0.0.1，仅分进程模式）
+  Benchmark Options (passed via environment variables):
+    THREADS            Concurrency thread count (default 4)
+    WARMUP             Warm-up seconds (default 5)
+    DURATION           Measurement seconds (default 10)
+    PORT               Protocol port (bench-jaws default 10010, bench-wire default 50051)
+    SERIALIZATION      Serialization method (default fastjson2, bench-jaws only)
+    TRANSPORT          Transport layer: netty (default) or http2 (bench-jaws only)
+    COMPRESSION        Compression method (default empty, bench-wire only)
+    SLEEP              Simulated business processing time on provider side in ms (default 0, no simulation, bench-jaws only)
+    ROLE               Run role (default all, same process; provider/consumer for separate processes)
+    HOST               Provider address (default 127.0.0.1, separate-process mode only)
 
   Examples:
     ./run-sample.sh build
     ./run-sample.sh injvm
     ./run-sample.sh provider
     ./run-sample.sh provider 10001
-    ./run-sample.sh provider-bg        # 后台启动，端口 10000
-    ./run-sample.sh provider-bg 10001  # 后台启动，端口 10001
-    ./run-sample.sh provider-bg -1     # 后台启动，自动分配端口
-    ./run-sample.sh stop               # 停止所有后台进程
-    ./run-sample.sh run                # 一键运行 ZK provider + consumer
-    ./run-sample.sh nacos              # 一键运行 Nacos provider + consumer
-    ./run-sample.sh netty              # 一键运行 Netty 直连 provider + consumer
-    ./run-sample.sh http2              # 一键运行 HTTP/2 直连（含流式）provider + consumer
-    ./run-sample.sh wire               # 一键运行 Wire 直连 provider + consumer
+    ./run-sample.sh provider-bg        # Start in background, port 10000
+    ./run-sample.sh provider-bg 10001  # Start in background, port 10001
+    ./run-sample.sh provider-bg -1     # Start in background, auto-allocate port
+    ./run-sample.sh stop               # Stop all background processes
+    ./run-sample.sh run                # One-shot ZK provider + consumer
+    ./run-sample.sh nacos              # One-shot Nacos provider + consumer
+    ./run-sample.sh netty              # One-shot Netty direct-connect provider + consumer
+    ./run-sample.sh http2              # One-shot HTTP/2 direct-connect (with streaming) provider + consumer
+    ./run-sample.sh wire               # One-shot Wire direct-connect provider + consumer
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
-    SLEEP=5 ./run-sample.sh bench-jaws       # 模拟 5ms 业务耗时
+    SLEEP=5 ./run-sample.sh bench-jaws       # Simulate 5ms business latency
     THREADS=20 DURATION=40 ./run-sample.sh bench-wire
     COMPRESSION=gzip ./run-sample.sh bench-wire
-    # 分进程压测：两个终端分别执行（仅 bench-jaws）
+    # Separate-process benchmark: run in two terminals (bench-jaws only)
     ROLE=provider ./run-sample.sh bench-jaws
     ROLE=consumer THREADS=20 ./run-sample.sh bench-jaws
 
@@ -120,7 +120,7 @@ ensure_built() {
         done
     fi
     if [ $need_build -eq 1 ]; then
-        echo "项目未编译或源码已更新，正在编译安装..."
+        echo "Project not built or sources updated, building and installing..."
         $MVN install -DskipTests -q
     fi
 }
@@ -143,14 +143,14 @@ build_classpath() {
 }
 
 cmd_build() {
-    echo "编译项目..."
+    echo "Building project..."
     $MVN clean install -DskipTests -q
-    echo "编译完成。"
+    echo "Build complete."
 }
 
 cmd_injvm() {
     ensure_built
-    echo "运行 InjvmRpcDemo..."
+    echo "Running InjvmRpcDemo..."
     echo "--------------------------------------------"
     $MVN exec:java -pl "$INJVM_MODULE" -Dexec.mainClass="$INJVM_MAIN" -q
 }
@@ -158,8 +158,8 @@ cmd_injvm() {
 cmd_provider() {
     ensure_built
     local port="${1:-10000}"
-    echo "启动 ZkProvider（jaws + ZooKeeper）port=$port"
-    echo "请确保 ZooKeeper 已在 127.0.0.1:2181 运行"
+    echo "Starting ZkProvider (jaws + ZooKeeper) port=$port"
+    echo "Make sure ZooKeeper is running at 127.0.0.1:2181"
     echo "--------------------------------------------"
     $MVN exec:java -pl "$PROVIDER_MODULE" \
         -Dexec.mainClass="$PROVIDER_MAIN" \
@@ -173,7 +173,7 @@ cmd_provider_bg() {
     local cp
     cp=$(build_classpath "$PROVIDER_MODULE")
 
-    # 确定文件后缀：固定端口用端口号，-1 用 auto-{序号}
+    # Determine file suffix: fixed port uses port number, -1 uses auto-{seq}
     local suffix
     if [ "$port" = "-1" ]; then
         local seq=1
@@ -187,14 +187,14 @@ cmd_provider_bg() {
     local pid_file=".provider-${suffix}.pid"
     local log_file="provider-${suffix}.log"
 
-    echo "后台启动 ZkProvider port=$port ..."
+    echo "Starting ZkProvider in background port=$port ..."
     java -cp "$cp:$PROVIDER_MODULE/target/classes" \
         -Dport="$port" \
         "$PROVIDER_MAIN" > "$log_file" 2>&1 &
     local pid=$!
     echo "$pid" > "$pid_file"
     echo "Provider started (PID=$pid), log: $log_file"
-    echo "停止: kill \$(cat $pid_file)"
+    echo "Stop: kill \$(cat $pid_file)"
 }
 
 cmd_stop() {
@@ -257,20 +257,20 @@ run_pair() {
     local pid_file=".provider-${name}.pid"
     local log_file="provider-${name}.log"
 
-    echo "=== 一键运行 ($name) ==="
+    echo "=== One-shot run ($name) ==="
     [ -n "$hint" ] && echo "$hint"
     echo ""
 
-    # 1. 后台启动 provider
-    echo "[1/4] 启动 Provider port=$port ..."
+    # 1. Start provider in background
+    echo "[1/4] Starting Provider port=$port ..."
     java -cp "$cp:$provider_module/target/classes" \
         -Dport="$port" \
         "$provider_main" > "$log_file" 2>&1 &
     local pid=$!
     echo "$pid" > "$pid_file"
 
-    # 2. 等待 provider 完成服务发布（轮询日志，最多等 15 秒）
-    echo -n "[2/4] 等待 Provider 就绪 "
+    # 2. Wait for provider to finish service export (poll log, max 15 seconds)
+    echo -n "[2/4] Waiting for Provider ready "
     local max_wait=15
     local waited=0
     while [ $waited -lt $max_wait ]; do
@@ -278,7 +278,7 @@ run_pair() {
             local count
             count=$(grep -c "exported" "$log_file")
             if [ "$count" -ge "$expected_exports" ]; then
-                echo " 就绪 (${waited}s)"
+                echo " ready (${waited}s)"
                 break
             fi
         fi
@@ -287,11 +287,11 @@ run_pair() {
         echo -n "."
     done
     if [ $waited -ge $max_wait ]; then
-        echo " 超时 (${max_wait}s)，继续运行..."
+        echo " timeout (${max_wait}s), continuing..."
     fi
 
-    # 3. 运行 consumer
-    echo "[3/4] 运行 Consumer ..."
+    # 3. Run consumer
+    echo "[3/4] Running Consumer ..."
     echo "--------------------------------------------"
     local consumer_cp
     consumer_cp=$(build_classpath "$consumer_module")
@@ -301,8 +301,8 @@ run_pair() {
     local consumer_exit=$?
     echo "--------------------------------------------"
 
-    # 4. 停止 provider 并清理
-    echo "[4/4] 停止 Provider ..."
+    # 4. Stop provider and clean up
+    echo "[4/4] Stopping Provider ..."
     if kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null
         wait "$pid" 2>/dev/null || true
@@ -310,20 +310,20 @@ run_pair() {
     rm -f "$pid_file" "$log_file"
 
     if [ $consumer_exit -ne 0 ]; then
-        echo "Consumer 退出码: $consumer_exit"
+        echo "Consumer exit code: $consumer_exit"
         exit $consumer_exit
     fi
-    echo "=== 完成 ==="
+    echo "=== Done ==="
 }
 
 cmd_run() {
     run_pair "zk" "$PROVIDER_MODULE" "$PROVIDER_MAIN" "$CONSUMER_MODULE" "$CONSUMER_MAIN" \
-        10000 2 "请确保 ZooKeeper 已在 127.0.0.1:2181 运行" "${1:-}"
+        10000 2 "Make sure ZooKeeper is running at 127.0.0.1:2181" "${1:-}"
 }
 
 cmd_run_nacos() {
     run_pair "nacos" "$NACOS_PROVIDER_MODULE" "$NACOS_PROVIDER_MAIN" "$NACOS_CONSUMER_MODULE" "$NACOS_CONSUMER_MAIN" \
-        10000 2 "请确保 Nacos 已在 127.0.0.1:8848 运行" "${1:-}"
+        10000 2 "Make sure Nacos is running at 127.0.0.1:8848" "${1:-}"
 }
 
 cmd_run_netty() {
@@ -343,7 +343,7 @@ cmd_run_wire() {
 
 cmd_consumer() {
     ensure_built
-    echo "运行 ZkConsumer..."
+    echo "Running ZkConsumer..."
     echo "--------------------------------------------"
     $MVN exec:java -pl "$CONSUMER_MODULE" -Dexec.mainClass="$CONSUMER_MAIN" -q
 }
@@ -354,7 +354,7 @@ cmd_bench_injvm() {
     local warmup="${WARMUP:-5}"
     local duration="${DURATION:-10}"
     local sleep_ms="${SLEEP:-0}"
-    echo "运行 Benchmark [injvm] threads=$threads warmup=${warmup}s duration=${duration}s sleep=${sleep_ms}ms"
+    echo "Running Benchmark [injvm] threads=$threads warmup=${warmup}s duration=${duration}s sleep=${sleep_ms}ms"
     echo "--------------------------------------------"
     $MVN exec:java -pl "$BENCHMARK_MODULE" \
         -Dexec.mainClass="$BENCHMARK_MAIN" \
@@ -380,7 +380,7 @@ cmd_bench_jaws() {
     local cp
     cp=$(build_classpath "$BENCHMARK_MODULE")
     cp="$cp:$BENCHMARK_MODULE/target/classes:jaws-samples/jaws-sample-injvm/target/classes"
-    echo "运行 Benchmark [jaws+$transport] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port serialization=$serialization transport=$transport sleep=${sleep_ms}ms host=$host"
+    echo "Running Benchmark [jaws+$transport] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port serialization=$serialization transport=$transport sleep=${sleep_ms}ms host=$host"
     echo "--------------------------------------------"
     java -cp "$cp" \
         -Dprotocol=jaws \
@@ -408,7 +408,7 @@ cmd_bench_wire() {
     local cp
     cp=$(build_classpath "$BENCHMARK_MODULE")
     cp="$cp:$BENCHMARK_MODULE/target/classes:jaws-samples/jaws-sample-injvm/target/classes"
-    echo "运行 Benchmark [wire] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port compression=${compression:-none} host=$host"
+    echo "Running Benchmark [wire] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port compression=${compression:-none} host=$host"
     echo "--------------------------------------------"
     java -cp "$cp" \
         -Drole="$role" \
@@ -421,7 +421,7 @@ cmd_bench_wire() {
         "$WIRE_BENCHMARK_MAIN"
 }
 
-# 主入口
+# Main entry point
 case "${1:-}" in
     build)       cmd_build ;;
     injvm)       cmd_injvm ;;
@@ -439,7 +439,7 @@ case "${1:-}" in
     bench-wire)  cmd_bench_wire ;;
     -h|--help|help|"") usage ;;
     *)
-        echo "未知命令: $1"
+        echo "Unknown command: $1"
         usage
         exit 1
         ;;
