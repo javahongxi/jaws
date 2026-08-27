@@ -8,7 +8,10 @@ import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
+import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
+import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -80,9 +83,10 @@ public class Http2Client extends AbstractHttp2Client {
             async = b;
         }
 
-        int timeout = url.getMethodParameter(
+        int urlTimeout = url.getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),
                 UrlParam.Transport.REQUEST_TIMEOUT.getName(), UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+        int timeout = resolveTimeout(request, urlTimeout);
 
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout, url);
 
@@ -111,8 +115,19 @@ public class Http2Client extends AbstractHttp2Client {
                                         "HTTP/2 stream write failed", f.cause()));
                                 future.onFailure(errorResponse);
                             }
+                            incrErrorCount();
                         }
                     });
+
+            // Error fusing: reset on success / biz-exception, increment on failure
+            responseFuture.addListener(future -> {
+                if (future.isSuccess()
+                        || (future.isDone() && ExceptionUtils.isBizException(future.getException()))) {
+                    resetErrorCount();
+                } else {
+                    incrErrorCount();
+                }
+            });
         } catch (Exception e) {
             // write path failed before/as the callback was registered
             ResponseFuture future = removeCallback(request.getRequestId());
@@ -121,6 +136,7 @@ public class Http2Client extends AbstractHttp2Client {
                 errorResponse.setException(new JawsServiceException("HTTP/2 request error", e));
                 future.onFailure(errorResponse);
             }
+            incrErrorCount();
             log.error("HTTP/2 request failed: url={} {}, {}", url.getUri(),
                     RpcUtils.toString(request), e.getMessage());
             if (e instanceof JawsAbstractException jae) {
@@ -206,6 +222,7 @@ public class Http2Client extends AbstractHttp2Client {
                     Unpooled.wrappedBuffer(payload), true)).addListener(f -> {
                 if (!f.isSuccess()) {
                     log.error("HTTP/2 stream write failed for streaming request", f.cause());
+                    incrErrorCount();
                     streamChannel.close();
                 }
             });
@@ -220,5 +237,18 @@ public class Http2Client extends AbstractHttp2Client {
             throw new JawsServiceException("Http2Client streaming request failed: url="
                     + url.getUri() + " " + RpcUtils.toString(request), e);
         }
+    }
+
+    /**
+     * Resolve request timeout from dynamic configuration with fallback chain:
+     * method-level key -> service-level key -> global key -> URL default.
+     */
+    private int resolveTimeout(Request request, int urlDefault) {
+        String interfaceName = request.getInterfaceName();
+        String methodName = request.getMethodName();
+        return DynamicConfigurationUtils.resolveIntConfig(urlDefault, v -> v > 0,
+                DynamicConfigurationKeys.requestTimeout(interfaceName, methodName),
+                DynamicConfigurationKeys.requestTimeout(interfaceName),
+                DynamicConfigurationKeys.GLOBAL_REQUEST_TIMEOUT);
     }
 }

@@ -11,6 +11,8 @@ import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
+import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -158,10 +160,11 @@ public class WireClient extends AbstractHttp2Client {
         // Build gRPC path: /{interfaceName}/{methodName}
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
-        int timeout = url.getMethodParameter(
+        int urlTimeout = url.getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),
                 UrlParam.Transport.REQUEST_TIMEOUT.getName(),
                 UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+        int timeout = resolveTimeout(request, urlTimeout);
 
         CompletableFuture<Message> resultFuture = new CompletableFuture<>();
         Map<String, String> trailerMetadata = new HashMap<>();
@@ -183,11 +186,15 @@ public class WireClient extends AbstractHttp2Client {
                         if (!f.isSuccess()) {
                             resultFuture.completeExceptionally(
                                     new JawsServiceException("Wire stream write failed", f.cause()));
+                            incrErrorCount();
                         }
                     });
 
             // Wait for response synchronously
             Message responseMessage = resultFuture.get(timeout, TimeUnit.MILLISECONDS);
+
+            // Success — reset the error fusing counter
+            resetErrorCount();
 
             DefaultResponse response = new DefaultResponse(request.getRequestId());
             response.setValue(responseMessage);
@@ -200,10 +207,12 @@ public class WireClient extends AbstractHttp2Client {
             // Cancel the call: RST_STREAM(CANCEL) tells the server to stop
             // working on it (gRPC cancellation semantics)
             cancelStream(streamChannel);
+            incrErrorCount();
             throw new JawsServiceException("Wire request timeout: url=" + url.getUri()
                     + " path=" + grpcPath + " timeout=" + timeout + "ms");
         } catch (Exception e) {
             log.error("Wire request failed: url={} path={}", url.getUri(), grpcPath, e);
+            incrErrorCount();
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
             }
@@ -237,10 +246,11 @@ public class WireClient extends AbstractHttp2Client {
 
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
-        int timeout = url.getMethodParameter(
+        int urlTimeout = url.getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),
                 UrlParam.Transport.REQUEST_TIMEOUT.getName(),
                 UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+        int timeout = resolveTimeout(request, urlTimeout);
 
         StreamingMessagePublisher publisher = new StreamingMessagePublisher();
 
@@ -267,6 +277,7 @@ public class WireClient extends AbstractHttp2Client {
                         if (!f.isSuccess()) {
                             publisher.completeExceptionally(
                                     new JawsServiceException("Wire stream write failed", f.cause()));
+                            incrErrorCount();
                         }
                     });
 
@@ -277,6 +288,7 @@ public class WireClient extends AbstractHttp2Client {
         } catch (Exception e) {
             log.error("Wire streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
             publisher.completeExceptionally(e);
+            incrErrorCount();
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
             }
@@ -322,5 +334,18 @@ public class WireClient extends AbstractHttp2Client {
         }
         streamChannel.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL))
                 .addListener(f -> streamChannel.close());
+    }
+
+    /**
+     * Resolve request timeout from dynamic configuration with fallback chain:
+     * method-level key -> service-level key -> global key -> URL default.
+     */
+    private int resolveTimeout(Request request, int urlDefault) {
+        String interfaceName = request.getInterfaceName();
+        String methodName = request.getMethodName();
+        return DynamicConfigurationUtils.resolveIntConfig(urlDefault, v -> v > 0,
+                DynamicConfigurationKeys.requestTimeout(interfaceName, methodName),
+                DynamicConfigurationKeys.requestTimeout(interfaceName),
+                DynamicConfigurationKeys.GLOBAL_REQUEST_TIMEOUT);
     }
 }
