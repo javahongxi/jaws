@@ -6,16 +6,16 @@
 
 > 取名自《大白鲨》(*Jaws*)——**J**ava **A**sync **W**ire **S**ervice：Java 生态、异步调用、线级协议、服务治理，四个词正是一个 RPC 框架的四层解剖。
 
-Jaws 是一个**核心约 2 万行、可以从头读到尾**的轻量级 RPC 框架。它用不到 Dubbo 十分之一的代码量，
+Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC 框架。它用不到 Dubbo 十分之一的代码量，
 完整实现了一个工业级 RPC 的核心机制：三传输(Netty TCP 全链路零拷贝 + 自研 HTTP/2 消除队头阻塞 + 
-gRPC 线格式跨语言互通)、 Server Streaming、自适应负载均衡与高可用容错，实测 10 万 QPS、150+ 个测试全绿。 
+gRPC 线格式跨语言互通)、 Server Streaming、自适应负载均衡与高可用容错，实测 10 万 QPS、200+ 个测试全绿。 
 目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快十倍。
 
 ## 特性
 
 - **自定义协议** — 基于 Netty 的 jaws 二进制协议，编解码全链路零拷贝（零额外 byte[] 分配）
 - **HTTP/2 传输** — 自研 HTTP/2 传输，支持 Server Streaming，网关与 Service Mesh 友好
-- **gRPC 线格式** — `jaws-wire` 模块支持标准 gRPC 线格式与 protobuf 序列化，兼容 grpcurl 等标准工具
+- **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持 gzip 压缩、健康检查、deadline 与 keepalive 语义
 - **多种序列化** — 内置 fastjson2 / hessian2 / protostuff，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
