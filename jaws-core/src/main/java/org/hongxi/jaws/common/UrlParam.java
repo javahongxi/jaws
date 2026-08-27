@@ -106,6 +106,14 @@ public final class UrlParam {
         // Multi-connection (client side)
         public static final Def<Integer> CONNECTIONS = new Def<>("connections", 1);
 
+        /**
+         * gRPC keepalive policy (wire transport, server side): minimum permitted
+         * interval between client PING frames. PINGs arriving faster trigger
+         * GOAWAY too_many_pings (gRPC gRFC A8 semantics, same default as
+         * grpc-java). 0 disables the guard.
+         */
+        public static final Def<Long> PERMIT_PING_INTERVAL_MS = new Def<>("permitPingIntervalMs", 300_000L);
+
         private Transport() {
         }
     }

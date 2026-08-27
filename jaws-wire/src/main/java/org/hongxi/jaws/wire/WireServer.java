@@ -1,5 +1,7 @@
 package org.hongxi.jaws.wire;
 
+import io.netty.channel.ChannelPipeline;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.http2.AbstractHttp2Server;
@@ -11,6 +13,9 @@ import org.hongxi.jaws.transport.http2.AbstractHttp2Server;
  *   <li>5-byte length-prefixed message framing</li>
  *   <li>{@code /{service}/{method}} path routing</li>
  *   <li>Trailers-based status reporting (grpc-status / grpc-message)</li>
+ *   <li>Keepalive PING policy: answers client PINGs (via Netty's auto-ACK) and
+ *       guards against overly frequent PINGs with GOAWAY too_many_pings,
+ *       per gRPC gRFC A8 {@code PERMIT_KEEPALIVE_TIME} semantics</li>
  * </ul>
  * <p>
  * Each inbound HTTP/2 stream is handled by {@link WireServerStreamHandler}
@@ -48,6 +53,15 @@ public class WireServer extends AbstractHttp2Server {
         super(url, "WireServer");
         this.registry = null;
         this.messageHandler = messageHandler;
+    }
+
+    @Override
+    protected void addConnectionHandler(ChannelPipeline pipeline) {
+        // gRPC keepalive guard: permit client PINGs no faster than
+        // permitPingIntervalMs (default 5min, same as grpc-java); faster PINGs
+        // get GOAWAY too_many_pings. Set 0 to permit all.
+        long permitMs = url.getLongParameter(UrlParam.Transport.PERMIT_PING_INTERVAL_MS);
+        pipeline.addLast("wire_keepalive", new WireKeepaliveHandler(permitMs));
     }
 
     @Override
