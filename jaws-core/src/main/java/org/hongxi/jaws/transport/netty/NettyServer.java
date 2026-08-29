@@ -48,7 +48,7 @@ public class NettyServer extends AbstractNettyServer {
                     new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
             pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
         }
-        pipeline.addLast("decoder", new NettyDecoder(codec, this, maxContentLength));
+        pipeline.addLast("decoder", new NettyDecoder(this, codec, maxContentLength));
         // serverExecutor is ready before bind, so it is safe to build the handler here
         pipeline.addLast("handler", new NettyChannelHandler(this, codec, messageHandler, serverExecutor));
     }

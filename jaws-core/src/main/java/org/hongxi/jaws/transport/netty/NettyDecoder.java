@@ -32,8 +32,8 @@ import java.util.List;
 public class NettyDecoder extends ByteToMessageDecoder {
     private static final Logger log = LoggerFactory.getLogger(NettyDecoder.class);
 
-    private final Codec codec;
     private final Channel channel;
+    private final Codec codec;
     private final int maxContentLength;
 
     /**
@@ -43,9 +43,9 @@ public class NettyDecoder extends ByteToMessageDecoder {
      */
     private long bytesToSkip;
 
-    public NettyDecoder(Codec codec, Channel channel, int maxContentLength) {
-        this.codec = codec;
+    public NettyDecoder(Channel channel, Codec codec, int maxContentLength) {
         this.channel = channel;
+        this.codec = codec;
         this.maxContentLength = maxContentLength;
     }
 
