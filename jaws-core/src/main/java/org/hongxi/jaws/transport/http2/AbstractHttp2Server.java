@@ -1,5 +1,6 @@
 package org.hongxi.jaws.transport.http2;
 
+import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http2.DefaultHttp2GoAwayFrame;
@@ -105,7 +106,7 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
         addConnectionHandler(pipeline);
 
         pipeline.addLast("http2_multiplex", new Http2MultiplexHandler(
-                new io.netty.channel.ChannelInitializer<io.netty.channel.Channel>() {
+                new ChannelInitializer<>() {
                     @Override
                     protected void initChannel(io.netty.channel.Channel streamChannel) {
                         initStreamChannel(streamChannel);
@@ -136,9 +137,9 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
         // streams on this server and migrate to other backends.
         if (!connectionChannels.isEmpty()) {
             int count = 0;
-            for (io.netty.channel.Channel conn : connectionChannels) {
-                if (conn.isActive()) {
-                    conn.writeAndFlush(new DefaultHttp2GoAwayFrame(Http2Error.NO_ERROR));
+            for (io.netty.channel.Channel ch : connectionChannels) {
+                if (ch.isActive()) {
+                    ch.writeAndFlush(new DefaultHttp2GoAwayFrame(Http2Error.NO_ERROR));
                     count++;
                 }
             }

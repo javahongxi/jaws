@@ -27,31 +27,31 @@ public enum StreamType {
 
     ;
 
-    private final String wireValue;
+    private final String value;
 
-    StreamType(String wireValue) {
-        this.wireValue = wireValue;
+    StreamType(String value) {
+        this.value = value;
     }
 
     /**
-     * The value used on the wire in the {@code x-jaws-streaming} header.
+     * The value used in the {@code x-jaws-streaming} header.
      */
-    public String getWireValue() {
-        return wireValue;
+    public String getValue() {
+        return value;
     }
 
     /**
-     * Resolve a {@link StreamType} from its wire value.
+     * Resolve a {@link StreamType} from its header value.
      *
-     * @param wireValue the header value (e.g., "server")
+     * @param value the header value (e.g., "server")
      * @return the corresponding StreamType, or {@link #UNARY} if null/unknown
      */
-    public static StreamType fromWireValue(String wireValue) {
-        if (wireValue == null) {
+    public static StreamType fromValue(String value) {
+        if (value == null) {
             return UNARY;
         }
         for (StreamType type : values()) {
-            if (type.wireValue.equals(wireValue)) {
+            if (type.value.equals(value)) {
                 return type;
             }
         }

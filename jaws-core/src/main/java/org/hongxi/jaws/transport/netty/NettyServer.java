@@ -40,8 +40,8 @@ public class NettyServer extends AbstractNettyServer {
     }
 
     @Override
-    protected void initChannel(SocketChannel socketChannel) {
-        ChannelPipeline pipeline = socketChannel.pipeline();
+    protected void initChannel(SocketChannel ch) {
+        ChannelPipeline pipeline = ch.pipeline();
         long heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
         if (heartbeat > 0) {
             pipeline.addLast("idle_state",

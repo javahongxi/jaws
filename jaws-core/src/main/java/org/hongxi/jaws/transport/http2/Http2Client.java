@@ -216,7 +216,7 @@ public class Http2Client extends AbstractHttp2Client {
             // Send request headers with streaming mode
             byte[] payload = Http2PayloadCodec.encodeRequest(request, serialization);
             Http2Headers headers = buildRequestHeaders(request)
-                    .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getWireValue());
+                    .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getValue());
             streamChannel.write(new DefaultHttp2HeadersFrame(headers));
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
                     Unpooled.wrappedBuffer(payload), true)).addListener(f -> {

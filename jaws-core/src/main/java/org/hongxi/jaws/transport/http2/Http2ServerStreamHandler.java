@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
@@ -85,7 +86,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (msg instanceof Http2HeadersFrame headersFrame) {
-            onHeaders(ctx, headersFrame.headers(), headersFrame.isEndStream());
+            onHeaders(ctx, headersFrame);
         } else if (msg instanceof Http2DataFrame dataFrame) {
             onData(ctx, dataFrame);
         } else {
@@ -93,11 +94,12 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private void onHeaders(ChannelHandlerContext ctx, Http2Headers headers, boolean endStream) {
+    private void onHeaders(ChannelHandlerContext ctx, Http2HeadersFrame headersFrame) {
+        Http2Headers headers = headersFrame.headers();
         // Extract HTTP method and path for health check routing
         // Parsed from HEADERS frame for metadata mirror / health check
-        String method = headers.method() != null ? headers.method().toString() : null;
-        String path = headers.path() != null ? headers.path().toString() : null;
+        String method = Objects.toString(headers.method(), null);
+        String path = Objects.toString(headers.path(), null);
 
         // Health check: GET /health returns immediately without dispatching
         if ("GET".equals(method) && Http2Constants.HEALTH_PATH.equals(path)) {
@@ -105,24 +107,21 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
             return;
         }
 
-        String name = headers.get(Http2Constants.HEADER_SERIALIZATION) != null
-                ? headers.get(Http2Constants.HEADER_SERIALIZATION).toString()
-                : defaultSerializationName;
-        try {
-            serialization = Http2PayloadCodec.resolveSerialization(name);
-        } catch (Exception e) {
-            log.error("unsupported serialization: {}", name, e);
-            sendError(ctx, Http2Constants.STATUS_BAD_REQUEST, "Unsupported serialization: " + name);
+        String serializationName = Objects.toString(
+                headers.get(Http2Constants.HEADER_SERIALIZATION), defaultSerializationName);
+        serialization = Http2PayloadCodec.resolveSerialization(serializationName);
+        if (serialization == null) {
+            sendError(ctx, Http2Constants.STATUS_BAD_REQUEST, "Unsupported serialization: " + serializationName);
             return;
         }
 
         // Extract streaming mode
-        String streamingHeader = headers.get(Http2Constants.HEADER_STREAMING) != null
-                ? headers.get(Http2Constants.HEADER_STREAMING).toString() : null;
-        streamType = StreamType.fromWireValue(streamingHeader);
+        String streamingHeader = Objects.toString(
+                headers.get(Http2Constants.HEADER_STREAMING), null);
+        streamType = StreamType.fromValue(streamingHeader);
 
-        if (endStream && streamType == StreamType.UNARY) {
-            // HEADERS-only request carries no payload (only valid for unary)
+        if (headersFrame.isEndStream() && streamType == StreamType.UNARY) {
+            // HEADERS-only request carries no payload, which a unary call requires
             sendError(ctx, Http2Constants.STATUS_BAD_REQUEST, "Empty request payload");
         }
     }
@@ -280,7 +279,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
             Http2Headers respHeaders = new DefaultHttp2Headers()
                     .status(Http2Constants.STATUS_OK)
                     .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
-                    .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getWireValue());
+                    .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getValue());
             ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
         }
 
