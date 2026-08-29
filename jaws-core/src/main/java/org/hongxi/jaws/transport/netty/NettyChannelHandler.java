@@ -2,11 +2,9 @@ package org.hongxi.jaws.transport.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelDuplexHandler;
-import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.common.util.NetUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
@@ -38,26 +36,25 @@ import java.util.concurrent.ThreadPoolExecutor;
  * <p>
  * Created by shenhongxi on 2020/7/7.
  */
-@ChannelHandler.Sharable
 public class NettyChannelHandler extends ChannelDuplexHandler {
     private static final Logger log = LoggerFactory.getLogger(NettyChannelHandler.class);
 
     private static final String CONTENT_LENGTH = "Content-Length";
 
     private final Channel channel;
-    private final MessageHandler messageHandler;
     private final Codec codec;
+    private final MessageHandler messageHandler;
     private ThreadPoolExecutor serverExecutor;
 
-    public NettyChannelHandler(Channel channel, MessageHandler messageHandler) {
+    public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler) {
         this.channel = channel;
+        this.codec = codec;
         this.messageHandler = messageHandler;
-        this.codec = ExtensionLoader.getExtensionLoader(Codec.class).getExtension(
-                channel.getUrl().getParameter(UrlParam.Transport.CODEC.getName(), UrlParam.Transport.CODEC.value()));
     }
 
-    public NettyChannelHandler(Channel channel, MessageHandler messageHandler, ThreadPoolExecutor serverExecutor) {
-        this(channel, messageHandler);
+    public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler,
+                               ThreadPoolExecutor serverExecutor) {
+        this(channel, codec, messageHandler);
         this.serverExecutor = serverExecutor;
     }
 
@@ -108,9 +105,6 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                 serverExecutor.getActiveCount(), serverExecutor.getPoolSize(),
                 serverExecutor.getCorePoolSize(), serverExecutor.getMaximumPoolSize(),
                 serverExecutor.getTaskCount(), frame.requestId());
-        if (channel instanceof NettyServer nettyServer) {
-            nettyServer.getRejectCounter().incrementAndGet();
-        }
     }
 
     private void processFrame(ChannelHandlerContext ctx, DecodedFrame frame) {

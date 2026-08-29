@@ -138,7 +138,7 @@ public class NettyClient extends AbstractClient {
                             pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
                         }
                         pipeline.addLast("decoder", new NettyDecoder(codec, NettyClient.this, maxContentLength));
-                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (Object message) -> {
+                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, codec, (Object message) -> {
                             Response response = (Response) message;
                             ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
 

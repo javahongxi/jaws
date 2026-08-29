@@ -168,8 +168,7 @@ public abstract class AbstractNettyServer implements Server {
     public synchronized void close(int timeout) {
         if (state.isCloseState()) return;
 
-        int waitMs = timeout > 0 ? timeout :
-                url.getIntParameter(UrlParam.Server.GRACEFUL_SHUTDOWN_TIMEOUT);
+        int waitMs = timeout > 0 ? timeout : url.getIntParameter(UrlParam.Server.GRACEFUL_SHUTDOWN_TIMEOUT);
         try {
             if (serverChannel != null) {
                 serverChannel.close().syncUninterruptibly();

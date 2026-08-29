@@ -70,7 +70,7 @@ class NettyChannelHandlerTest {
 
         FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler, saturated);
+        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, new JawsCodec(), messageHandler, saturated);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -109,7 +109,7 @@ class NettyChannelHandlerTest {
 
         FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler, executor);
+        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, new JawsCodec(), messageHandler, executor);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -146,7 +146,7 @@ class NettyChannelHandlerTest {
     void syncProcessedMessageReleasesByteBuf() throws InterruptedException {
         FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler);
+        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, new JawsCodec(), messageHandler);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -169,7 +169,7 @@ class NettyChannelHandlerTest {
     void unsupportedMessageTypeClosesChannel() throws InterruptedException {
         FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler);
+        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, new JawsCodec(), messageHandler);
         embeddedChannel = new EmbeddedChannel(handler);
 
         // exceptionCaught logs and closes the channel; writeInbound does not propagate

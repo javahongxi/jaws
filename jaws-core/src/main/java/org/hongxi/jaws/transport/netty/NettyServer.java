@@ -11,7 +11,6 @@ import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.transport.MessageHandler;
 
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Netty-based {@link org.hongxi.jaws.transport.Server} implementation speaking
@@ -32,22 +31,12 @@ public class NettyServer extends AbstractNettyServer {
     private final MessageHandler messageHandler;
     private final int maxContentLength;
 
-    private final AtomicInteger rejectCounter = new AtomicInteger(0);
-
-    // Created in onOpen() once the business pool exists
-    private NettyChannelHandler channelHandler;
-
     public NettyServer(URL url, MessageHandler messageHandler) {
         super(url, "NettyServer");
         this.messageHandler = messageHandler;
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
                 .getExtension(url.getParameter(UrlParam.Transport.CODEC));
         this.maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
-    }
-
-    @Override
-    protected void onOpen() {
-        channelHandler = new NettyChannelHandler(this, messageHandler, serverExecutor);
     }
 
     @Override
@@ -60,10 +49,7 @@ public class NettyServer extends AbstractNettyServer {
             pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
         }
         pipeline.addLast("decoder", new NettyDecoder(codec, this, maxContentLength));
-        pipeline.addLast("handler", channelHandler);
-    }
-
-    public AtomicInteger getRejectCounter() {
-        return rejectCounter;
+        // serverExecutor is ready before bind, so it is safe to build the handler here
+        pipeline.addLast("handler", new NettyChannelHandler(this, codec, messageHandler, serverExecutor));
     }
 }
