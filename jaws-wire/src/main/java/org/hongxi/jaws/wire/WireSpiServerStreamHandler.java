@@ -9,7 +9,6 @@ import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
-import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,17 +45,15 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
     private static final Logger log = LoggerFactory.getLogger(WireSpiServerStreamHandler.class);
 
     private final MessageHandler messageHandler;
-    private final Channel serverChannel;
 
     private String serviceName;
     private String methodName;
 
-    WireSpiServerStreamHandler(MessageHandler messageHandler, Channel serverChannel,
+    WireSpiServerStreamHandler(MessageHandler messageHandler,
                                ExecutorService executor,
                                int maxMessageSize, String responseEncoding) {
         super("Wire SPI", executor, maxMessageSize, responseEncoding);
         this.messageHandler = messageHandler;
-        this.serverChannel = serverChannel;
     }
 
     @Override
@@ -122,7 +119,7 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
                 // pipeline via RpcContext, consistent with the netty/http2 transports
                 RpcContext.init(jawsRequest);
 
-                CompletableFuture<Object> future = messageHandler.handleAsync(serverChannel, jawsRequest);
+                CompletableFuture<Object> future = messageHandler.handleAsync(jawsRequest);
                 if (deadlineMs > 0) {
                     // Honor the caller's deadline: on expiry fail the stream with the
                     // jaws timeout error code, which maps to grpc-status DEADLINE_EXCEEDED

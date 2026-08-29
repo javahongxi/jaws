@@ -253,7 +253,7 @@ class NettyChannelHandlerTest {
         volatile Request lastRequest;
 
         @Override
-        public CompletableFuture<Object> handleAsync(Channel channel, Object message) {
+        public CompletableFuture<Object> handleAsync(Object message) {
             if (message instanceof Request request) {
                 lastRequest = request;
                 handled.incrementAndGet();

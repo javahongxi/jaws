@@ -4,7 +4,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 
 /**
- * Callback interface for handling messages received on a {@link Channel}.
+ * Callback interface for handling messages received by the server.
  * <p>
  * When a server receives a request, it delegates processing to the configured
  * message handler. The typical implementation is a router that dispatches
@@ -15,13 +15,12 @@ import java.util.concurrent.Flow;
 public interface MessageHandler {
 
     /**
-     * Handle a message received from the given channel asynchronously.
+     * Handle a message asynchronously.
      *
-     * @param channel the channel on which the message was received
      * @param message the received message object
      * @return a CompletableFuture representing the async processing result
      */
-    CompletableFuture<Object> handleAsync(Channel channel, Object message);
+    CompletableFuture<Object> handleAsync(Object message);
 
     /**
      * Handle a server-streaming request, returning a {@link Flow.Publisher}
@@ -31,11 +30,10 @@ public interface MessageHandler {
      * never receive streaming requests and can rely on the default
      * {@link UnsupportedOperationException}.
      *
-     * @param channel the channel on which the message was received
      * @param message the incoming RPC request
      * @return a {@link Flow.Publisher} emitting the stream items
      */
-    default Flow.Publisher<Object> handleStream(Channel channel, Object message) {
+    default Flow.Publisher<Object> handleStream(Object message) {
         throw new UnsupportedOperationException("Streaming not supported by this handler");
     }
 

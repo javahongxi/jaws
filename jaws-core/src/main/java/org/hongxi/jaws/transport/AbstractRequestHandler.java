@@ -36,9 +36,9 @@ public abstract class AbstractRequestHandler implements MessageHandler {
     protected final ConcurrentMap<String, Provider<?>> providers = new ConcurrentHashMap<>();
 
     @Override
-    public CompletableFuture<Object> handleAsync(Channel channel, Object message) {
-        if (channel == null || message == null) {
-            throw new JawsFrameworkException("handler(channel, message): channel and message must not be null");
+    public CompletableFuture<Object> handleAsync(Object message) {
+        if (message == null) {
+            throw new JawsFrameworkException("handler(message): message must not be null");
         }
         if (!(message instanceof Request request)) {
             throw new JawsFrameworkException("unsupported message type: " + message.getClass());
@@ -134,13 +134,12 @@ public abstract class AbstractRequestHandler implements MessageHandler {
      * Handle a server-streaming request: look up the provider, resolve the
      * method, and delegate to {@link Provider#callStream(Request)}.
      *
-     * @param channel the transport channel
      * @param message the incoming RPC request
      * @return a {@link Flow.Publisher} emitting the stream items
      */
-    public Flow.Publisher<Object> handleStream(Channel channel, Object message) {
-        if (channel == null || message == null) {
-            throw new JawsFrameworkException("handler(channel, message): channel and message must not be null");
+    public Flow.Publisher<Object> handleStream(Object message) {
+        if (message == null) {
+            throw new JawsFrameworkException("handler(message): message must not be null");
         }
         if (!(message instanceof Request request)) {
             throw new JawsFrameworkException("unsupported message type: " + message.getClass());

@@ -119,7 +119,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             if (decoded instanceof Request request) {
                 processRequest(ctx, request);
             } else if (decoded instanceof Response response) {
-                messageHandler.handleAsync(channel, response);
+                messageHandler.handleAsync(response);
             }
         } catch (Exception e) {
             log.error("Failed to decode, requestId: {}, size: {}, remote: {}",
@@ -128,7 +128,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             if (frame.isRequest()) {
                 sendResponse(ctx, response);
             } else {
-                messageHandler.handleAsync(channel, response);
+                messageHandler.handleAsync(response);
             }
         }
     }
@@ -141,7 +141,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             nettyServer.getActiveRequests().incrementAndGet();
         }
         RpcContext.init(request);
-        messageHandler.handleAsync(channel, request).whenComplete((res, throwable) -> {
+        messageHandler.handleAsync(request).whenComplete((res, throwable) -> {
             try {
                 RpcContext.init(request);
                 DefaultResponse response;

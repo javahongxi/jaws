@@ -16,9 +16,9 @@ import java.util.concurrent.CompletableFuture;
  * {@link Message} expected by the Jaws filter chain and {@link org.hongxi.jaws.rpc.Provider}.
  * <p>
  * On the request path, the raw bytes are parsed into a {@code Message} using
- * the {@link Parser} obtained from the service interface. On the response path,
- * the {@code Message} returned by the provider passes through directly —
- * {@code WireSpiServerStreamHandler} encodes it into a gRPC frame.
+ * the {@link com.google.protobuf.Parser} obtained from the service interface.
+ * On the response path, the {@code Message} returned by the provider passes
+ * through directly — {@code WireSpiServerStreamHandler} encodes it into a gRPC frame.
  *
  * @author shenhongxi
  */
@@ -34,15 +34,14 @@ class WireMessageHandler implements MessageHandler {
     }
 
     @Override
-    public CompletableFuture<Object> handleAsync(org.hongxi.jaws.transport.Channel channel,
-                                                 Object message) {
+    public CompletableFuture<Object> handleAsync(Object message) {
         if (!(message instanceof Request request)) {
-            return delegate.handleAsync(channel, message);
+            return delegate.handleAsync(message);
         }
 
         Object[] args = request.getArguments();
         if (args == null || args.length == 0 || !(args[0] instanceof byte[] bytes)) {
-            return delegate.handleAsync(channel, message);
+            return delegate.handleAsync(message);
         }
 
         // Look up per-method request parser
@@ -77,7 +76,7 @@ class WireMessageHandler implements MessageHandler {
             // For unary: the response Message passes through directly.
             // For streaming: the response is a Flow.Publisher, passed through as-is.
             // WireSpiServerStreamHandler handles gRPC frame encoding for both cases.
-            return delegate.handleAsync(channel, typedRequest);
+            return delegate.handleAsync(typedRequest);
         } catch (InvalidProtocolBufferException e) {
             log.error("Wire message decode failed: interface={} method={}",
                     request.getInterfaceName(), request.getMethodName(), e);

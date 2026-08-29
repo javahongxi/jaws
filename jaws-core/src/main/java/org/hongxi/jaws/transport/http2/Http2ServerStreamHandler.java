@@ -17,7 +17,6 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.serialization.Serialization;
-import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,7 +59,6 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(Http2ServerStreamHandler.class);
 
     private final MessageHandler messageHandler;
-    private final Channel serverChannel;
     private final ExecutorService executor;
     private final String defaultSerializationName;
     private final AtomicInteger activeRequests;
@@ -73,13 +71,11 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     private boolean dispatched;
 
     Http2ServerStreamHandler(MessageHandler messageHandler,
-                             Channel serverChannel,
                              ExecutorService executor,
                              String defaultSerializationName,
                              AtomicInteger activeRequests,
                              int maxContentLength) {
         this.messageHandler = messageHandler;
-        this.serverChannel = serverChannel;
         this.executor = executor;
         this.defaultSerializationName = defaultSerializationName;
         this.activeRequests = activeRequests;
@@ -225,7 +221,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
      * Dispatch a unary (request-response) invocation.
      */
     private void dispatchUnary(ChannelHandlerContext ctx, Request request, long startTime) {
-        CompletableFuture<Object> future = messageHandler.handleAsync(serverChannel, request);
+        CompletableFuture<Object> future = messageHandler.handleAsync(request);
         future.whenComplete((result, throwable) -> {
             try {
                 RpcContext.init(request);
@@ -277,7 +273,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
      * multiple response items via {@link Flow.Publisher}.
      */
     private void dispatchStream(ChannelHandlerContext ctx, Request request) {
-        Flow.Publisher<Object> publisher = messageHandler.handleStream(serverChannel, request);
+        Flow.Publisher<Object> publisher = messageHandler.handleStream(request);
 
         // Send response headers first (without END_STREAM)
         if (ctx.channel().isActive()) {

@@ -2,7 +2,6 @@ package org.hongxi.jaws.transport.http2;
 
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
 
 /**
@@ -44,32 +43,6 @@ public class Http2Server extends AbstractHttp2Server {
     private final String serializationName;
     private final int maxContentLength;
 
-    /** Lightweight Channel facade passed to MessageHandler for server-side context. */
-    private final Channel serverChannelFacade = new Channel() {
-        @Override
-        public boolean open() {
-            return true;
-        }
-
-        @Override
-        public void close() {
-        }
-
-        @Override
-        public void close(int timeout) {
-        }
-
-        @Override
-        public boolean isAvailable() {
-            return Http2Server.this.isAvailable();
-        }
-
-        @Override
-        public URL getUrl() {
-            return url;
-        }
-    };
-
     public Http2Server(URL url, MessageHandler messageHandler) {
         super(url, "Http2Server");
         this.messageHandler = messageHandler;
@@ -80,7 +53,7 @@ public class Http2Server extends AbstractHttp2Server {
     @Override
     protected void initStreamChannel(io.netty.channel.Channel streamChannel) {
         streamChannel.pipeline().addLast(new Http2ServerStreamHandler(
-                messageHandler, serverChannelFacade, serverExecutor,
+                messageHandler, serverExecutor,
                 serializationName, activeRequests, maxContentLength));
     }
 }

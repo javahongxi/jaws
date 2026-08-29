@@ -19,14 +19,14 @@ public class ProviderMessageHandler implements MessageHandler {
     private final AbstractRequestHandler genericHandler = new GenericRequestHandler();
 
     @Override
-    public CompletableFuture<Object> handleAsync(Channel channel, Object message) {
+    public CompletableFuture<Object> handleAsync(Object message) {
         if (message instanceof Request request) {
             boolean isGeneric = "true".equals(request.getAttachments().get("$generic"));
             if (isGeneric) {
-                return genericHandler.handleAsync(channel, message);
+                return genericHandler.handleAsync(message);
             }
         }
-        return normalHandler.handleAsync(channel, message);
+        return normalHandler.handleAsync(message);
     }
 
     public void addProvider(Provider<?> provider) {
@@ -42,12 +42,11 @@ public class ProviderMessageHandler implements MessageHandler {
     /**
      * Handle a server-streaming request by delegating to the normal handler.
      *
-     * @param channel the transport channel
      * @param message the incoming RPC request
      * @return a {@link Flow.Publisher} emitting the stream items
      */
-    public Flow.Publisher<Object> handleStream(Channel channel, Object message) {
-        return normalHandler.handleStream(channel, message);
+    public Flow.Publisher<Object> handleStream(Object message) {
+        return normalHandler.handleStream(message);
     }
 
 }
