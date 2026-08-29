@@ -381,7 +381,7 @@ class WireServerStreamHandlerTest {
         ch.writeInbound(requestHeaders("/test.Health/Watch"));
         ch.writeInbound(new DefaultHttp2DataFrame(
                 WireFrameCodec.encode(REQUEST, ch.alloc()), true));
-        assertNotNull(capturedSubscriber.get(), "dispatchStreaming must have subscribed");
+        assertNotNull(capturedSubscriber.get(), "dispatchStream must have subscribed");
 
         // Caller cancels with RST_STREAM(CANCEL)
         ch.writeInbound(new DefaultHttp2ResetFrame(Http2Error.CANCEL));

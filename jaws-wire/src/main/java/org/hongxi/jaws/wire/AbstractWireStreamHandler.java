@@ -273,7 +273,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
      * Non-Message items are logged and skipped. Emission stops early when
      * the caller cancels the stream or the deadline expires.
      */
-    protected void dispatchStreaming(ChannelHandlerContext ctx, Flow.Publisher<?> publisher) {
+    protected void dispatchStream(ChannelHandlerContext ctx, Flow.Publisher<?> publisher) {
         publisher.subscribe(new Flow.Subscriber<Object>() {
             private Flow.Subscription subscription;
 

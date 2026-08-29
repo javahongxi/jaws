@@ -91,7 +91,7 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
                 try {
                     // Try streaming first; falls back to UnsupportedOperationException
                     Flow.Publisher<Message> publisher = methodHandler.handleStream(request, callContext);
-                    dispatchStreaming(ctx, publisher);
+                    dispatchStream(ctx, publisher);
                 } catch (UnsupportedOperationException e) {
                     // Unary fallback
                     Message response = methodHandler.handle(request, callContext);

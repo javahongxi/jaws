@@ -88,9 +88,9 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
             }
             return Http2PayloadCodec.decodeResponse(buffer.toByteArray(), client.getSerialization());
         } catch (Exception e) {
-            log.error("HTTP/2 response deserialization failed: requestId={}", requestId, e);
+            log.error("Failed to decode HTTP/2 response: requestId={}", requestId, e);
             response.setException(new org.hongxi.jaws.exception.JawsServiceException(
-                    "Response deserialization failed", e));
+                    "Failed to decode response", e));
             return response;
         }
     }

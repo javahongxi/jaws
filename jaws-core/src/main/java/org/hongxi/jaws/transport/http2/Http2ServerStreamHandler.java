@@ -191,9 +191,9 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
             try {
                 request = Http2PayloadCodec.decodeRequest(payload, serialization);
             } catch (Exception e) {
-                log.error("HTTP/2 request deserialization failed", e);
+                log.error("Failed to decode HTTP/2 request", e);
                 sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
-                        "Request deserialization failed: " + e.getMessage());
+                        "Failed to decode request: " + e.getMessage());
                 activeRequests.decrementAndGet();
                 return;
             }
@@ -227,7 +227,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                 DefaultResponse response;
                 if (throwable != null) {
                     log.error("HTTP/2 invoke failed: {}", request, throwable);
-                    response = new DefaultResponse(request.getRequestId());
+                    response = new DefaultResponse();
                     response.setException(new RuntimeException(
                             "process request failed: " + throwable.getMessage(), throwable));
                 } else if (result instanceof DefaultResponse dr) {
@@ -256,10 +256,10 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                             });
                 }
             } catch (Exception e) {
-                log.error("HTTP/2 response serialization failed: requestId={}",
+                log.error("Failed to encode HTTP/2 response: requestId={}",
                         request.getRequestId(), e);
                 sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
-                        "Response serialization failed: " + e.getMessage());
+                        "Failed to encode response: " + e.getMessage());
             } finally {
                 RpcContext.destroy();
                 activeRequests.decrementAndGet();
@@ -338,7 +338,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     private void sendStreamError(ChannelHandlerContext ctx, Throwable error) {
         if (ctx.channel().isActive()) {
             try {
-                String errorMsg = error.getMessage() != null ? error.getMessage() : error.getClass().getName();
+                String errorMsg = Objects.toString(error.getMessage(), error.getClass().getName());
                 byte[] errorBytes = errorMsg.getBytes(StandardCharsets.UTF_8);
                 ctx.writeAndFlush(new DefaultHttp2DataFrame(
                         Unpooled.wrappedBuffer(errorBytes), true))

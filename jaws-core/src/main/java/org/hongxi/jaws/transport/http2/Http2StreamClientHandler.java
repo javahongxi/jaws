@@ -113,7 +113,7 @@ class Http2StreamClientHandler extends ChannelInboundHandlerAdapter implements F
                     deliverItem(item);
                 } catch (Exception e) {
                     log.error("Failed to decode stream item", e);
-                    emitError(new JawsServiceException("Stream item deserialization failed", e));
+                    emitError(new JawsServiceException("Failed to decode stream item", e));
                 }
             }
 

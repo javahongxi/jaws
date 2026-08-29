@@ -143,7 +143,7 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
 
                 if (value instanceof Flow.Publisher<?> publisher) {
                     // Server streaming: subscribe and emit each Message as a DATA frame
-                    dispatchStreaming(ctx, publisher);
+                    dispatchStream(ctx, publisher);
                 } else {
                     // Unary: single response Message
                     Message responseMessage = extractMessage(result);
