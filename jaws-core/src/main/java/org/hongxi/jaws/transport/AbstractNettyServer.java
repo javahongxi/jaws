@@ -46,8 +46,6 @@ public abstract class AbstractNettyServer implements Server {
 
     protected final URL url;
 
-    protected volatile ChannelState state = ChannelState.UNINIT;
-
     /** Human-readable server name used in log messages and thread names. */
     protected final String serverName;
 
@@ -55,6 +53,7 @@ public abstract class AbstractNettyServer implements Server {
     protected EventLoopGroup workerGroup;
     // volatile: written under the instance lock in open(), read lock-free in stopAccept()
     protected volatile io.netty.channel.Channel serverChannel;
+    protected volatile ChannelState state = ChannelState.UNINIT;
     protected ThreadPoolExecutor serverExecutor;
 
     /** Tracks in-flight business requests for graceful shutdown draining. */
@@ -63,16 +62,6 @@ public abstract class AbstractNettyServer implements Server {
     protected AbstractNettyServer(URL url, String serverName) {
         this.url = url;
         this.serverName = serverName;
-    }
-
-    @Override
-    public URL getUrl() {
-        return url;
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return state.isAliveState();
     }
 
     /**
@@ -226,6 +215,16 @@ public abstract class AbstractNettyServer implements Server {
             serverExecutor.shutdownNow();
             serverExecutor = null;
         }
+    }
+
+    @Override
+    public URL getUrl() {
+        return url;
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return state.isAliveState();
     }
 
     @Override
