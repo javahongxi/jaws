@@ -2,6 +2,7 @@ package org.hongxi.jaws.transport;
 
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.ResponseFuture;
@@ -12,12 +13,14 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Base implementation of {@link Client} holding state shared by all
  * client transports: the remote {@link URL}, the volatile {@link ChannelState}
- * lifecycle flag, and the async-request callback bookkeeping (callback futures
- * plus one-shot per-request timeouts on a shared HashedWheelTimer).
+ * lifecycle flag, the async-request callback bookkeeping (callback futures
+ * plus one-shot per-request timeouts on a shared HashedWheelTimer), and the
+ * error-fusing availability management.
  * <p>
  * Also provides the graceful-close template: drain in-flight requests within
  * the given timeout, cancel whatever remains, then delegate transport-specific
@@ -50,6 +53,10 @@ public abstract class AbstractClient implements Client {
 
     protected volatile ChannelState state = ChannelState.UNINIT;
 
+    private final int fusingThreshold;
+    /** Consecutive error count for client-side error fusing. */
+    private final AtomicLong errorCount = new AtomicLong(0);
+
     /**
      * Async requests need to register a callback future.
      * Removal triggers: 1) response received from server  2) timeout task cancels it  3) close().
@@ -59,6 +66,51 @@ public abstract class AbstractClient implements Client {
 
     protected AbstractClient(URL url) {
         this.url = url;
+        this.fusingThreshold = url.getIntParameter(UrlParam.Client.FUSING_THRESHOLD);
+    }
+
+    /**
+     * Increment the consecutive error count.
+     * If the count reaches the fusing threshold, mark this client as unavailable.
+     */
+    public void incrErrorCount() {
+        long count = errorCount.incrementAndGet();
+        if (count >= fusingThreshold && state.isAliveState()) {
+            synchronized (this) {
+                count = errorCount.longValue();
+                if (count >= fusingThreshold && state.isAliveState()) {
+                    log.error("{} marked unavailable due to consecutive errors: url={} {}",
+                            getClass().getSimpleName(), url.getIdentity(), url.getHostPort());
+                    state = ChannelState.UNALIVE;
+                }
+            }
+        }
+    }
+
+    /**
+     * Reset the consecutive error count and recover to available state if applicable.
+     */
+    public void resetErrorCount() {
+        errorCount.set(0);
+
+        if (state.isAliveState()) {
+            return;
+        }
+
+        synchronized (this) {
+            if (state.isAliveState()) {
+                return;
+            }
+
+            if (state.isUnAliveState()) {
+                long count = errorCount.longValue();
+                if (count < fusingThreshold) {
+                    state = ChannelState.ALIVE;
+                    log.info("{} recovered to available: url={} {}",
+                            getClass().getSimpleName(), url.getIdentity(), url.getHostPort());
+                }
+            }
+        }
     }
 
     @Override

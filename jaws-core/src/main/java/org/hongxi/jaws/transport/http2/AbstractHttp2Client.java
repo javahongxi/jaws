@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Base class for HTTP/2 based clients, owning everything that is protocol
@@ -58,17 +57,13 @@ public abstract class AbstractHttp2Client extends AbstractClient {
     private static final Logger log = LoggerFactory.getLogger(AbstractHttp2Client.class);
 
     /** Shared event loop group for all HTTP/2 client connections. */
-    private static final NioEventLoopGroup NIO_EVENT_LOOP = new NioEventLoopGroup();
+    private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
 
     /** Human-readable client name used in log messages and thread names. */
     private final String clientName;
 
     private final int connectionCount;
     private final SslContext sslContext;
-
-    private final int fusingThreshold;
-    /** Consecutive error count for client-side error fusing. */
-    private final AtomicLong errorCount = new AtomicLong(0);
 
     private Bootstrap bootstrap;
 
@@ -83,7 +78,6 @@ public abstract class AbstractHttp2Client extends AbstractClient {
         super(url);
         this.clientName = clientName;
         this.connectionCount = Math.max(1, url.getIntParameter(UrlParam.Transport.CONNECTIONS));
-        this.fusingThreshold = url.getIntParameter(UrlParam.Client.FUSING_THRESHOLD);
         this.sslContext = buildSslContext();
     }
 
@@ -268,7 +262,7 @@ public abstract class AbstractHttp2Client extends AbstractClient {
      * @return the shared event loop group used by this client class
      */
     protected EventLoopGroup eventLoopGroup() {
-        return NIO_EVENT_LOOP;
+        return nioEventLoopGroup;
     }
 
     @Override
@@ -280,50 +274,6 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                 }
             }
             channels = null;
-        }
-    }
-
-    /**
-     * Increment the consecutive error count.
-     * If the count reaches the fusing threshold, mark this client as unavailable.
-     */
-    protected void incrErrorCount() {
-        long count = errorCount.incrementAndGet();
-        if (count >= fusingThreshold && state.isAliveState()) {
-            synchronized (this) {
-                count = errorCount.longValue();
-                if (count >= fusingThreshold && state.isAliveState()) {
-                    log.error("{} marked unavailable due to consecutive errors: url={} {}",
-                            clientName, url.getIdentity(), url.getHostPort());
-                    state = ChannelState.UNALIVE;
-                }
-            }
-        }
-    }
-
-    /**
-     * Reset the consecutive error count and recover to available state if applicable.
-     */
-    protected void resetErrorCount() {
-        errorCount.set(0);
-
-        if (state.isAliveState()) {
-            return;
-        }
-
-        synchronized (this) {
-            if (state.isAliveState()) {
-                return;
-            }
-
-            if (state.isUnAliveState()) {
-                long count = errorCount.longValue();
-                if (count < fusingThreshold) {
-                    state = ChannelState.ALIVE;
-                    log.info("{} recovered to available: url={} {}",
-                            clientName, url.getIdentity(), url.getHostPort());
-                }
-            }
         }
     }
 

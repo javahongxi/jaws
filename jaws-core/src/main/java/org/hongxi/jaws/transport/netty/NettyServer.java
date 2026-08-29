@@ -1,198 +1,69 @@
 package org.hongxi.jaws.transport.netty;
 
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
-import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
-import org.hongxi.jaws.common.threadpool.EagerThreadPoolExecutor;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.AbstractServer;
+import org.hongxi.jaws.transport.AbstractNettyServer;
 import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.transport.MessageHandler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.net.InetSocketAddress;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Netty-based {@link org.hongxi.jaws.transport.Server} implementation built on
- * boss/worker {@link io.netty.channel.EventLoopGroup} NIO transport. Each child
- * channel runs the pipeline IdleStateHandler → HeartbeatHandler
- * → {@link NettyDecoder} → {@link NettyChannelHandler}, the last of which
- * dispatches decoded requests to a dedicated business thread pool.
+ * Netty-based {@link org.hongxi.jaws.transport.Server} implementation speaking
+ * the jaws binary protocol. Each child channel runs the pipeline
+ * IdleStateHandler → HeartbeatHandler → {@link NettyDecoder}
+ * → {@link NettyChannelHandler}, the last of which dispatches decoded requests
+ * to the business thread pool owned by {@link AbstractNettyServer}.
  * <p>
- * Supports graceful shutdown via {@link #stopAccept()} and
- * {@link #awaitInactiveRequests(long)}, which stop taking new connections
- * and wait for in-flight requests to drain.
+ * The business pool rejects with an error response when full (see
+ * {@link NettyChannelHandler}), and graceful shutdown is driven by the base
+ * class via {@link #stopAccept()} and {@link #awaitInactiveRequests(long)}.
  * <p>
  * Created by shenhongxi on 2020/6/27.
  */
-public class NettyServer extends AbstractServer {
-    private static final Logger log = LoggerFactory.getLogger(NettyServer.class);
+public class NettyServer extends AbstractNettyServer {
 
     private final Codec codec;
-
-    private EventLoopGroup bossGroup;
-    private EventLoopGroup workerGroup;
-    // volatile: written under the instance lock in open(), read lock-free in stopAccept()
-    private volatile Channel serverChannel;
     private final MessageHandler messageHandler;
-    private ThreadPoolExecutor serverExecutor;
+    private final int maxContentLength;
 
-    private final AtomicInteger activeRequests = new AtomicInteger(0);
     private final AtomicInteger rejectCounter = new AtomicInteger(0);
 
+    // Created in onOpen() once the business pool exists
+    private NettyChannelHandler channelHandler;
+
     public NettyServer(URL url, MessageHandler messageHandler) {
-        super(url);
+        super(url, "NettyServer");
         this.messageHandler = messageHandler;
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
                 .getExtension(url.getParameter(UrlParam.Transport.CODEC));
+        this.maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
     }
 
     @Override
-    public synchronized boolean open() {
-        if (isAvailable()) {
-            log.debug("server channel already open, url={}", url);
-            return state.isAliveState();
-        }
-
-        if (bossGroup == null) {
-            bossGroup = new NioEventLoopGroup(1);
-            workerGroup = new NioEventLoopGroup();
-        }
-
-        log.info("server channel start open, url={}", url);
-
-        if (serverExecutor == null || serverExecutor.isShutdown()) {
-            serverExecutor = new EagerThreadPoolExecutor(
-                    url.getIntParameter(UrlParam.Server.MIN_WORKER_THREADS),
-                    url.getIntParameter(UrlParam.Server.MAX_WORKER_THREADS),
-                    url.getIntParameter(UrlParam.Server.WORKER_QUEUE_SIZE),
-                    new DefaultThreadFactory("NettyServer-" + url.getHostPort(), true));
-        }
-        serverExecutor.prestartAllCoreThreads();
-        NettyChannelHandler channelHandler = new NettyChannelHandler(
-                NettyServer.this, messageHandler, serverExecutor);
-
-        int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
-
-        ServerBootstrap serverBootstrap = new ServerBootstrap();
-        serverBootstrap.group(bossGroup, workerGroup)
-                .channel(NioServerSocketChannel.class)
-                .childHandler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel socketChannel) throws Exception {
-                        ChannelPipeline pipeline = socketChannel.pipeline();
-                        long heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
-                        if (heartbeat > 0) {
-                            pipeline.addLast("idle_state",
-                                    new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
-                            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
-                        }
-                        pipeline.addLast("decoder", new NettyDecoder(codec, NettyServer.this, maxContentLength));
-                        pipeline.addLast("handler", channelHandler);
-                    }
-                });
-        serverBootstrap.childOption(ChannelOption.TCP_NODELAY, true);
-        serverBootstrap.childOption(ChannelOption.SO_KEEPALIVE, true);
-        ChannelFuture channelFuture = serverBootstrap.bind(new InetSocketAddress(url.getPort()));
-        channelFuture.syncUninterruptibly();
-        serverChannel = channelFuture.channel();
-        state = ChannelState.ALIVE;
-        log.info("server channel finished open: url={}", url);
-        return state.isAliveState();
+    protected void onOpen() {
+        channelHandler = new NettyChannelHandler(this, messageHandler, serverExecutor);
     }
 
     @Override
-    public synchronized void close() {
-        close(0);
-    }
-
-    @Override
-    public synchronized void close(int timeout) {
-        if (state.isCloseState()) return;
-
-        try {
-            cleanup();
-            if (state.isUnInitState()) {
-                log.info("Server close failed, state={}, uri={}", state.value(), url.getUri());
-                return;
-            }
-
-            state = ChannelState.CLOSE;
-            log.info("Server close success, uri={}", url.getUri());
-        } catch (Exception e) {
-            log.error("Server close error, uri={}", url.getUri(), e);
+    protected void initChannel(SocketChannel socketChannel) {
+        ChannelPipeline pipeline = socketChannel.pipeline();
+        long heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
+        if (heartbeat > 0) {
+            pipeline.addLast("idle_state",
+                    new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
+            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
         }
-    }
-
-    private void cleanup() {
-        if (serverChannel != null) {
-            serverChannel.close();
-        }
-        if (bossGroup != null) {
-            bossGroup.shutdownGracefully();
-            bossGroup = null;
-        }
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
-            workerGroup = null;
-        }
-        if (serverExecutor != null) {
-            serverExecutor.shutdownNow();
-        }
-    }
-
-    @Override
-    public void stopAccept() {
-        if (serverChannel != null && serverChannel.isOpen()) {
-            serverChannel.close();
-            log.info("Server stopAccept: no longer accepting new connections, uri={}", url.getUri());
-        }
-    }
-
-    public AtomicInteger getActiveRequests() {
-        return activeRequests;
+        pipeline.addLast("decoder", new NettyDecoder(codec, this, maxContentLength));
+        pipeline.addLast("handler", channelHandler);
     }
 
     public AtomicInteger getRejectCounter() {
         return rejectCounter;
-    }
-
-    /**
-     * Wait for in-flight requests to complete within the given timeout.
-     */
-    @Override
-    public void awaitInactiveRequests(long timeoutMs) {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (activeRequests.get() > 0 && System.currentTimeMillis() < deadline) {
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-        int remaining = activeRequests.get();
-        if (remaining > 0) {
-            log.warn("Graceful shutdown timeout reached, {} requests still in-flight, uri={}",
-                    remaining, url.getUri());
-        } else {
-            log.info("All in-flight requests completed before shutdown, uri={}", url.getUri());
-        }
     }
 }

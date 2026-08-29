@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for shared client pooling in {@link AbstractTransportFactory}.
+ * Tests for shared server and client pooling in {@link AbstractTransportFactory}.
  */
 class AbstractTransportFactoryTest {
 
@@ -68,22 +68,102 @@ class AbstractTransportFactoryTest {
         assertTrue(factory.createdClients() == 2);
     }
 
+    @Test
+    void createServerSharesSameHostPort() {
+        URL demoUrl = new URL("jaws", "127.0.0.1", 10000, "org.example.DemoService");
+        URL orderUrl = new URL("jaws", "127.0.0.1", 10000, "org.example.OrderService");
+
+        Server first = factory.createServer(demoUrl, null);
+        Server second = factory.createServer(orderUrl, null);
+
+        assertSame(first, second, "services on the same host:port must share one server");
+        assertTrue(factory.createdServers() == 1, "only one underlying server should be created");
+    }
+
+    @Test
+    void releaseServerClosesOnlyWhenLastReferenceReleased() {
+        URL url = new URL("jaws", "127.0.0.1", 10000, "org.example.DemoService");
+        Server first = factory.createServer(url, null);
+        Server second = factory.createServer(new URL("jaws", "127.0.0.1", 10000, "org.example.OrderService"), null);
+
+        factory.releaseServer(first);
+        assertFalse(((FakeServer) second).isClosed(), "shared server must stay open while referenced");
+
+        factory.releaseServer(second);
+        assertTrue(((FakeServer) second).isClosed(), "shared server must close when the last reference is released");
+    }
+
+    @Test
+    void createServerAfterLastReleaseCreatesNewServer() {
+        URL url = new URL("jaws", "127.0.0.1", 10000, "org.example.DemoService");
+        Server first = factory.createServer(url, null);
+        factory.releaseServer(first);
+
+        Server second = factory.createServer(url, null);
+        assertNotSame(first, second, "a new server must be created after the shared one was closed");
+        assertTrue(factory.createdServers() == 2);
+    }
+
     static class FakeTransportFactory extends AbstractTransportFactory {
         private int created;
+        private int createdServers;
 
         int createdClients() {
             return created;
         }
 
+        int createdServers() {
+            return createdServers;
+        }
+
         @Override
         protected Server innerCreateServer(URL url, MessageHandler messageHandler) {
-            throw new UnsupportedOperationException();
+            createdServers++;
+            return new FakeServer(url);
         }
 
         @Override
         protected Client innerCreateClient(URL url) {
             created++;
             return new FakeClient(url);
+        }
+    }
+
+    static class FakeServer implements Server {
+        private final URL url;
+        private boolean closed;
+
+        FakeServer(URL url) {
+            this.url = url;
+        }
+
+        boolean isClosed() {
+            return closed;
+        }
+
+        @Override
+        public boolean open() {
+            return true;
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        @Override
+        public void close(int timeout) {
+            closed = true;
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return !closed;
+        }
+
+        @Override
+        public URL getUrl() {
+            return url;
         }
     }
 

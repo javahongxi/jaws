@@ -6,8 +6,6 @@ import org.hongxi.jaws.transport.AbstractTransportFactory;
 import org.hongxi.jaws.transport.Client;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.Server;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Set;
 
@@ -33,7 +31,6 @@ import java.util.Set;
  */
 @Extension("wire")
 public class WireTransportFactory extends AbstractTransportFactory {
-    private static final Logger log = LoggerFactory.getLogger(WireTransportFactory.class);
 
     @Override
     public Set<String> supportedProtocols() {

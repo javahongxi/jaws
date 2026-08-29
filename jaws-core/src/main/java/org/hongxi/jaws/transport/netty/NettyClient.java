@@ -31,7 +31,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Netty-based {@link Client} implementation maintaining a single
@@ -59,17 +58,10 @@ public class NettyClient extends AbstractClient {
     // volatile: written under the instance lock in open()/close(), read lock-free in request()
     private volatile NettyChannel channel;
 
-    private final int fusingThreshold;
-    /**
-     * consecutive error count
-     */
-    private final AtomicLong errorCount = new AtomicLong(0);
-
     public NettyClient(URL url) {
         super(url);
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
                 .getExtension(url.getParameter(UrlParam.Transport.CODEC));
-        this.fusingThreshold = url.getIntParameter(UrlParam.Client.FUSING_THRESHOLD);
         log.info("init netty client. url: {}-{}, use codec: {}",
                 url.getHost(), url.getPath(), codec.getClass().getSimpleName());
     }
@@ -181,50 +173,6 @@ public class NettyClient extends AbstractClient {
         // Close the channel
         if (channel != null) {
             channel.close();
-        }
-    }
-
-    /**
-     * Increment the consecutive error count.
-     * If the count reaches the fusing threshold, mark this client as unavailable.
-     */
-    void incrErrorCount() {
-        long count = errorCount.incrementAndGet();
-        if (count >= fusingThreshold && state.isAliveState()) {
-            synchronized (this) {
-                count = errorCount.longValue();
-                if (count >= fusingThreshold && state.isAliveState()) {
-                    log.error("NettyClient marked unavailable due to consecutive errors: url={} {}",
-                            url.getIdentity(), url.getHostPort());
-                    state = ChannelState.UNALIVE;
-                }
-            }
-        }
-    }
-
-    /**
-     * Reset the consecutive error count and recover to available state if applicable.
-     */
-    void resetErrorCount() {
-        errorCount.set(0);
-
-        if (state.isAliveState()) {
-            return;
-        }
-
-        synchronized (this) {
-            if (state.isAliveState()) {
-                return;
-            }
-
-            if (state.isUnAliveState()) {
-                long count = errorCount.longValue();
-                if (count < fusingThreshold) {
-                    state = ChannelState.ALIVE;
-                    log.info("NettyClient recovered to available: url={} {}",
-                            url.getIdentity(), url.getHostPort());
-                }
-            }
         }
     }
 }

@@ -35,6 +35,7 @@ public class WireExporter<T> extends AbstractExporter<T> {
             new ConcurrentHashMap<>();
 
     protected Server server;
+    private final TransportFactory transportFactory;
 
     public WireExporter(Provider<T> provider, URL url) {
         super(provider, url);
@@ -49,7 +50,8 @@ public class WireExporter<T> extends AbstractExporter<T> {
         WireMessageHandler wireHandler = new WireMessageHandler(
                 baseHandler, protoTypes);
 
-        server = TransportResolver.resolve(url).createServer(url, wireHandler);
+        transportFactory = TransportResolver.resolve(url);
+        server = transportFactory.createServer(url, wireHandler);
     }
 
     @Override
@@ -68,6 +70,7 @@ public class WireExporter<T> extends AbstractExporter<T> {
         if (messageHandler != null) {
             messageHandler.removeProvider(provider);
         }
+        transportFactory.releaseServer(server);
         log.info("WireExporter destroy: url={}", url);
     }
 

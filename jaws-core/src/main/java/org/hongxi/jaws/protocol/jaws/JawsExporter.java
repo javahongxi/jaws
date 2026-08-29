@@ -25,6 +25,7 @@ public class JawsExporter<T> extends AbstractExporter<T> {
     private static final ConcurrentMap<String, ProviderMessageHandler> messageHandlerMap = new ConcurrentHashMap<>();
 
     protected Server server;
+    private final TransportFactory transportFactory;
 
     public JawsExporter(Provider<T> provider, URL url) {
         super(provider, url);
@@ -33,7 +34,8 @@ public class JawsExporter<T> extends AbstractExporter<T> {
                 url.getHostPort(), key -> new ProviderMessageHandler());
         messageHandler.addProvider(provider);
 
-        server = TransportResolver.resolve(url).createServer(url, messageHandler);
+        transportFactory = TransportResolver.resolve(url);
+        server = transportFactory.createServer(url, messageHandler);
     }
 
     @Override
@@ -52,6 +54,7 @@ public class JawsExporter<T> extends AbstractExporter<T> {
         if (messageHandler != null) {
             messageHandler.removeProvider(provider);
         }
+        transportFactory.releaseServer(server);
         log.info("JawsExporter destroy: url={}", url);
     }
 

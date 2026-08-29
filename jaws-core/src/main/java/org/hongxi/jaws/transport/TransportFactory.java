@@ -36,12 +36,27 @@ public interface TransportFactory {
      * <p>
      * The returned server listens for incoming connections and dispatches
      * received messages to the given {@link MessageHandler}.
+     * <p>
+     * Implementations may share one server across services exported on the
+     * same host:port; each invocation increments the server's reference count.
+     * Callers must invoke {@link #releaseServer(Server)} when the server is no
+     * longer needed.
      *
      * @param url            the URL containing host, port and transport parameters
      * @param messageHandler the handler that processes incoming messages
      * @return a new or shared server instance
      */
     Server createServer(URL url, MessageHandler messageHandler);
+
+    /**
+     * Release a server previously obtained from {@link #createServer(URL, MessageHandler)}.
+     * <p>
+     * For shared servers the reference count is decremented, and the server
+     * is closed only when the last reference is released.
+     *
+     * @param server the server to release
+     */
+    void releaseServer(Server server);
 
     /**
      * Create a {@link Client} that connects to the remote address specified by the URL.

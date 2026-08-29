@@ -21,9 +21,10 @@ public abstract class AbstractTransportFactory implements TransportFactory {
     private static final Logger log = LoggerFactory.getLogger(AbstractTransportFactory.class);
 
     /**
-     * Shared server pool keyed by host:port.
+     * Shared server pool keyed by host:port, with reference counts.
      */
     protected final Map<String, Server> serverMap = new HashMap<>();
+    protected final Map<String, Integer> serverRefCounts = new HashMap<>();
 
     /**
      * Shared client pool keyed by remote host:port, with reference counts.
@@ -37,6 +38,9 @@ public abstract class AbstractTransportFactory implements TransportFactory {
             String hostPort = url.getHostPort();
             Server server = serverMap.get(hostPort);
             if (server != null) {
+                int refCount = serverRefCounts.merge(hostPort, 1, Integer::sum);
+                log.info("{} reuse shared server: url={}, refCount={}",
+                        this.getClass().getSimpleName(), url, refCount);
                 return server;
             }
 
@@ -46,7 +50,32 @@ public abstract class AbstractTransportFactory implements TransportFactory {
             url.setPath("");
             server = innerCreateServer(url, messageHandler);
             serverMap.put(hostPort, server);
+            serverRefCounts.put(hostPort, 1);
             return server;
+        }
+    }
+
+    @Override
+    public void releaseServer(Server server) {
+        if (server == null) {
+            return;
+        }
+        String hostPort = server.getUrl().getHostPort();
+        synchronized (serverMap) {
+            if (server != serverMap.get(hostPort)) {
+                // Not (or no longer) managed by the shared pool; close it directly
+                log.warn("{} release unmanaged server: url={}", this.getClass().getSimpleName(), hostPort);
+                server.close();
+                return;
+            }
+
+            int refCount = serverRefCounts.merge(hostPort, -1, Integer::sum);
+            if (refCount <= 0) {
+                serverMap.remove(hostPort);
+                serverRefCounts.remove(hostPort);
+                server.close();
+                log.info("{} closed shared server: url={}", this.getClass().getSimpleName(), hostPort);
+            }
         }
     }
 
