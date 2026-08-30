@@ -8,6 +8,7 @@ import io.netty.handler.codec.http2.Http2Headers;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * Per-stream inbound handler for the gRPC server in direct API mode.
@@ -32,9 +33,9 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
 
     private WireMethodHandler handler;
 
-    WireServerStreamHandler(WireServiceRegistry registry, ExecutorService executor,
+    WireServerStreamHandler(WireServiceRegistry registry, ExecutorService serverExecutor,
                             int maxMessageSize, String responseEncoding) {
-        super("Wire server", executor, maxMessageSize, responseEncoding);
+        super("Wire server", serverExecutor, maxMessageSize, responseEncoding);
         this.registry = registry;
     }
 
@@ -66,64 +67,70 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
         final WireCallContext callContext = attachments.isEmpty()
                 ? WireCallContext.EMPTY : new WireCallContext(attachments);
 
-        executor.execute(() -> {
-            ByteBuf frame = null;
-            try {
-                // Honor the caller's deadline before doing any work
-                if (isDeadlineExceeded()) {
-                    sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
-                    return;
-                }
-
-                frame = WireFrameCodec.tryExtractFrame(frameData);
-                if (frame == null) {
-                    sendError(ctx, WireConstants.STATUS_INTERNAL, "Incomplete gRPC frame");
-                    return;
-                }
-                Message request;
+        try {
+            serverExecutor.execute(() -> {
+                ByteBuf frame = null;
                 try {
-                    request = WireFrameCodec.decode(frame, methodHandler.getRequestParser(), requestEncoding);
-                } catch (IllegalArgumentException e) {
-                    sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, e.getMessage());
-                    return;
-                }
-
-                try {
-                    // Try streaming first; falls back to UnsupportedOperationException
-                    Flow.Publisher<Message> publisher = methodHandler.handleStream(request, callContext);
-                    dispatchStream(ctx, publisher);
-                } catch (UnsupportedOperationException e) {
-                    // Unary fallback
-                    Message response = methodHandler.handle(request, callContext);
-                    if (cancelled || !ctx.channel().isActive()) {
-                        return;
-                    }
+                    // Honor the caller's deadline before doing any work
                     if (isDeadlineExceeded()) {
-                        // The deadline passed while the handler was running; do
-                        // not send the result, report DEADLINE_EXCEEDED instead
                         sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
                         return;
                     }
-                    sendResponseHeaders(ctx);
-                    ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), responseEncoding);
-                    ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
-                    sendTrailers(ctx, WireConstants.STATUS_OK, null);
+
+                    frame = WireFrameCodec.tryExtractFrame(frameData);
+                    if (frame == null) {
+                        sendError(ctx, WireConstants.STATUS_INTERNAL, "Incomplete gRPC frame");
+                        return;
+                    }
+                    Message request;
+                    try {
+                        request = WireFrameCodec.decode(frame, methodHandler.getRequestParser(), requestEncoding);
+                    } catch (IllegalArgumentException e) {
+                        sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, e.getMessage());
+                        return;
+                    }
+
+                    try {
+                        // Try streaming first; falls back to UnsupportedOperationException
+                        Flow.Publisher<Message> publisher = methodHandler.handleStream(request, callContext);
+                        dispatchStream(ctx, publisher);
+                    } catch (UnsupportedOperationException e) {
+                        // Unary fallback
+                        Message response = methodHandler.handle(request, callContext);
+                        if (cancelled || !ctx.channel().isActive()) {
+                            return;
+                        }
+                        if (isDeadlineExceeded()) {
+                            // The deadline passed while the handler was running; do
+                            // not send the result, report DEADLINE_EXCEEDED instead
+                            sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
+                            return;
+                        }
+                        sendResponseHeaders(ctx);
+                        ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), responseEncoding);
+                        ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
+                        sendTrailers(ctx, WireConstants.STATUS_OK, null);
+                    }
+                } catch (Exception e) {
+                    log.error("Wire server invoke failed: path={}", path, e);
+                    if (!cancelled && ctx.channel().isActive()) {
+                        // Map failure class to grpc-status (retryable/deadline semantics)
+                        sendError(ctx, WireStatus.fromThrowable(e),
+                                "Invoke failed: " + e.getMessage());
+                    }
+                } finally {
+                    if (frame != null) {
+                        frame.release();
+                    }
+                    if (frameData != null) {
+                        frameData.release();
+                    }
                 }
-            } catch (Exception e) {
-                log.error("Wire server invoke failed: path={}", path, e);
-                if (!cancelled && ctx.channel().isActive()) {
-                    // Map failure class to grpc-status (retryable/deadline semantics)
-                    sendError(ctx, WireStatus.fromThrowable(e),
-                            "Invoke failed: " + e.getMessage());
-                }
-            } finally {
-                if (frame != null) {
-                    frame.release();
-                }
-                if (frameData != null) {
-                    frameData.release();
-                }
-            }
-        });
+            });
+        } catch (RejectedExecutionException e) {
+            // Business thread pool is full; fail fast with UNAVAILABLE so the
+            // caller can retry on another provider
+            rejectCall(ctx, e);
+        }
     }
 }

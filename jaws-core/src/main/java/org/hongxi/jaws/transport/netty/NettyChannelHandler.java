@@ -19,14 +19,14 @@ import org.hongxi.jaws.transport.MessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Sharable terminal handler of the Netty pipeline that bridges the transport
  * layer and the business layer. Each {@link DecodedFrame} is decoded
  * by the {@link Codec} and dispatched to the {@link MessageHandler}; on the
- * server side this runs on a business {@link ThreadPoolExecutor} so the
+ * server side this runs on a business {@link ExecutorService} so the
  * Netty event loop is never blocked, and a full pool results in an immediate
  * error response rather than queuing. Heartbeat frames never reach this
  * handler — they are consumed earlier by {@link NettyDecoder}.
@@ -44,7 +44,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private final Channel channel;
     private final Codec codec;
     private final MessageHandler messageHandler;
-    private ThreadPoolExecutor serverExecutor;
+    private ExecutorService serverExecutor;
 
     public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler) {
         this.channel = channel;
@@ -53,7 +53,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     }
 
     public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler,
-                               ThreadPoolExecutor serverExecutor) {
+                               ExecutorService serverExecutor) {
         this(channel, codec, messageHandler);
         this.serverExecutor = serverExecutor;
     }
@@ -77,9 +77,12 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                         // Release the ByteBuf retained above; the finally block below only releases
                         // the reference acquired by the decoder (readRetainedSlice).
                         frame.data().release();
-                        // Only server-side requests go through the thread pool;
-                        // reject and return error response to client when pool is full.
-                        rejectFrame(ctx, frame);
+                        // Pool statistics are already logged by AbortPolicyWithStats; here we
+                        // answer the rejected request so the client fails over instead of
+                        // blocking until timeout.
+                        sendResponse(ctx, RpcUtils.buildErrorResponse(frame.requestId(), new JawsServiceException(
+                                "request rejected by server due to full thread pool: " + ctx.channel().localAddress(),
+                                JawsErrorCode.SERVICE_REJECT)));
                     }
                 } else {
                     processFrame(ctx, frame);
@@ -93,18 +96,6 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             throw new JawsFrameworkException(
                     "NettyChannelHandler received unsupported message type: class=" + msg.getClass());
         }
-    }
-
-    private void rejectFrame(ChannelHandlerContext ctx, DecodedFrame frame) {
-        sendResponse(ctx, RpcUtils.buildErrorResponse(frame.requestId(), new JawsServiceException(
-                "request rejected by server due to full thread pool: " + ctx.channel().localAddress(),
-                                JawsErrorCode.SERVICE_REJECT)));
-
-        log.error("request rejected due to full thread pool, " +
-                        "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={} requestId={}",
-                serverExecutor.getActiveCount(), serverExecutor.getPoolSize(),
-                serverExecutor.getCorePoolSize(), serverExecutor.getMaximumPoolSize(),
-                serverExecutor.getTaskCount(), frame.requestId());
     }
 
     private void processFrame(ChannelHandlerContext ctx, DecodedFrame frame) {

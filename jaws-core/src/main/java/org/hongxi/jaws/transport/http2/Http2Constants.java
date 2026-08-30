@@ -59,5 +59,7 @@ public final class Http2Constants {
     public static final String STATUS_OK = "200";
     public static final String STATUS_BAD_REQUEST = "400";
     public static final String STATUS_INTERNAL_ERROR = "500";
+    /** Business thread pool is full and the request is rejected. */
+    public static final String STATUS_SERVICE_UNAVAILABLE = "503";
 
 }

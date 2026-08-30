@@ -22,8 +22,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.util.concurrent.RejectedExecutionHandler;
-import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Base class for HTTP/2 based servers, adding the HTTP/2-specific parts on top
@@ -115,20 +113,6 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
 
         // Track connection channel for GOAWAY on shutdown
         connectionChannels.add(ch);
-    }
-
-    @Override
-    protected RejectedExecutionHandler newRejectedExecutionHandler() {
-        return (command, pool) -> {
-            // No access to the response stream here, so fall back to
-            // the transport thread instead of dropping the request.
-            log.warn("{} server thread pool full, running task on transport thread: "
-                            + "active={} poolSize={} corePoolSize={} maxPoolSize={} taskCount={}",
-                    serverName,
-                    pool.getActiveCount(), pool.getPoolSize(),
-                    pool.getCorePoolSize(), pool.getMaximumPoolSize(), pool.getTaskCount());
-            command.run();
-        };
     }
 
     @Override

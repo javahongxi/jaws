@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -60,7 +61,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(Http2ServerStreamHandler.class);
 
     private final MessageHandler messageHandler;
-    private final ExecutorService executor;
+    private final ExecutorService serverExecutor;
     private final String defaultSerializationName;
     private final AtomicInteger activeRequests;
     private final int maxContentLength;
@@ -72,12 +73,12 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     private boolean dispatched;
 
     Http2ServerStreamHandler(MessageHandler messageHandler,
-                             ExecutorService executor,
+                             ExecutorService serverExecutor,
                              String defaultSerializationName,
                              AtomicInteger activeRequests,
                              int maxContentLength) {
         this.messageHandler = messageHandler;
-        this.executor = executor;
+        this.serverExecutor = serverExecutor;
         this.defaultSerializationName = defaultSerializationName;
         this.activeRequests = activeRequests;
         this.maxContentLength = maxContentLength;
@@ -186,34 +187,43 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
         activeRequests.incrementAndGet();
 
         long startTime = System.currentTimeMillis();
-        executor.execute(() -> {
-            final DefaultRequest request;
-            try {
-                request = Http2PayloadCodec.decodeRequest(payload, serialization);
-            } catch (Exception e) {
-                log.error("Failed to decode HTTP/2 request", e);
-                sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
-                        "Failed to decode request: " + e.getMessage());
-                activeRequests.decrementAndGet();
-                return;
-            }
-
-            try {
-                RpcContext.init(request);
-
-                if (streamType == StreamType.SERVER) {
-                    dispatchStream(ctx, request);
-                } else {
-                    dispatchUnary(ctx, request, startTime);
+        try {
+            serverExecutor.execute(() -> {
+                final DefaultRequest request;
+                try {
+                    request = Http2PayloadCodec.decodeRequest(payload, serialization);
+                } catch (Exception e) {
+                    log.error("Failed to decode HTTP/2 request", e);
+                    sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
+                            "Failed to decode request: " + e.getMessage());
+                    activeRequests.decrementAndGet();
+                    return;
                 }
-            } catch (Exception e) {
-                log.error("HTTP/2 invoke failed: {}", request, e);
-                sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
-                        "Process request failed: " + e.getMessage());
-                RpcContext.destroy();
-                activeRequests.decrementAndGet();
-            }
-        });
+
+                try {
+                    RpcContext.init(request);
+
+                    if (streamType == StreamType.SERVER) {
+                        dispatchStream(ctx, request);
+                    } else {
+                        dispatchUnary(ctx, request, startTime);
+                    }
+                } catch (Exception e) {
+                    log.error("HTTP/2 invoke failed: {}", request, e);
+                    sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
+                            "Process request failed: " + e.getMessage());
+                    RpcContext.destroy();
+                    activeRequests.decrementAndGet();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            // Business thread pool is full (see AbortPolicyWithStats); answer
+            // this stream with 503 so the client can fail over instead of
+            // blocking until timeout, and balance the counter above.
+            activeRequests.decrementAndGet();
+            sendError(ctx, Http2Constants.STATUS_SERVICE_UNAVAILABLE,
+                    "Request rejected: server thread pool is full");
+        }
     }
 
     /**

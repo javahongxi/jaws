@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -71,6 +72,38 @@ class WireServerStreamHandlerTest {
         @Override
         public boolean isTerminated() {
             return shutdown;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) {
+            return true;
+        }
+    };
+
+    /** Always rejects, simulating a saturated business thread pool. */
+    private static final ExecutorService REJECTING_EXECUTOR = new AbstractExecutorService() {
+        @Override
+        public void execute(Runnable command) {
+            throw new RejectedExecutionException("pool full");
+        }
+
+        @Override
+        public void shutdown() {
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            return List.of();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return false;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return false;
         }
 
         @Override
@@ -390,6 +423,27 @@ class WireServerStreamHandlerTest {
         capturedSubscriber.get().onNext(HealthCheckResponse.getDefaultInstance());
         assertNull(ch.readOutbound(), "no frames after caller cancellation");
         assertTrue(upstreamCancelled.get(), "streaming publisher must be cancelled");
+        ch.finishAndReleaseAll();
+    }
+
+    @Test
+    void rejectedCallGetsUnavailable() {
+        WireServiceRegistry registry = new WireServiceRegistry();
+        registry.register("test.Health", "Echo", echoHandler());
+        EmbeddedChannel ch = new EmbeddedChannel(
+                new WireServerStreamHandler(registry, REJECTING_EXECUTOR, MAX_MESSAGE_SIZE, null));
+
+        ch.writeInbound(requestHeaders("/test.Health/Echo"));
+        ch.writeInbound(new DefaultHttp2DataFrame(
+                WireFrameCodec.encode(REQUEST, ch.alloc()), true));
+
+        // The saturated pool must not leave the call hanging: trailers-only
+        // UNAVAILABLE so standard gRPC clients treat it as retryable
+        Http2HeadersFrame trailersOnly = ch.readOutbound();
+        assertTrue(trailersOnly.isEndStream());
+        assertEquals(String.valueOf(WireStatus.STATUS_UNAVAILABLE),
+                trailersOnly.headers().get(WireConstants.GRPC_STATUS).toString());
+        assertNull(ch.readOutbound(), "no further frames after rejection");
         ch.finishAndReleaseAll();
     }
 }

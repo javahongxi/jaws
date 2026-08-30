@@ -16,8 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.RejectedExecutionHandler;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -54,7 +53,7 @@ public abstract class AbstractNettyServer implements Server {
     // volatile: written under the instance lock in open(), read lock-free in stopAccept()
     protected volatile io.netty.channel.Channel serverChannel;
     protected volatile ChannelState state = ChannelState.UNINIT;
-    protected ThreadPoolExecutor serverExecutor;
+    protected ExecutorService serverExecutor;
 
     /** Tracks in-flight business requests for graceful shutdown draining. */
     protected final AtomicInteger activeRequests = new AtomicInteger(0);
@@ -82,15 +81,6 @@ public abstract class AbstractNettyServer implements Server {
     }
 
     /**
-     * Rejection policy of the business thread pool. Default aborts so the
-     * pipeline handler can answer with an error response; subclasses may
-     * override, e.g. to fall back to the transport thread.
-     */
-    protected RejectedExecutionHandler newRejectedExecutionHandler() {
-        return new ThreadPoolExecutor.AbortPolicy();
-    }
-
-    /**
      * Hook for extra steps in {@link #stopAccept()} after the listening
      * socket is closed, e.g. sending GOAWAY on existing HTTP/2 connections.
      */
@@ -115,15 +105,19 @@ public abstract class AbstractNettyServer implements Server {
         }
 
         // Business pool aligned across transports: bounded and config-driven
-        // (minWorkerThreads/maxWorkerThreads/workerQueueSize).
-        serverExecutor = new EagerThreadPoolExecutor(
+        // (minWorkerThreads/maxWorkerThreads/workerQueueSize). The rejection
+        // policy logs pool statistics and throws, so the pipeline handler
+        // holding the request context can answer with an error response
+        // (fail fast) instead of queuing or dropping the request.
+        EagerThreadPoolExecutor executor = new EagerThreadPoolExecutor(
                 url.getIntParameter(UrlParam.Server.MIN_WORKER_THREADS),
                 url.getIntParameter(UrlParam.Server.MAX_WORKER_THREADS),
                 EagerThreadPoolExecutor.DEFAULT_MAX_IDLE_TIME, TimeUnit.MILLISECONDS,
                 url.getIntParameter(UrlParam.Server.WORKER_QUEUE_SIZE),
                 new DefaultThreadFactory(serverName + "-" + url.getHostPort(), true),
-                newRejectedExecutionHandler());
-        serverExecutor.prestartAllCoreThreads();
+                new AbortPolicyWithStats(serverName + "-" + url.getHostPort()));
+        executor.prestartAllCoreThreads();
+        serverExecutor = executor;
 
         // Non-daemon event loops keep the JVM alive after main() exits.
         bossGroup = new NioEventLoopGroup(1,

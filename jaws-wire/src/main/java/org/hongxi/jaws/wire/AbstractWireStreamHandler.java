@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * Base class for per-stream inbound handlers on the gRPC server, owning the
@@ -61,7 +62,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
     /** Log message prefix identifying the concrete handler in error logs. */
     private final String logPrefix;
 
-    protected final ExecutorService executor;
+    protected final ExecutorService serverExecutor;
 
     /** Max size of a single inbound gRPC message in bytes. */
     protected final int maxMessageSize;
@@ -90,10 +91,10 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
 
     private boolean responseHeadersSent;
 
-    AbstractWireStreamHandler(String logPrefix, ExecutorService executor,
+    AbstractWireStreamHandler(String logPrefix, ExecutorService serverExecutor,
                               int maxMessageSize, String configuredResponseEncoding) {
         this.logPrefix = logPrefix;
-        this.executor = executor;
+        this.serverExecutor = serverExecutor;
         this.maxMessageSize = maxMessageSize;
         this.responseEncoding = configuredResponseEncoding;
     }
@@ -248,6 +249,22 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
      * @param ctx the stream channel context
      */
     protected abstract void dispatch(ChannelHandlerContext ctx);
+
+    /**
+     * Fail the call when the business executor rejects the dispatch task
+     * (thread pool full, see AbortPolicyWithStats). Reports UNAVAILABLE so
+     * standard gRPC clients see retryable semantics, and releases the
+     * accumulated request buffer that the rejected task will never consume.
+     */
+    protected void rejectCall(ChannelHandlerContext ctx, RejectedExecutionException e) {
+        log.error("{} request rejected due to full thread pool: path={}", logPrefix, path);
+        if (accumulator != null) {
+            accumulator.release();
+            accumulator = null;
+        }
+        sendError(ctx, WireStatus.STATUS_UNAVAILABLE,
+                "Request rejected: server thread pool is full");
+    }
 
     /**
      * @return true if the caller's deadline (grpc-timeout) has passed
