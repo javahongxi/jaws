@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * The business pool rejects with an error response when full (see
  * {@link NettyChannelHandler}), and graceful shutdown is driven by the base
- * class via {@link #stopAccept()} and {@link #awaitInactiveRequests(long)}.
+ * class via {@link #stopAccept()} and {@link #drainInflightRequests(long)}.
  * <p>
  * Created by shenhongxi on 2020/6/27.
  */

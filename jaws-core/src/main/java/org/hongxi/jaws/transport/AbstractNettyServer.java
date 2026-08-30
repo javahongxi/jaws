@@ -232,7 +232,7 @@ public abstract class AbstractNettyServer implements Server {
     }
 
     @Override
-    public void awaitInactiveRequests(long timeoutMs) {
+    public void drainInflightRequests(long timeoutMs) {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (activeRequests.get() > 0 && System.currentTimeMillis() < deadline) {
             try {

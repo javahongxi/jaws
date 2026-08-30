@@ -24,7 +24,7 @@ public interface Server extends Channel {
      *
      * @param timeoutMs max wait time in milliseconds
      */
-    default void awaitInactiveRequests(long timeoutMs) {
+    default void drainInflightRequests(long timeoutMs) {
         // no-op by default
     }
 }

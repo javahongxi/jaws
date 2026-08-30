@@ -109,11 +109,11 @@ class Http2TransportTest {
 
     @Test
     void gracefulShutdownDrainsActiveRequests() throws Exception {
-        // fire a request, then verify awaitInactiveRequests returns after drain
+        // fire a request, then verify drainInflightRequests returns after drain
         client.request(newRequest("echo", "drain"));
         assertEquals(0, server.getActiveRequests().get());
         server.stopAccept();
-        server.awaitInactiveRequests(1000);
+        server.drainInflightRequests(1000);
     }
 
     @Test

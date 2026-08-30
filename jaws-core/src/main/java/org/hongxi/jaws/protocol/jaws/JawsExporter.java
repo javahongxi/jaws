@@ -64,7 +64,7 @@ public class JawsExporter<T> extends AbstractExporter<T> {
     }
 
     @Override
-    public void awaitInactiveRequests(long timeout) {
-        server.awaitInactiveRequests(timeout);
+    public void drainInflightRequests(long timeout) {
+        server.drainInflightRequests(timeout);
     }
 }

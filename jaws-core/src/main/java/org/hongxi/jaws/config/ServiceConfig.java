@@ -162,9 +162,9 @@ public class ServiceConfig<T> extends AbstractInterfaceConfig {
             log.info("[GracefulShutdown] Phase 2: Waiting for in-flight requests to complete, timeout={}ms", gracefulTimeout);
             for (Exporter<T> exporter : exporters) {
                 try {
-                    exporter.awaitInactiveRequests(gracefulTimeout);
+                    exporter.drainInflightRequests(gracefulTimeout);
                 } catch (Exception e) {
-                    log.warn("[GracefulShutdown] Failed to awaitInactiveRequests for exporter: {}", exporter.getUrl(), e);
+                    log.warn("[GracefulShutdown] Failed to drainInflightRequests for exporter: {}", exporter.getUrl(), e);
                 }
             }
 

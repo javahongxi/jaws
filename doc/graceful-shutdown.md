@@ -6,7 +6,7 @@ Jaws 支持四阶段优雅停机，确保服务下线时不中断在途请求，
 
 ```
 Phase 1: stopAccept()              关闭 ServerChannel，不再接收新连接
-Phase 2: awaitInactiveRequests()   等待在途请求处理完成（默认超时 10s）
+Phase 2: drainInflightRequests()   等待在途请求处理完成（默认超时 10s）
 Phase 3: unregister()              从注册中心注销服务
 Phase 4: unexport() → destroy()    关闭连接、释放 EventLoopGroup 和线程池
 ```
