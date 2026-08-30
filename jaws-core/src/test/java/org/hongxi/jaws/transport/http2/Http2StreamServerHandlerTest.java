@@ -22,14 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Unit tests for the {@link Http2ServerStreamHandler} reject path: when the
+ * Unit tests for the {@link Http2StreamServerHandler} reject path: when the
  * business thread pool is full (AbortPolicyWithStats), the stream must be
  * answered with 503 instead of hanging until timeout, and the active-request
  * counter incremented before submission must not leak.
  *
  * @author shenhongxi
  */
-class Http2ServerStreamHandlerTest {
+class Http2StreamServerHandlerTest {
 
     private static final int MAX_CONTENT_LENGTH = 4 * 1024 * 1024;
 
@@ -68,7 +68,7 @@ class Http2ServerStreamHandlerTest {
     @Test
     void rejectedRequestGetsServiceUnavailable() {
         AtomicInteger inflightRequests = new AtomicInteger();
-        EmbeddedChannel ch = new EmbeddedChannel(new Http2ServerStreamHandler(
+        EmbeddedChannel ch = new EmbeddedChannel(new Http2StreamServerHandler(
                 message -> CompletableFuture.completedFuture(null),
                 REJECTING_EXECUTOR, "hessian2", inflightRequests, MAX_CONTENT_LENGTH));
 

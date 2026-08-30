@@ -9,7 +9,7 @@ import org.hongxi.jaws.transport.MessageHandler;
  * Netty's {@code Http2FrameCodec} + {@code Http2MultiplexHandler}, speaking plain
  * h2c (HTTP/2 prior-knowledge) without any gRPC/protobuf dependency.
  * <p>
- * Each inbound HTTP/2 stream is initialized with an {@link Http2ServerStreamHandler}
+ * Each inbound HTTP/2 stream is initialized with an {@link Http2StreamServerHandler}
  * that reassembles the request DATA frames, dispatches to the Jaws
  * {@link MessageHandler} pipeline on the business thread pool, and writes the
  * serialized response back on the same stream.
@@ -52,7 +52,7 @@ public class Http2Server extends AbstractHttp2Server {
 
     @Override
     protected void initStreamChannel(io.netty.channel.Channel streamChannel) {
-        streamChannel.pipeline().addLast(new Http2ServerStreamHandler(
+        streamChannel.pipeline().addLast(new Http2StreamServerHandler(
                 messageHandler, serverExecutor,
                 serializationName, inflightRequests, maxContentLength));
     }
