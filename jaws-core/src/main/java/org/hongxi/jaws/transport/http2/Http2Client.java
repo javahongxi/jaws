@@ -205,7 +205,7 @@ public class Http2Client extends AbstractHttp2Client {
             io.netty.channel.Channel connChannel = activeChannel();
 
             // Create the streaming handler which doubles as a Flow.Publisher
-            Http2StreamClientHandler streamHandler = new Http2StreamClientHandler(serialization);
+            Http2StreamStreamingHandler streamHandler = new Http2StreamStreamingHandler(serialization);
 
             io.netty.channel.Channel streamChannel =
                     new Http2StreamChannelBootstrap(connChannel)

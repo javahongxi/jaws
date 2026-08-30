@@ -34,8 +34,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @author shenhongxi
  */
-class Http2StreamClientHandler extends ChannelInboundHandlerAdapter implements Flow.Publisher<Object> {
-    private static final Logger log = LoggerFactory.getLogger(Http2StreamClientHandler.class);
+class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter implements Flow.Publisher<Object> {
+    private static final Logger log = LoggerFactory.getLogger(Http2StreamStreamingHandler.class);
 
     private final Serialization serialization;
 
@@ -43,7 +43,7 @@ class Http2StreamClientHandler extends ChannelInboundHandlerAdapter implements F
     private volatile Flow.Subscriber<? super Object> subscriber;
     private final AtomicBoolean terminated = new AtomicBoolean();
 
-    Http2StreamClientHandler(Serialization serialization) {
+    Http2StreamStreamingHandler(Serialization serialization) {
         this.serialization = serialization;
     }
 
