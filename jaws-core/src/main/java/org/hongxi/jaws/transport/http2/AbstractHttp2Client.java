@@ -62,23 +62,79 @@ public abstract class AbstractHttp2Client extends AbstractClient {
     /** Human-readable client name used in log messages and thread names. */
     private final String clientName;
 
-    private final int connectionCount;
     private final SslContext sslContext;
 
     private Bootstrap bootstrap;
 
     /**
-     * Multiple connections for L4 LB distribution. When connectionCount > 1,
+     * Multiple connections for L4 LB distribution. When more than one,
      * requests are distributed across connections via round-robin.
      */
     private volatile io.netty.channel.Channel[] channels;
+
     private final AtomicInteger requestCounter = new AtomicInteger(0);
 
     protected AbstractHttp2Client(URL url, String clientName) {
         super(url);
         this.clientName = clientName;
-        this.connectionCount = Math.max(1, url.getIntParameter(UrlParam.Transport.CONNECTIONS));
         this.sslContext = buildSslContext();
+    }
+
+    @Override
+    public synchronized boolean open() {
+        if (isAvailable()) {
+            return true;
+        }
+
+        int timeout = url.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
+        if (timeout <= 0) {
+            throw new JawsFrameworkException(clientName
+                    + " init failed: connect timeout must be positive but was " + timeout);
+        }
+
+        bootstrap = new Bootstrap();
+        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout);
+        bootstrap.option(ChannelOption.TCP_NODELAY, true);
+        bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
+        bootstrap.group(nioEventLoopGroup)
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        ChannelPipeline pipeline = ch.pipeline();
+                        // Add TLS if configured (before HTTP/2 codec)
+                        if (sslContext != null) {
+                            pipeline.addLast("ssl", sslContext.newHandler(ch.alloc(),
+                                    url.getHost(), url.getPort()));
+                        }
+                        // HTTP/2 framing & flow control; liveness relies on TCP keepalive
+                        // and HTTP/2 PINGs instead of application-level heartbeats
+                        pipeline.addLast("http2_codec", Http2FrameCodecBuilder.forClient().build());
+                        pipeline.addLast("http2_multiplex", new Http2MultiplexHandler(
+                                new io.netty.channel.ChannelInboundHandlerAdapter()));
+                    }
+                });
+
+        // Open multiple connections if configured
+        int connectionCount = Math.max(1, url.getIntParameter(UrlParam.Transport.CONNECTIONS));
+        channels = new io.netty.channel.Channel[connectionCount];
+        for (int i = 0; i < connectionCount; i++) {
+            doConnect(i);
+        }
+        state = ChannelState.ALIVE;
+
+        String tlsInfo = sslContext != null ? "with TLS" : "";
+        String connInfo = connectionCount > 1 ? "(" + connectionCount + " connections)" : "";
+        log.info("{} opened successfully {} {}: url={}", clientName, tlsInfo, connInfo, url);
+        return true;
+    }
+
+    private void doConnect(int index) {
+        ChannelFuture future = bootstrap.connect(url.getHost(), url.getPort()).syncUninterruptibly();
+        if (!future.isSuccess()) {
+            throw new JawsServiceException(clientName + " connect failed: url=" + url.getUri(), future.cause());
+        }
+        channels[index] = future.channel();
     }
 
     /**
@@ -131,67 +187,26 @@ public abstract class AbstractHttp2Client extends AbstractClient {
         }
     }
 
-    @Override
-    public synchronized boolean open() {
-        if (isAvailable()) {
-            return true;
+    /**
+     * Return an active channel, lazily reconnecting if the selected
+     * channel has gone away.
+     */
+    protected io.netty.channel.Channel activeChannel() {
+        io.netty.channel.Channel channel = selectChannel();
+        if (!channel.isActive()) {
+            reconnect();
+            channel = selectChannel();
         }
-
-        int timeout = url.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
-        if (timeout <= 0) {
-            throw new JawsFrameworkException(clientName
-                    + " init failed: connect timeout must be positive but was " + timeout);
+        if (!channel.isActive()) {
+            throw new JawsServiceException(clientName + " channel is not active: url=" + url.getUri());
         }
-
-        bootstrap = new Bootstrap();
-        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout);
-        bootstrap.option(ChannelOption.TCP_NODELAY, true);
-        bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
-        bootstrap.group(eventLoopGroup())
-                .channel(NioSocketChannel.class)
-                .handler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel ch) {
-                        ChannelPipeline pipeline = ch.pipeline();
-                        // Add TLS if configured (before HTTP/2 codec)
-                        if (sslContext != null) {
-                            pipeline.addLast("ssl", sslContext.newHandler(ch.alloc(),
-                                    url.getHost(), url.getPort()));
-                        }
-                        // HTTP/2 framing & flow control; liveness relies on TCP keepalive
-                        // and HTTP/2 PINGs instead of application-level heartbeats
-                        pipeline.addLast("http2_codec", Http2FrameCodecBuilder.forClient().build());
-                        pipeline.addLast("http2_multiplex", new Http2MultiplexHandler(
-                                new io.netty.channel.ChannelInboundHandlerAdapter()));
-                    }
-                });
-
-        // Open multiple connections if configured
-        channels = new io.netty.channel.Channel[connectionCount];
-        for (int i = 0; i < connectionCount; i++) {
-            doConnect(i);
-        }
-        state = ChannelState.ALIVE;
-
-        String tlsInfo = sslContext != null ? " with TLS" : "";
-        String connInfo = connectionCount > 1 ? " (" + connectionCount + " connections)" : "";
-        log.info("{} opened successfully{}{}: url={}", clientName, tlsInfo, connInfo, url);
-        return true;
-    }
-
-    private void doConnect(int index) {
-        ChannelFuture future = bootstrap.connect(url.getHost(), url.getPort()).syncUninterruptibly();
-        if (!future.isSuccess()) {
-            throw new JawsServiceException(clientName + " connect failed: url=" + url.getUri(),
-                    future.cause());
-        }
-        channels[index] = future.channel();
+        return channel;
     }
 
     /**
-     * Select a connection channel using round-robin for multi-connection setups.
+     * Select a channel using round-robin for multi-connection setups.
      */
-    protected io.netty.channel.Channel selectConnection() {
+    private io.netty.channel.Channel selectChannel() {
         if (channels == null || channels.length == 0) {
             throw new JawsServiceException("No HTTP/2 connections available: url=" + url.getUri());
         }
@@ -203,26 +218,10 @@ public abstract class AbstractHttp2Client extends AbstractClient {
     }
 
     /**
-     * Return an active connection, lazily reconnecting if the selected
-     * connection has gone away.
-     */
-    protected io.netty.channel.Channel activeConnection() {
-        io.netty.channel.Channel connChannel = selectConnection();
-        if (!connChannel.isActive()) {
-            reconnect();
-            connChannel = selectConnection();
-        }
-        if (!connChannel.isActive()) {
-            throw new JawsServiceException(clientName + " channel is not active: url=" + url.getUri());
-        }
-        return connChannel;
-    }
-
-    /**
      * Re-establish all connections. Called lazily from request paths when a
      * multiplexed connection has gone away.
      */
-    synchronized void reconnect() {
+    private synchronized void reconnect() {
         if (state.isCloseState()) {
             return;
         }
@@ -256,13 +255,6 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                 }
             }
         }
-    }
-
-    /**
-     * @return the shared event loop group used by this client class
-     */
-    protected EventLoopGroup eventLoopGroup() {
-        return nioEventLoopGroup;
     }
 
     @Override

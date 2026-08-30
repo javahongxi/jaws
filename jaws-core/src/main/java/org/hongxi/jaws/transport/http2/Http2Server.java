@@ -54,6 +54,6 @@ public class Http2Server extends AbstractHttp2Server {
     protected void initStreamChannel(io.netty.channel.Channel streamChannel) {
         streamChannel.pipeline().addLast(new Http2ServerStreamHandler(
                 messageHandler, serverExecutor,
-                serializationName, activeRequests, maxContentLength));
+                serializationName, inflightRequests, maxContentLength));
     }
 }

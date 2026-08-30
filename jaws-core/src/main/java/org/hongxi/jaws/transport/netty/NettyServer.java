@@ -50,6 +50,6 @@ public class NettyServer extends AbstractNettyServer {
         }
         pipeline.addLast("decoder", new NettyDecoder(this, codec, maxContentLength));
         // serverExecutor is ready before bind, so it is safe to build the handler here
-        pipeline.addLast("handler", new NettyChannelHandler(this, codec, messageHandler, serverExecutor));
+        pipeline.addLast("handler", new NettyChannelHandler(this, codec, messageHandler, serverExecutor, inflightRequests));
     }
 }

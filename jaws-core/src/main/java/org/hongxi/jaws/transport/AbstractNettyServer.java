@@ -56,7 +56,7 @@ public abstract class AbstractNettyServer implements Server {
     protected ExecutorService serverExecutor;
 
     /** Tracks in-flight business requests for graceful shutdown draining. */
-    protected final AtomicInteger activeRequests = new AtomicInteger(0);
+    protected final AtomicInteger inflightRequests = new AtomicInteger(0);
 
     protected AbstractNettyServer(URL url, String serverName) {
         this.url = url;
@@ -234,7 +234,7 @@ public abstract class AbstractNettyServer implements Server {
     @Override
     public void drainInflightRequests(long timeoutMs) {
         long deadline = System.currentTimeMillis() + timeoutMs;
-        while (activeRequests.get() > 0 && System.currentTimeMillis() < deadline) {
+        while (inflightRequests.get() > 0 && System.currentTimeMillis() < deadline) {
             try {
                 Thread.sleep(50);
             } catch (InterruptedException e) {
@@ -242,7 +242,7 @@ public abstract class AbstractNettyServer implements Server {
                 break;
             }
         }
-        int remaining = activeRequests.get();
+        int remaining = inflightRequests.get();
         if (remaining > 0) {
             log.warn("Graceful shutdown timeout reached, {} requests still in-flight, uri={}",
                     remaining, url.getUri());
@@ -251,7 +251,10 @@ public abstract class AbstractNettyServer implements Server {
         }
     }
 
-    public AtomicInteger getActiveRequests() {
-        return activeRequests;
+    /**
+     * @return the number of in-flight business requests, for monitoring and testing
+     */
+    public int getInflightRequestCount() {
+        return inflightRequests.get();
     }
 }

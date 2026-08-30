@@ -63,7 +63,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     private final MessageHandler messageHandler;
     private final ExecutorService serverExecutor;
     private final String defaultSerializationName;
-    private final AtomicInteger activeRequests;
+    private final AtomicInteger inflightRequests;
     private final int maxContentLength;
 
     private Serialization serialization;
@@ -75,12 +75,12 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
     Http2ServerStreamHandler(MessageHandler messageHandler,
                              ExecutorService serverExecutor,
                              String defaultSerializationName,
-                             AtomicInteger activeRequests,
+                             AtomicInteger inflightRequests,
                              int maxContentLength) {
         this.messageHandler = messageHandler;
         this.serverExecutor = serverExecutor;
         this.defaultSerializationName = defaultSerializationName;
-        this.activeRequests = activeRequests;
+        this.inflightRequests = inflightRequests;
         this.maxContentLength = maxContentLength;
     }
 
@@ -184,7 +184,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
             return;
         }
         dispatched = true;
-        activeRequests.incrementAndGet();
+        inflightRequests.incrementAndGet();
 
         long startTime = System.currentTimeMillis();
         try {
@@ -196,7 +196,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                     log.error("Failed to decode HTTP/2 request", e);
                     sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
                             "Failed to decode request: " + e.getMessage());
-                    activeRequests.decrementAndGet();
+                    inflightRequests.decrementAndGet();
                     return;
                 }
 
@@ -213,14 +213,14 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                     sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
                             "Process request failed: " + e.getMessage());
                     RpcContext.destroy();
-                    activeRequests.decrementAndGet();
+                    inflightRequests.decrementAndGet();
                 }
             });
         } catch (RejectedExecutionException e) {
             // Business thread pool is full (see AbortPolicyWithStats); answer
             // this stream with 503 so the client can fail over instead of
             // blocking until timeout, and balance the counter above.
-            activeRequests.decrementAndGet();
+            inflightRequests.decrementAndGet();
             sendError(ctx, Http2Constants.STATUS_SERVICE_UNAVAILABLE,
                     "Request rejected: server thread pool is full");
         }
@@ -272,7 +272,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
                         "Failed to encode response: " + e.getMessage());
             } finally {
                 RpcContext.destroy();
-                activeRequests.decrementAndGet();
+                inflightRequests.decrementAndGet();
             }
         });
     }
@@ -340,7 +340,7 @@ class Http2ServerStreamHandler extends ChannelInboundHandlerAdapter {
 
             private void finishStream() {
                 RpcContext.destroy();
-                activeRequests.decrementAndGet();
+                inflightRequests.decrementAndGet();
             }
         });
     }

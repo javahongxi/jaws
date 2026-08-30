@@ -171,7 +171,7 @@ public class WireClient extends AbstractHttp2Client {
         io.netty.channel.Channel streamChannel = null;
 
         try {
-            io.netty.channel.Channel connChannel = activeConnection();
+            io.netty.channel.Channel connChannel = activeChannel();
 
             // Open a new HTTP/2 stream
             streamChannel = new Http2StreamChannelBootstrap(connChannel)
@@ -255,7 +255,7 @@ public class WireClient extends AbstractHttp2Client {
         StreamingMessagePublisher publisher = new StreamingMessagePublisher();
 
         try {
-            io.netty.channel.Channel connChannel = activeConnection();
+            io.netty.channel.Channel connChannel = activeChannel();
 
             // Open a new HTTP/2 stream with the streaming handler
             io.netty.channel.Channel streamChannel =

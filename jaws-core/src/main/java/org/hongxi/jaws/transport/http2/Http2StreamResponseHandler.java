@@ -6,12 +6,16 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http2.Http2DataFrame;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
+import io.netty.util.ReferenceCountUtil;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.ResponseFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 /**
  * Per-stream response handler for the HTTP/2 client.
@@ -41,8 +45,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (msg instanceof Http2HeadersFrame headersFrame) {
-            status = headersFrame.headers().status() != null
-                    ? headersFrame.headers().status().toString() : null;
+            status = Objects.toString(headersFrame.headers().status(), null);
             if (headersFrame.isEndStream()) {
                 // no payload, e.g. server-side error reported via headers only
                 complete(new DefaultResponse(requestId));
@@ -52,7 +55,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
         } else if (msg instanceof Http2ResetFrame resetFrame) {
             fail("HTTP/2 stream reset: errorCode=" + resetFrame.errorCode());
         } else {
-            io.netty.util.ReferenceCountUtil.release(msg);
+            ReferenceCountUtil.release(msg);
         }
     }
 
@@ -78,8 +81,8 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
         DefaultResponse response = new DefaultResponse(requestId);
         try {
             if (!Http2Constants.STATUS_OK.equals(status)) {
-                String body = buffer != null ? buffer.toString(java.nio.charset.StandardCharsets.UTF_8) : "";
-                response.setException(new org.hongxi.jaws.exception.JawsServiceException(
+                String body = buffer != null ? buffer.toString(StandardCharsets.UTF_8) : "";
+                response.setException(new JawsServiceException(
                         "HTTP/2 transport error: status=" + status + ", message=" + body));
                 return response;
             }
@@ -89,7 +92,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
             return Http2PayloadCodec.decodeResponse(buffer.toByteArray(), client.getSerialization());
         } catch (Exception e) {
             log.error("Failed to decode HTTP/2 response: requestId={}", requestId, e);
-            response.setException(new org.hongxi.jaws.exception.JawsServiceException(
+            response.setException(new JawsServiceException(
                     "Failed to decode response", e));
             return response;
         }
@@ -98,7 +101,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
     private void complete(DefaultResponse response) {
         ResponseFuture future = client.removeCallback(requestId);
         if (future == null) {
-            // already timed out or cancelled
+            // already timed out or canceled
             return;
         }
         if (response.getException() != null) {
@@ -110,7 +113,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
 
     private void fail(String message) {
         DefaultResponse response = new DefaultResponse(requestId);
-        response.setException(new org.hongxi.jaws.exception.JawsServiceException(message));
+        response.setException(new JawsServiceException(message));
         complete(response);
     }
 

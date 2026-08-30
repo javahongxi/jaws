@@ -83,15 +83,14 @@ public class Http2Client extends AbstractHttp2Client {
             async = b;
         }
 
-        int urlTimeout = url.getMethodParameter(
-                request.getMethodName(), request.getParamDesc(),
+        int urlTimeout = url.getMethodParameter(request.getMethodName(), request.getParamDesc(),
                 UrlParam.Transport.REQUEST_TIMEOUT.getName(), UrlParam.Transport.REQUEST_TIMEOUT.intValue());
         int timeout = resolveTimeout(request, urlTimeout);
 
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout, url);
 
         try {
-            io.netty.channel.Channel connChannel = activeConnection();
+            io.netty.channel.Channel connChannel = activeChannel();
 
             io.netty.channel.Channel streamChannel =
                     new Http2StreamChannelBootstrap(connChannel)
@@ -203,7 +202,7 @@ public class Http2Client extends AbstractHttp2Client {
         }
 
         try {
-            io.netty.channel.Channel connChannel = activeConnection();
+            io.netty.channel.Channel connChannel = activeChannel();
 
             // Create the streaming handler which doubles as a Flow.Publisher
             Http2StreamClientHandler streamHandler = new Http2StreamClientHandler(serialization);
@@ -219,7 +218,8 @@ public class Http2Client extends AbstractHttp2Client {
                     .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getValue());
             streamChannel.write(new DefaultHttp2HeadersFrame(headers));
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
-                    Unpooled.wrappedBuffer(payload), true)).addListener(f -> {
+                    Unpooled.wrappedBuffer(payload), true))
+                    .addListener(f -> {
                 if (!f.isSuccess()) {
                     log.error("HTTP/2 stream write failed for streaming request", f.cause());
                     incrErrorCount();

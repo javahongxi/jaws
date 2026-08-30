@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Sharable terminal handler of the Netty pipeline that bridges the transport
@@ -45,6 +46,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private final Codec codec;
     private final MessageHandler messageHandler;
     private ExecutorService serverExecutor;
+    /** Tracks in-flight requests for graceful shutdown; null on the client side. */
+    private AtomicInteger inflightRequests;
 
     public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler) {
         this.channel = channel;
@@ -56,6 +59,12 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
                                ExecutorService serverExecutor) {
         this(channel, codec, messageHandler);
         this.serverExecutor = serverExecutor;
+    }
+
+    public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler,
+                               ExecutorService serverExecutor, AtomicInteger inflightRequests) {
+        this(channel, codec, messageHandler, serverExecutor);
+        this.inflightRequests = inflightRequests;
     }
 
     @Override
@@ -121,9 +130,9 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private void processRequest(ChannelHandlerContext ctx, Request request) {
         request.setAttachment(UrlParam.Server.HOST.getName(), NetUtils.getHostName(ctx.channel().remoteAddress()));
         final long processStartTime = System.currentTimeMillis();
-        // Track active request for graceful shutdown
-        if (channel instanceof NettyServer nettyServer) {
-            nettyServer.getActiveRequests().incrementAndGet();
+        // Track in-flight request for graceful shutdown
+        if (inflightRequests != null) {
+            inflightRequests.incrementAndGet();
         }
         RpcContext.init(request);
         messageHandler.handleAsync(request).whenComplete((res, throwable) -> {
@@ -146,8 +155,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
                 sendResponse(ctx, response);
             } finally {
-                if (channel instanceof NettyServer nettyServer) {
-                    nettyServer.getActiveRequests().decrementAndGet();
+                if (inflightRequests != null) {
+                    inflightRequests.decrementAndGet();
                 }
                 RpcContext.destroy();
             }

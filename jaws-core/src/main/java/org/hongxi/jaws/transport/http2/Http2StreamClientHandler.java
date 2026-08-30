@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -73,8 +74,7 @@ class Http2StreamClientHandler extends ChannelInboundHandlerAdapter implements F
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (msg instanceof Http2HeadersFrame headersFrame) {
-            status = headersFrame.headers().status() != null
-                    ? headersFrame.headers().status().toString() : null;
+            status = Objects.toString(headersFrame.headers().status(), null);
             if (headersFrame.isEndStream()) {
                 // Server ended immediately after headers (possibly an error)
                 if (!Http2Constants.STATUS_OK.equals(status)) {

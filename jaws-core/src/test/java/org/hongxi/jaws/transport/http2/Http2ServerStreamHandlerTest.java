@@ -67,10 +67,10 @@ class Http2ServerStreamHandlerTest {
 
     @Test
     void rejectedRequestGetsServiceUnavailable() {
-        AtomicInteger activeRequests = new AtomicInteger();
+        AtomicInteger inflightRequests = new AtomicInteger();
         EmbeddedChannel ch = new EmbeddedChannel(new Http2ServerStreamHandler(
                 message -> CompletableFuture.completedFuture(null),
-                REJECTING_EXECUTOR, "hessian2", activeRequests, MAX_CONTENT_LENGTH));
+                REJECTING_EXECUTOR, "hessian2", inflightRequests, MAX_CONTENT_LENGTH));
 
         Http2Headers headers = new DefaultHttp2Headers()
                 .method("POST").path(Http2Constants.PATH);
@@ -85,7 +85,7 @@ class Http2ServerStreamHandlerTest {
         assertTrue(errorData.isEndStream());
 
         // The counter incremented before execute() must be balanced
-        assertEquals(0, activeRequests.get(), "activeRequests leaked on rejection");
+        assertEquals(0, inflightRequests.get(), "inflightRequests leaked on rejection");
         ch.finishAndReleaseAll();
     }
 }
