@@ -46,26 +46,13 @@ public final class Http2StreamCodec {
      *
      * @param data          the serialized bytes
      * @param serialization the serialization to use
-     * @param itemType      the expected type of the item (may be null for Object)
      * @return the deserialized item
      */
-    public static Object decodeItem(byte[] data, Serialization serialization, Class<?> itemType)
+    public static Object decodeItem(byte[] data, Serialization serialization)
             throws IOException, ClassNotFoundException {
         ByteArrayInputStream bis = new ByteArrayInputStream(data);
         try (ObjectInput in = serialization.deserialize(bis)) {
             return in.readObject();
         }
-    }
-
-    /**
-     * Deserialize a single stream item from bytes, returning Object.
-     *
-     * @param data          the serialized bytes
-     * @param serialization the serialization to use
-     * @return the deserialized item
-     */
-    public static Object decodeItem(byte[] data, Serialization serialization)
-            throws IOException, ClassNotFoundException {
-        return decodeItem(data, serialization, null);
     }
 }

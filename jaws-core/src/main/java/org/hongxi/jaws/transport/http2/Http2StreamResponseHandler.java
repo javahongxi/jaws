@@ -10,12 +10,14 @@ import io.netty.util.ReferenceCountUtil;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.ResponseFuture;
+import org.hongxi.jaws.serialization.Serialization;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.function.LongFunction;
 
 /**
  * Per-stream response handler for the HTTP/2 client.
@@ -31,14 +33,18 @@ import java.util.Objects;
 class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(Http2StreamResponseHandler.class);
 
-    private final Http2Client client;
+    private final Serialization serialization;
+    private final LongFunction<ResponseFuture> callbackRemover;
     private final long requestId;
 
     private String status;
     private ByteArrayOutputStream buffer;
 
-    Http2StreamResponseHandler(Http2Client client, long requestId) {
-        this.client = client;
+    Http2StreamResponseHandler(Serialization serialization,
+                               LongFunction<ResponseFuture> callbackRemover,
+                               long requestId) {
+        this.serialization = serialization;
+        this.callbackRemover = callbackRemover;
         this.requestId = requestId;
     }
 
@@ -89,7 +95,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
             if (buffer == null) {
                 return response;
             }
-            return Http2PayloadCodec.decodeResponse(buffer.toByteArray(), client.getSerialization());
+            return Http2PayloadCodec.decodeResponse(buffer.toByteArray(), serialization);
         } catch (Exception e) {
             log.error("Failed to decode HTTP/2 response: requestId={}", requestId, e);
             response.setException(new JawsServiceException(
@@ -99,7 +105,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void complete(DefaultResponse response) {
-        ResponseFuture future = client.removeCallback(requestId);
+        ResponseFuture future = callbackRemover.apply(requestId);
         if (future == null) {
             // already timed out or canceled
             return;

@@ -345,6 +345,23 @@ class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
         });
     }
 
+    private void sendError(ChannelHandlerContext ctx, String status, String message) {
+        if (!ctx.channel().isActive()) {
+            return;
+        }
+        Http2Headers headers = new DefaultHttp2Headers()
+                .status(status)
+                .set(Http2Constants.HEADER_CONTENT_TYPE, "text/plain; charset=utf-8");
+        ctx.write(new DefaultHttp2HeadersFrame(headers));
+        ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                        Unpooled.copiedBuffer(message, StandardCharsets.UTF_8), true))
+                .addListener(f -> {
+                    if (!f.isSuccess()) {
+                        log.error("Failed to send error response: status={}", status, f.cause());
+                    }
+                });
+    }
+
     private void sendStreamError(ChannelHandlerContext ctx, Throwable error) {
         if (ctx.channel().isActive()) {
             try {
@@ -361,22 +378,5 @@ class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 log.error("Failed to send stream error", e);
             }
         }
-    }
-
-    private void sendError(ChannelHandlerContext ctx, String status, String message) {
-        if (!ctx.channel().isActive()) {
-            return;
-        }
-        Http2Headers headers = new DefaultHttp2Headers()
-                .status(status)
-                .set(Http2Constants.HEADER_CONTENT_TYPE, "text/plain; charset=utf-8");
-        ctx.write(new DefaultHttp2HeadersFrame(headers));
-        ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                Unpooled.copiedBuffer(message, StandardCharsets.UTF_8), true))
-                .addListener(f -> {
-                    if (!f.isSuccess()) {
-                        log.error("Failed to send error response: status={}", status, f.cause());
-                    }
-                });
     }
 }

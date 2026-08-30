@@ -66,10 +66,6 @@ public class Http2Client extends AbstractHttp2Client {
                 url.getParameter(UrlParam.Transport.SERIALIZATION));
     }
 
-    public Serialization getSerialization() {
-        return serialization;
-    }
-
     @Override
     public Response request(Request request) {
         if (!isAvailable()) {
@@ -94,7 +90,8 @@ public class Http2Client extends AbstractHttp2Client {
 
             io.netty.channel.Channel streamChannel =
                     new Http2StreamChannelBootstrap(connChannel)
-                            .handler(new Http2StreamResponseHandler(this, request.getRequestId()))
+                            .handler(new Http2StreamResponseHandler(
+                                    serialization, this::removeCallback, request.getRequestId()))
                             .open().syncUninterruptibly().getNow();
 
             // Register before writing so a fast failure (channelInactive) can
