@@ -53,8 +53,9 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
         if (msg instanceof Http2HeadersFrame headersFrame) {
             status = Objects.toString(headersFrame.headers().status(), null);
             if (headersFrame.isEndStream()) {
-                // no payload, e.g. server-side error reported via headers only
-                complete(new DefaultResponse(requestId));
+                // no payload; decode() still surfaces non-200 status reported
+                // via headers only
+                complete(decode());
             }
         } else if (msg instanceof Http2DataFrame dataFrame) {
             onData(dataFrame);

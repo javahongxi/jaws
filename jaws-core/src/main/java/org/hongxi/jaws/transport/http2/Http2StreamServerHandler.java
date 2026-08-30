@@ -51,8 +51,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Gateway-friendly enhancements:
  * <ul>
  *   <li>Built-in {@code GET /health} endpoint returning 200 OK without dispatching</li>
- *   <li>Reads mirrored metadata headers ({@code x-jaws-interface}, {@code x-jaws-method},
- *       etc.) for gateway-level routing and observability</li>
+ *   <li>Ignores mirrored metadata headers ({@code x-jaws-interface}, {@code x-jaws-method},
+ *       etc.) — routing information is decoded from the payload; those headers exist
+ *       solely for gateway-level routing and observability</li>
  * </ul>
  *
  * @author shenhongxi
@@ -97,8 +98,8 @@ class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
 
     private void onHeaders(ChannelHandlerContext ctx, Http2HeadersFrame headersFrame) {
         Http2Headers headers = headersFrame.headers();
-        // Extract HTTP method and path for health check routing
-        // Parsed from HEADERS frame for metadata mirror / health check
+        // Method and path are only needed for health check routing; routing
+        // metadata itself comes from the payload, not the mirrored headers
         String method = Objects.toString(headers.method(), null);
         String path = Objects.toString(headers.path(), null);
 

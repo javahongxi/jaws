@@ -27,10 +27,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * triggers {@link Flow.Subscriber#onComplete()}; stream reset or channel close triggers
  * {@link Flow.Subscriber#onError(Throwable)}.
  * <p>
- * Back-pressure is simple: the handler requests one item at a time from the subscriber
- * via {@code request(1)} and only asks for the next after the previous item has been
- * delivered.  Because the server produces items asynchronously, the Netty event loop
- * is never blocked.
+ * Back-pressure is not propagated over the wire: the server pushes items as
+ * they are produced and each DATA frame is delivered to the subscriber on the
+ * Netty event loop, so {@code request(n)} below is effectively a no-op hint.
  *
  * @author shenhongxi
  */
@@ -58,8 +57,8 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter implement
         subscriber.onSubscribe(new Flow.Subscription() {
             @Override
             public void request(long n) {
-                // We always request 1 at a time from the server side; this is a no-op
-                // hint.  The actual back-pressure is driven by the server's Publisher.
+                // Demand is not propagated over the wire; the server pushes items
+                // as they are produced, so this is a no-op hint.
             }
 
             @Override

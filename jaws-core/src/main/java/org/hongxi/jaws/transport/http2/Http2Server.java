@@ -19,9 +19,9 @@ import org.hongxi.jaws.transport.MessageHandler;
  * are provided by Netty, while business payloads keep using the Jaws
  * {@link org.hongxi.jaws.serialization.Serialization} SPI.
  * <p>
- * Supports both unary and streaming invocations. Streaming methods (server/client/
- * bidirectional) are detected via the {@code x-jaws-streaming} header and dispatched
- * to the provider's {@code callStream()} method.
+ * Supports both unary and server-streaming invocations. Server streaming is
+ * detected via the {@code x-jaws-streaming} header and dispatched to the
+ * provider's {@code callStream()} method.
  * <p>
  * The Netty bootstrap skeleton, business thread pool, GOAWAY-based graceful
  * shutdown, optional TLS with ALPN, and connection limiting are provided by

@@ -37,7 +37,7 @@ import java.io.File;
  *   [ssl] → http2_codec → http2_multiplex → (per-stream handler)
  * </pre>
  * <p>
- * Speaking plain h2c (HTTP/2 prior-knowledge) by default; TLS is enabled when
+ * Speaks plain h2c (HTTP/2 prior-knowledge) by default; TLS is enabled when
  * {@code sslCertChain} and {@code sslPrivateKey} are configured on the URL.
  *
  * @author shenhongxi
