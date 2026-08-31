@@ -357,6 +357,11 @@ class WireServerStreamHandlerTest {
         AtomicBoolean upstreamCanceled = new AtomicBoolean();
         registry.register("test.Health", "Watch", new WireMethodHandler() {
             @Override
+            public MethodType methodType() {
+                return MethodType.SERVER_STREAMING;
+            }
+
+            @Override
             public Message handle(Message request) {
                 throw new UnsupportedOperationException("streaming");
             }

@@ -147,6 +147,11 @@ public class WireHealthService {
      */
     private class WatchHandler implements WireMethodHandler {
         @Override
+        public MethodType methodType() {
+            return MethodType.SERVER_STREAMING;
+        }
+
+        @Override
         public Message handle(Message request) {
             throw new UnsupportedOperationException("Watch is a streaming method");
         }

@@ -29,6 +29,25 @@ import java.util.concurrent.Flow;
 public interface WireMethodHandler {
 
     /**
+     * The invocation style of a gRPC method, mirroring the proto definition.
+     * Only {@code UNARY} and {@code SERVER_STREAMING} are supported; client
+     * and bidirectional streaming are intentionally excluded (see the
+     * framework design rationale).
+     */
+    enum MethodType {
+        UNARY,
+        SERVER_STREAMING
+    }
+
+    /**
+     * @return the invocation style of this method; defaults to {@link MethodType#UNARY}.
+     *         Streaming handlers must override and return {@link MethodType#SERVER_STREAMING}.
+     */
+    default MethodType methodType() {
+        return MethodType.UNARY;
+    }
+
+    /**
      * Handle a unary gRPC call.
      *
      * @param request the decoded protobuf request message
