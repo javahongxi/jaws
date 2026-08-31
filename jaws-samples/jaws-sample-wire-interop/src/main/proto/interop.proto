@@ -10,6 +10,7 @@ package interop;
 // WireClient will call this server using the gRPC wire format.
 service Greeter {
   rpc SayHello (HelloRequest) returns (HelloReply) {}
+  rpc SayHelloStream (HelloRequest) returns (stream HelloReply) {}
 }
 
 message HelloRequest {

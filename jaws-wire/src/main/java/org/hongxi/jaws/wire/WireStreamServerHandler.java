@@ -17,13 +17,14 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * Base class for per-stream inbound handlers on the gRPC server, owning the
- * gRPC wire mechanics shared by both dispatch modes:
+ * Per-stream inbound handler for the gRPC server, owning the gRPC wire
+ * mechanics shared by both dispatch modes:
  * <ol>
  *   <li>{@code channelRead} frame dispatch (HEADERS / DATA / RST_STREAM)</li>
  *   <li>DATA frame accumulation with the max-inbound-message-size guard and
@@ -40,48 +41,37 @@ import java.util.concurrent.RejectedExecutionException;
  *   <li>Lifecycle: buffer release on early close, error trailers, channel close</li>
  * </ol>
  * <p>
- * Subclasses implement the two points where dispatch semantics differ:
+ * The two dispatch modes differ only in path resolution and business invocation,
+ * which are delegated to a {@link WireCallDispatcher} strategy:
  * <ul>
- *   <li>{@link #onHeadersResolved(ChannelHandlerContext, Http2Headers, String, boolean)} —
- *       route the {@code :path} (registry lookup for the direct API mode,
- *       service/method name parsing for the SPI adapter mode)</li>
- *   <li>{@link #dispatch(ChannelHandlerContext)} — hand the complete accumulated
- *       payload to the business executor and write the response</li>
+ *   <li>{@link WireCallDispatcher.WireRegistryCallDispatcher} — direct API mode,
+ *       routes via {@link WireServiceRegistry} to typed {@link WireMethodHandler}</li>
+ *   <li>{@link WireCallDispatcher.WireSpiCallDispatcher} — SPI adapter mode,
+ *       bridges to the Jaws {@link org.hongxi.jaws.transport.MessageHandler} pipeline</li>
  * </ul>
- * <p>
- * Because both modes share this class, the wire protocol has a single stream
- * handler family; a future port-unification router (one port serving both
- * jaws-HTTP/2 and gRPC streams) can dispatch to it without knowing which
- * mode is active.
+ * This composition simplifies adding new dispatch modes (e.g. a future
+ * port-unification router serving both jaws-HTTP/2 and gRPC streams on
+ * one port) without extending the handler hierarchy.
  *
  * @author shenhongxi
+ * @see WireCallDispatcher
  */
-abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
-    private static final Logger log = LoggerFactory.getLogger(AbstractWireStreamHandler.class);
+public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
+    private static final Logger log = LoggerFactory.getLogger(WireStreamServerHandler.class);
 
-    /** Log message prefix identifying the concrete handler in error logs. */
-    private final String logPrefix;
-
+    /** Dispatch strategy: registry-based routing or SPI pipeline bridge. */
+    private final WireCallDispatcher dispatcher;
     protected final ExecutorService serverExecutor;
-
     /** Max size of a single inbound gRPC message in bytes. */
     protected final int maxMessageSize;
-
     /**
-     * Outbound encoding for response messages as configured (identity or gzip);
-     * downgraded to identity per call when the client's grpc-accept-encoding
-     * does not advertise it.
+     * Server-configured compression (identity or gzip); downgraded to
+     * identity per call when the client's grpc-accept-encoding does not
+     * advertise it.
      */
-    protected String responseEncoding;
+    protected String compression;
 
     protected String path;
-    protected ByteBuf accumulator;
-    protected boolean dispatched;
-    /** Set when the caller canceled the stream (RST_STREAM) or it closed. */
-    protected volatile boolean canceled;
-    /** Set when the inbound message exceeded {@link #maxMessageSize}. */
-    private boolean rejected;
-
     /** Absolute caller deadline in epoch ms parsed from grpc-timeout; 0 = none. */
     protected long deadlineMs;
     /** Inbound message encoding declared by the grpc-encoding header. */
@@ -89,21 +79,35 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
     /** Custom metadata (non-reserved request headers) for the current call. */
     protected Map<String, String> attachments = Collections.emptyMap();
 
+    protected ByteBuf accumulator;
+    /** Set when the inbound message exceeded {@link #maxMessageSize}. */
+    private boolean rejected;
+    protected boolean dispatched;
+
+    /** Set when the caller canceled the stream (RST_STREAM) or it closed. */
+    protected volatile boolean canceled;
+
+    /**
+     * Whether the initial response HEADERS frame has been written to the
+     * stream; once set, subsequent errors must use trailers rather than
+     * the trailers-only form.
+     */
     private boolean responseHeadersSent;
 
-    AbstractWireStreamHandler(String logPrefix, ExecutorService serverExecutor,
-                              int maxMessageSize, String configuredResponseEncoding) {
-        this.logPrefix = logPrefix;
+    WireStreamServerHandler(WireCallDispatcher dispatcher,
+                            ExecutorService serverExecutor,
+                            int maxMessageSize, String compression) {
+        this.dispatcher = dispatcher;
         this.serverExecutor = serverExecutor;
         this.maxMessageSize = maxMessageSize;
-        this.responseEncoding = configuredResponseEncoding;
+        this.compression = compression;
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         try {
             if (msg instanceof Http2HeadersFrame headersFrame) {
-                onHeaders(ctx, headersFrame.headers(), headersFrame.isEndStream());
+                onHeaders(ctx, headersFrame);
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
             } else if (msg instanceof Http2ResetFrame) {
@@ -115,14 +119,15 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
                 ReferenceCountUtil.release(msg);
             }
         } catch (Exception e) {
-            log.error("{} stream error: path={}", logPrefix, path, e);
+            log.error("stream error: path={}", path, e);
             sendError(ctx, WireConstants.STATUS_INTERNAL, "Internal error: " + e.getMessage());
         }
     }
 
-    private void onHeaders(ChannelHandlerContext ctx, Http2Headers headers, boolean endStream) {
-        CharSequence pathSeq = headers.path();
-        path = pathSeq != null ? pathSeq.toString() : null;
+    private void onHeaders(ChannelHandlerContext ctx, Http2HeadersFrame headersFrame) {
+        Http2Headers headers = headersFrame.headers();
+        boolean endStream = headersFrame.isEndStream();
+        path = Objects.toString(headers.path(), null);
 
         if (path == null) {
             sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, "Missing :path header");
@@ -134,7 +139,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
         if (timeoutSeq != null) {
             long timeoutMs = WireStatus.decodeTimeout(timeoutSeq.toString());
             if (timeoutMs < 0) {
-                log.warn("{} malformed grpc-timeout header: {}", logPrefix, timeoutSeq);
+                log.warn("malformed grpc-timeout header: {}", timeoutSeq);
             } else if (timeoutMs > 0) {
                 deadlineMs = System.currentTimeMillis() + timeoutMs;
             }
@@ -157,52 +162,33 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
         attachments = WireMetadata.fromHeaders(headers);
 
         // Downgrade the response encoding when the client does not accept it
-        if (responseEncoding != null
-                && !WireConstants.ENCODING_IDENTITY.equals(responseEncoding)) {
+        if (compression != null && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
             CharSequence acceptSeq = headers.get(WireConstants.GRPC_ACCEPT_ENCODING);
-            if (acceptSeq == null || !containsEncoding(acceptSeq.toString(), responseEncoding)) {
-                responseEncoding = WireConstants.ENCODING_IDENTITY;
+            if (acceptSeq == null) {
+                compression = WireConstants.ENCODING_IDENTITY;
+            } else {
+                for (String candidate : acceptSeq.toString().split(",")) {
+                    if (candidate.trim().equals(compression)) {
+                        compression = WireConstants.ENCODING_IDENTITY;
+                        break;
+                    }
+                }
             }
         }
 
-        onHeadersResolved(ctx, headers, path, endStream);
+        if (!dispatcher.resolvePath(ctx, path)) {
+            sendError(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + path);
+            return;
+        }
 
         if (endStream) {
             sendError(ctx, WireConstants.STATUS_INTERNAL, "Missing request payload");
         }
     }
 
-    /**
-     * Whether a comma-separated accept-encoding value contains the encoding.
-     */
-    private static boolean containsEncoding(String acceptEncodings, String encoding) {
-        for (String candidate : acceptEncodings.split(",")) {
-            if (candidate.trim().equals(encoding)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Handle the resolved request HEADERS. Called once, after the path has
-     * been extracted and validated and the protocol headers (grpc-timeout,
-     * grpc-encoding, metadata) have been parsed, before the "missing payload"
-     * check for END_STREAM-only headers. Implementations typically route the
-     * path (registry lookup for the direct API mode, service/method name
-     * parsing for the SPI adapter mode).
-     *
-     * @param ctx        the stream channel context
-     * @param headers    the full request headers (path included)
-     * @param path       the request path (never null here)
-     * @param endStream  whether the HEADERS frame already ended the stream
-     */
-    protected abstract void onHeadersResolved(ChannelHandlerContext ctx, Http2Headers headers,
-                                              String path, boolean endStream);
-
     private void onData(ChannelHandlerContext ctx, Http2DataFrame dataFrame) {
         try {
-            if (dispatched || rejected || !acceptsData()) {
+            if (dispatched || rejected) {
                 return;
             }
 
@@ -232,23 +218,40 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Whether incoming DATA frames should still be accumulated. Returns
-     * {@code true} by default; the direct API mode returns {@code false}
-     * once the path failed to resolve, so no memory is spent buffering a
-     * request that will never be dispatched.
-     */
-    protected boolean acceptsData() {
-        return true;
-    }
-
-    /**
-     * Hand the complete accumulated payload (in {@link #accumulator}) to the
-     * business executor and write the response. Called once, when the request
-     * END_STREAM arrives. The implementation owns releasing the accumulator.
+     * Hand the complete accumulated payload to the business executor via the
+     * {@link WireCallDispatcher}, which decodes the request, invokes the
+     * handler, and writes the response.
      *
      * @param ctx the stream channel context
      */
-    protected abstract void dispatch(ChannelHandlerContext ctx);
+    private void dispatch(ChannelHandlerContext ctx) {
+        if (dispatched) {
+            return;
+        }
+        dispatched = true;
+
+        final ByteBuf frameData = this.accumulator;
+
+        try {
+            serverExecutor.execute(() -> {
+                try {
+                    dispatcher.dispatch(ctx, frameData, this);
+                } catch (Exception e) {
+                    log.error("unexpected dispatch error: path={}", path, e);
+                    if (!canceled && ctx.channel().isActive()) {
+                        sendError(ctx, WireConstants.STATUS_INTERNAL,
+                                "Unexpected error: " + e.getMessage());
+                    }
+                } finally {
+                    if (frameData != null) {
+                        frameData.release();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            rejectCall(ctx, e);
+        }
+    }
 
     /**
      * Fail the call when the business executor rejects the dispatch task
@@ -257,31 +260,13 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
      * accumulated request buffer that the rejected task will never consume.
      */
     protected void rejectCall(ChannelHandlerContext ctx, RejectedExecutionException e) {
-        log.error("{} request rejected due to full thread pool: path={}", logPrefix, path);
+        log.error("request rejected due to full thread pool: path={}", path);
         if (accumulator != null) {
             accumulator.release();
             accumulator = null;
         }
         sendError(ctx, WireStatus.STATUS_UNAVAILABLE,
                 "Request rejected: server thread pool is full");
-    }
-
-    /**
-     * @return true if the caller's deadline (grpc-timeout) has passed
-     */
-    protected boolean isDeadlineExceeded() {
-        return deadlineMs > 0 && System.currentTimeMillis() >= deadlineMs;
-    }
-
-    /**
-     * @return the remaining deadline in ms, or 0 when no deadline is set or
-     *         it already expired
-     */
-    protected long remainingDeadlineMs() {
-        if (deadlineMs <= 0) {
-            return 0;
-        }
-        return Math.max(0, deadlineMs - System.currentTimeMillis());
     }
 
     /**
@@ -315,17 +300,17 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
                 }
                 if (item instanceof Message msg) {
                     sendResponseHeaders(ctx);
-                    ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc(), responseEncoding);
+                    ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc(), compression);
                     ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
                 } else {
-                    log.warn("{} streaming: expected protobuf Message but got: {}",
-                            logPrefix, item != null ? item.getClass().getName() : "null");
+                    log.warn("streaming: expected protobuf Message but got: {}",
+                            item != null ? item.getClass().getName() : "null");
                 }
             }
 
             @Override
             public void onError(Throwable throwable) {
-                log.error("{} streaming error: path={}", logPrefix, path, throwable);
+                log.error("streaming error: path={}", path, throwable);
                 if (!canceled && ctx.channel().isActive()) {
                     // Map failure class to grpc-status (retryable/deadline semantics)
                     sendTrailers(ctx, WireStatus.fromThrowable(throwable),
@@ -343,6 +328,25 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
+     * Send a unary response: check cancellation and deadline, then write
+     * initial HEADERS, the encoded gRPC DATA frame, and trailers.
+     * Called by the {@link WireCallDispatcher} after a successful invocation.
+     */
+    protected void sendUnaryResponse(ChannelHandlerContext ctx, Message response) {
+        if (canceled || !ctx.channel().isActive()) {
+            return;
+        }
+        if (isDeadlineExceeded()) {
+            sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
+            return;
+        }
+        sendResponseHeaders(ctx);
+        ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), compression);
+        ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
+        sendTrailers(ctx, WireConstants.STATUS_OK, null);
+    }
+
+    /**
      * Send the initial response HEADERS with :status 200, content-type, and
      * the encoding capabilities advertised for follow-up messages on this
      * connection.
@@ -356,9 +360,9 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
                 .status("200")
                 .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
                 .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ACCEPT_ENCODINGS);
-        if (responseEncoding != null
-                && !WireConstants.ENCODING_IDENTITY.equals(responseEncoding)) {
-            headers.set(WireConstants.GRPC_ENCODING, responseEncoding);
+        if (compression != null
+                && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
+            headers.set(WireConstants.GRPC_ENCODING, compression);
         }
         ctx.write(new DefaultHttp2HeadersFrame(headers, false));
     }
@@ -401,6 +405,24 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
         ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailersOnly, true));
     }
 
+    /**
+     * @return true if the caller's deadline (grpc-timeout) has passed
+     */
+    protected boolean isDeadlineExceeded() {
+        return deadlineMs > 0 && System.currentTimeMillis() >= deadlineMs;
+    }
+
+    /**
+     * @return the remaining deadline in ms, or 0 when no deadline is set or
+     *         it already expired
+     */
+    protected long remainingDeadlineMs() {
+        if (deadlineMs <= 0) {
+            return 0;
+        }
+        return Math.max(0, deadlineMs - System.currentTimeMillis());
+    }
+
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
         canceled = true;
@@ -413,7 +435,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        log.error("{} stream exception: path={}", logPrefix, path, cause);
+        log.error("stream exception: path={}", path, cause);
         if (!dispatched) {
             sendError(ctx, WireConstants.STATUS_INTERNAL, cause.getMessage());
         }

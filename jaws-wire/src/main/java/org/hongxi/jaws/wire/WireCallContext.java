@@ -20,9 +20,16 @@ public final class WireCallContext {
 
     private final Map<String, String> attachments;
 
-    public WireCallContext(Map<String, String> attachments) {
-        this.attachments = attachments != null
-                ? Collections.unmodifiableMap(attachments) : Collections.emptyMap();
+    private WireCallContext(Map<String, String> attachments) {
+        this.attachments = attachments;
+    }
+
+    /**
+     * Returns a {@link WireCallContext} for the given attachments,
+     * reusing {@link #EMPTY} when the map is null or empty.
+     */
+    public static WireCallContext of(Map<String, String> attachments) {
+        return (attachments == null || attachments.isEmpty()) ? EMPTY : new WireCallContext(attachments);
     }
 
     /**

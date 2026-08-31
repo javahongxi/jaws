@@ -18,10 +18,12 @@ import org.hongxi.jaws.transport.http2.AbstractHttp2Server;
  *       per gRPC gRFC A8 {@code PERMIT_KEEPALIVE_TIME} semantics</li>
  * </ul>
  * <p>
- * Each inbound HTTP/2 stream is handled by {@link WireServerStreamHandler}
- * (direct API mode) or {@link WireSpiServerStreamHandler} (SPI adapter mode),
- * which decodes the protobuf request, dispatches to the registered handler
- * on a business thread pool, and writes the protobuf response as a gRPC frame.
+ * Each inbound HTTP/2 stream is handled by {@link WireStreamServerHandler}
+ * with a {@link WireCallDispatcher} strategy: direct API mode uses
+ * {@link WireCallDispatcher.WireRegistryCallDispatcher}, SPI adapter mode
+ * uses {@link WireCallDispatcher.WireSpiCallDispatcher}. The handler decodes
+ * the protobuf request, dispatches to the registered handler on a business
+ * thread pool, and writes the protobuf response as a gRPC frame.
  * <p>
  * The Netty bootstrap skeleton, business thread pool, GOAWAY-based graceful
  * shutdown, optional TLS with ALPN (h2 over TLS, interoperable with standard
@@ -61,7 +63,7 @@ public class WireServer extends AbstractHttp2Server {
 
     /**
      * SPI adapter mode: use a Jaws {@link MessageHandler} pipeline, bridged
-     * via {@link WireSpiServerStreamHandler}.
+     * via {@link WireCallDispatcher.WireSpiCallDispatcher}.
      * <p>
      * The standard {@code grpc.health.v1.Health} service is automatically
      * intercepted at the stream-handler level, so health probes work
@@ -102,13 +104,14 @@ public class WireServer extends AbstractHttp2Server {
 
     @Override
     protected void initStreamChannel(io.netty.channel.Channel streamChannel) {
+        WireCallDispatcher dispatcher;
         if (registry != null) {
-            streamChannel.pipeline().addLast(
-                    new WireServerStreamHandler(registry, serverExecutor, maxMessageSize, compression));
+            dispatcher = new WireCallDispatcher.WireRegistryCallDispatcher(registry);
         } else {
-            streamChannel.pipeline().addLast(
-                    new WireSpiServerStreamHandler(messageHandler, healthService,
-                            serverExecutor, maxMessageSize, compression));
+            dispatcher = new WireCallDispatcher.WireSpiCallDispatcher(messageHandler, healthService);
         }
+        streamChannel.pipeline().addLast(
+                new WireStreamServerHandler(dispatcher,
+                        serverExecutor, maxMessageSize, compression));
     }
 }

@@ -10,7 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>jaws-sample-wire-interop</artifactId>
-    <description>Proves jaws-wire WireClient can call a standard grpc-java server</description>
+    <description>Bidirectional interop demos: WireClient ↔ grpc-java (baseline, metadata, gzip, deadline, health check, business call via WireCallContext)</description>
 
     <properties>
         <grpc.version>1.81.0</grpc.version>

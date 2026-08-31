@@ -40,10 +40,10 @@ import java.util.concurrent.TimeUnit;
  * Run:
  * <pre>
  *   ./mvnw -q compile exec:java -pl jaws-samples/jaws-sample-wire-interop -am \
- *       -Dexec.mainClass="org.hongxi.jaws.sample.wire.interop.WireKeepaliveInteropDemo"
+ *       -Dexec.mainClass="org.hongxi.jaws.sample.wire.interop.WireKeepaliveDemo"
  * </pre>
  */
-public class WireKeepaliveInteropDemo {
+public class WireKeepaliveDemo {
 
     private static final int PERMIT_PORT = 50091;
     private static final int ENFORCE_PORT = 50092;

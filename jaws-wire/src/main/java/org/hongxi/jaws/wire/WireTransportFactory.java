@@ -14,7 +14,7 @@ import java.util.Set;
  * wire (gRPC wire format) transport, registered as {@code @Extension("wire")}.
  * <p>
  * <b>Server side</b>: creates a {@link WireServer} in SPI adapter mode, using
- * {@link WireSpiServerStreamHandler} to bridge gRPC calls to the Jaws
+ * {@link WireCallDispatcher.WireSpiCallDispatcher} to bridge gRPC calls to the Jaws
  * {@link MessageHandler} pipeline. The gRPC path is parsed to populate
  * interface/method routing, and raw protobuf bytes are passed as the request
  * argument for the Jaws framework to handle.
