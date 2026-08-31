@@ -124,8 +124,8 @@ public class ZkConsumer {
         int total = orderService.countOrders();
         System.out.println("countOrders => " + total);
 
-        boolean cancelled = orderService.cancelOrder(order2.getId());
-        System.out.println("cancelOrder => " + cancelled);
+        boolean canceled = orderService.cancelOrder(order2.getId());
+        System.out.println("cancelOrder => " + canceled);
 
         /* 打印实际调用的服务端地址 */
         URL serverUrl2 = RpcContext.getContext().getServerUrl();

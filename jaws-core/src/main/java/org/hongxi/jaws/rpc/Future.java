@@ -19,7 +19,7 @@ public interface Future {
     /**
      * Returns whether the task has completed, either normally or with an exception.
      *
-     * @return true if the task is done (success, failure, or cancelled)
+     * @return true if the task is done (success, failure, or canceled)
      */
     boolean isDone();
 
@@ -39,7 +39,7 @@ public interface Future {
     Object getValue();
 
     /**
-     * Returns the exception if the task completed with a failure or was cancelled.
+     * Returns the exception if the task completed with a failure or was canceled.
      *
      * @return the exception, or null if the task succeeded or has not yet completed
      */

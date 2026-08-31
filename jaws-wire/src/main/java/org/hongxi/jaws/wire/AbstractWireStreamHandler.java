@@ -107,7 +107,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
             } else if (msg instanceof Http2ResetFrame) {
-                // Caller cancelled the call (grpc-java Context cancellation):
+                // Caller canceled the call (grpc-java Context cancellation):
                 // stop producing; the stream channel closes automatically.
                 canceled = true;
                 ReferenceCountUtil.release(msg);

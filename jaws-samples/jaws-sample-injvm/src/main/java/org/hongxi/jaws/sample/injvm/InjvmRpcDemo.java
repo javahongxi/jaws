@@ -177,8 +177,8 @@ public class InjvmRpcDemo {
         System.out.println("countOrders() => " + total);
 
         // 取消订单
-        boolean cancelled = orderService.cancelOrder(order2.getId());
-        System.out.println("cancelOrder(" + order2.getId() + ") => " + cancelled);
+        boolean canceled = orderService.cancelOrder(order2.getId());
+        System.out.println("cancelOrder(" + order2.getId() + ") => " + canceled);
         System.out.println();
     }
 

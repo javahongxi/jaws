@@ -221,7 +221,7 @@ public class WireHealthService {
         private final WatchPublisher publisher;
         private final Flow.Subscriber<? super Message> subscriber;
         private final Deque<Message> pending = new ArrayDeque<>();
-        private boolean cancelled;
+        private boolean canceled;
         private boolean draining;
 
         WatchSubscription(WatchPublisher publisher, Flow.Subscriber<? super Message> subscriber) {
@@ -237,7 +237,7 @@ public class WireHealthService {
         @Override
         public void cancel() {
             synchronized (this) {
-                cancelled = true;
+                canceled = true;
             }
             // Deregister so an abandoned Watch stream does not accumulate
             // in the health service's watcher list
@@ -246,7 +246,7 @@ public class WireHealthService {
 
         void offer(Message message) {
             synchronized (this) {
-                if (cancelled) {
+                if (canceled) {
                     return;
                 }
                 pending.add(message);
@@ -256,7 +256,7 @@ public class WireHealthService {
 
         private void drain() {
             synchronized (this) {
-                if (draining || cancelled) {
+                if (draining || canceled) {
                     return;
                 }
                 draining = true;
@@ -275,7 +275,7 @@ public class WireHealthService {
             } finally {
                 synchronized (this) {
                     draining = false;
-                    if (!cancelled && !pending.isEmpty()) {
+                    if (!canceled && !pending.isEmpty()) {
                         drain();
                     }
                 }

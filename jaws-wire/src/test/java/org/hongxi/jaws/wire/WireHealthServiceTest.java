@@ -153,7 +153,7 @@ class WireHealthServiceTest {
     }
 
     @Test
-    void cancelledWatchStopsReceivingUpdates() {
+    void canceledWatchStopsReceivingUpdates() {
         WireHealthService health = new WireHealthService();
         WireServiceRegistry registry = new WireServiceRegistry();
         health.registerTo(registry);

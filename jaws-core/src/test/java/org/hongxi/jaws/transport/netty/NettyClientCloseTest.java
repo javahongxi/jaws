@@ -53,7 +53,7 @@ class NettyClientCloseTest {
 
         // Drain finished via removeCallback well before the full timeout
         assertTrue(elapsed < 2000, "graceful close should return once in-flight requests drain");
-        assertFalse(future.isDone(), "request drained before close must not be cancelled");
+        assertFalse(future.isDone(), "request drained before close must not be canceled");
         completer.interrupt();
     }
 

@@ -354,7 +354,7 @@ class WireServerStreamHandlerTest {
     void callerCancelStopsStreamingEmission() {
         WireServiceRegistry registry = new WireServiceRegistry();
         AtomicReference<Flow.Subscriber<? super Message>> capturedSubscriber = new AtomicReference<>();
-        AtomicBoolean upstreamCancelled = new AtomicBoolean();
+        AtomicBoolean upstreamCanceled = new AtomicBoolean();
         registry.register("test.Health", "Watch", new WireMethodHandler() {
             @Override
             public Message handle(Message request) {
@@ -372,7 +372,7 @@ class WireServerStreamHandlerTest {
 
                         @Override
                         public void cancel() {
-                            upstreamCancelled.set(true);
+                            upstreamCanceled.set(true);
                         }
                     });
                 };
@@ -394,10 +394,10 @@ class WireServerStreamHandlerTest {
         // Caller cancels with RST_STREAM(CANCEL)
         ch.writeInbound(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
 
-        // Any emission after cancel must be dropped, and the upstream cancelled
+        // Any emission after cancel must be dropped, and the upstream canceled
         capturedSubscriber.get().onNext(HealthCheckResponse.getDefaultInstance());
         assertNull(ch.readOutbound(), "no frames after caller cancellation");
-        assertTrue(upstreamCancelled.get(), "streaming publisher must be cancelled");
+        assertTrue(upstreamCanceled.get(), "streaming publisher must be canceled");
         ch.finishAndReleaseAll();
     }
 

@@ -17,7 +17,7 @@ import java.util.Map;
  * support. {@link #getValue()} blocks on an intrinsic lock (via wait/notify) until the
  * network layer completes the future through {@link #onSuccess(Response)} or
  * {@link #onFailure(Response)}, or until the request timeout elapses, in which case the
- * future is cancelled with a timeout exception. All state transitions are guarded by
+ * future is canceled with a timeout exception. All state transitions are guarded by
  * the lock, making completion and waiting thread-safe; registered listeners are
  * notified after the state changes.
  *

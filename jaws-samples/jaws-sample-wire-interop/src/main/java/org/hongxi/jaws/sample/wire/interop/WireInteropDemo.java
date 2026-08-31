@@ -81,7 +81,7 @@ public class WireInteropDemo {
                             // or the deadline expires
                             Context.current().addListener(
                                     context -> System.out.println(
-                                            "[grpc-java server] call cancelled (client RST_STREAM or deadline expired)"),
+                                            "[grpc-java server] call canceled (client RST_STREAM or deadline expired)"),
                                     Runnable::run);
                             try {
                                 // Outrun the caller's 300ms deadline

@@ -42,8 +42,8 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
     private boolean cancelActionFired;
 
     /**
-     * Set the action to run when the stream is cancelled by the application.
-     * Must be called before the stream can be cancelled (right after the
+     * Set the action to run when the stream is canceled by the application.
+     * Must be called before the stream can be canceled (right after the
      * RPC is issued).
      */
     void setCancelAction(Runnable action) {
@@ -108,7 +108,7 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
     private class StreamingSubscription implements Flow.Subscription {
         private final Flow.Subscriber<? super Message> subscriber;
         private int index;
-        private boolean cancelled = false;
+        private boolean canceled = false;
         private boolean draining = false;
         private boolean terminalDelivered = false;
 
@@ -124,7 +124,7 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
 
         @Override
         public void cancel() {
-            cancelled = true;
+            canceled = true;
             // Notify the transport once: the caller no longer wants the
             // stream (sends RST_STREAM CANCEL so the server stops work)
             synchronized (StreamingMessagePublisher.this) {
@@ -148,11 +148,11 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
          */
         void drain() {
             synchronized (StreamingMessagePublisher.this) {
-                if (draining || cancelled || terminalDelivered) return;
+                if (draining || canceled || terminalDelivered) return;
                 draining = true;
             }
             try {
-                while (!cancelled) {
+                while (!canceled) {
                     Message item;
                     boolean isComplete;
                     Throwable err;
@@ -190,7 +190,7 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
                     draining = false;
                     // Check if new items / completion arrived while we were draining
                     // (they would have seen draining=true and skipped drain)
-                    if (!terminalDelivered && !cancelled
+                    if (!terminalDelivered && !canceled
                             && (index < items.size() || completed || error != null)) {
                         drain();
                     }

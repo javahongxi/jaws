@@ -128,8 +128,8 @@ public class Http2Consumer {
         int total = orderService.countOrders();
         System.out.println("countOrders => " + total);
 
-        boolean cancelled = orderService.cancelOrder(order2.getId());
-        System.out.println("cancelOrder => " + cancelled);
+        boolean canceled = orderService.cancelOrder(order2.getId());
+        System.out.println("cancelOrder => " + canceled);
 
         /* Print the actual server address */
         URL serverUrl2 = RpcContext.getContext().getServerUrl();
