@@ -30,11 +30,11 @@ import java.util.concurrent.CompletableFuture;
  *
  * @author shenhongxi
  */
-class WireClientStreamHandler extends ChannelInboundHandlerAdapter {
-    private static final Logger log = LoggerFactory.getLogger(WireClientStreamHandler.class);
+class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
+    private static final Logger log = LoggerFactory.getLogger(WireStreamResponseHandler.class);
 
     private final Parser<? extends Message> responseParser;
-    private final CompletableFuture<Message> resultFuture;
+    private final CompletableFuture<Message> responseFuture;
     private final int maxMessageSize;
     /** Filled with non-reserved trailer metadata when trailers arrive; may be null. */
     private final Map<String, String> trailerMetadata;
@@ -44,12 +44,12 @@ class WireClientStreamHandler extends ChannelInboundHandlerAdapter {
     private String grpcMessage;
     private String responseEncoding = WireConstants.ENCODING_IDENTITY;
 
-    WireClientStreamHandler(Parser<? extends Message> responseParser,
-                            CompletableFuture<Message> resultFuture,
-                            int maxMessageSize,
-                            Map<String, String> trailerMetadata) {
+    WireStreamResponseHandler(Parser<? extends Message> responseParser,
+                              CompletableFuture<Message> responseFuture,
+                              int maxMessageSize,
+                              Map<String, String> trailerMetadata) {
         this.responseParser = responseParser;
-        this.resultFuture = resultFuture;
+        this.responseFuture = responseFuture;
         this.maxMessageSize = maxMessageSize;
         this.trailerMetadata = trailerMetadata;
     }
@@ -58,39 +58,43 @@ class WireClientStreamHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         try {
             if (msg instanceof Http2HeadersFrame headersFrame) {
-                // Distinguish initial response HEADERS from trailers HEADERS
-                CharSequence statusSeq = headersFrame.headers().get(WireConstants.GRPC_STATUS);
-                if (statusSeq != null) {
-                    // Trailers HEADERS frame carrying grpc-status
-                    grpcStatus = Integer.parseInt(statusSeq.toString());
-                    CharSequence messageSeq = headersFrame.headers().get(WireConstants.GRPC_MESSAGE);
-                    if (messageSeq != null) {
-                        grpcMessage = messageSeq.toString();
-                    }
-                    if (trailerMetadata != null) {
-                        trailerMetadata.putAll(WireMetadata.fromHeaders(headersFrame.headers()));
-                    }
-                } else {
-                    // Initial response HEADERS: capture the response message encoding
-                    CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
-                    if (encodingSeq != null) {
-                        responseEncoding = encodingSeq.toString();
-                    }
-                }
-
-                if (headersFrame.isEndStream()) {
-                    completeOrFail();
-                }
+                onHeaders(headersFrame);
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
             } else if (msg instanceof Http2ResetFrame resetFrame) {
-                resultFuture.completeExceptionally(new RuntimeException(
+                responseFuture.completeExceptionally(new RuntimeException(
                         "gRPC stream reset: errorCode=" + resetFrame.errorCode()));
             } else {
                 ReferenceCountUtil.release(msg);
             }
         } catch (Exception e) {
-            resultFuture.completeExceptionally(e);
+            responseFuture.completeExceptionally(e);
+        }
+    }
+
+    private void onHeaders(Http2HeadersFrame headersFrame) {
+        // Distinguish initial response HEADERS from trailers HEADERS
+        CharSequence statusSeq = headersFrame.headers().get(WireConstants.GRPC_STATUS);
+        if (statusSeq != null) {
+            // Trailers HEADERS frame carrying grpc-status
+            grpcStatus = Integer.parseInt(statusSeq.toString());
+            CharSequence messageSeq = headersFrame.headers().get(WireConstants.GRPC_MESSAGE);
+            if (messageSeq != null) {
+                grpcMessage = messageSeq.toString();
+            }
+            if (trailerMetadata != null) {
+                trailerMetadata.putAll(WireMetadata.fromHeaders(headersFrame.headers()));
+            }
+        } else {
+            // Initial response HEADERS: capture the response message encoding
+            CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
+            if (encodingSeq != null) {
+                responseEncoding = encodingSeq.toString();
+            }
+        }
+
+        if (headersFrame.isEndStream()) {
+            completeOrFail();
         }
     }
 
@@ -105,7 +109,7 @@ class WireClientStreamHandler extends ChannelInboundHandlerAdapter {
             // Guard against oversized responses: fail the call and reset the
             // stream instead of buffering unbounded data
             if (accumulator.readableBytes() > maxMessageSize + WireConstants.GRPC_HEADER_SIZE) {
-                resultFuture.completeExceptionally(new RuntimeException(
+                responseFuture.completeExceptionally(new RuntimeException(
                         "gRPC response exceeds maxInboundMessageSize: " + maxMessageSize));
                 ctx.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
                 ctx.close();
@@ -127,31 +131,31 @@ class WireClientStreamHandler extends ChannelInboundHandlerAdapter {
             if (grpcStatus != WireConstants.STATUS_OK && grpcStatus >= 0) {
                 // Surface a semantically typed exception: DEADLINE_EXCEEDED carries the
                 // jaws timeout error code, UNAVAILABLE is flagged retryable
-                resultFuture.completeExceptionally(
+                responseFuture.completeExceptionally(
                         WireStatus.toException(grpcStatus, grpcMessage));
                 return;
             }
 
             if (accumulator == null || accumulator.readableBytes() == 0) {
-                resultFuture.completeExceptionally(
+                responseFuture.completeExceptionally(
                         new RuntimeException("No response data received"));
                 return;
             }
 
             ByteBuf frame = WireFrameCodec.tryExtractFrame(accumulator);
             if (frame == null) {
-                resultFuture.completeExceptionally(
+                responseFuture.completeExceptionally(
                         new RuntimeException("Incomplete gRPC response frame"));
                 return;
             }
             try {
                 Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
-                resultFuture.complete(response);
+                responseFuture.complete(response);
             } finally {
                 frame.release();
             }
         } catch (Exception e) {
-            resultFuture.completeExceptionally(e);
+            responseFuture.completeExceptionally(e);
         } finally {
             if (accumulator != null && accumulator.refCnt() > 0) {
                 accumulator.release();
@@ -161,8 +165,8 @@ class WireClientStreamHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
-        if (!resultFuture.isDone()) {
-            resultFuture.completeExceptionally(
+        if (!responseFuture.isDone()) {
+            responseFuture.completeExceptionally(
                     new RuntimeException("gRPC stream closed before response received"));
         }
     }
@@ -170,8 +174,8 @@ class WireClientStreamHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Wire client stream error", cause);
-        if (!resultFuture.isDone()) {
-            resultFuture.completeExceptionally(cause);
+        if (!responseFuture.isDone()) {
+            responseFuture.completeExceptionally(cause);
         }
         ctx.close();
     }

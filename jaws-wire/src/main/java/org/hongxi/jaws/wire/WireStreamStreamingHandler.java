@@ -11,16 +11,17 @@ import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
+import org.hongxi.jaws.transport.StreamPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Per-stream response handler for server-streaming gRPC calls on the client side.
  * <p>
- * Unlike {@link WireClientStreamHandler} which collects a single response
+ * Unlike {@link WireStreamResponseHandler} which collects a single response
  * message into a {@link java.util.concurrent.CompletableFuture}, this handler
  * decodes each incoming gRPC frame and feeds it to a
- * {@link StreamingMessagePublisher} that implements {@link java.util.concurrent.Flow.Publisher}.
+ * {@link StreamPublisher} that implements {@link java.util.concurrent.Flow.Publisher}.
  * <p>
  * The handler accumulates DATA frame bytes (guarded by the max-inbound
  * message size), extracts complete gRPC frames via
@@ -30,11 +31,11 @@ import org.slf4j.LoggerFactory;
  *
  * @author shenhongxi
  */
-class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
-    private static final Logger log = LoggerFactory.getLogger(WireClientStreamingHandler.class);
+class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
+    private static final Logger log = LoggerFactory.getLogger(WireStreamStreamingHandler.class);
 
     private final Parser<? extends Message> responseParser;
-    private final StreamingMessagePublisher publisher;
+    private final StreamPublisher publisher;
     private final int maxMessageSize;
 
     private ByteBuf accumulator;
@@ -42,8 +43,8 @@ class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
     private String grpcMessage;
     private String responseEncoding = WireConstants.ENCODING_IDENTITY;
 
-    WireClientStreamingHandler(Parser<? extends Message> responseParser,
-                               StreamingMessagePublisher publisher,
+    WireStreamStreamingHandler(Parser<? extends Message> responseParser,
+                               StreamPublisher publisher,
                                int maxMessageSize) {
         this.responseParser = responseParser;
         this.publisher = publisher;
@@ -54,23 +55,7 @@ class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         try {
             if (msg instanceof Http2HeadersFrame headersFrame) {
-                CharSequence statusSeq = headersFrame.headers().get(WireConstants.GRPC_STATUS);
-                if (statusSeq != null) {
-                    grpcStatus = Integer.parseInt(statusSeq.toString());
-                    CharSequence messageSeq = headersFrame.headers().get(WireConstants.GRPC_MESSAGE);
-                    if (messageSeq != null) {
-                        grpcMessage = messageSeq.toString();
-                    }
-                } else {
-                    // Initial response HEADERS: capture the response message encoding
-                    CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
-                    if (encodingSeq != null) {
-                        responseEncoding = encodingSeq.toString();
-                    }
-                }
-                if (headersFrame.isEndStream()) {
-                    completeOrFail();
-                }
+                onHeaders(headersFrame);
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
             } else if (msg instanceof Http2ResetFrame resetFrame) {
@@ -81,6 +66,26 @@ class WireClientStreamingHandler extends ChannelInboundHandlerAdapter {
             }
         } catch (Exception e) {
             publisher.completeExceptionally(e);
+        }
+    }
+
+    private void onHeaders(Http2HeadersFrame headersFrame) {
+        CharSequence statusSeq = headersFrame.headers().get(WireConstants.GRPC_STATUS);
+        if (statusSeq != null) {
+            grpcStatus = Integer.parseInt(statusSeq.toString());
+            CharSequence messageSeq = headersFrame.headers().get(WireConstants.GRPC_MESSAGE);
+            if (messageSeq != null) {
+                grpcMessage = messageSeq.toString();
+            }
+        } else {
+            // Initial response HEADERS: capture the response message encoding
+            CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
+            if (encodingSeq != null) {
+                responseEncoding = encodingSeq.toString();
+            }
+        }
+        if (headersFrame.isEndStream()) {
+            completeOrFail();
         }
     }
 

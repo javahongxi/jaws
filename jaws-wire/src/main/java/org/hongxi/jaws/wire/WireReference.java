@@ -103,12 +103,7 @@ public class WireReference<T> extends AbstractReference<T> {
         }
 
         WireClient wireClient = (WireClient) client;
-        Response response = wireClient.requestStream(streamRequest, methodInfo.responseParser());
-
-        // The response value is a Flow.Publisher<Message>; cast to Flow.Publisher<Object>
-        @SuppressWarnings("unchecked")
-        Flow.Publisher<Object> publisher = (Flow.Publisher<Object>) response.getValue();
-        return publisher;
+        return wireClient.requestStream(streamRequest, methodInfo.responseParser());
     }
 
     @Override

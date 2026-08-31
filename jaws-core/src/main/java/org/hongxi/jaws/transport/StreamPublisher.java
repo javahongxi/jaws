@@ -1,16 +1,14 @@
-package org.hongxi.jaws.wire;
-
-import com.google.protobuf.Message;
+package org.hongxi.jaws.transport;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Flow;
 
 /**
- * A simple {@link Flow.Publisher} that bridges gRPC server-streaming responses
- * to the Java {@link Flow} API.
+ * A buffered {@link Flow.Publisher} that bridges transport-level streaming
+ * responses to the Java {@link Flow} API.
  * <p>
- * Items are produced by the Netty event loop (via {@link #addItem(Message)})
+ * Items are produced by the Netty event loop (via {@link #addItem(Object)})
  * and consumed by the application subscriber. The publisher buffers all items
  * internally; every subscriber receives the full stream from the beginning —
  * including items that were buffered before it subscribed (the application
@@ -26,17 +24,16 @@ import java.util.concurrent.Flow;
  *
  * @author shenhongxi
  */
-class StreamingMessagePublisher implements Flow.Publisher<Message> {
+public class StreamPublisher implements Flow.Publisher<Object> {
 
-    private final List<Message> items = new ArrayList<>();
-    private boolean completed = false;
-    private Throwable error = null;
+    private final List<Object> items = new ArrayList<>();
+    private boolean completed;
+    private Throwable error;
     private final List<StreamingSubscription> subscribers = new ArrayList<>();
 
     /**
      * Invoked once when a subscriber cancels the stream; wired by the client
-     * to send RST_STREAM(CANCEL) so the server stops producing (gRPC
-     * cancellation semantics). Runs at most once.
+     * to send RST_STREAM so the server stops producing. Runs at most once.
      */
     private volatile Runnable cancelAction;
     private boolean cancelActionFired;
@@ -46,26 +43,25 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
      * Must be called before the stream can be canceled (right after the
      * RPC is issued).
      */
-    void setCancelAction(Runnable action) {
+    public void setCancelAction(Runnable action) {
         this.cancelAction = action;
     }
 
     /**
-     * Called from the Netty event loop to add a decoded protobuf message.
+     * Called from the Netty event loop to add a decoded response item.
      */
-    synchronized void addItem(Message message) {
+    public synchronized void addItem(Object item) {
         if (completed || error != null) return;
-        items.add(message);
-        // Trigger drain on all subscribers — items arrived after request() returned
+        items.add(item);
         for (StreamingSubscription sub : subscribers) {
             sub.drain();
         }
     }
 
     /**
-     * Called when the gRPC trailers with {@code grpc-status: OK} are received.
+     * Called when the stream completes normally (END_STREAM or trailers received).
      */
-    synchronized void complete() {
+    public synchronized void complete() {
         if (completed) return;
         completed = true;
         for (StreamingSubscription sub : subscribers) {
@@ -74,9 +70,9 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
     }
 
     /**
-     * Called when a gRPC error status is received or a decode error occurs.
+     * Called when an error occurs (stream reset, decode failure, etc.).
      */
-    synchronized void completeExceptionally(Throwable t) {
+    public synchronized void completeExceptionally(Throwable t) {
         if (completed || error != null) return;
         error = t;
         for (StreamingSubscription sub : subscribers) {
@@ -85,7 +81,10 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
     }
 
     @Override
-    public void subscribe(Flow.Subscriber<? super Message> subscriber) {
+    public void subscribe(Flow.Subscriber<? super Object> subscriber) {
+        if (subscriber == null) {
+            throw new NullPointerException("subscriber must not be null");
+        }
         StreamingSubscription sub;
         synchronized (this) {
             // Start from index 0: a subscriber must receive the full stream,
@@ -106,13 +105,13 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
      * are missed when {@link #addItem} and {@link #request} interleave.
      */
     private class StreamingSubscription implements Flow.Subscription {
-        private final Flow.Subscriber<? super Message> subscriber;
+        private final Flow.Subscriber<? super Object> subscriber;
         private int index;
         private boolean canceled = false;
         private boolean draining = false;
         private boolean terminalDelivered = false;
 
-        StreamingSubscription(Flow.Subscriber<? super Message> subscriber, int startIndex) {
+        StreamingSubscription(Flow.Subscriber<? super Object> subscriber, int startIndex) {
             this.subscriber = subscriber;
             this.index = startIndex;
         }
@@ -126,8 +125,8 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
         public void cancel() {
             canceled = true;
             // Notify the transport once: the caller no longer wants the
-            // stream (sends RST_STREAM CANCEL so the server stops work)
-            synchronized (StreamingMessagePublisher.this) {
+            // stream (sends RST_STREAM so the server stops work)
+            synchronized (StreamPublisher.this) {
                 if (cancelActionFired || cancelAction == null) {
                     return;
                 }
@@ -147,16 +146,16 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
          * within an {@code onNext} callback.
          */
         void drain() {
-            synchronized (StreamingMessagePublisher.this) {
+            synchronized (StreamPublisher.this) {
                 if (draining || canceled || terminalDelivered) return;
                 draining = true;
             }
             try {
                 while (!canceled) {
-                    Message item;
+                    Object item;
                     boolean isComplete;
                     Throwable err;
-                    synchronized (StreamingMessagePublisher.this) {
+                    synchronized (StreamPublisher.this) {
                         if (index < items.size()) {
                             item = items.get(index++);
                             isComplete = false;
@@ -186,7 +185,7 @@ class StreamingMessagePublisher implements Flow.Publisher<Message> {
                     }
                 }
             } finally {
-                synchronized (StreamingMessagePublisher.this) {
+                synchronized (StreamPublisher.this) {
                     draining = false;
                     // Check if new items / completion arrived while we were draining
                     // (they would have seen draining=true and skipped drain)

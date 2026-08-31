@@ -3,6 +3,7 @@ package org.hongxi.jaws.wire;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
 import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
@@ -19,6 +20,7 @@ import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.transport.StreamPublisher;
 import org.hongxi.jaws.transport.http2.AbstractHttp2Client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,20 +55,15 @@ import java.util.function.Function;
  * Inbound messages larger than {@code maxInboundMessageSize} (default 4MiB,
  * same as grpc-java) fail the call.
  * <p>
- * The response parser is provided via the {@code responseParser} parameter
- * in the {@link #request(Request, Parser)} method, or via the URL parameter
- * {@code wireResponseParser} for the standard {@link #request(Request)} path.
+ * The response parser must be provided as the {@code responseParser} parameter
+ * in {@link #request(Request, Parser)}, {@link #requestStream(Request, Parser)},
+ * or {@link #sendRawBytes(Request, byte[], Parser)} — gRPC responses cannot
+ * be decoded without a target protobuf type.
  *
  * @author shenhongxi
  */
 public class WireClient extends AbstractHttp2Client {
     private static final Logger log = LoggerFactory.getLogger(WireClient.class);
-
-    /**
-     * The response parser for decoding gRPC responses. Must be set before
-     * calling {@link #request(Request)} via {@link #setResponseParser(Parser)}.
-     */
-    private volatile Parser<? extends Message> responseParser;
 
     /** Max size of a single inbound gRPC message in bytes. */
     private final int maxMessageSize;
@@ -76,37 +73,19 @@ public class WireClient extends AbstractHttp2Client {
     public WireClient(URL url) {
         super(url, "WireClient");
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
-        String configured = url.getParameter(UrlParam.Transport.COMPRESSION);
-        if (configured != null
-                && !WireConstants.ENCODING_IDENTITY.equals(configured)
-                && !WireCompression.isSupported(configured)) {
-            log.warn("Unsupported wire compression '{}', falling back to identity", configured);
-            configured = WireConstants.ENCODING_IDENTITY;
+        String compression = url.getParameter(UrlParam.Transport.COMPRESSION);
+        if (compression != null && !WireConstants.ENCODING_IDENTITY.equals(compression)
+                && !WireCompression.isSupported(compression)) {
+            log.warn("Unsupported wire compression '{}', falling back to identity", compression);
+            compression = WireConstants.ENCODING_IDENTITY;
         }
-        this.compression = configured;
-    }
-
-    /**
-     * Set the protobuf parser used to decode response messages.
-     * Must be called before {@link #request(Request)}.
-     */
-    public void setResponseParser(Parser<? extends Message> responseParser) {
-        this.responseParser = responseParser;
+        this.compression = compression;
     }
 
     @Override
     public Response request(Request request) {
-        if (!isAvailable()) {
-            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
-        }
-
-        Parser<? extends Message> parser = this.responseParser;
-        if (parser == null) {
-            throw new JawsServiceException(
-                    "WireClient responseParser not set; call setResponseParser() before request()");
-        }
-
-        return request(request, parser);
+        throw new UnsupportedOperationException(
+                "WireClient requires a protobuf Parser; use request(Request, Parser) instead");
     }
 
     /**
@@ -122,12 +101,11 @@ public class WireClient extends AbstractHttp2Client {
         }
 
         Object[] args = request.getArguments();
-        if (args == null || args.length == 0 || !(args[0] instanceof Message)) {
+        if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
             throw new JawsServiceException(
                     "WireClient request argument must be a protobuf Message; got: "
                             + (args != null && args.length > 0 ? args[0].getClass().getName() : "null"));
         }
-        Message requestMessage = (Message) args[0];
         return doUnaryCall(request, responseParser,
                 alloc -> WireFrameCodec.encode(requestMessage, alloc, compression));
     }
@@ -156,7 +134,7 @@ public class WireClient extends AbstractHttp2Client {
      * is encoded with the stream channel's allocator right before writing.
      */
     private Response doUnaryCall(Request request, Parser<? extends Message> responseParser,
-                                Function<io.netty.buffer.ByteBufAllocator, ByteBuf> frameEncoder) {
+                                Function<ByteBufAllocator, ByteBuf> frameEncoder) {
         // Build gRPC path: /{interfaceName}/{methodName}
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
@@ -166,32 +144,33 @@ public class WireClient extends AbstractHttp2Client {
                 UrlParam.Transport.REQUEST_TIMEOUT.intValue());
         int timeout = resolveTimeout(request, urlTimeout);
 
-        CompletableFuture<Message> resultFuture = new CompletableFuture<>();
-        Map<String, String> trailerMetadata = new HashMap<>();
         io.netty.channel.Channel streamChannel = null;
+        CompletableFuture<Message> responseFuture = new CompletableFuture<>();
+        Map<String, String> trailerMetadata = new HashMap<>();
 
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
             // Open a new HTTP/2 stream
             streamChannel = new Http2StreamChannelBootstrap(connChannel)
-                    .handler(new WireClientStreamHandler(responseParser, resultFuture,
-                            maxMessageSize, trailerMetadata))
+                    .handler(new WireStreamResponseHandler(
+                            responseParser, responseFuture, maxMessageSize, trailerMetadata))
                     .open().syncUninterruptibly().getNow();
 
-            ByteBuf frame = frameEncoder.apply(streamChannel.alloc());
-            streamChannel.write(new DefaultHttp2HeadersFrame(buildRequestHeaders(request, grpcPath, timeout)));
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, true))
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
+            ByteBuf content = frameEncoder.apply(streamChannel.alloc());
+            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
-                            resultFuture.completeExceptionally(
+                            responseFuture.completeExceptionally(
                                     new JawsServiceException("Wire stream write failed", f.cause()));
                             incrErrorCount();
                         }
                     });
 
             // Wait for response synchronously
-            Message responseMessage = resultFuture.get(timeout, TimeUnit.MILLISECONDS);
+            Message responseMessage = responseFuture.get(timeout, TimeUnit.MILLISECONDS);
 
             // Success — reset the error fusing counter
             resetErrorCount();
@@ -202,7 +181,6 @@ public class WireClient extends AbstractHttp2Client {
                 response.setAttachments(trailerMetadata);
             }
             return response;
-
         } catch (java.util.concurrent.TimeoutException e) {
             // Cancel the call: RST_STREAM(CANCEL) tells the server to stop
             // working on it (gRPC cancellation semantics)
@@ -222,27 +200,26 @@ public class WireClient extends AbstractHttp2Client {
     }
 
     /**
-     * Send a server-streaming gRPC request and return a {@link Response} whose
-     * value is a {@link Flow.Publisher Publisher&lt;Message&gt;} that emits
-     * each streamed response item. Cancelling the returned subscription sends
-     * RST_STREAM(CANCEL) to abort the stream on the server.
+     * Send a server-streaming gRPC request and return a {@link Flow.Publisher}
+     * that emits each streamed response item. Cancelling the returned
+     * subscription sends RST_STREAM(CANCEL) to abort the stream on the server
+     * (gRPC cancellation semantics).
      *
      * @param request        the RPC request; {@code arguments[0]} must be a protobuf {@link Message}
      * @param responseParser the parser for the expected response message type
-     * @return the response containing a streaming publisher
+     * @return a publisher emitting streamed response messages
      */
-    public Response requestStream(Request request, Parser<? extends Message> responseParser) {
+    public Flow.Publisher<Object> requestStream(Request request, Parser<? extends Message> responseParser) {
         if (!isAvailable()) {
             throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
         }
 
         Object[] args = request.getArguments();
-        if (args == null || args.length == 0 || !(args[0] instanceof Message)) {
+        if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
             throw new JawsServiceException(
                     "WireClient requestStream argument must be a protobuf Message; got: "
                             + (args != null && args.length > 0 ? args[0].getClass().getName() : "null"));
         }
-        Message requestMessage = (Message) args[0];
 
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
@@ -252,27 +229,25 @@ public class WireClient extends AbstractHttp2Client {
                 UrlParam.Transport.REQUEST_TIMEOUT.intValue());
         int timeout = resolveTimeout(request, urlTimeout);
 
-        StreamingMessagePublisher publisher = new StreamingMessagePublisher();
+        StreamPublisher publisher = new StreamPublisher();
 
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
-            // Open a new HTTP/2 stream with the streaming handler
             io.netty.channel.Channel streamChannel =
                     new Http2StreamChannelBootstrap(connChannel)
-                            .handler(new WireClientStreamingHandler(responseParser, publisher, maxMessageSize))
+                            .handler(new WireStreamStreamingHandler(
+                                    responseParser, publisher, maxMessageSize))
                             .open().syncUninterruptibly().getNow();
 
             // Subscriber cancel() → RST_STREAM(CANCEL): the server observes the
             // reset and stops producing (gRPC cancellation semantics)
             publisher.setCancelAction(() -> cancelStream(streamChannel));
 
-            // Encode request as gRPC frame
-            ByteBuf frame = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
-
-            // Send HEADERS + DATA(END_STREAM)
-            streamChannel.write(new DefaultHttp2HeadersFrame(buildRequestHeaders(request, grpcPath, timeout)));
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, true))
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
+            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             publisher.completeExceptionally(
@@ -281,10 +256,7 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
 
-            DefaultResponse response = new DefaultResponse(request.getRequestId());
-            response.setValue(publisher);
-            return response;
-
+            return publisher;
         } catch (Exception e) {
             log.error("Wire streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
             publisher.completeExceptionally(e);

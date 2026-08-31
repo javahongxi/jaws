@@ -67,7 +67,8 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             if (value instanceof CompletableFuture<?> future) {
                 long timeout = this.url.getMethodParameter(
                         request.getMethodName(), request.getParamDesc(),
-                        UrlParam.Transport.REQUEST_TIMEOUT.getName(), UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+                        UrlParam.Transport.REQUEST_TIMEOUT.getName(),
+                        UrlParam.Transport.REQUEST_TIMEOUT.intValue());
                 if (timeout > 0) {
                     future = future.orTimeout(timeout, TimeUnit.MILLISECONDS);
                 }

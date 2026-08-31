@@ -88,9 +88,9 @@ public class WireServer extends AbstractHttp2Server {
     }
 
     private static String normalizeCompression(URL url) {
-        String configured = url.getParameter(UrlParam.Transport.COMPRESSION);
-        return configured != null && WireCompression.isSupported(configured)
-                ? configured : WireConstants.ENCODING_IDENTITY;
+        String compression = url.getParameter(UrlParam.Transport.COMPRESSION);
+        return compression != null && WireCompression.isSupported(compression)
+                ? compression : WireConstants.ENCODING_IDENTITY;
     }
 
     @Override

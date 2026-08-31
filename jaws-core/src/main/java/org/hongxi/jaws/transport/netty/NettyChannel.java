@@ -62,7 +62,8 @@ public class NettyChannel implements Channel {
     public Response request(Request request) {
         int urlTimeout = nettyClient.getUrl().getMethodParameter(
                 request.getMethodName(), request.getParamDesc(),
-                UrlParam.Transport.REQUEST_TIMEOUT.getName(), UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
+                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
         int timeout = resolveTimeout(request, urlTimeout);
         if (timeout <= 0) {
             throw new JawsFrameworkException(

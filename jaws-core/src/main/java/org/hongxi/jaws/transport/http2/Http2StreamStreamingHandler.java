@@ -9,86 +9,68 @@ import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.serialization.Serialization;
+import org.hongxi.jaws.transport.StreamPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
-import java.util.concurrent.Flow;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Per-stream inbound handler for the HTTP/2 client that doubles as a
- * {@link Flow.Publisher} for server-streaming responses.
+ * Per-stream inbound handler for the HTTP/2 client that decodes each DATA
+ * frame as an independent stream item and feeds it to an
+ * {@link StreamPublisher}.
  * <p>
- * One instance is created per streaming request opened by {@link Http2Client#requestStream}.
- * It decodes each DATA frame as an independent stream item via {@link Http2StreamCodec}
- * and delivers it to the downstream {@link Flow.Subscriber}. END_STREAM on the response
- * triggers {@link Flow.Subscriber#onComplete()}; stream reset or channel close triggers
- * {@link Flow.Subscriber#onError(Throwable)}.
+ * Unlike the previous design where this handler doubled as a
+ * {@link java.util.concurrent.Flow.Publisher}, the publisher logic is now
+ * delegated to {@link StreamPublisher} for clean separation of concerns:
+ * the handler only deals with Netty inbound events and protocol decoding,
+ * while the publisher manages subscriber lifecycle, buffering, and drain.
  * <p>
- * Back-pressure is not propagated over the wire: the server pushes items as
- * they are produced and each DATA frame is delivered to the subscriber on the
- * Netty event loop, so {@code request(n)} below is effectively a no-op hint.
+ * One instance is created per streaming request opened by
+ * {@link Http2Client#requestStream}. END_STREAM on the response triggers
+ * {@link StreamPublisher#complete()}; stream reset or channel close
+ * triggers {@link StreamPublisher#completeExceptionally(Throwable)}.
  *
  * @author shenhongxi
  */
-class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter implements Flow.Publisher<Object> {
+class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(Http2StreamStreamingHandler.class);
 
     private final Serialization serialization;
+    private final StreamPublisher publisher;
 
     private String status;
-    private volatile Flow.Subscriber<? super Object> subscriber;
-    private final AtomicBoolean terminated = new AtomicBoolean();
 
-    Http2StreamStreamingHandler(Serialization serialization) {
+    Http2StreamStreamingHandler(Serialization serialization, StreamPublisher publisher) {
         this.serialization = serialization;
+        this.publisher = publisher;
     }
-
-    // ---- Flow.Publisher ------------------------------------------------
-
-    @Override
-    public void subscribe(Flow.Subscriber<? super Object> subscriber) {
-        if (subscriber == null) {
-            throw new NullPointerException("subscriber must not be null");
-        }
-        this.subscriber = subscriber;
-        subscriber.onSubscribe(new Flow.Subscription() {
-            @Override
-            public void request(long n) {
-                // Demand is not propagated over the wire; the server pushes items
-                // as they are produced, so this is a no-op hint.
-            }
-
-            @Override
-            public void cancel() {
-                terminate();
-            }
-        });
-    }
-
-    // ---- Netty handler --------------------------------------------------
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        if (msg instanceof Http2HeadersFrame headersFrame) {
-            status = Objects.toString(headersFrame.headers().status(), null);
-            if (headersFrame.isEndStream()) {
-                // Server ended immediately after headers (possibly an error)
-                if (!Http2Constants.STATUS_OK.equals(status)) {
-                    emitError(new JawsServiceException(
-                            "HTTP/2 streaming error: status=" + status));
+        try {
+            if (msg instanceof Http2HeadersFrame headersFrame) {
+                status = Objects.toString(headersFrame.headers().status(), null);
+                if (headersFrame.isEndStream()) {
+                    // Server ended immediately after headers (possibly an error)
+                    if (!Http2Constants.STATUS_OK.equals(status)) {
+                        publisher.completeExceptionally(new JawsServiceException(
+                                "HTTP/2 streaming error: status=" + status));
+                        return;
+                    }
+                    publisher.complete();
                 }
-                complete();
+            } else if (msg instanceof Http2DataFrame dataFrame) {
+                onData(dataFrame);
+            } else if (msg instanceof Http2ResetFrame resetFrame) {
+                publisher.completeExceptionally(new JawsServiceException(
+                        "HTTP/2 stream reset: errorCode=" + resetFrame.errorCode()));
+            } else {
+                ReferenceCountUtil.release(msg);
             }
-        } else if (msg instanceof Http2DataFrame dataFrame) {
-            onData(dataFrame);
-        } else if (msg instanceof Http2ResetFrame resetFrame) {
-            emitError(new JawsServiceException(
-                    "HTTP/2 stream reset: errorCode=" + resetFrame.errorCode()));
-        } else {
-            ReferenceCountUtil.release(msg);
+        } catch (Exception e) {
+            publisher.completeExceptionally(e);
         }
     }
 
@@ -102,81 +84,39 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter implement
                 if (!Http2Constants.STATUS_OK.equals(status)) {
                     // Error payload — interpret as error message
                     String errorMsg = new String(bytes, StandardCharsets.UTF_8);
-                    emitError(new JawsServiceException(
+                    publisher.completeExceptionally(new JawsServiceException(
                             "HTTP/2 streaming error: status=" + status + ", message=" + errorMsg));
                     return;
                 }
 
                 try {
                     Object item = Http2StreamCodec.decodeItem(bytes, serialization);
-                    deliverItem(item);
+                    publisher.addItem(item);
                 } catch (Exception e) {
                     log.error("Failed to decode stream item", e);
-                    emitError(new JawsServiceException("Failed to decode stream item", e));
+                    publisher.completeExceptionally(
+                            new JawsServiceException("Failed to decode stream item", e));
                 }
             }
 
             if (dataFrame.isEndStream()) {
-                complete();
+                publisher.complete();
             }
         } finally {
             dataFrame.release();
         }
     }
 
-    private void deliverItem(Object item) {
-        Flow.Subscriber<? super Object> sub = this.subscriber;
-        if (sub != null && !terminated.get()) {
-            try {
-                sub.onNext(item);
-            } catch (Exception e) {
-                log.error("Subscriber onNext threw", e);
-                emitError(e);
-            }
-        }
-    }
-
-    private void complete() {
-        if (terminated.compareAndSet(false, true)) {
-            Flow.Subscriber<? super Object> sub = this.subscriber;
-            if (sub != null) {
-                try {
-                    sub.onComplete();
-                } catch (Exception e) {
-                    log.error("Subscriber onComplete threw", e);
-                }
-            }
-        }
-    }
-
-    private void emitError(Throwable throwable) {
-        if (terminated.compareAndSet(false, true)) {
-            Flow.Subscriber<? super Object> sub = this.subscriber;
-            if (sub != null) {
-                try {
-                    sub.onError(throwable);
-                } catch (Exception e) {
-                    log.error("Subscriber onError threw", e);
-                }
-            }
-        }
-    }
-
-    private void terminate() {
-        terminated.set(true);
-    }
-
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
-        if (!terminated.get()) {
-            emitError(new JawsServiceException("HTTP/2 stream closed before streaming completed"));
-        }
+        publisher.completeExceptionally(
+                new JawsServiceException("HTTP/2 stream closed before streaming completed"));
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("HTTP/2 streaming client error", cause);
-        emitError(cause);
+        publisher.completeExceptionally(cause);
         ctx.close();
     }
 }
