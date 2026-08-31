@@ -76,12 +76,9 @@ public class WireConsumer {
         CountDownLatch latch = new CountDownLatch(1);
         greeterService.sayHelloStream(
                 HelloRequest.newBuilder().setName("StreamUser").build()
-        ).subscribe(new Flow.Subscriber<HelloReply>() {
-            private Flow.Subscription subscription;
-
+        ).subscribe(new Flow.Subscriber<>() {
             @Override
             public void onSubscribe(Flow.Subscription subscription) {
-                this.subscription = subscription;
                 subscription.request(Long.MAX_VALUE);
             }
 

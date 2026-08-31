@@ -77,8 +77,8 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
     protected String path;
     protected ByteBuf accumulator;
     protected boolean dispatched;
-    /** Set when the caller cancelled the stream (RST_STREAM) or it closed. */
-    protected volatile boolean cancelled;
+    /** Set when the caller canceled the stream (RST_STREAM) or it closed. */
+    protected volatile boolean canceled;
     /** Set when the inbound message exceeded {@link #maxMessageSize}. */
     private boolean rejected;
 
@@ -109,7 +109,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
             } else if (msg instanceof Http2ResetFrame) {
                 // Caller cancelled the call (grpc-java Context cancellation):
                 // stop producing; the stream channel closes automatically.
-                cancelled = true;
+                canceled = true;
                 ReferenceCountUtil.release(msg);
             } else {
                 ReferenceCountUtil.release(msg);
@@ -302,7 +302,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
 
             @Override
             public void onNext(Object item) {
-                if (cancelled || !ctx.channel().isActive()) {
+                if (canceled || !ctx.channel().isActive()) {
                     subscription.cancel();
                     return;
                 }
@@ -326,7 +326,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
             @Override
             public void onError(Throwable throwable) {
                 log.error("{} streaming error: path={}", logPrefix, path, throwable);
-                if (!cancelled && ctx.channel().isActive()) {
+                if (!canceled && ctx.channel().isActive()) {
                     // Map failure class to grpc-status (retryable/deadline semantics)
                     sendTrailers(ctx, WireStatus.fromThrowable(throwable),
                             "Stream failed: " + throwable.getMessage());
@@ -335,7 +335,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
 
             @Override
             public void onComplete() {
-                if (!cancelled && ctx.channel().isActive()) {
+                if (!canceled && ctx.channel().isActive()) {
                     sendTrailers(ctx, WireConstants.STATUS_OK, null);
                 }
             }
@@ -403,7 +403,7 @@ abstract class AbstractWireStreamHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
-        cancelled = true;
+        canceled = true;
         // Release accumulated buffer if the stream closed before dispatch
         if (accumulator != null && !dispatched) {
             accumulator.release();

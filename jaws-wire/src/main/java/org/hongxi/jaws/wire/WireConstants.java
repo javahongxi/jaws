@@ -30,7 +30,7 @@ public final class WireConstants {
 
     // grpc-status codes (used in trailers)
     public static final int STATUS_OK = 0;
-    public static final int STATUS_CANCELLED = 1;
+    public static final int STATUS_CANCELED = 1;
     public static final int STATUS_UNKNOWN = 2;
     public static final int STATUS_NOT_FOUND = 5;
     public static final int STATUS_UNIMPLEMENTED = 12;
@@ -54,12 +54,6 @@ public final class WireConstants {
     public static final CharSequence TE_TRAILERS = "trailers";
     public static final CharSequence HEADER_USER_AGENT = "user-agent";
     public static final String USER_AGENT = userAgent();
-
-    /** HTTP/2 pseudo-headers used in gRPC requests. */
-    public static final CharSequence HEADER_METHOD = ":method";
-    public static final CharSequence HEADER_SCHEME = ":scheme";
-    public static final CharSequence HEADER_PATH = ":path";
-    public static final CharSequence HEADER_AUTHORITY = ":authority";
 
     private static String userAgent() {
         String version = WireConstants.class.getPackage().getImplementationVersion();

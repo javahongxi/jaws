@@ -122,7 +122,7 @@ public final class WireStatus {
     public static String nameOf(int grpcStatus) {
         return switch (grpcStatus) {
             case WireConstants.STATUS_OK -> "OK";
-            case WireConstants.STATUS_CANCELLED -> "CANCELLED";
+            case WireConstants.STATUS_CANCELED -> "CANCELLED";
             case WireConstants.STATUS_UNKNOWN -> "UNKNOWN";
             case WireConstants.STATUS_NOT_FOUND -> "NOT_FOUND";
             case STATUS_DEADLINE_EXCEEDED -> "DEADLINE_EXCEEDED";

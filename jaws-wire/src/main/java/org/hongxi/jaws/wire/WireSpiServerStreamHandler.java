@@ -129,7 +129,7 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
                     }
                     Object result = future.join();
 
-                    if (cancelled || !ctx.channel().isActive()) {
+                    if (canceled || !ctx.channel().isActive()) {
                         return;
                     }
 
@@ -162,7 +162,7 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
                     }
                 } catch (Exception e) {
                     log.error("Wire SPI invoke failed: path={}", path, e);
-                    if (!cancelled && ctx.channel().isActive()) {
+                    if (!canceled && ctx.channel().isActive()) {
                         // Map the failure class to grpc-status so standard gRPC clients
                         // see retryable (UNAVAILABLE) / deadline (DEADLINE_EXCEEDED)
                         // semantics instead of a blanket INTERNAL

@@ -91,18 +91,6 @@ public final class WireFrameCodec {
     }
 
     /**
-     * Encode raw protobuf bytes into an uncompressed gRPC frame:
-     * {@code [compressed-flag(1)][length(4)][protobuf bytes]}.
-     *
-     * @param rawBytes the raw protobuf bytes (without gRPC header)
-     * @param alloc    the allocator for the output buffer
-     * @return a new {@link ByteBuf} containing the complete gRPC frame
-     */
-    public static ByteBuf encodeRawBytes(byte[] rawBytes, ByteBufAllocator alloc) {
-        return encodeRawBytes(rawBytes, alloc, null);
-    }
-
-    /**
      * Encode raw protobuf bytes into a gRPC frame, compressing the payload
      * when {@code encoding} is a supported compression encoding.
      *

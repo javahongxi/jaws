@@ -86,8 +86,7 @@ public class WireServer extends AbstractHttp2Server {
                     new WireServerStreamHandler(registry, serverExecutor, maxMessageSize, compression));
         } else {
             streamChannel.pipeline().addLast(
-                    new WireSpiServerStreamHandler(messageHandler, serverExecutor,
-                            maxMessageSize, compression));
+                    new WireSpiServerStreamHandler(messageHandler, serverExecutor, maxMessageSize, compression));
         }
     }
 }

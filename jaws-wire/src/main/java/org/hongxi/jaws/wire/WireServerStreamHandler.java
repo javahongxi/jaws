@@ -5,6 +5,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
 import io.netty.handler.codec.http2.Http2Headers;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
@@ -27,7 +29,7 @@ import java.util.concurrent.RejectedExecutionException;
  * @author shenhongxi
  */
 class WireServerStreamHandler extends AbstractWireStreamHandler {
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(WireServerStreamHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(WireServerStreamHandler.class);
 
     private final WireServiceRegistry registry;
 
@@ -97,7 +99,7 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
                     } catch (UnsupportedOperationException e) {
                         // Unary fallback
                         Message response = methodHandler.handle(request, callContext);
-                        if (cancelled || !ctx.channel().isActive()) {
+                        if (canceled || !ctx.channel().isActive()) {
                             return;
                         }
                         if (isDeadlineExceeded()) {
@@ -113,7 +115,7 @@ class WireServerStreamHandler extends AbstractWireStreamHandler {
                     }
                 } catch (Exception e) {
                     log.error("Wire server invoke failed: path={}", path, e);
-                    if (!cancelled && ctx.channel().isActive()) {
+                    if (!canceled && ctx.channel().isActive()) {
                         // Map failure class to grpc-status (retryable/deadline semantics)
                         sendError(ctx, WireStatus.fromThrowable(e),
                                 "Invoke failed: " + e.getMessage());

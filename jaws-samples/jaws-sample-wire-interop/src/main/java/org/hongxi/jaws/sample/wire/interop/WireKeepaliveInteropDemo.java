@@ -174,11 +174,6 @@ public class WireKeepaliveInteropDemo {
             public Parser<? extends Message> getRequestParser() {
                 return HelloRequest.parser();
             }
-
-            @Override
-            public Message getResponseDefaultInstance() {
-                return HelloReply.getDefaultInstance();
-            }
         });
 
         Map<String, String> params = Map.of(

@@ -77,9 +77,4 @@ public interface WireMethodHandler {
      * @return the protobuf {@link Parser} for the request message type
      */
     Parser<? extends Message> getRequestParser();
-
-    /**
-     * @return a default instance of the response message type (used for type identification)
-     */
-    Message getResponseDefaultInstance();
 }

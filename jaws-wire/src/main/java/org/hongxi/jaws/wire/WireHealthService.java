@@ -141,11 +141,6 @@ public class WireHealthService {
         public Parser<? extends Message> getRequestParser() {
             return HealthCheckRequest.parser();
         }
-
-        @Override
-        public Message getResponseDefaultInstance() {
-            return HealthCheckResponse.getDefaultInstance();
-        }
     }
 
     /**
@@ -169,11 +164,6 @@ public class WireHealthService {
         @Override
         public Parser<? extends Message> getRequestParser() {
             return HealthCheckRequest.parser();
-        }
-
-        @Override
-        public Message getResponseDefaultInstance() {
-            return HealthCheckResponse.getDefaultInstance();
         }
     }
 

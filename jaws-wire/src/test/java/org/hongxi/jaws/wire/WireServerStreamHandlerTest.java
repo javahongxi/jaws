@@ -156,11 +156,6 @@ class WireServerStreamHandlerTest {
             public Parser<? extends Message> getRequestParser() {
                 return HealthCheckRequest.parser();
             }
-
-            @Override
-            public Message getResponseDefaultInstance() {
-                return HealthCheckResponse.getDefaultInstance();
-            }
         };
     }
 
@@ -244,11 +239,6 @@ class WireServerStreamHandlerTest {
             public Parser<? extends Message> getRequestParser() {
                 return HealthCheckRequest.parser();
             }
-
-            @Override
-            public Message getResponseDefaultInstance() {
-                return HealthCheckResponse.getDefaultInstance();
-            }
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireServerStreamHandler(registry, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
@@ -306,11 +296,6 @@ class WireServerStreamHandlerTest {
             public Parser<? extends Message> getRequestParser() {
                 return HealthCheckRequest.parser();
             }
-
-            @Override
-            public Message getResponseDefaultInstance() {
-                return HealthCheckResponse.getDefaultInstance();
-            }
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireServerStreamHandler(registry, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
@@ -346,11 +331,6 @@ class WireServerStreamHandlerTest {
             @Override
             public Parser<? extends Message> getRequestParser() {
                 return HealthCheckRequest.parser();
-            }
-
-            @Override
-            public Message getResponseDefaultInstance() {
-                return HealthCheckResponse.getDefaultInstance();
             }
         });
         EmbeddedChannel ch = new EmbeddedChannel(
@@ -401,11 +381,6 @@ class WireServerStreamHandlerTest {
             @Override
             public Parser<? extends Message> getRequestParser() {
                 return HealthCheckRequest.parser();
-            }
-
-            @Override
-            public Message getResponseDefaultInstance() {
-                return HealthCheckResponse.getDefaultInstance();
             }
         });
         EmbeddedChannel ch = new EmbeddedChannel(

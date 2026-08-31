@@ -1,7 +1,5 @@
 package org.hongxi.jaws.wire;
 
-import java.util.Collections;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -37,12 +35,5 @@ public class WireServiceRegistry {
      */
     public WireMethodHandler resolve(String path) {
         return handlers.get(path);
-    }
-
-    /**
-     * @return an unmodifiable view of all registered paths
-     */
-    public Set<String> getPaths() {
-        return Collections.unmodifiableSet(handlers.keySet());
     }
 }
