@@ -24,13 +24,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  */
 class WireHealthServiceTest {
 
-    private static HealthCheckResponse check(WireServiceRegistry registry, String service) throws Exception {
+    private static HealthCheckResponse check(WireHandlerRegistry registry, String service) throws Exception {
         return (HealthCheckResponse) registry
                 .resolve("/" + WireHealthService.SERVICE_NAME + "/Check")
                 .handle(HealthCheckRequest.newBuilder().setService(service).build());
     }
 
-    private static Flow.Publisher<Message> watch(WireServiceRegistry registry, String service) {
+    private static Flow.Publisher<Message> watch(WireHandlerRegistry registry, String service) {
         return registry.resolve("/" + WireHealthService.SERVICE_NAME + "/Watch")
                 .handleStream(HealthCheckRequest.newBuilder().setService(service).build());
     }
@@ -67,7 +67,7 @@ class WireHealthServiceTest {
     @Test
     void overallStatusIsServingByDefault() throws Exception {
         WireHealthService health = new WireHealthService();
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         health.registerTo(registry);
 
         assertEquals(ServingStatus.SERVING, check(registry, "").getStatus());
@@ -76,7 +76,7 @@ class WireHealthServiceTest {
     @Test
     void unknownServiceCheckFailsWithNotFound() {
         WireHealthService health = new WireHealthService();
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         health.registerTo(registry);
 
         JawsServiceException e = assertThrows(JawsServiceException.class,
@@ -89,7 +89,7 @@ class WireHealthServiceTest {
     @Test
     void setStatusIsVisibleToCheck() throws Exception {
         WireHealthService health = new WireHealthService();
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         health.registerTo(registry);
 
         health.setStatus("svc.A", ServingStatus.SERVING);
@@ -106,7 +106,7 @@ class WireHealthServiceTest {
     @Test
     void watchEmitsInitialStatusAndUpdates() {
         WireHealthService health = new WireHealthService();
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         health.registerTo(registry);
 
         Flow.Publisher<Message> publisher = watch(registry, "svc.B");
@@ -127,7 +127,7 @@ class WireHealthServiceTest {
     @Test
     void watchOfExistingServiceEmitsCurrentStatusFirst() {
         WireHealthService health = new WireHealthService();
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         health.registerTo(registry);
         health.setStatus("svc.C", ServingStatus.SERVING);
 
@@ -140,7 +140,7 @@ class WireHealthServiceTest {
     @Test
     void clearStatusNotifiesWatchersWithServiceUnknown() {
         WireHealthService health = new WireHealthService();
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         health.registerTo(registry);
         health.setStatus("svc.D", ServingStatus.SERVING);
 
@@ -155,7 +155,7 @@ class WireHealthServiceTest {
     @Test
     void canceledWatchStopsReceivingUpdates() {
         WireHealthService health = new WireHealthService();
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         health.registerTo(registry);
         health.setStatus("svc.E", ServingStatus.SERVING);
 

@@ -8,7 +8,7 @@ import io.grpc.ManagedChannelBuilder;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.wire.WireMethodHandler;
 import org.hongxi.jaws.wire.WireServer;
-import org.hongxi.jaws.wire.WireServiceRegistry;
+import org.hongxi.jaws.wire.WireHandlerRegistry;
 
 import java.util.List;
 import java.util.Map;
@@ -160,7 +160,7 @@ public class WireKeepaliveDemo {
     }
 
     private static WireServer startWireServer(int port, long permitPingIntervalMs) {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("interop.Greeter", "SayHello", new WireMethodHandler() {
             @Override
             public Message handle(Message request) {

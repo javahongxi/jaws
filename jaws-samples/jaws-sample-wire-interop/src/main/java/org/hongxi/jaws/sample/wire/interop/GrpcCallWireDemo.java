@@ -12,7 +12,7 @@ import org.hongxi.jaws.wire.WireCallContext;
 import org.hongxi.jaws.wire.WireMethodHandler;
 import org.hongxi.jaws.wire.WireMethodHandler.MethodType;
 import org.hongxi.jaws.wire.WireServer;
-import org.hongxi.jaws.wire.WireServiceRegistry;
+import org.hongxi.jaws.wire.WireHandlerRegistry;
 
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  * and that gRPC metadata flows end-to-end through {@link WireCallContext}:
  * <ol>
  *   <li>Start a {@link WireServer} with business {@link WireMethodHandler}s
- *       registered via {@link WireServiceRegistry} — both unary and
+ *       registered via {@link WireHandlerRegistry} — both unary and
  *       server-streaming</li>
  *   <li>The unary handler overrides {@code handle(Message, WireCallContext)} to
  *       read the {@code x-trace-id} inbound metadata and echo it in the
@@ -55,7 +55,7 @@ public class GrpcCallWireDemo {
             Metadata.Key.of("x-trace-id", Metadata.ASCII_STRING_MARSHALLER);
 
     public static void main(String[] args) throws Exception {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("interop.Greeter", "SayHello", new WireMethodHandler() {
             @Override
             public Message handle(Message request) {

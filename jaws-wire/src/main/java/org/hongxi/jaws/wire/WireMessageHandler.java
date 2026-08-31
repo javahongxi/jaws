@@ -12,13 +12,13 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Server-side {@link MessageHandler} that bridges between the raw protobuf
- * bytes used by {@link WireCallDispatcher.WireSpiCallDispatcher} and the typed protobuf
+ * bytes used by {@link WireCallDispatcher.ProviderCallDispatcher} and the typed protobuf
  * {@link Message} expected by the Jaws filter chain and {@link org.hongxi.jaws.rpc.Provider}.
  * <p>
  * On the request path, the raw bytes are parsed into a {@code Message} using
  * the {@link com.google.protobuf.Parser} obtained from the service interface.
  * On the response path, the {@code Message} returned by the provider passes
- * through directly — {@code WireCallDispatcher.WireSpiCallDispatcher} encodes it into a gRPC frame.
+ * through directly — {@code WireCallDispatcher.ProviderCallDispatcher} encodes it into a gRPC frame.
  *
  * @author shenhongxi
  */
@@ -75,7 +75,7 @@ class WireMessageHandler implements MessageHandler {
             // Delegate to the filter chain / provider.
             // For unary: the response Message passes through directly.
             // For streaming: the response is a Flow.Publisher, passed through as-is.
-            // WireCallDispatcher.WireSpiCallDispatcher handles gRPC frame encoding for both cases.
+            // WireCallDispatcher.ProviderCallDispatcher handles gRPC frame encoding for both cases.
             return delegate.handleAsync(typedRequest);
         } catch (InvalidProtocolBufferException e) {
             log.error("Wire message decode failed: interface={} method={}",

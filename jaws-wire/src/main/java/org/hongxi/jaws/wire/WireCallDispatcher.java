@@ -24,11 +24,11 @@ import java.util.concurrent.TimeUnit;
  * Strategy interface that encapsulates the dispatch-mode differences between
  * the two server operating modes:
  * <ol>
- *   <li><b>Direct API</b> — a {@link WireServiceRegistry} routes the gRPC path
- *       to a typed {@link WireMethodHandler} ({@link WireRegistryCallDispatcher})</li>
- *   <li><b>SPI adapter</b> — a Jaws {@link MessageHandler} pipeline bridges
+ *   <li><b>Direct API</b> — a {@link WireHandlerRegistry} routes the gRPC path
+ *       to a typed {@link WireMethodHandler} ({@link HandlerCallDispatcher})</li>
+ *   <li><b>Provider pipeline</b> — a Jaws {@link MessageHandler} pipeline bridges
  *       raw protobuf bytes through the standard request/response model
- *       ({@link WireSpiCallDispatcher})</li>
+ *       ({@link ProviderCallDispatcher})</li>
  * </ol>
  * The {@link WireStreamServerHandler} owns the gRPC wire mechanics (frame
  * accumulation, header parsing, response writing, deadline/cancellation
@@ -39,8 +39,8 @@ import java.util.concurrent.TimeUnit;
  * @see WireStreamServerHandler
  */
 sealed interface WireCallDispatcher
-        permits WireCallDispatcher.WireRegistryCallDispatcher,
-                WireCallDispatcher.WireSpiCallDispatcher {
+        permits WireCallDispatcher.HandlerCallDispatcher,
+                WireCallDispatcher.ProviderCallDispatcher {
 
     /**
      * Resolve the request path after protocol headers have been parsed.
@@ -74,16 +74,16 @@ sealed interface WireCallDispatcher
 
     /**
      * Registry-mode dispatcher: resolves the gRPC path against a
-     * {@link WireServiceRegistry} to find a typed {@link WireMethodHandler},
+     * {@link WireHandlerRegistry} to find a typed {@link WireMethodHandler},
      * decodes the protobuf request, and invokes the handler directly.
      */
-    final class WireRegistryCallDispatcher implements WireCallDispatcher {
-        private static final Logger log = LoggerFactory.getLogger(WireRegistryCallDispatcher.class);
+    final class HandlerCallDispatcher implements WireCallDispatcher {
+        private static final Logger log = LoggerFactory.getLogger(HandlerCallDispatcher.class);
 
-        private final WireServiceRegistry registry;
+        private final WireHandlerRegistry registry;
         private WireMethodHandler handler;
 
-        WireRegistryCallDispatcher(WireServiceRegistry registry) {
+        HandlerCallDispatcher(WireHandlerRegistry registry) {
             this.registry = registry;
         }
 
@@ -144,7 +144,7 @@ sealed interface WireCallDispatcher
     }
 
     // ========================================================================
-    // SPI adapter mode — bridges to the Jaws MessageHandler pipeline
+    // Provider pipeline mode — bridges to the Jaws MessageHandler pipeline
     // ========================================================================
 
     /**
@@ -154,8 +154,8 @@ sealed interface WireCallDispatcher
      * pipeline. Also handles the standard {@code grpc.health.v1} health check
      * inline as a protocol concern.
      */
-    final class WireSpiCallDispatcher implements WireCallDispatcher {
-        private static final Logger log = LoggerFactory.getLogger(WireSpiCallDispatcher.class);
+    final class ProviderCallDispatcher implements WireCallDispatcher {
+        private static final Logger log = LoggerFactory.getLogger(ProviderCallDispatcher.class);
 
         /** gRPC path for the standard health Check method. */
         private static final String HEALTH_CHECK_PATH =
@@ -167,7 +167,7 @@ sealed interface WireCallDispatcher
         private String serviceName;
         private String methodName;
 
-        WireSpiCallDispatcher(MessageHandler messageHandler, WireHealthService healthService) {
+        ProviderCallDispatcher(MessageHandler messageHandler, WireHealthService healthService) {
             this.messageHandler = messageHandler;
             this.healthService = healthService;
         }
@@ -183,7 +183,7 @@ sealed interface WireCallDispatcher
                     methodName = trimmed.substring(slashIdx + 1);
                 }
             }
-            // SPI mode defers path validation to dispatch time
+            // Provider pipeline mode defers path validation to dispatch time
             return true;
         }
 
@@ -263,7 +263,7 @@ sealed interface WireCallDispatcher
                                 }
                                 handleDispatchResult(result, ctx, serverHandler);
                             } catch (Exception e) {
-                                log.error("Wire SPI async invoke failed: path={}", serverHandler.path, e);
+                                log.error("Wire Provider async invoke failed: path={}", serverHandler.path, e);
                                 if (!serverHandler.canceled && ctx.channel().isActive()) {
                                     serverHandler.sendError(ctx, WireStatus.fromThrowable(e),
                                             "Invoke failed: " + e.getMessage());
@@ -280,7 +280,7 @@ sealed interface WireCallDispatcher
                     throw e;
                 }
             } catch (Exception e) {
-                log.error("Wire SPI invoke failed: path={}", serverHandler.path, e);
+                log.error("Wire Provider invoke failed: path={}", serverHandler.path, e);
                 if (!serverHandler.canceled && ctx.channel().isActive()) {
                     // Map the failure class to grpc-status so standard gRPC clients
                     // see retryable (UNAVAILABLE) / deadline (DEADLINE_EXCEEDED)
@@ -330,12 +330,12 @@ sealed interface WireCallDispatcher
                 if (value instanceof Message msg) {
                     return msg;
                 }
-                throw new RuntimeException("Wire SPI expected protobuf Message response but got: "
+                throw new RuntimeException("Wire Provider expected protobuf Message response but got: "
                         + (value != null ? value.getClass().getName() : "null"));
             } else if (result instanceof Message msg) {
                 return msg;
             }
-            throw new RuntimeException("Wire SPI unexpected result type: "
+            throw new RuntimeException("Wire Provider unexpected result type: "
                     + (result != null ? result.getClass().getName() : "null"));
         }
 
@@ -363,7 +363,7 @@ sealed interface WireCallDispatcher
                 ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
                 serverHandler.sendTrailers(ctx, WireConstants.STATUS_OK, null);
             } catch (Exception e) {
-                log.error("Wire SPI health check failed: path={}", serverHandler.path, e);
+                log.error("Wire Provider health check failed: path={}", serverHandler.path, e);
                 serverHandler.sendError(ctx, WireConstants.STATUS_INTERNAL,
                         "Health check failed: " + e.getMessage());
             }

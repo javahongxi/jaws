@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Frame-level tests for {@link WireStreamServerHandler} with
- * {@link WireCallDispatcher.WireRegistryCallDispatcher} (direct API mode) on
+ * {@link WireCallDispatcher.HandlerCallDispatcher} (direct API mode) on
  * an {@link EmbeddedChannel}: unary responses, trailers-only errors, the
  * max-inbound-message-size guard, gzip request decompression, metadata
  * exposure, deadline enforcement, and caller cancellation.
@@ -162,11 +162,11 @@ class WireServerStreamHandlerTest {
 
     @Test
     void unaryCallReturnsHeadersDataAndTrailers() throws Exception {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("test.Health", "Echo", echoHandler());
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
@@ -192,10 +192,10 @@ class WireServerStreamHandlerTest {
 
     @Test
     void unknownPathGetsTrailersOnlyNotFound() {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         ch.writeInbound(requestHeaders("/no.Such/Method"));
@@ -213,12 +213,12 @@ class WireServerStreamHandlerTest {
 
     @Test
     void oversizedMessageGetsResourceExhausted() {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("test.Health", "Echo", echoHandler());
         // Tiny limit: 10 bytes
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         DIRECT_EXECUTOR, 10, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
@@ -233,7 +233,7 @@ class WireServerStreamHandlerTest {
 
     @Test
     void gzipCompressedRequestIsDecompressed() throws Exception {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         AtomicReference<String> seenService = new AtomicReference<>();
         registry.register("test.Health", "Echo", new WireMethodHandler() {
             @Override
@@ -249,7 +249,7 @@ class WireServerStreamHandlerTest {
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         Http2Headers extra = new DefaultHttp2Headers()
@@ -270,11 +270,11 @@ class WireServerStreamHandlerTest {
 
     @Test
     void unsupportedEncodingGetsUnimplemented() {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("test.Health", "Echo", echoHandler());
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         Http2Headers extra = new DefaultHttp2Headers().set(WireConstants.GRPC_ENCODING, "zstd");
@@ -289,7 +289,7 @@ class WireServerStreamHandlerTest {
 
     @Test
     void customMetadataIsExposedToHandler() {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         AtomicReference<WireCallContext> seenContext = new AtomicReference<>();
         registry.register("test.Health", "Echo", new WireMethodHandler() {
             @Override
@@ -310,7 +310,7 @@ class WireServerStreamHandlerTest {
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         Http2Headers extra = new DefaultHttp2Headers()
@@ -328,7 +328,7 @@ class WireServerStreamHandlerTest {
 
     @Test
     void expiredDeadlineGetsDeadlineExceeded() {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("test.Health", "Echo", new WireMethodHandler() {
             @Override
             public Message handle(Message request) {
@@ -348,7 +348,7 @@ class WireServerStreamHandlerTest {
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         Http2Headers extra = new DefaultHttp2Headers().set(WireStatus.GRPC_TIMEOUT, "5m");
@@ -367,7 +367,7 @@ class WireServerStreamHandlerTest {
 
     @Test
     void callerCancelStopsStreamingEmission() {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         AtomicReference<Flow.Subscriber<? super Message>> capturedSubscriber = new AtomicReference<>();
         AtomicBoolean upstreamCanceled = new AtomicBoolean();
         registry.register("test.Health", "Watch", new WireMethodHandler() {
@@ -405,7 +405,7 @@ class WireServerStreamHandlerTest {
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Watch"));
@@ -425,11 +425,11 @@ class WireServerStreamHandlerTest {
 
     @Test
     void rejectedCallGetsUnavailable() {
-        WireServiceRegistry registry = new WireServiceRegistry();
+        WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("test.Health", "Echo", echoHandler());
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.WireRegistryCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry),
                         REJECTING_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));

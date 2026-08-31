@@ -20,8 +20,8 @@ import org.hongxi.jaws.transport.http2.AbstractHttp2Server;
  * <p>
  * Each inbound HTTP/2 stream is handled by {@link WireStreamServerHandler}
  * with a {@link WireCallDispatcher} strategy: direct API mode uses
- * {@link WireCallDispatcher.WireRegistryCallDispatcher}, SPI adapter mode
- * uses {@link WireCallDispatcher.WireSpiCallDispatcher}. The handler decodes
+ * {@link WireCallDispatcher.HandlerCallDispatcher}, Provider pipeline mode
+ * uses {@link WireCallDispatcher.ProviderCallDispatcher}. The handler decodes
  * the protobuf request, dispatches to the registered handler on a business
  * thread pool, and writes the protobuf response as a gRPC frame.
  * <p>
@@ -34,7 +34,7 @@ import org.hongxi.jaws.transport.http2.AbstractHttp2Server;
  */
 public class WireServer extends AbstractHttp2Server {
 
-    private final WireServiceRegistry registry;
+    private final WireHandlerRegistry registry;
     private final MessageHandler messageHandler;
     private final WireHealthService healthService;
 
@@ -44,14 +44,14 @@ public class WireServer extends AbstractHttp2Server {
     private final String compression;
 
     /**
-     * Direct API mode: use a {@link WireServiceRegistry} for path-based routing
+     * Direct API mode: use a {@link WireHandlerRegistry} for path-based routing
      * to typed {@link WireMethodHandler} instances.
      * <p>
      * The standard {@code grpc.health.v1.Health} service is automatically
      * registered to the registry; use {@link #getHealthService()} to manage
      * per-service statuses.
      */
-    public WireServer(URL url, WireServiceRegistry registry) {
+    public WireServer(URL url, WireHandlerRegistry registry) {
         super(url, "WireServer");
         this.registry = registry;
         this.messageHandler = null;
@@ -62,8 +62,8 @@ public class WireServer extends AbstractHttp2Server {
     }
 
     /**
-     * SPI adapter mode: use a Jaws {@link MessageHandler} pipeline, bridged
-     * via {@link WireCallDispatcher.WireSpiCallDispatcher}.
+     * Provider pipeline mode: use a Jaws {@link MessageHandler} pipeline, bridged
+     * via {@link WireCallDispatcher.ProviderCallDispatcher}.
      * <p>
      * The standard {@code grpc.health.v1.Health} service is automatically
      * intercepted at the stream-handler level, so health probes work
@@ -106,9 +106,9 @@ public class WireServer extends AbstractHttp2Server {
     protected void initStreamChannel(io.netty.channel.Channel streamChannel) {
         WireCallDispatcher dispatcher;
         if (registry != null) {
-            dispatcher = new WireCallDispatcher.WireRegistryCallDispatcher(registry);
+            dispatcher = new WireCallDispatcher.HandlerCallDispatcher(registry);
         } else {
-            dispatcher = new WireCallDispatcher.WireSpiCallDispatcher(messageHandler, healthService);
+            dispatcher = new WireCallDispatcher.ProviderCallDispatcher(messageHandler, healthService);
         }
         streamChannel.pipeline().addLast(
                 new WireStreamServerHandler(dispatcher,

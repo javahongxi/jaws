@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentMap;
  *
  * @author shenhongxi
  */
-public class WireServiceRegistry {
+public class WireHandlerRegistry {
 
     private final ConcurrentMap<String, WireMethodHandler> handlers = new ConcurrentHashMap<>();
 

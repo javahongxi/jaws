@@ -13,8 +13,8 @@ import java.util.Set;
  * {@link org.hongxi.jaws.transport.TransportFactory} SPI implementation for the
  * wire (gRPC wire format) transport, registered as {@code @Extension("wire")}.
  * <p>
- * <b>Server side</b>: creates a {@link WireServer} in SPI adapter mode, using
- * {@link WireCallDispatcher.WireSpiCallDispatcher} to bridge gRPC calls to the Jaws
+ * <b>Server side</b>: creates a {@link WireServer} in Provider pipeline mode, using
+ * {@link WireCallDispatcher.ProviderCallDispatcher} to bridge gRPC calls to the Jaws
  * {@link MessageHandler} pipeline. The gRPC path is parsed to populate
  * interface/method routing, and raw protobuf bytes are passed as the request
  * argument for the Jaws framework to handle.
@@ -24,7 +24,7 @@ import java.util.Set;
  * <p>
  * <b>Note</b>: For full protobuf-typed integration (where request/response are
  * strongly-typed {@link com.google.protobuf.Message} subclasses), use the
- * direct API: {@link WireServer}(URL, {@link WireServiceRegistry}) +
+ * direct API: {@link WireServer}(URL, {@link WireHandlerRegistry}) +
  * {@link WireMethodHandler}.
  *
  * @author shenhongxi

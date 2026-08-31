@@ -24,7 +24,7 @@ import java.util.concurrent.Flow;
  * <p>
  * {@link WireServer} creates and registers a {@code WireHealthService}
  * automatically — both in direct API mode (registered into the
- * {@link WireServiceRegistry}) and in SPI adapter mode (intercepted at
+ * {@link WireHandlerRegistry}) and in Provider pipeline mode (intercepted at
  * the stream-handler level). Use {@link WireServer#getHealthService()} to
  * obtain the instance for managing per-service statuses.
  * <p>
@@ -67,7 +67,7 @@ public class WireHealthService {
      * Register the Check / Watch method handlers under the standard
      * {@code grpc.health.v1.Health} path.
      */
-    public void registerTo(WireServiceRegistry registry) {
+    public void registerTo(WireHandlerRegistry registry) {
         registry.register(SERVICE_NAME, "Check", checkHandler);
         registry.register(SERVICE_NAME, "Watch", watchHandler);
     }

@@ -7,7 +7,7 @@ import io.grpc.health.v1.HealthCheckResponse;
 import io.grpc.health.v1.HealthGrpc;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.wire.WireServer;
-import org.hongxi.jaws.wire.WireServiceRegistry;
+import org.hongxi.jaws.wire.WireHandlerRegistry;
 
 import java.util.Map;
 
@@ -35,7 +35,7 @@ public class WireHealthDemo {
     public static void main(String[] args) throws Exception {
         // Start jaws-wire server; health service is auto-registered
         URL url = new URL("wire", "localhost", WIRE_PORT, "health", Map.of());
-        WireServer wireServer = new WireServer(url, new WireServiceRegistry());
+        WireServer wireServer = new WireServer(url, new WireHandlerRegistry());
         wireServer.open();
         System.out.println("jaws-wire server started on port " + WIRE_PORT
                 + " (auto-registered grpc.health.v1.Health)");

@@ -113,7 +113,7 @@ public final class WireFrameCodec {
 
     /**
      * Extract the payload bytes of one gRPC frame, decompressing when the
-     * compressed flag is set. Used by the SPI adapter mode, which carries raw
+     * compressed flag is set. Used by the Provider pipeline mode, which carries raw
      * protobuf bytes instead of typed {@link Message} instances.
      *
      * @param frame    the buffer positioned at the frame header

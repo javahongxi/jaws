@@ -44,9 +44,9 @@ import java.util.concurrent.RejectedExecutionException;
  * The two dispatch modes differ only in path resolution and business invocation,
  * which are delegated to a {@link WireCallDispatcher} strategy:
  * <ul>
- *   <li>{@link WireCallDispatcher.WireRegistryCallDispatcher} — direct API mode,
- *       routes via {@link WireServiceRegistry} to typed {@link WireMethodHandler}</li>
- *   <li>{@link WireCallDispatcher.WireSpiCallDispatcher} — SPI adapter mode,
+ *   <li>{@link WireCallDispatcher.HandlerCallDispatcher} — direct API mode,
+ *       routes via {@link WireHandlerRegistry} to typed {@link WireMethodHandler}</li>
+ *   <li>{@link WireCallDispatcher.ProviderCallDispatcher} — Provider pipeline mode,
  *       bridges to the Jaws {@link org.hongxi.jaws.transport.MessageHandler} pipeline</li>
  * </ul>
  * This composition simplifies adding new dispatch modes (e.g. a future
