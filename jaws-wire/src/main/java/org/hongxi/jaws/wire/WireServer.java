@@ -34,6 +34,7 @@ public class WireServer extends AbstractHttp2Server {
 
     private final WireServiceRegistry registry;
     private final MessageHandler messageHandler;
+    private final WireHealthService healthService;
 
     /** Max size of a single inbound gRPC message in bytes. */
     private final int maxMessageSize;
@@ -43,11 +44,17 @@ public class WireServer extends AbstractHttp2Server {
     /**
      * Direct API mode: use a {@link WireServiceRegistry} for path-based routing
      * to typed {@link WireMethodHandler} instances.
+     * <p>
+     * The standard {@code grpc.health.v1.Health} service is automatically
+     * registered to the registry; use {@link #getHealthService()} to manage
+     * per-service statuses.
      */
     public WireServer(URL url, WireServiceRegistry registry) {
         super(url, "WireServer");
         this.registry = registry;
         this.messageHandler = null;
+        this.healthService = new WireHealthService();
+        this.healthService.registerTo(registry);
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
         this.compression = normalizeCompression(url);
     }
@@ -55,13 +62,27 @@ public class WireServer extends AbstractHttp2Server {
     /**
      * SPI adapter mode: use a Jaws {@link MessageHandler} pipeline, bridged
      * via {@link WireSpiServerStreamHandler}.
+     * <p>
+     * The standard {@code grpc.health.v1.Health} service is automatically
+     * intercepted at the stream-handler level, so health probes work
+     * without any Jaws-side service registration.
      */
     public WireServer(URL url, MessageHandler messageHandler) {
         super(url, "WireServer");
         this.registry = null;
         this.messageHandler = messageHandler;
+        this.healthService = new WireHealthService();
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
         this.compression = normalizeCompression(url);
+    }
+
+    /**
+     * @return the auto-registered health service, for managing per-service
+     *         statuses (e.g. {@code setStatus("", ServingStatus.NOT_SERVING)}
+     *         during graceful shutdown)
+     */
+    public WireHealthService getHealthService() {
+        return healthService;
     }
 
     private static String normalizeCompression(URL url) {
@@ -86,7 +107,8 @@ public class WireServer extends AbstractHttp2Server {
                     new WireServerStreamHandler(registry, serverExecutor, maxMessageSize, compression));
         } else {
             streamChannel.pipeline().addLast(
-                    new WireSpiServerStreamHandler(messageHandler, serverExecutor, maxMessageSize, compression));
+                    new WireSpiServerStreamHandler(messageHandler, healthService,
+                            serverExecutor, maxMessageSize, compression));
         }
     }
 }

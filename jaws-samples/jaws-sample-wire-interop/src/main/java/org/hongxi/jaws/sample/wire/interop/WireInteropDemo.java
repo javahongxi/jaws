@@ -19,7 +19,6 @@ import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.wire.WireClient;
-import org.hongxi.jaws.wire.WireHealthService;
 import org.hongxi.jaws.wire.WireServer;
 import org.hongxi.jaws.wire.WireServiceRegistry;
 
@@ -115,9 +114,8 @@ public class WireInteropDemo {
         System.out.println("grpc-java server started on port " + GRPC_PORT);
 
         // ---- Step 5: Start jaws-wire health server ----
+        // WireHealthService is auto-registered by WireServer; no manual setup needed
         WireServiceRegistry registry = new WireServiceRegistry();
-        WireHealthService healthService = new WireHealthService();
-        healthService.registerTo(registry);
         URL healthUrl = new URL("wire", "localhost", HEALTH_PORT, "health", Map.of());
         WireServer healthServer = new WireServer(healthUrl, registry);
         healthServer.open();

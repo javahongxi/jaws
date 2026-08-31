@@ -20,8 +20,13 @@ import java.util.concurrent.Flow;
 /**
  * Standard gRPC health checking service ({@code grpc.health.v1.Health},
  * <a href="https://github.com/grpc/grpc/blob/master/doc/health-checking.md">
- * health-checking.md</a>), ready to be registered into a
- * {@link WireServiceRegistry} in direct API mode.
+ * health-checking.md</a>).
+ * <p>
+ * {@link WireServer} creates and registers a {@code WireHealthService}
+ * automatically — both in direct API mode (registered into the
+ * {@link WireServiceRegistry}) and in SPI adapter mode (intercepted at
+ * the stream-handler level). Use {@link WireServer#getHealthService()} to
+ * obtain the instance for managing per-service statuses.
  * <p>
  * Serves the two protocol methods:
  * <ul>
@@ -32,13 +37,6 @@ import java.util.concurrent.Flow;
  *       cancels</li>
  * </ul>
  * <p>
- * Typical usage on the provider side:
- * <pre>
- *   WireHealthService health = new WireHealthService();
- *   health.registerTo(registry);
- *   // later, e.g. during graceful shutdown:
- *   health.setStatus("", ServingStatus.NOT_SERVING);
- * </pre>
  * Standard tooling such as {@code grpc_health_probe} or
  * {@code grpcurl ... grpc.health.v1.Health/Check} can then probe the server.
  *
@@ -104,7 +102,7 @@ public class WireHealthService {
      * @param service the service name (empty string = overall server)
      * @return the current status, or {@code null} if the service is unknown
      */
-    public ServingStatus getStatus(String service) {
+    ServingStatus getStatus(String service) {
         return statuses.get(normalize(service));
     }
 

@@ -10,6 +10,8 @@ import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.wire.health.HealthCheckRequest;
+import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,16 +47,23 @@ import java.util.concurrent.TimeUnit;
 class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
     private static final Logger log = LoggerFactory.getLogger(WireSpiServerStreamHandler.class);
 
+    /** gRPC path for the standard health Check method. */
+    private static final String HEALTH_CHECK_PATH =
+            "/" + WireHealthService.SERVICE_NAME + "/Check";
+
     private final MessageHandler messageHandler;
+    private final WireHealthService healthService;
 
     private String serviceName;
     private String methodName;
 
     WireSpiServerStreamHandler(MessageHandler messageHandler,
+                               WireHealthService healthService,
                                ExecutorService serverExecutor,
                                int maxMessageSize, String responseEncoding) {
         super("Wire SPI", serverExecutor, maxMessageSize, responseEncoding);
         this.messageHandler = messageHandler;
+        this.healthService = healthService;
     }
 
     @Override
@@ -96,6 +105,13 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
                     frame = WireFrameCodec.tryExtractFrame(frameData);
                     if (frame == null) {
                         sendError(ctx, WireConstants.STATUS_INTERNAL, "Incomplete gRPC frame");
+                        return;
+                    }
+
+                    // Health check is a protocol concern handled before the
+                    // business pipeline; no Jaws-side registration needed
+                    if (HEALTH_CHECK_PATH.equals(path)) {
+                        dispatchHealthCheck(ctx, frame);
                         return;
                     }
 
@@ -199,5 +215,35 @@ class WireSpiServerStreamHandler extends AbstractWireStreamHandler {
         }
         throw new RuntimeException("Wire SPI unexpected result type: "
                 + (result != null ? result.getClass().getName() : "null"));
+    }
+
+    /**
+     * Handle {@code grpc.health.v1.Health/Check} inline: decode the request,
+     * look up the status, and write the response. Unknown services return
+     * NOT_FOUND per the gRPC health-checking spec.
+     */
+    private void dispatchHealthCheck(ChannelHandlerContext ctx, ByteBuf frame) {
+        try {
+            HealthCheckRequest request = WireFrameCodec.decode(
+                    frame, HealthCheckRequest.parser(), requestEncoding);
+            HealthCheckResponse.ServingStatus status =
+                    healthService.getStatus(request.getService());
+            if (status == null) {
+                sendError(ctx, WireConstants.STATUS_NOT_FOUND,
+                        "Unknown health service: " + request.getService());
+                return;
+            }
+            HealthCheckResponse response = HealthCheckResponse.newBuilder()
+                    .setStatus(status).build();
+            sendResponseHeaders(ctx);
+            ByteBuf responseFrame = WireFrameCodec.encode(
+                    response, ctx.alloc(), responseEncoding);
+            ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
+            sendTrailers(ctx, WireConstants.STATUS_OK, null);
+        } catch (Exception e) {
+            log.error("Wire SPI health check failed: path={}", path, e);
+            sendError(ctx, WireConstants.STATUS_INTERNAL,
+                    "Health check failed: " + e.getMessage());
+        }
     }
 }
