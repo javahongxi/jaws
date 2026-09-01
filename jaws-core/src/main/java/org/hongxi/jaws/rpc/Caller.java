@@ -30,11 +30,7 @@ public interface Caller<T> extends Endpoint {
      * @return a future completed with the response
      */
     default CompletableFuture<Response> callAsync(Request request) {
-        try {
-            return CompletableFuture.completedFuture(call(request));
-        } catch (Exception e) {
-            return CompletableFuture.failedFuture(e);
-        }
+        return CompletableFuture.completedFuture(call(request));
     }
 
     /**

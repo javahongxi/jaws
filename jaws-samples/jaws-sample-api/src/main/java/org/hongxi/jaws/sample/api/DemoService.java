@@ -29,4 +29,9 @@ public interface DemoService {
      * Provider can return CompletableFuture for non-blocking processing.
      */
     CompletableFuture<String> helloAsync(String name);
+
+    /**
+     * Async version returning a POJO - demonstrates CompletableFuture with complex types.
+     */
+    CompletableFuture<User> getUserAsync(String name);
 }

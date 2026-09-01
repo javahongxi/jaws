@@ -68,4 +68,9 @@ public class SleepDemoServiceImpl implements DemoService {
     public CompletableFuture<String> helloAsync(String name) {
         return delegate.helloAsync(name);
     }
+
+    @Override
+    public CompletableFuture<User> getUserAsync(String name) {
+        return delegate.getUserAsync(name);
+    }
 }

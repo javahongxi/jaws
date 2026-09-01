@@ -56,4 +56,9 @@ public class DemoServiceImpl implements DemoService {
     public CompletableFuture<String> helloAsync(String name) {
         return CompletableFuture.supplyAsync(() -> "Hello async, " + name);
     }
+
+    @Override
+    public CompletableFuture<User> getUserAsync(String name) {
+        return CompletableFuture.supplyAsync(() -> new User(name, 30));
+    }
 }

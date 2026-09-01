@@ -65,4 +65,9 @@ public class GrayDemoServiceImpl implements DemoService {
     public CompletableFuture<String> helloAsync(String name) {
         return CompletableFuture.supplyAsync(() -> hello(name));
     }
+
+    @Override
+    public CompletableFuture<User> getUserAsync(String name) {
+        return CompletableFuture.supplyAsync(() -> new User(name, 30));
+    }
 }

@@ -67,4 +67,12 @@ public class DemoServiceImpl implements DemoService {
             return "Hello async, " + name;
         });
     }
+
+    @Override
+    public CompletableFuture<User> getUserAsync(String name) {
+        return CompletableFuture.supplyAsync(() -> {
+            log.info("getUserAsync processing: {}", name);
+            return new User(name, 30);
+        });
+    }
 }

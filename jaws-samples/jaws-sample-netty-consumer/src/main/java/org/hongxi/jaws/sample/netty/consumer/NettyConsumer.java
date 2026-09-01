@@ -16,6 +16,7 @@ import org.hongxi.jaws.sample.api.model.User;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Netty transport consumer - connects to provider via {@code directUrl}, no registry needed.
@@ -93,6 +94,34 @@ public class NettyConsumer {
         contactsList.add(contacts2);
         int size = demoService.save(contactsList);
         System.out.println("save(contactsList) => " + size);
+
+        /* Async invocation */
+        System.out.println("\n--- DemoService async invocation ---");
+
+        /* Basic async call - returns CompletableFuture<String> */
+        CompletableFuture<String> asyncHello = demoService.helloAsync("async-lily");
+        System.out.println("helloAsync submitted, thread=" + Thread.currentThread().getName());
+        asyncHello.thenAccept(result -> System.out.println("helloAsync callback => " + result
+                + ", thread=" + Thread.currentThread().getName()));
+
+        /* Async call with POJO return type */
+        CompletableFuture<User> asyncUser = demoService.getUserAsync("async-user");
+        asyncUser.thenAccept(u -> System.out.println("getUserAsync callback => " + u));
+
+        /* Async chaining: transform the result */
+        demoService.helloAsync("chain-demo")
+                .thenApply(s -> s.toUpperCase())
+                .thenAccept(s -> System.out.println("chained async => " + s));
+
+        /* Combine multiple async calls */
+        CompletableFuture<String> f1 = demoService.helloAsync("user-A");
+        CompletableFuture<String> f2 = demoService.helloAsync("user-B");
+        CompletableFuture.allOf(f1, f2)
+                .thenRun(() -> System.out.println("combined async => [" + f1.join() + ", " + f2.join() + "]"));
+
+        /* Wait for all async callbacks to complete before proceeding */
+        asyncHello.join();
+        asyncUser.join();
 
         /* Reference OrderService with directUrl */
         System.out.println("\n--- OrderService invocation ---");
