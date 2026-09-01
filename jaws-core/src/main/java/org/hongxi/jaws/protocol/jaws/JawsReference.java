@@ -4,7 +4,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.AbstractReference;
-import org.hongxi.jaws.rpc.Future;
+import java.util.concurrent.CompletableFuture;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
@@ -60,8 +60,8 @@ public class JawsReference<T> extends AbstractReference<T> {
 
     @Override
     protected void decrActiveCount(Response response) {
-        if (response instanceof Future future) {
-            future.addListener(future1 -> activeReferenceCount.decrementAndGet());
+        if (response instanceof CompletableFuture<?> cf) {
+            cf.whenComplete((r, t) -> activeReferenceCount.decrementAndGet());
         } else {
             activeReferenceCount.decrementAndGet();
         }

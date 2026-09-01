@@ -140,6 +140,8 @@ public class NettyClient extends AbstractClient {
                         pipeline.addLast("decoder", new NettyDecoder(NettyClient.this, codec, maxContentLength));
                         pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, codec, (Object message) -> {
                             Response response = (Response) message;
+                            // removeCallback: atomically claim + clean up the map entry,
+                            // so the timeout timer won't attempt a duplicate completion
                             ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
 
                             if (responseFuture == null) {

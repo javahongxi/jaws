@@ -15,7 +15,6 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
-import org.hongxi.jaws.rpc.ResponseFuture;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Channel;
 import org.slf4j.Logger;
@@ -70,8 +69,8 @@ public class NettyChannel implements Channel {
                     "NettyChannel request failed: request timeout must be positive but was " + timeout);
         }
 
-        ResponseFuture response = new DefaultResponseFuture(request, timeout, getUrl());
-        nettyClient.registerCallback(request.getRequestId(), response);
+        DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
+        nettyClient.registerCallback(request.getRequestId(), responseFuture);
 
         // Snapshot the volatile field so this request uses a single channel
         // reference even if a reconnect swaps it mid-flight
@@ -87,12 +86,12 @@ public class NettyChannel implements Channel {
             nettyClient.removeCallback(request.getRequestId());
             throw new JawsServiceException("encode request error: url=" + getUrl().getUri(), e);
         }
-        ChannelFuture writeFuture = ch.writeAndFlush(buf);
 
+        ChannelFuture writeFuture = ch.writeAndFlush(buf);
         boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
         if (completed && writeFuture.isSuccess()) {
-            response.addListener(future -> {
-                if (future.isSuccess() || (future.isDone() && ExceptionUtils.isBizException(future.getThrowable()))) {
+            responseFuture.whenComplete((r, t) -> {
+                if (t == null || ExceptionUtils.isBizException(t)) {
                     // Successful invocation
                     nettyClient.resetErrorCount();
                 } else {
@@ -100,13 +99,13 @@ public class NettyChannel implements Channel {
                     nettyClient.incrErrorCount();
                 }
             });
-            return response;
+            return responseFuture;
         }
 
         writeFuture.cancel(true);
-        response = nettyClient.removeCallback(request.getRequestId());
-        if (response != null) {
-            response.cancel();
+        responseFuture = (DefaultResponseFuture) nettyClient.removeCallback(request.getRequestId());
+        if (responseFuture != null) {
+            responseFuture.cancel();
         }
         // Failed invocation
         nettyClient.incrErrorCount();
@@ -132,7 +131,8 @@ public class NettyChannel implements Channel {
 
         int timeout = nettyClient.getUrl().getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
-            throw new JawsFrameworkException("NettyChannel init failed: connect timeout must be positive but was " + timeout);
+            throw new JawsFrameworkException(
+                    "NettyChannel init failed: connect timeout must be positive but was " + timeout);
         }
 
         ChannelFuture channelFuture = null;

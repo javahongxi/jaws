@@ -4,10 +4,9 @@ package org.hongxi.jaws.rpc;
  * Represents the result of an asynchronous RPC invocation.
  * <p>
  * Provides methods to check completion status, retrieve the result or exception,
- * cancel the task, and register listeners for completion notification.
+ * and cancel the task.
  *
  * @see ResponseFuture
- * @see FutureListener
  */
 public interface Future {
 
@@ -44,13 +43,4 @@ public interface Future {
      * @return the exception, or null if the task succeeded or has not yet completed
      */
     Throwable getThrowable();
-
-    /**
-     * Registers a listener to be notified when the task completes (success, failure,
-     * timeout, or cancellation). If the task is already done, the listener is invoked
-     * immediately.
-     *
-     * @param listener the listener to register
-     */
-    void addListener(FutureListener listener);
 }

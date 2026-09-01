@@ -25,7 +25,6 @@ public class DefaultResponse implements Response, Serializable {
     private Throwable throwable;
     private long requestId;
     private long processTime;
-    private int timeout;
     // Framework-level attachments carried by the response; reserved for protocol extension
     private Map<String, String> attachments;
     // default serialization is hessian2
@@ -43,7 +42,6 @@ public class DefaultResponse implements Response, Serializable {
         this.throwable = response.getThrowable();
         this.requestId = response.getRequestId();
         this.processTime = response.getProcessTime();
-        this.timeout = response.getTimeout();
         this.attachments = response.getAttachments();
         this.serializationNumber = response.getSerializationNumber();
     }
@@ -99,15 +97,6 @@ public class DefaultResponse implements Response, Serializable {
     }
 
     @Override
-    public int getTimeout() {
-        return timeout;
-    }
-
-    public void setTimeout(int timeout) {
-        this.timeout = timeout;
-    }
-
-    @Override
     public Map<String, String> getAttachments() {
         return attachments != null ? attachments : Collections.emptyMap();
     }
@@ -131,5 +120,10 @@ public class DefaultResponse implements Response, Serializable {
 
     public void setSerializationNumber(byte number) {
         this.serializationNumber = number;
+    }
+
+    @Override
+    public int getTimeout() {
+        return 0;
     }
 }

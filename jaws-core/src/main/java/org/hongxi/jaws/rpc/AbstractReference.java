@@ -88,21 +88,17 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
             return CompletableFuture.failedFuture(e);
         }
 
-        // Bridge DefaultResponseFuture → CompletableFuture so that the returned
-        // future completes only when the actual response is ready, not when
-        // doCall() returns the future handle.
-        if (response instanceof ResponseFuture rf && !rf.isDone()) {
-            CompletableFuture<Response> future = new CompletableFuture<>();
-            rf.addListener(f -> {
+        // If the response is a pending future, chain stats tracking so it
+        // runs when the network layer completes the future.
+        if (response instanceof CompletableFuture<?> cf) {
+            return cf.whenComplete((r, t) -> {
                 decrActiveCount(response);
-                if (response.getThrowable() == null) {
+                if (t == null) {
                     long elapsed = System.nanoTime() - startTime;
                     succeededElapsed.addAndGet(elapsed);
                     succeededCount.incrementAndGet();
                 }
-                future.complete(response);
-            });
-            return future;
+            }).thenApply(r -> (Response) r);
         }
 
         decrActiveCount(response);

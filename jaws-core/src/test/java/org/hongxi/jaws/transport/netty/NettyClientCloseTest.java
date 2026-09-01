@@ -69,6 +69,6 @@ class NettyClientCloseTest {
         request.setInterfaceName("org.hongxi.jaws.FooService");
         request.setMethodName("hello");
         request.setParamDesc("");
-        return new DefaultResponseFuture(request, 10000, client.getUrl());
+        return new DefaultResponseFuture(request, 10000);
     }
 }

@@ -7,7 +7,6 @@ import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
@@ -18,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Flow;
 
 /**
@@ -121,12 +121,12 @@ public class AbstractReferenceHandler<T> {
 
             try {
                 Response response = cluster.call(request);
-                if (response instanceof DefaultResponseFuture responseFuture) {
-                    responseFuture.addListener(future -> {
-                        if (future.isSuccess()) {
-                            resultFuture.complete(future.getValue());
+                if (response instanceof CompletableFuture<?> cf) {
+                    cf.whenComplete((r, t) -> {
+                        if (t == null) {
+                            resultFuture.complete(((Response) r).getValue());
                         } else {
-                            Throwable ex = future.getThrowable();
+                            Throwable ex = (t instanceof CompletionException ce) ? ce.getCause() : t;
                             resultFuture.completeExceptionally(ex != null ? ex
                                     : new JawsServiceException("response future failed"));
                         }

@@ -15,6 +15,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
+import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
@@ -28,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -172,14 +174,13 @@ public class WireClient extends AbstractHttp2Client {
             // Wait for response synchronously
             Message responseMessage = responseFuture.get(timeout, TimeUnit.MILLISECONDS);
 
-            // Success — reset the error fusing counter
-            resetErrorCount();
-
             DefaultResponse response = new DefaultResponse(request.getRequestId());
             response.setValue(responseMessage);
             if (!trailerMetadata.isEmpty()) {
                 response.setAttachments(trailerMetadata);
             }
+            // Success — reset the error fusing counter
+            resetErrorCount();
             return response;
         } catch (java.util.concurrent.TimeoutException e) {
             // Cancel the call: RST_STREAM(CANCEL) tells the server to stop
@@ -189,11 +190,20 @@ public class WireClient extends AbstractHttp2Client {
             throw new JawsServiceException("Wire request timeout: url=" + url.getUri()
                     + " path=" + grpcPath + " timeout=" + timeout + "ms");
         } catch (Exception e) {
+            // Unwrap ExecutionException to check for business exceptions
+            Throwable cause = (e instanceof ExecutionException ee) ? ee.getCause() : e;
+            if (cause instanceof JawsBizException biz) {
+                // Business exception — not a framework error, reset error count
+                resetErrorCount();
+                throw biz;
+            }
+            if (cause instanceof RuntimeException re) {
+                log.error("Wire request failed: url={} path={}", url.getUri(), grpcPath, e);
+                incrErrorCount();
+                throw re;
+            }
             log.error("Wire request failed: url={} path={}", url.getUri(), grpcPath, e);
             incrErrorCount();
-            if (e instanceof JawsAbstractException jae) {
-                throw jae;
-            }
             throw new JawsServiceException("WireClient request failed: url="
                     + url.getUri() + " path=" + grpcPath, e);
         }

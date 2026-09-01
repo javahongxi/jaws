@@ -38,7 +38,6 @@ class FailfastClusterTest {
         @Override public long getProcessTime() { return 0; }
         public void setProcessTime(long time) {}
         @Override public int getTimeout() { return 0; }
-        public void setTimeout(int timeout) {}
         @Override public Map<String, String> getAttachments() { return new HashMap<>(); }
         @Override public void setAttachment(String key, String value) {}
         @Override public byte getSerializationNumber() { return 0; }

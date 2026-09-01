@@ -88,7 +88,7 @@ public class Http2Client extends AbstractHttp2Client {
                 UrlParam.Transport.REQUEST_TIMEOUT.intValue());
         int timeout = resolveTimeout(request, urlTimeout);
 
-        DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout, url);
+        DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
 
         try {
             io.netty.channel.Channel connChannel = activeChannel();
@@ -109,6 +109,8 @@ public class Http2Client extends AbstractHttp2Client {
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(payload), true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
+                            // removeCallback: atomically claim + clean up the map entry,
+                            // so the timeout timer won't attempt a duplicate completion
                             ResponseFuture future = removeCallback(request.getRequestId());
                             if (future != null) {
                                 DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
@@ -121,9 +123,8 @@ public class Http2Client extends AbstractHttp2Client {
                     });
 
             // Error fusing: reset on success / biz-exception, increment on failure
-            responseFuture.addListener(future -> {
-                if (future.isSuccess()
-                        || (future.isDone() && ExceptionUtils.isBizException(future.getThrowable()))) {
+            responseFuture.whenComplete((r, t) -> {
+                if (t == null || ExceptionUtils.isBizException(t)) {
                     resetErrorCount();
                 } else {
                     incrErrorCount();
