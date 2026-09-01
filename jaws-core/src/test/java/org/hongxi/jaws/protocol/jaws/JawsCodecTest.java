@@ -157,7 +157,7 @@ class JawsCodecTest {
         Response result = (Response) decoded;
         assertEquals(42L, result.getRequestId());
         assertEquals("result-payload", result.getValue());
-        assertNull(result.getException());
+        assertNull(result.getThrowable());
         assertEquals(123L, result.getProcessTime());
     }
 
@@ -175,14 +175,14 @@ class JawsCodecTest {
         Response result = (Response) decoded;
         assertEquals(43L, result.getRequestId());
         assertNull(result.getValue());
-        assertNull(result.getException());
+        assertNull(result.getThrowable());
     }
 
     @Test
     void exceptionResponseRoundtrip() throws IOException {
         DefaultResponse response = new DefaultResponse();
         response.setRequestId(44L);
-        response.setException(new IllegalStateException("boom"));
+        response.setThrowable(new IllegalStateException("boom"));
         response.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
@@ -191,9 +191,9 @@ class JawsCodecTest {
 
         Response result = (Response) decoded;
         assertEquals(44L, result.getRequestId());
-        assertNotNull(result.getException());
-        assertEquals(IllegalStateException.class, result.getException().getClass());
-        assertEquals("boom", result.getException().getMessage());
+        assertNotNull(result.getThrowable());
+        assertEquals(IllegalStateException.class, result.getThrowable().getClass());
+        assertEquals("boom", result.getThrowable().getMessage());
     }
 
     @Test

@@ -40,7 +40,7 @@ public interface Response {
      *
      * @return exception instance, or {@code null}
      */
-    Exception getException();
+    Throwable getThrowable();
 
     /**
      * Returns the request id that this response corresponds to.

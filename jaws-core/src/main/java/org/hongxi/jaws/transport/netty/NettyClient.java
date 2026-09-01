@@ -147,7 +147,7 @@ public class NettyClient extends AbstractClient {
                                         response.getRequestId());
                                 return CompletableFuture.completedFuture(null);
                             }
-                            if (response.getException() != null) {
+                            if (response.getThrowable() != null) {
                                 responseFuture.onFailure(response);
                             } else {
                                 responseFuture.onSuccess(response);

@@ -25,9 +25,9 @@ public class DefaultResponseFuture implements ResponseFuture {
     protected URL serverUrl;
 
     protected volatile FutureState state = FutureState.DOING;
-    // Volatile: also read outside the lock by getRawValue()/getException()/isSuccess()
+    // Volatile: also read outside the lock by getRawValue()/getThrowable()/isSuccess()
     protected volatile Object result;
-    protected volatile Exception exception;
+    protected volatile Throwable throwable;
 
     // Volatile: written under the lock in addListener, read outside the lock
     // in notifyListeners; after the state leaves DOING the list is never mutated again
@@ -48,7 +48,7 @@ public class DefaultResponseFuture implements ResponseFuture {
 
     @Override
     public void onFailure(Response response) {
-        this.exception = response.getException();
+        this.throwable = response.getThrowable();
         done();
     }
 
@@ -70,7 +70,7 @@ public class DefaultResponseFuture implements ResponseFuture {
     public Object getValue() {
         synchronized (this) {
             if (!isDoing()) {
-                return getValueOrThrowable();
+                return getValueOrThrow();
             }
 
             if (timeout <= 0) {
@@ -83,7 +83,7 @@ public class DefaultResponseFuture implements ResponseFuture {
                             " cost=" + (System.currentTimeMillis() - createTime), e));
                 }
 
-                return getValueOrThrowable();
+                return getValueOrThrow();
             }
 
             long waitTime = timeout - (System.currentTimeMillis() - createTime);
@@ -111,14 +111,14 @@ public class DefaultResponseFuture implements ResponseFuture {
                 cancelOnTimeout();
             }
 
-            return getValueOrThrowable();
+            return getValueOrThrow();
         }
     }
 
-    private Object getValueOrThrowable() {
-        if (exception != null) {
-            throw exception instanceof RuntimeException re ? re :
-                    new JawsServiceException(exception.getMessage(), exception);
+    private Object getValueOrThrow() {
+        if (throwable != null) {
+            throw throwable instanceof RuntimeException re ? re :
+                    new JawsServiceException(throwable.getMessage(), throwable);
         }
         return result;
     }
@@ -130,7 +130,7 @@ public class DefaultResponseFuture implements ResponseFuture {
             }
 
             state = FutureState.CANCELED;
-            exception = new JawsServiceException(
+            throwable = new JawsServiceException(
                     this.getClass().getName() +
                             " request timeout: serverPort=" + serverUrl.getHostPort()
                             + " " + RpcUtils.toString(request) +
@@ -149,27 +149,27 @@ public class DefaultResponseFuture implements ResponseFuture {
     }
 
     @Override
-    public Exception getException() {
-        return exception;
+    public Throwable getThrowable() {
+        return throwable;
     }
 
     @Override
     public void cancel() {
-        Exception e = new JawsServiceException(this.getClass().getName() +
+        Throwable e = new JawsServiceException(this.getClass().getName() +
                 " task cancel: serverPort=" + serverUrl.getHostPort() + " "
                 + RpcUtils.toString(request) +
                 " cost=" + (System.currentTimeMillis() - createTime));
         cancel(e);
     }
 
-    private void cancel(Exception e) {
+    private void cancel(Throwable e) {
         synchronized (this) {
             if (!isDoing()) {
                 return;
             }
 
             state = FutureState.CANCELED;
-            exception = e;
+            throwable = e;
             notifyAll();
         }
 
@@ -213,7 +213,7 @@ public class DefaultResponseFuture implements ResponseFuture {
 
     @Override
     public boolean isSuccess() {
-        return isDone() && (exception == null);
+        return isDone() && (throwable == null);
     }
 
     private boolean isDoing() {

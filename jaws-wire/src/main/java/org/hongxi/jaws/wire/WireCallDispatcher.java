@@ -308,8 +308,8 @@ sealed interface WireCallDispatcher
             // For streaming methods, the wrapped value is a Flow.Publisher.
             Object value = result;
             if (result instanceof Response response) {
-                if (response.getException() != null) {
-                    throw new RuntimeException("Provider error", response.getException());
+                if (response.getThrowable() != null) {
+                    throw new RuntimeException("Provider error", response.getThrowable());
                 }
                 value = response.getRawValue();
             }

@@ -22,7 +22,7 @@ public class DefaultResponse implements Response, Serializable {
     private static final long serialVersionUID = -46598719225168485L;
 
     private Object value;
-    private Exception exception;
+    private Throwable throwable;
     private long requestId;
     private long processTime;
     private int timeout;
@@ -40,7 +40,7 @@ public class DefaultResponse implements Response, Serializable {
 
     public DefaultResponse(Response response) {
         this.value = response.getValue();
-        this.exception = response.getException();
+        this.throwable = response.getThrowable();
         this.requestId = response.getRequestId();
         this.processTime = response.getProcessTime();
         this.timeout = response.getTimeout();
@@ -54,10 +54,9 @@ public class DefaultResponse implements Response, Serializable {
 
     @Override
     public Object getValue() {
-        if (exception != null) {
-            throw (exception instanceof RuntimeException) ?
-                    (RuntimeException) exception :
-                    new JawsServiceException(exception.getMessage(), exception);
+        if (throwable != null) {
+            throw throwable instanceof RuntimeException re ? re :
+                    new JawsServiceException(throwable.getMessage(), throwable);
         }
 
         return value;
@@ -73,12 +72,12 @@ public class DefaultResponse implements Response, Serializable {
     }
 
     @Override
-    public Exception getException() {
-        return exception;
+    public Throwable getThrowable() {
+        return throwable;
     }
 
-    public void setException(Exception exception) {
-        this.exception = exception;
+    public void setThrowable(Throwable throwable) {
+        this.throwable = throwable;
     }
 
     @Override

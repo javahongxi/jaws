@@ -52,7 +52,7 @@ public final class RpcUtils {
     public static DefaultResponse buildErrorResponse(long requestId, Exception e) {
         DefaultResponse response = new DefaultResponse();
         response.setRequestId(requestId);
-        response.setException(e);
+        response.setThrowable(e);
         return response;
     }
 

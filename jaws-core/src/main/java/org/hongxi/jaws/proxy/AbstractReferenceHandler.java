@@ -126,15 +126,15 @@ public class AbstractReferenceHandler<T> {
                         if (future.isSuccess()) {
                             resultFuture.complete(future.getValue());
                         } else {
-                            Exception ex = future.getException();
+                            Throwable ex = future.getThrowable();
                             resultFuture.completeExceptionally(ex != null ? ex
                                     : new JawsServiceException("response future failed"));
                         }
                     });
                 } else {
                     // Synchronous response (e.g., injvm or cached)
-                    if (response.getException() != null) {
-                        resultFuture.completeExceptionally(response.getException());
+                    if (response.getThrowable() != null) {
+                        resultFuture.completeExceptionally(response.getThrowable());
                     } else {
                         resultFuture.complete(response.getValue());
                     }

@@ -211,9 +211,9 @@ public class JawsCodec implements Codec {
         try (ObjectOutput output = serialization.serialize(new ByteBufOutputStream(out))) {
             output.writeLong(response.getProcessTime());
 
-            if (response.getException() != null) {
-                output.writeUTF(response.getException().getClass().getName());
-                output.writeObject(response.getException());
+            if (response.getThrowable() != null) {
+                output.writeUTF(response.getThrowable().getClass().getName());
+                output.writeObject(response.getThrowable());
                 dataType = FLAG_RESPONSE_EXCEPTION;
             } else if (response.getValue() == null) {
                 dataType = FLAG_RESPONSE_VOID;
@@ -340,7 +340,7 @@ public class JawsCodec implements Codec {
         if (dataType == FLAG_RESPONSE) {
             response.setValue(result);
         } else if (dataType == FLAG_RESPONSE_EXCEPTION) {
-            response.setException((Exception) result);
+            response.setThrowable((Exception) result);
         } else {
             throw new JawsFrameworkException("decode error: unsupported response dataType " + dataType);
         }

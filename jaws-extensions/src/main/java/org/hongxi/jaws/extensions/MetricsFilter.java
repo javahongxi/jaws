@@ -87,7 +87,7 @@ public class MetricsFilter implements Filter {
             long elapsed = System.nanoTime() - startTime;
             meters.active.record(-1);
             meters.requests.increment();
-            boolean success = throwable == null && (response == null || response.getException() == null);
+            boolean success = throwable == null && (response == null || response.getThrowable() == null);
             if (success) {
                 meters.success.increment();
                 meters.durationSuccess.record(elapsed, TimeUnit.NANOSECONDS);

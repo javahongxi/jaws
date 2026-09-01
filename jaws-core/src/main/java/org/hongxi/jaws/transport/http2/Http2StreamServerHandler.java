@@ -239,7 +239,7 @@ class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 if (throwable != null) {
                     log.error("HTTP/2 invoke failed: {}", request, throwable);
                     response = new DefaultResponse();
-                    response.setException(new RuntimeException(
+                    response.setThrowable(new RuntimeException(
                             "process request failed: " + throwable.getMessage(), throwable));
                 } else if (result instanceof DefaultResponse dr) {
                     response = dr;

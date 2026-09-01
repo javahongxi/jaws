@@ -43,7 +43,7 @@ public interface Future {
      *
      * @return the exception, or null if the task succeeded or has not yet completed
      */
-    Exception getException();
+    Throwable getThrowable();
 
     /**
      * Registers a listener to be notified when the task completes (success, failure,

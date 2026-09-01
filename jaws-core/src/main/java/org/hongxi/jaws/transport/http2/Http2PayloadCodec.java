@@ -133,7 +133,7 @@ public final class Http2PayloadCodec {
             }
 
             // exception
-            Exception ex = response.getException();
+            Throwable ex = response.getThrowable();
             if (ex != null) {
                 out.writeLong(1);
                 out.writeObject(ex);
@@ -179,10 +179,10 @@ public final class Http2PayloadCodec {
             long hasException = in.readLong();
             if (hasException == 1) {
                 Object exObj = in.readObject();
-                if (exObj instanceof Exception ex) {
-                    response.setException(ex);
+                if (exObj instanceof Throwable ex) {
+                    response.setThrowable(ex);
                 } else if (exObj != null) {
-                    response.setException(new RuntimeException(String.valueOf(exObj)));
+                    response.setThrowable(new RuntimeException(String.valueOf(exObj)));
                 }
             }
 

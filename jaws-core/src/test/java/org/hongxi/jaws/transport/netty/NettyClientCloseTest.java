@@ -28,7 +28,7 @@ class NettyClientCloseTest {
 
         assertTrue(future.isDone(), "pending future must be completed on close");
         assertFalse(future.isSuccess());
-        assertNotNull(future.getException());
+        assertNotNull(future.getThrowable());
     }
 
     @Test

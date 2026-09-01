@@ -112,7 +112,7 @@ public class Http2Client extends AbstractHttp2Client {
                             ResponseFuture future = removeCallback(request.getRequestId());
                             if (future != null) {
                                 DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
-                                errorResponse.setException(new JawsServiceException(
+                                errorResponse.setThrowable(new JawsServiceException(
                                         "HTTP/2 stream write failed", f.cause()));
                                 future.onFailure(errorResponse);
                             }
@@ -123,7 +123,7 @@ public class Http2Client extends AbstractHttp2Client {
             // Error fusing: reset on success / biz-exception, increment on failure
             responseFuture.addListener(future -> {
                 if (future.isSuccess()
-                        || (future.isDone() && ExceptionUtils.isBizException(future.getException()))) {
+                        || (future.isDone() && ExceptionUtils.isBizException(future.getThrowable()))) {
                     resetErrorCount();
                 } else {
                     incrErrorCount();
@@ -134,7 +134,7 @@ public class Http2Client extends AbstractHttp2Client {
             ResponseFuture future = removeCallback(request.getRequestId());
             if (future != null) {
                 DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
-                errorResponse.setException(new JawsServiceException("HTTP/2 request error", e));
+                errorResponse.setThrowable(new JawsServiceException("HTTP/2 request error", e));
                 future.onFailure(errorResponse);
             }
             incrErrorCount();

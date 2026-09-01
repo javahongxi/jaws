@@ -66,7 +66,7 @@ public class FailbackCluster<T> extends AbstractCluster<T> {
             log.warn("FailbackCluster call failed, recording for retry: {}", request, e);
             addTask(request);
             DefaultResponse response = new DefaultResponse(request.getRequestId());
-            response.setException(e);
+            response.setThrowable(e);
             return response;
         }
     }
@@ -103,8 +103,8 @@ public class FailbackCluster<T> extends AbstractCluster<T> {
                 RpcContext.getContext().setServerUrl(refer.getUrl());
                 ((DefaultRequest) task.request).setRetries(task.retryCount + 1);
                 Response response = refer.call(task.request);
-                if (response.getException() != null) {
-                    throw new RuntimeException(response.getException());
+                if (response.getThrowable() != null) {
+                    throw new RuntimeException(response.getThrowable());
                 }
                 log.info("FailbackCluster retry success for request: {}, retries: {}", task.request, task.retryCount + 1);
             } catch (RuntimeException e) {

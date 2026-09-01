@@ -92,7 +92,7 @@ public class NettyChannel implements Channel {
         boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
         if (completed && writeFuture.isSuccess()) {
             response.addListener(future -> {
-                if (future.isSuccess() || (future.isDone() && ExceptionUtils.isBizException(future.getException()))) {
+                if (future.isSuccess() || (future.isDone() && ExceptionUtils.isBizException(future.getThrowable()))) {
                     // Successful invocation
                     nettyClient.resetErrorCount();
                 } else {

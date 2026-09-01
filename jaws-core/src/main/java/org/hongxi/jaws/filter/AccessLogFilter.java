@@ -33,7 +33,7 @@ public class AccessLogFilter implements Filter {
             long t1 = System.currentTimeMillis();
             return caller.callAsync(request).whenComplete((response, throwable) -> {
                 long elapsed = System.currentTimeMillis() - t1;
-                boolean success = throwable == null && (response == null || response.getException() == null);
+                boolean success = throwable == null && (response == null || response.getThrowable() == null);
                 logAccess(caller, request, elapsed, success);
             });
         } else {

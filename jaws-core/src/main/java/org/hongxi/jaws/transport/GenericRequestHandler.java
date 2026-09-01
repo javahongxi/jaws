@@ -49,13 +49,15 @@ public class GenericRequestHandler extends AbstractRequestHandler {
 
         return callAsync(request, provider).thenApply(response -> {
             // Convert the result for generic response
-            if (response.getException() == null && response.getValue() != null) {
+            if (response.getThrowable() == null && response.getValue() != null) {
                 Object convertedResult = GenericUtils.toGenericResult(response.getValue());
                 if (response instanceof DefaultResponse dr) {
                     dr.setValue(convertedResult);
                 }
             }
-            ((DefaultResponse) response).setSerializationNumber(request.getSerializationNumber());
+            if (response instanceof DefaultResponse dr) {
+                dr.setSerializationNumber(request.getSerializationNumber());
+            }
             return response;
         });
     }

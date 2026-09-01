@@ -89,7 +89,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
         try {
             if (!Http2Constants.STATUS_OK.equals(status)) {
                 String body = buffer != null ? buffer.toString(StandardCharsets.UTF_8) : "";
-                response.setException(new JawsServiceException(
+                response.setThrowable(new JawsServiceException(
                         "HTTP/2 transport error: status=" + status + ", message=" + body));
                 return response;
             }
@@ -99,7 +99,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
             return Http2PayloadCodec.decodeResponse(buffer.toByteArray(), serialization);
         } catch (Exception e) {
             log.error("Failed to decode HTTP/2 response: requestId={}", requestId, e);
-            response.setException(new JawsServiceException(
+            response.setThrowable(new JawsServiceException(
                     "Failed to decode response", e));
             return response;
         }
@@ -111,7 +111,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
             // already timed out or canceled
             return;
         }
-        if (response.getException() != null) {
+        if (response.getThrowable() != null) {
             future.onFailure(response);
         } else {
             future.onSuccess(response);
@@ -120,7 +120,7 @@ class Http2StreamResponseHandler extends ChannelInboundHandlerAdapter {
 
     private void fail(String message) {
         DefaultResponse response = new DefaultResponse(requestId);
-        response.setException(new JawsServiceException(message));
+        response.setThrowable(new JawsServiceException(message));
         complete(response);
     }
 

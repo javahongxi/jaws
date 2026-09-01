@@ -62,7 +62,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
             return response;
         } finally {
             decrActiveCount(response);
-            if (response != null && response.getException() == null) {
+            if (response != null && response.getThrowable() == null) {
                 long elapsed = System.nanoTime() - startTime;
                 succeededElapsed.addAndGet(elapsed);
                 succeededCount.incrementAndGet();
@@ -95,7 +95,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
             CompletableFuture<Response> future = new CompletableFuture<>();
             rf.addListener(f -> {
                 decrActiveCount(response);
-                if (response.getException() == null) {
+                if (response.getThrowable() == null) {
                     long elapsed = System.nanoTime() - startTime;
                     succeededElapsed.addAndGet(elapsed);
                     succeededCount.incrementAndGet();
@@ -106,7 +106,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
         }
 
         decrActiveCount(response);
-        if (response.getException() == null) {
+        if (response.getThrowable() == null) {
             long elapsed = System.nanoTime() - startTime;
             succeededElapsed.addAndGet(elapsed);
             succeededCount.incrementAndGet();

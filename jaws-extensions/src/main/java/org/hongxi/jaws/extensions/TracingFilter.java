@@ -77,8 +77,8 @@ public class TracingFilter implements Filter {
         return caller.callAsync(request).whenComplete((response, throwable) -> {
             if (throwable != null) {
                 span.error(throwable);
-            } else if (response != null && response.getException() != null) {
-                span.error(response.getException());
+            } else if (response != null && response.getThrowable() != null) {
+                span.error(response.getThrowable());
             }
             span.end();
         });
@@ -102,8 +102,8 @@ public class TracingFilter implements Filter {
         return caller.callAsync(request).whenComplete((response, throwable) -> {
             if (throwable != null) {
                 span.error(throwable);
-            } else if (response != null && response.getException() != null) {
-                span.error(response.getException());
+            } else if (response != null && response.getThrowable() != null) {
+                span.error(response.getThrowable());
             }
             span.end();
         });

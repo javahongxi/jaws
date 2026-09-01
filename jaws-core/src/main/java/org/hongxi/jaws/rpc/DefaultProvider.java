@@ -57,7 +57,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                     new JawsServiceException("Service method not found: " + request.getInterfaceName() + "." + request.getMethodName()
                             + "(" + request.getParamDesc() + ")", JawsErrorCode.SERVICE_METHOD_NOT_FOUND);
 
-            response.setException(exception);
+            response.setThrowable(exception);
             return CompletableFuture.completedFuture(response);
         }
 
@@ -78,14 +78,14 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                     if (throwable != null) {
                         Throwable cause = throwable instanceof CompletionException ? throwable.getCause() : throwable;
                         if (cause instanceof TimeoutException) {
-                            asyncResponse.setException(new JawsServiceException(
+                            asyncResponse.setThrowable(new JawsServiceException(
                                     "provider async call timeout: " + request.getInterfaceName() + "." + request.getMethodName(),
                                     JawsErrorCode.SERVICE_TIMEOUT));
                         } else if (cause instanceof Exception ex) {
-                            asyncResponse.setException(new JawsBizException("provider async call failed",
+                            asyncResponse.setThrowable(new JawsBizException("provider async call failed",
                                     ExceptionUtils.toSerializableException(ex, method, interfaceClass)));
                         } else {
-                            asyncResponse.setException(new JawsServiceException("provider async call failed with fatal error: " + cause));
+                            asyncResponse.setThrowable(new JawsServiceException("provider async call failed with fatal error: " + cause));
                         }
                     } else {
                         asyncResponse.setValue(result);
@@ -96,13 +96,13 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             response.setValue(value);
         } catch (Exception e) {
             Throwable bizCause = e.getCause() != null ? e.getCause() : e;
-            response.setException(new JawsBizException("provider call failed",
+            response.setThrowable(new JawsBizException("provider call failed",
                     ExceptionUtils.toSerializableException(bizCause, method, interfaceClass)));
 
             // not print stack in error log when exception declared in method
             boolean logException = true;
             for (Class<?> clazz : method.getExceptionTypes()) {
-                if (clazz.isInstance(response.getException().getCause())) {
+                if (clazz.isInstance(response.getThrowable().getCause())) {
                     logException = false;
                     defaultTransferExceptionStack = false;
                     break;
@@ -112,24 +112,24 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                 log.error("Exception caught during method invocation. request: {}", request, e);
             } else {
                 log.info("Exception caught during method invocation. request: {}, exception: {}",
-                        request, response.getException().getCause().toString());
+                        request, response.getThrowable().getCause().toString());
             }
         } catch (Throwable t) {
             // If provider encounters an Error, stringify it into the message instead of
             // attaching it as cause: Error classes are usually absent in the consumer's
             // class loader and would break response deserialization.
             Throwable fatalCause = t.getCause() != null ? t.getCause() : t;
-            response.setException(new JawsServiceException(
+            response.setThrowable(new JawsServiceException(
                     "provider has encountered a fatal error: " + ExceptionUtils.toString(fatalCause)));
             // Also log for Throwable
             log.error("Exception caught during method invocation. request: {}", request, t);
         }
 
-        if (response.getException() != null) {
+        if (response.getThrowable() != null) {
             // Whether to transfer exception stack trace
             boolean transferExceptionStack = this.url.getParameter(UrlParam.Transport.TRANSFER_EXCEPTION_STACK.getName(), defaultTransferExceptionStack);
             if (!transferExceptionStack) {
-                ExceptionUtils.setMockStackTrace(response.getException().getCause());
+                ExceptionUtils.setMockStackTrace(response.getThrowable().getCause());
             }
         }
         response.setAttachments(request.getAttachments());
