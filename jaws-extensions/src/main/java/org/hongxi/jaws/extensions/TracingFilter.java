@@ -12,6 +12,8 @@ import org.hongxi.jaws.rpc.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * Distributed tracing filter using Micrometer Tracer and Propagator APIs.
  * <p>
@@ -40,11 +42,11 @@ public class TracingFilter implements Filter {
     }
 
     @Override
-    public Response filter(Caller<?> caller, Request request) {
+    public CompletableFuture<Response> filter(Caller<?> caller, Request request) {
         Tracer t = tracer;
         Propagator p = propagator;
         if (t == null || p == null) {
-            return caller.call(request);
+            return caller.callAsync(request);
         }
 
         boolean isProvider = caller instanceof Provider;
@@ -61,52 +63,49 @@ public class TracingFilter implements Filter {
     /**
      * Consumer (client) side:
      * 1. Create a new span (automatically child of current span if any)
-     * 2. Open scope to make it current
-     * 3. Use Propagator to inject trace context into request attachments
-     * 4. Execute the RPC call
+     * 2. Use Propagator to inject trace context into request attachments
+     * 3. Execute the async RPC call
+     * 4. On completion, record errors if any and end the span
      */
-    private Response handleConsumer(Tracer t, Propagator p, Caller<?> caller, Request request, String spanName) {
+    private CompletableFuture<Response> handleConsumer(Tracer t, Propagator p, Caller<?> caller, Request request, String spanName) {
         Span span = t.nextSpan().name(spanName).start();
         try (Tracer.SpanInScope scope = t.withSpan(span)) {
             p.inject(span.context(), request, Request::setAttachment);
             log.debug("[Jaws-Tracing] Consumer span created: spanName={}, traceId={}, spanId={}",
                     spanName, span.context().traceId(), span.context().spanId());
-            Response response = caller.call(request);
-            if (response.getException() != null) {
+        }
+        return caller.callAsync(request).whenComplete((response, throwable) -> {
+            if (throwable != null) {
+                span.error(throwable);
+            } else if (response != null && response.getException() != null) {
                 span.error(response.getException());
             }
-            return response;
-        } catch (Exception e) {
-            span.error(e);
-            throw e;
-        } finally {
             span.end();
-        }
+        });
     }
 
     /**
      * Provider (server) side:
      * 1. Use Propagator to extract trace context from request attachments
      * 2. Create child span from the extracted context
-     * 3. Open scope and execute business logic
+     * 3. Execute the async call
+     * 4. On completion, record errors if any and end the span
      */
-    private Response handleProvider(Tracer t, Propagator p, Caller<?> caller, Request request, String spanName) {
+    private CompletableFuture<Response> handleProvider(Tracer t, Propagator p, Caller<?> caller, Request request, String spanName) {
         Span span = p.extract(request, (req, key) -> req.getAttachments().get(key))
                 .name(spanName)
                 .start();
         try (Tracer.SpanInScope scope = t.withSpan(span)) {
             log.debug("[Jaws-Tracing] Provider child span created: spanName={}, traceId={}, spanId={}",
                     spanName, span.context().traceId(), span.context().spanId());
-            Response response = caller.call(request);
-            if (response.getException() != null) {
+        }
+        return caller.callAsync(request).whenComplete((response, throwable) -> {
+            if (throwable != null) {
+                span.error(throwable);
+            } else if (response != null && response.getException() != null) {
                 span.error(response.getException());
             }
-            return response;
-        } catch (Exception e) {
-            span.error(e);
-            throw e;
-        } finally {
             span.end();
-        }
+        });
     }
 }

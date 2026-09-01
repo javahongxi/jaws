@@ -11,6 +11,8 @@ import org.hongxi.jaws.rpc.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * Token-based service authentication filter.
  * <p>
@@ -27,7 +29,7 @@ public class TokenAuthFilter implements Filter {
     private static final String TOKEN_ATTACHMENT = "token";
 
     @Override
-    public Response filter(Caller<?> caller, Request request) {
+    public CompletableFuture<Response> filter(Caller<?> caller, Request request) {
         if (caller instanceof Provider) {
             return filterProvider(caller, request);
         } else {
@@ -35,7 +37,7 @@ public class TokenAuthFilter implements Filter {
         }
     }
 
-    private Response filterConsumer(Caller<?> caller, Request request) {
+    private CompletableFuture<Response> filterConsumer(Caller<?> caller, Request request) {
         String token = null;
         if (caller instanceof Reference<?> ref) {
             token = ref.getServiceUrl().getParameter(UrlParam.Identity.TOKEN.getName());
@@ -43,22 +45,23 @@ public class TokenAuthFilter implements Filter {
         if (token != null && !token.isEmpty()) {
             request.setAttachment(TOKEN_ATTACHMENT, token);
         }
-        return caller.call(request);
+        return caller.callAsync(request);
     }
 
-    private Response filterProvider(Caller<?> caller, Request request) {
+    private CompletableFuture<Response> filterProvider(Caller<?> caller, Request request) {
         String expectedToken = caller.getUrl().getParameter(UrlParam.Identity.TOKEN.getName());
         if (expectedToken == null || expectedToken.isEmpty()) {
             // no token configured, skip auth
-            return caller.call(request);
+            return caller.callAsync(request);
         }
         String actualToken = request.getAttachments().get(TOKEN_ATTACHMENT);
         if (!expectedToken.equals(actualToken)) {
             log.warn("Token auth failed: service={}, method={}, remote={}",
                     request.getInterfaceName(), request.getMethodName(),
                     request.getAttachments().get(UrlParam.Server.HOST.getName()));
-            throw new JawsServiceException("Token authentication failed for service: " + request.getInterfaceName());
+            return CompletableFuture.failedFuture(
+                    new JawsServiceException("Token authentication failed for service: " + request.getInterfaceName()));
         }
-        return caller.call(request);
+        return caller.callAsync(request);
     }
 }

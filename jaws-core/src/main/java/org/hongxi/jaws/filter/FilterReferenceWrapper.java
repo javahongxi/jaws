@@ -9,6 +9,7 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 
 /**
@@ -38,7 +39,7 @@ class FilterReferenceWrapper<T> implements Reference<T> {
         if (isFilterDisabled(request.getInterfaceName())) {
             return original.call(request);
         }
-        return filter.filter(original, request);
+        return filter.filter(original, request).join();
     }
 
     @Override

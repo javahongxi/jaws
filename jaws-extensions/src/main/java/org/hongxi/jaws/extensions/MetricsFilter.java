@@ -11,6 +11,7 @@ import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
@@ -64,10 +65,10 @@ public class MetricsFilter implements Filter {
     }
 
     @Override
-    public Response filter(Caller<?> caller, Request request) {
+    public CompletableFuture<Response> filter(Caller<?> caller, Request request) {
         MeterRegistry registry = meterRegistry;
         if (registry == null) {
-            return caller.call(request);
+            return caller.callAsync(request);
         }
 
         String application = caller.getUrl().getApplication();
@@ -82,15 +83,11 @@ public class MetricsFilter implements Filter {
 
         meters.active.record(1);
         long startTime = System.nanoTime();
-        boolean success = false;
-        try {
-            Response response = caller.call(request);
-            success = true;
-            return response;
-        } finally {
+        return caller.callAsync(request).whenComplete((response, throwable) -> {
             long elapsed = System.nanoTime() - startTime;
             meters.active.record(-1);
             meters.requests.increment();
+            boolean success = throwable == null && (response == null || response.getException() == null);
             if (success) {
                 meters.success.increment();
                 meters.durationSuccess.record(elapsed, TimeUnit.NANOSECONDS);
@@ -98,7 +95,7 @@ public class MetricsFilter implements Filter {
                 meters.failure.increment();
                 meters.durationFailure.record(elapsed, TimeUnit.NANOSECONDS);
             }
-        }
+        });
     }
 
     private String simplifyClassName(String fullName) {

@@ -40,7 +40,20 @@ class FilterProviderWrapper<T> implements Provider<T> {
         if (isFilterDisabled(request.getInterfaceName())) {
             return original.call(request);
         }
+        return filter.filter(original, request).join();
+    }
+
+    @Override
+    public CompletableFuture<Response> callAsync(Request request) {
+        if (isFilterDisabled(request.getInterfaceName())) {
+            return original.callAsync(request);
+        }
         return filter.filter(original, request);
+    }
+
+    @Override
+    public Flow.Publisher<Object> callStream(Request request) {
+        return original.callStream(request);
     }
 
     @Override
@@ -81,16 +94,6 @@ class FilterProviderWrapper<T> implements Provider<T> {
     @Override
     public String desc() {
         return original.desc();
-    }
-
-    @Override
-    public CompletableFuture<Response> callAsync(Request request) {
-        return original.callAsync(request);
-    }
-
-    @Override
-    public Flow.Publisher<Object> callStream(Request request) {
-        return original.callStream(request);
     }
 
     /**

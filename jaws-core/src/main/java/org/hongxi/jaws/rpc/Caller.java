@@ -1,5 +1,6 @@
 package org.hongxi.jaws.rpc;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 
 /**
@@ -19,6 +20,22 @@ public interface Caller<T> extends Endpoint {
     Class<T> getInterface();
 
     Response call(Request request);
+
+    /**
+     * Async invocation that returns a {@link CompletableFuture} completed when
+     * the response is ready. Default implementation bridges the synchronous
+     * {@link #call(Request)} result.
+     *
+     * @param request the RPC request
+     * @return a future completed with the response
+     */
+    default CompletableFuture<Response> callAsync(Request request) {
+        try {
+            return CompletableFuture.completedFuture(call(request));
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
 
     /**
      * Open a server-streaming call and return a {@link Flow.Publisher} that emits

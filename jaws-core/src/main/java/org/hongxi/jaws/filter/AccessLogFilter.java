@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Access log filter that records the execution status of each call.
@@ -26,21 +27,17 @@ public class AccessLogFilter implements Filter {
     private static final String ACCESS_LOG_SEPARATOR = "|";
 
     @Override
-    public Response filter(Caller<?> caller, Request request) {
+    public CompletableFuture<Response> filter(Caller<?> caller, Request request) {
         boolean needLog = caller.getUrl().getBoolParameter(UrlParam.Server.ACCESS_LOG);
         if (needLog) {
             long t1 = System.currentTimeMillis();
-            boolean success = false;
-            try {
-                Response response = caller.call(request);
-                success = true;
-                return response;
-            } finally {
+            return caller.callAsync(request).whenComplete((response, throwable) -> {
                 long elapsed = System.currentTimeMillis() - t1;
+                boolean success = throwable == null && (response == null || response.getException() == null);
                 logAccess(caller, request, elapsed, success);
-            }
+            });
         } else {
-            return caller.call(request);
+            return caller.callAsync(request);
         }
     }
 

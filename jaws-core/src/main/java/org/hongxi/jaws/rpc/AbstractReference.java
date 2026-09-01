@@ -3,6 +3,7 @@ package org.hongxi.jaws.rpc;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -67,6 +68,50 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
                 succeededCount.incrementAndGet();
             }
         }
+    }
+
+    @Override
+    public CompletableFuture<Response> callAsync(Request request) {
+        if (!isAvailable()) {
+            return CompletableFuture.failedFuture(new JawsServiceException(
+                    this.getClass().getSimpleName() + " callAsync failed: endpoint is not available, url=" + url.getUri()
+                            + " " + RpcUtils.toString(request)));
+        }
+
+        incrActiveCount();
+        long startTime = System.nanoTime();
+        Response response;
+        try {
+            response = doCall(request);
+        } catch (Exception e) {
+            decrActiveCount(null);
+            return CompletableFuture.failedFuture(e);
+        }
+
+        // Bridge DefaultResponseFuture → CompletableFuture so that the returned
+        // future completes only when the actual response is ready, not when
+        // doCall() returns the future handle.
+        if (response instanceof ResponseFuture rf && !rf.isDone()) {
+            CompletableFuture<Response> future = new CompletableFuture<>();
+            rf.addListener(f -> {
+                decrActiveCount(response);
+                if (response.getException() == null) {
+                    long elapsed = System.nanoTime() - startTime;
+                    succeededElapsed.addAndGet(elapsed);
+                    succeededCount.incrementAndGet();
+                }
+                future.complete(response);
+            });
+            return future;
+        }
+
+        decrActiveCount(response);
+        if (response.getException() == null) {
+            long elapsed = System.nanoTime() - startTime;
+            succeededElapsed.addAndGet(elapsed);
+            succeededCount.incrementAndGet();
+        }
+        return CompletableFuture.completedFuture(response);
     }
 
     @Override
