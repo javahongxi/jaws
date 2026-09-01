@@ -3,6 +3,7 @@ package org.hongxi.jaws.transport;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Flow;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * A buffered {@link Flow.Publisher} that bridges transport-level streaming
@@ -16,11 +17,12 @@ import java.util.concurrent.Flow;
  * ahead of subscription).
  * <p>
  * Thread-safety: all mutable state is guarded by {@code synchronized} blocks
- * on this instance. A {@code draining} flag ensures that at most one thread
- * delivers items at any time. When {@link #addItem} is called from the Netty
- * event loop, it triggers {@code drain()} on each subscriber; if a drain is
- * already in progress (e.g. from {@code request()}), the {@code finally}
- * block re-checks for newly arrived items to guarantee nothing is missed.
+ * on this instance, except {@code onCancel} which uses an {@link AtomicReference}
+ * for lock-free at-most-once cancel semantics. A {@code draining} flag ensures
+ * that at most one thread delivers items at any time. When {@link #addItem}
+ * is called from the Netty event loop, it triggers {@code drain()} on each
+ * subscriber; if a drain is already in progress (e.g. from {@code request()}),
+ * the outer loop re-checks for newly arrived items to guarantee nothing is missed.
  *
  * @author shenhongxi
  */
@@ -29,23 +31,15 @@ public class StreamPublisher implements Flow.Publisher<Object> {
     private final List<Object> items = new ArrayList<>();
     private boolean completed;
     private Throwable error;
-    private final List<StreamingSubscription> subscribers = new ArrayList<>();
+    private final List<Subscription> subscribers = new ArrayList<>();
 
     /**
      * Invoked once when a subscriber cancels the stream; wired by the client
-     * to send RST_STREAM so the server stops producing. Runs at most once.
+     * to send RST_STREAM so the server stops producing. Set to null after
+     * first execution via {@link AtomicReference#getAndSet} to guarantee
+     * at-most-once semantics across multiple subscribers.
      */
-    private volatile Runnable cancelAction;
-    private boolean cancelActionFired;
-
-    /**
-     * Set the action to run when the stream is canceled by the application.
-     * Must be called before the stream can be canceled (right after the
-     * RPC is issued).
-     */
-    public void setCancelAction(Runnable action) {
-        this.cancelAction = action;
-    }
+    private final AtomicReference<Runnable> onCancel = new AtomicReference<>();
 
     /**
      * Called from the Netty event loop to add a decoded response item.
@@ -53,7 +47,7 @@ public class StreamPublisher implements Flow.Publisher<Object> {
     public synchronized void addItem(Object item) {
         if (completed || error != null) return;
         items.add(item);
-        for (StreamingSubscription sub : subscribers) {
+        for (Subscription sub : subscribers) {
             sub.drain();
         }
     }
@@ -64,7 +58,7 @@ public class StreamPublisher implements Flow.Publisher<Object> {
     public synchronized void complete() {
         if (completed) return;
         completed = true;
-        for (StreamingSubscription sub : subscribers) {
+        for (Subscription sub : subscribers) {
             sub.drain();
         }
     }
@@ -75,9 +69,18 @@ public class StreamPublisher implements Flow.Publisher<Object> {
     public synchronized void completeExceptionally(Throwable t) {
         if (completed || error != null) return;
         error = t;
-        for (StreamingSubscription sub : subscribers) {
+        for (Subscription sub : subscribers) {
             sub.drain();
         }
+    }
+
+    /**
+     * Set the action to run when the stream is canceled by the application.
+     * Must be called before the stream can be canceled (right after the
+     * RPC is issued).
+     */
+    public void setOnCancel(Runnable action) {
+        this.onCancel.set(action);
     }
 
     @Override
@@ -85,35 +88,33 @@ public class StreamPublisher implements Flow.Publisher<Object> {
         if (subscriber == null) {
             throw new NullPointerException("subscriber must not be null");
         }
-        StreamingSubscription sub;
+        // A subscriber must receive the full stream from the beginning,
+        // including items that arrived (and were buffered) before it
+        // subscribed. In the RPC flow the application subscribes only
+        // after requestStream() returns, so the first items typically
+        // race ahead of subscription.
+        Subscription sub = new Subscription(subscriber);
         synchronized (this) {
-            // Start from index 0: a subscriber must receive the full stream,
-            // including items that arrived (and were buffered) before it
-            // subscribed. In the RPC flow the application subscribes only
-            // after requestStream() returns, so the first items typically
-            // race ahead of subscription.
-            sub = new StreamingSubscription(subscriber, 0);
             subscribers.add(sub);
         }
         subscriber.onSubscribe(sub);
     }
 
     /**
-     * Per-subscriber state tracking the consumption index into the shared
+     * Per-subscriber state tracking the next read position in the shared
      * items list. Uses a {@code draining} flag to ensure that at most one
      * thread delivers items at any time, while guaranteeing that no items
      * are missed when {@link #addItem} and {@link #request} interleave.
      */
-    private class StreamingSubscription implements Flow.Subscription {
+    private class Subscription implements Flow.Subscription {
         private final Flow.Subscriber<? super Object> subscriber;
-        private int index;
-        private boolean canceled = false;
-        private boolean draining = false;
-        private boolean terminalDelivered = false;
+        private int nextIndex;
+        private boolean draining;
+        private boolean canceled;
+        private boolean terminated;
 
-        StreamingSubscription(Flow.Subscriber<? super Object> subscriber, int startIndex) {
+        Subscription(Flow.Subscriber<? super Object> subscriber) {
             this.subscriber = subscriber;
-            this.index = startIndex;
         }
 
         @Override
@@ -126,14 +127,12 @@ public class StreamPublisher implements Flow.Publisher<Object> {
             canceled = true;
             // Notify the transport once: the caller no longer wants the
             // stream (sends RST_STREAM so the server stops work)
-            synchronized (StreamPublisher.this) {
-                if (cancelActionFired || cancelAction == null) {
-                    return;
-                }
-                cancelActionFired = true;
+            Runnable action = onCancel.getAndSet(null);
+            if (action == null) {
+                return;
             }
             try {
-                cancelAction.run();
+                action.run();
             } catch (Exception e) {
                 // Cancellation is best-effort; never surface to the subscriber
             }
@@ -146,52 +145,53 @@ public class StreamPublisher implements Flow.Publisher<Object> {
          * within an {@code onNext} callback.
          */
         void drain() {
-            synchronized (StreamPublisher.this) {
-                if (draining || canceled || terminalDelivered) return;
-                draining = true;
-            }
-            try {
-                while (!canceled) {
-                    Object item;
-                    boolean isComplete;
-                    Throwable err;
-                    synchronized (StreamPublisher.this) {
-                        if (index < items.size()) {
-                            item = items.get(index++);
-                            isComplete = false;
-                            err = null;
-                        } else if (completed) {
-                            item = null;
-                            isComplete = true;
-                            err = null;
-                        } else if (error != null) {
-                            item = null;
-                            isComplete = false;
-                            err = error;
+            while (true) {
+                synchronized (StreamPublisher.this) {
+                    if (draining || canceled || terminated) return;
+                    draining = true;
+                }
+                try {
+                    while (!canceled) {
+                        Object item;
+                        Throwable err;
+                        synchronized (StreamPublisher.this) {
+                            if (nextIndex < items.size()) {
+                                item = items.get(nextIndex++);
+                                err = null;
+                            } else if (StreamPublisher.this.completed) {
+                                item = null;
+                                err = null;
+                            } else if (error != null) {
+                                item = null;
+                                err = error;
+                            } else {
+                                break; // no more items available yet
+                            }
+                        }
+                        if (item != null) {
+                            subscriber.onNext(item);
+                        } else if (err != null) {
+                            terminated = true;
+                            subscriber.onError(err);
+                            return;
                         } else {
-                            break; // no more items available yet
+                            // item == null && err == null → stream completed
+                            terminated = true;
+                            subscriber.onComplete();
+                            return;
                         }
                     }
-                    if (item != null) {
-                        subscriber.onNext(item);
-                    } else if (isComplete) {
-                        terminalDelivered = true;
-                        subscriber.onComplete();
-                        return;
-                    } else if (err != null) {
-                        terminalDelivered = true;
-                        subscriber.onError(err);
-                        return;
+                } finally {
+                    synchronized (StreamPublisher.this) {
+                        draining = false;
                     }
                 }
-            } finally {
+                // Check if new items / completion arrived while we were draining
+                // (they would have seen draining=true and skipped drain)
                 synchronized (StreamPublisher.this) {
-                    draining = false;
-                    // Check if new items / completion arrived while we were draining
-                    // (they would have seen draining=true and skipped drain)
-                    if (!terminalDelivered && !canceled
-                            && (index < items.size() || completed || error != null)) {
-                        drain();
+                    if (canceled || terminated
+                            || (nextIndex >= items.size() && error == null)) {
+                        return;
                     }
                 }
             }

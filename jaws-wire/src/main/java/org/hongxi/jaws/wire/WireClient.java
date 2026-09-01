@@ -242,7 +242,7 @@ public class WireClient extends AbstractHttp2Client {
 
             // Subscriber cancel() → RST_STREAM(CANCEL): the server observes the
             // reset and stops producing (gRPC cancellation semantics)
-            publisher.setCancelAction(() -> cancelStream(streamChannel));
+            publisher.setOnCancel(() -> cancelStream(streamChannel));
 
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
             ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);

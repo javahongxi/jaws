@@ -179,7 +179,7 @@ public class Http2Client extends AbstractHttp2Client {
 
             // Subscriber cancel() → RST_STREAM: the server observes the
             // reset and stops producing
-            publisher.setCancelAction(() -> cancelStream(streamChannel));
+            publisher.setOnCancel(() -> cancelStream(streamChannel));
 
             // Send request headers with streaming mode
             byte[] payload = Http2PayloadCodec.encodeRequest(request, serialization);
