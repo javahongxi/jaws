@@ -6,7 +6,7 @@ import org.hongxi.jaws.sample.api.model.User;
 import java.util.List;
 
 /**
- * 订单服务接口 - 用于演示多服务场景
+ * Order service interface - used to demonstrate multi-service scenarios
  */
 public interface OrderService {
 

@@ -21,15 +21,15 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Injvm 协议 RPC 演示
+ * Injvm protocol RPC demo
  *
  * <pre>
- * 演示场景：
- * 1. injvm 协议 - JVM 内部调用，无需网络传输
- * 2. 多服务发布与引用 - 同时发布 DemoService 和 OrderService
- * 3. 各种参数类型 - String、POJO、List、Map、void 返回值
- * 4. 方法级别配置 - MethodConfig 设置单独超时/重试
- * 5. group/version 配置
+ * Demo scenarios:
+ * 1. injvm protocol - in-JVM invocation without network transport
+ * 2. Multi-service export and reference - exporting DemoService and OrderService together
+ * 3. Various parameter types - String, POJO, List, Map, void return
+ * 4. Method-level configuration - MethodConfig for individual timeout/retries
+ * 5. group/version configuration
  * </pre>
  */
 public class InjvmRpcDemo {
@@ -37,34 +37,34 @@ public class InjvmRpcDemo {
     public static void main(String[] args) {
         System.out.println("========== Injvm RPC Demo ==========\n");
 
-        /* 1. 发布服务 */
+        /* 1. Export services */
         exportServices();
 
-        /* 2. 引用并调用 DemoService - 基本调用 */
+        /* 2. Reference and invoke DemoService - basic calls */
         demoBasicCall();
 
-        /* 3. 引用并调用 DemoService - 复杂参数类型 */
+        /* 3. Reference and invoke DemoService - complex parameter types */
         demoComplexTypes();
 
-        /* 4. 引用并调用 OrderService - 多服务演示 */
+        /* 4. Reference and invoke OrderService - multi-service demo */
         demoOrderService();
 
-        /* 5. 带方法级别配置的引用 */
+        /* 5. Reference with method-level configuration */
         demoMethodConfig();
 
-        /* 6. CompletableFuture 异步调用 */
+        /* 6. CompletableFuture async invocation */
         demoAsyncCall();
 
         System.out.println("\n========== Injvm RPC Demo Done ==========");
     }
 
     /*
-     * 发布 DemoService 和 OrderService（injvm 协议）
+     * Export DemoService and OrderService (injvm protocol)
      */
     private static void exportServices() {
-        System.out.println("--- 发布服务 ---");
+        System.out.println("--- Export Services ---");
 
-        // 发布 DemoService
+        // Export DemoService
         ServiceConfig<DemoService> demoServiceConfig = new ServiceConfig<>();
         demoServiceConfig.setRef(new DemoServiceImpl());
         demoServiceConfig.setApplication("injvm-demo-provider");
@@ -76,7 +76,7 @@ public class InjvmRpcDemo {
         demoServiceConfig.export();
         System.out.println("DemoService exported.");
 
-        // 发布 OrderService
+        // Export OrderService
         ServiceConfig<OrderService> orderServiceConfig = new ServiceConfig<>();
         orderServiceConfig.setRef(new OrderServiceImpl());
         orderServiceConfig.setApplication("injvm-demo-provider");
@@ -90,19 +90,19 @@ public class InjvmRpcDemo {
     }
 
     /*
-     * 基本调用 - String 参数、POJO 参数
+     * Basic calls - String parameter, POJO parameter
      */
     private static void demoBasicCall() {
-        System.out.println("--- 基本调用 ---");
+        System.out.println("--- Basic Calls ---");
 
         ReferenceConfig<DemoService> ref = createReference(DemoService.class);
         DemoService demoService = ref.getRef();
 
-        // 简单 String 调用
+        // Simple String call
         String result = demoService.hello("jaws");
         System.out.println("hello('jaws') => " + result);
 
-        // POJO 参数 + 返回值
+        // POJO parameter + return value
         User user = new User("lily", 24);
         User renamed = demoService.rename(user, "lucy");
         System.out.println("rename(" + user + ", 'lucy') => " + renamed);
@@ -110,23 +110,23 @@ public class InjvmRpcDemo {
     }
 
     /*
-     * 复杂参数类型 - List、Map、嵌套 POJO、void 方法
+     * Complex parameter types - List, Map, nested POJO, void method
      */
     private static void demoComplexTypes() {
-        System.out.println("--- 复杂参数类型 ---");
+        System.out.println("--- Complex Parameter Types ---");
 
         ReferenceConfig<DemoService> ref = createReference(DemoService.class);
         DemoService demoService = ref.getRef();
 
-        // List 返回值
+        // List return value
         List<User> users = demoService.getUsers();
         System.out.println("getUsers() => " + users);
 
-        // List + Map 组合
+        // List + Map combination
         Map<String, User> userMap = demoService.map(users);
         System.out.println("map(users) => " + userMap);
 
-        // 嵌套 POJO（Contacts 包含 User、List<Phone>、List<String>）
+        // Nested POJO (Contacts contains User, List<Phone>, List<String>)
         Contacts contacts = new Contacts();
         contacts.setId(1001L);
         contacts.setUser(new User("tom", 30));
@@ -135,7 +135,7 @@ public class InjvmRpcDemo {
         demoService.save(contacts);
         System.out.println("save(contacts) => void OK");
 
-        // 重载方法 - List<Contacts>
+        // Overloaded method - List<Contacts>
         Contacts contacts2 = new Contacts();
         contacts2.setId(1002L);
         contacts2.setUser(new User("jerry", 28));
@@ -147,46 +147,46 @@ public class InjvmRpcDemo {
     }
 
     /*
-     * OrderService 调用 - 多服务演示
+     * OrderService calls - multi-service demo
      */
     private static void demoOrderService() {
-        System.out.println("--- OrderService 多服务演示 ---");
+        System.out.println("--- OrderService Multi-Service Demo ---");
 
         ReferenceConfig<OrderService> ref = createReference(OrderService.class);
         OrderService orderService = ref.getRef();
 
         User buyer = new User("lily", 24);
 
-        // 创建订单
+        // Create orders
         Order order1 = orderService.createOrder(buyer, List.of("item-A", "item-B"));
         System.out.println("createOrder => " + order1);
 
         Order order2 = orderService.createOrder(buyer, List.of("item-C"));
         System.out.println("createOrder => " + order2);
 
-        // 查询订单
+        // Query order by id
         Order fetched = orderService.getOrder(order1.getId());
         System.out.println("getOrder(" + order1.getId() + ") => " + fetched);
 
-        // 按买家查询
+        // Query orders by buyer
         List<Order> buyerOrders = orderService.getOrdersByBuyer(buyer);
         System.out.println("getOrdersByBuyer => " + buyerOrders);
 
-        // 订单计数
+        // Count orders
         int total = orderService.countOrders();
         System.out.println("countOrders() => " + total);
 
-        // 取消订单
+        // Cancel order
         boolean canceled = orderService.cancelOrder(order2.getId());
         System.out.println("cancelOrder(" + order2.getId() + ") => " + canceled);
         System.out.println();
     }
 
     /*
-     * 方法级别配置演示 - MethodConfig
+     * Method-level configuration demo - MethodConfig
      */
     private static void demoMethodConfig() {
-        System.out.println("--- MethodConfig 方法级别配置 ---");
+        System.out.println("--- MethodConfig Method-Level Configuration ---");
 
         ReferenceConfig<DemoService> ref = new ReferenceConfig<>();
         ref.setInterface(DemoService.class);
@@ -197,13 +197,13 @@ public class InjvmRpcDemo {
         ref.setRegistry(createLocalRegistry());
         ref.setRequestTimeout(3000);
 
-        // 为 hello 方法单独设置超时和重试
+        // Set individual timeout and retries for the hello method
         MethodConfig helloMethod = new MethodConfig();
         helloMethod.setName("hello");
         helloMethod.setRequestTimeout(1000);
         helloMethod.setRetries(2);
 
-        // 为 getUsers 方法设置不同的超时
+        // Set a different timeout for the getUsers method
         MethodConfig getUsersMethod = new MethodConfig();
         getUsersMethod.setName("getUsers");
         getUsersMethod.setRequestTimeout(5000);
@@ -220,19 +220,19 @@ public class InjvmRpcDemo {
     }
 
     /*
-     * CompletableFuture 异步调用演示
+     * CompletableFuture async invocation demo
      */
     private static void demoAsyncCall() {
-        System.out.println("--- CompletableFuture 异步调用 ---");
+        System.out.println("--- CompletableFuture Async Invocation ---");
 
         ReferenceConfig<DemoService> ref = createReference(DemoService.class);
         DemoService demoService = ref.getRef();
 
-        // 基本异步调用 - 返回 CompletableFuture
+        // Basic async call - returns CompletableFuture
         CompletableFuture<String> future = demoService.helloAsync("jaws");
         future.thenAccept(result -> System.out.println("helloAsync callback => " + result));
 
-        // 阻塞获取结果
+        // Block to get the result
         try {
             String syncResult = future.get();
             System.out.println("helloAsync get() => " + syncResult);
@@ -240,7 +240,7 @@ public class InjvmRpcDemo {
             e.printStackTrace();
         }
 
-        // 多个异步调用组合
+        // Compose multiple async calls
         CompletableFuture<String> f1 = demoService.helloAsync("world");
         CompletableFuture<String> f2 = demoService.helloAsync("jaws");
         CompletableFuture.allOf(f1, f2).thenRun(() -> {
@@ -250,7 +250,7 @@ public class InjvmRpcDemo {
     }
 
     /*
-     * 创建 injvm 协议的 ReferenceConfig
+     * Create a ReferenceConfig for the injvm protocol
      */
     private static <T> ReferenceConfig<T> createReference(Class<T> interfaceClass) {
         ReferenceConfig<T> ref = new ReferenceConfig<>();

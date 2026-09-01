@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * OrderService 实现 - 用于 injvm 协议演示
+ * OrderService implementation - used for the injvm protocol demo
  */
 public class OrderServiceImpl implements OrderService {
 

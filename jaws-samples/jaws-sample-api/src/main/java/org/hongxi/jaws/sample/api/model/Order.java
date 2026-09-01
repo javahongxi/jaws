@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 订单模型
+ * Order model
  */
 public class Order implements Serializable {
 

@@ -24,10 +24,11 @@ public class ConsumerController {
     }
 
     /**
-     * CompletableFuture 异步调用示例
+     * CompletableFuture async invocation example.
      * <p>
-     * 接口方法返回 CompletableFuture，框架自动桥接 RPC 异步响应到 CompletableFuture，
-     * 不阻塞 Servlet 线程，支持 thenAccept / exceptionally 等编排。
+     * When the interface method returns a CompletableFuture, the framework automatically
+     * bridges the RPC async response to the CompletableFuture without blocking the
+     * Servlet thread, supporting composition such as thenAccept / exceptionally.
      */
     @GetMapping("/helloAsync")
     public CompletableFuture<String> helloAsync(@RequestParam("name") String name) {

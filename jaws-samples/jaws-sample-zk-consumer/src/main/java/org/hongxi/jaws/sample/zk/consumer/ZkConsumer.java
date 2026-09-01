@@ -19,17 +19,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 服务消费者示例
+ * Service consumer sample
  *
  * <pre>
- * 演示场景：
- * 1. jaws 协议 + ZooKeeper 注册中心
- * 2. 多服务引用 - DemoService + OrderService
- * 3. 各种参数类型调用 - String、POJO、List、Map、嵌套对象
- * 4. group/version 配置
+ * Demo scenarios:
+ * 1. jaws protocol + ZooKeeper registry
+ * 2. Multi-service reference - DemoService + OrderService
+ * 3. Calls with various parameter types - String, POJO, List, Map, nested objects
+ * 4. group/version configuration
  * </pre>
  *
- * 启动前请先运行 ZkProvider 确保服务已发布
+ * Run ZkProvider first to make sure the services are exported
  */
 public class ZkConsumer {
 
@@ -37,7 +37,7 @@ public class ZkConsumer {
         ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
         RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER);
 
-        /* 引用 DemoService */
+        /* Reference DemoService */
         ReferenceConfig<DemoService> demoRef = new ReferenceConfig<>();
         demoRef.setInterface(DemoService.class);
         demoRef.setApplication("sample-zk-consumer");
@@ -51,12 +51,12 @@ public class ZkConsumer {
 
         DemoService demoService = demoRef.getRef();
 
-        /* 基本调用 */
-        System.out.println("--- DemoService 基本调用 ---");
+        /* Basic calls */
+        System.out.println("--- DemoService Basic Calls ---");
         String r = demoService.hello("lily");
         System.out.println("hello => " + r);
 
-        /* 打印实际调用的服务端地址 */
+        /* Print the actual server address being invoked */
         URL serverUrl = RpcContext.getContext().getServerUrl();
         if (serverUrl != null) {
             System.out.println("server => " + serverUrl.getHost() + ":" + serverUrl.getPort());
@@ -66,8 +66,8 @@ public class ZkConsumer {
         User newUser = demoService.rename(user, "lucy");
         System.out.println("rename => " + newUser);
 
-        /* 复杂参数调用 */
-        System.out.println("\n--- DemoService 复杂参数 ---");
+        /* Complex parameter calls */
+        System.out.println("\n--- DemoService Complex Parameters ---");
         List<User> users = demoService.getUsers();
         System.out.println("getUsers => " + users);
 
@@ -94,8 +94,8 @@ public class ZkConsumer {
         int size = demoService.save(contactsList);
         System.out.println("save(contactsList) => " + size);
 
-        /* 引用 OrderService */
-        System.out.println("\n--- OrderService 调用 ---");
+        /* Reference OrderService */
+        System.out.println("\n--- OrderService Calls ---");
         ReferenceConfig<OrderService> orderRef = new ReferenceConfig<>();
         orderRef.setInterface(OrderService.class);
         orderRef.setApplication("sample-zk-consumer");
@@ -127,13 +127,13 @@ public class ZkConsumer {
         boolean canceled = orderService.cancelOrder(order2.getId());
         System.out.println("cancelOrder => " + canceled);
 
-        /* 打印实际调用的服务端地址 */
+        /* Print the actual server address being invoked */
         URL serverUrl2 = RpcContext.getContext().getServerUrl();
         if (serverUrl2 != null) {
             System.out.println("server => " + serverUrl2.getHost() + ":" + serverUrl2.getPort());
         }
 
-        /* 示例调用完毕，强制退出（Netty/Curator 的非守护线程会阻止 JVM 自动退出） */
+        /* Sample calls done, force exit (non-daemon threads of Netty/Curator would prevent JVM auto-exit) */
         System.exit(0);
     }
 

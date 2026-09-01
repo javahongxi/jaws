@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * OrderService 实现 - 用于 ZK 注册中心演示
+ * OrderService implementation - used for the ZooKeeper registry demo
  */
 public class OrderServiceImpl implements OrderService {
 

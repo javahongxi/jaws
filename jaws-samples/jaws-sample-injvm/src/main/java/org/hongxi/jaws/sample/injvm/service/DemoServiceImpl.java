@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * DemoService 实现 - 用于 injvm 协议演示
+ * DemoService implementation - used for the injvm protocol demo
  */
 public class DemoServiceImpl implements DemoService {
 

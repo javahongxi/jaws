@@ -10,17 +10,17 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 泛化调用示例 — 无需依赖 DemoService 接口 JAR 包即可发起 RPC 调用。
+ * Generic invocation sample - invokes RPC without depending on the DemoService interface JAR.
  *
  * <pre>
- * 演示场景：
- * 1. 通过 GenericService.$invoke() 发起调用
- * 2. 基础类型参数（String）
- * 3. POJO 参数用 Map 表示（User）
- * 4. 返回值自动转为 Map / 基础类型
+ * Demo scenarios:
+ * 1. Invoking via GenericService.$invoke()
+ * 2. Primitive parameter (String)
+ * 3. POJO parameter represented as a Map (User)
+ * 4. Return values are automatically converted to Map / primitives
  * </pre>
  *
- * 启动前请先运行 ZkProvider 确保服务已发布
+ * Run ZkProvider first to make sure the services are exported
  */
 public class GenericSampleConsumer {
 
@@ -28,7 +28,7 @@ public class GenericSampleConsumer {
         ProtocolConfig protocolConfig = createProtocolConfig();
         RegistryConfig registryConfig = createRegistryConfig();
 
-        // 泛化引用 DemoService — 不需要 DemoService.class
+        // Generic reference to DemoService - DemoService.class is not required
         ReferenceConfig<GenericService> ref = new ReferenceConfig<>();
         ref.setInterface(GenericService.class);
         ref.setServiceInterface("org.hongxi.jaws.sample.api.DemoService");
@@ -43,14 +43,14 @@ public class GenericSampleConsumer {
 
         GenericService demoService = ref.getRef();
 
-        // 1. 基础类型参数：hello(String) => String
-        System.out.println("--- 泛化调用 DemoService ---");
+        // 1. Primitive parameter: hello(String) => String
+        System.out.println("--- Generic Invocation of DemoService ---");
         Object r1 = demoService.$invoke("hello",
                 new String[]{"java.lang.String"},
                 new Object[]{"lily"});
         System.out.println("hello => " + r1);
 
-        // 2. POJO 参数用 Map 表示：rename(User, String) => User
+        // 2. POJO parameter represented as a Map: rename(User, String) => User
         Map<String, Object> user = new HashMap<>();
         user.put("name", "lily");
         user.put("age", 24);
@@ -60,13 +60,13 @@ public class GenericSampleConsumer {
                 new Object[]{user, "lucy"});
         System.out.println("rename => " + r2);
 
-        // 3. 无参调用：getUsers() => List<User>
+        // 3. No-argument call: getUsers() => List<User>
         Object r3 = demoService.$invoke("getUsers",
                 new String[]{},
                 new Object[]{});
         System.out.println("getUsers => " + r3);
 
-        System.out.println("\n泛化调用完成");
+        System.out.println("\nGeneric invocation done");
         System.exit(0);
     }
 

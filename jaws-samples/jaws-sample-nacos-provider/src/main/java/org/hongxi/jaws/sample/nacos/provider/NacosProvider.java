@@ -10,16 +10,16 @@ import org.hongxi.jaws.sample.nacos.provider.service.DemoServiceImpl;
 import org.hongxi.jaws.sample.nacos.provider.service.OrderServiceImpl;
 
 /**
- * 服务提供者示例
+ * Service provider sample
  *
  * <pre>
- * 演示场景：
- * 1. jaws 协议 + Nacos 注册中心
- * 2. 多服务发布 - DemoService + OrderService
+ * Demo scenarios:
+ * 1. jaws protocol + Nacos registry
+ * 2. Multi-service export - DemoService + OrderService
  * 3. group/version configuration
  * </pre>
  *
- * 启动前请确保 Nacos 已在 127.0.0.1:8848 运行
+ * Make sure Nacos is running at 127.0.0.1:8848 before starting
  */
 public class NacosProvider {
 
@@ -29,7 +29,7 @@ public class NacosProvider {
         ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
         RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_NACOS);
 
-        /* 发布 DemoService */
+        /* Export DemoService */
         ServiceConfig<DemoService> demoServiceConfig = new ServiceConfig<>();
         demoServiceConfig.setRef(new DemoServiceImpl());
         demoServiceConfig.setApplication("sample-nacos-provider");
@@ -43,7 +43,7 @@ public class NacosProvider {
         demoServiceConfig.export();
         System.out.println("DemoService exported.");
 
-        /* 发布 OrderService */
+        /* Export OrderService */
         ServiceConfig<OrderService> orderServiceConfig = new ServiceConfig<>();
         orderServiceConfig.setRef(new OrderServiceImpl());
         orderServiceConfig.setApplication("sample-nacos-provider");
