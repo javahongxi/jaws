@@ -3,14 +3,8 @@ package org.hongxi.jaws.rpc;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Default {@link ResponseFuture} implementing asynchronous waiting with timeout
@@ -24,28 +18,24 @@ import java.util.Map;
  * <p>Created by shenhongxi on 2020/8/23.
  */
 public class DefaultResponseFuture implements ResponseFuture {
-    private static final Logger log = LoggerFactory.getLogger(DefaultResponseFuture.class);
 
-    protected final Object lock = new Object();
+    protected long createTime;
+    protected Request request;
+    protected int timeout;
+    protected URL serverUrl;
+
     protected volatile FutureState state = FutureState.DOING;
     // Volatile: also read outside the lock by getRawValue()/getException()/isSuccess()
-    protected volatile Object result = null;
-    protected volatile Exception exception = null;
+    protected volatile Object result;
+    protected volatile Exception exception;
 
-    protected long createTime = System.currentTimeMillis();
-    protected int timeout = 0;
-    protected long processTime = 0;
-    protected Request request;
     // Volatile: written under the lock in addListener, read outside the lock
     // in notifyListeners; after the state leaves DOING the list is never mutated again
     protected volatile List<FutureListener> listeners;
-    protected URL serverUrl;
-    protected Class<?> returnType;
-    // Framework-level attachments carried by the response; reserved for protocol extension
-    private Map<String, String> attachments;
 
-    public DefaultResponseFuture(Request requestObj, int timeout, URL serverUrl) {
-        this.request = requestObj;
+    public DefaultResponseFuture(Request request, int timeout, URL serverUrl) {
+        this.createTime = System.currentTimeMillis();
+        this.request = request;
         this.timeout = timeout;
         this.serverUrl = serverUrl;
     }
@@ -53,30 +43,39 @@ public class DefaultResponseFuture implements ResponseFuture {
     @Override
     public void onSuccess(Response response) {
         this.result = response.getValue();
-        this.processTime = response.getProcessTime();
-        this.attachments = response.getAttachments();
-
         done();
     }
 
     @Override
     public void onFailure(Response response) {
         this.exception = response.getException();
-        this.processTime = response.getProcessTime();
-
         done();
+    }
+
+    private void done() {
+        synchronized (this) {
+            if (!isDoing()) {
+                return;
+            }
+
+            state = FutureState.DONE;
+            notifyAll();
+        }
+
+        // Notify outside the lock to avoid blocking on listener callbacks
+        notifyListeners();
     }
 
     @Override
     public Object getValue() {
-        synchronized (lock) {
+        synchronized (this) {
             if (!isDoing()) {
                 return getValueOrThrowable();
             }
 
             if (timeout <= 0) {
                 try {
-                    lock.wait();
+                    wait();
                 } catch (Exception e) {
                     cancel(new JawsServiceException(this.getClass().getName() +
                             " getValue InterruptedException : "
@@ -85,113 +84,47 @@ public class DefaultResponseFuture implements ResponseFuture {
                 }
 
                 return getValueOrThrowable();
-            } else {
-                long waitTime = timeout - (System.currentTimeMillis() - createTime);
+            }
 
-                if (waitTime > 0) {
-                    for (; ; ) {
-                        try {
-                            lock.wait(waitTime);
-                        } catch (InterruptedException ignore) {
-                            Thread.currentThread().interrupt();
-                        }
+            long waitTime = timeout - (System.currentTimeMillis() - createTime);
 
-                        if (!isDoing()) {
+            if (waitTime > 0) {
+                for (; ; ) {
+                    try {
+                        wait(waitTime);
+                    } catch (InterruptedException ignore) {
+                        Thread.currentThread().interrupt();
+                    }
+
+                    if (!isDoing()) {
+                        break;
+                    } else {
+                        waitTime = timeout - (System.currentTimeMillis() - createTime);
+                        if (waitTime <= 0) {
                             break;
-                        } else {
-                            waitTime = timeout - (System.currentTimeMillis() - createTime);
-                            if (waitTime <= 0) {
-                                break;
-                            }
                         }
                     }
                 }
-
-                if (isDoing()) {
-                    timeoutSoCancel();
-                }
             }
+
+            if (isDoing()) {
+                cancelOnTimeout();
+            }
+
             return getValueOrThrowable();
         }
     }
 
-    @Override
-    public Exception getException() {
-        return exception;
-    }
-
-    @Override
-    public Object getRawValue() {
+    private Object getValueOrThrowable() {
+        if (exception != null) {
+            throw exception instanceof RuntimeException re ? re :
+                    new JawsServiceException(exception.getMessage(), exception);
+        }
         return result;
     }
 
-    @Override
-    public void cancel() {
-        Exception e = new JawsServiceException(this.getClass().getName() +
-                " task cancel: serverPort=" + serverUrl.getHostPort() + " "
-                + RpcUtils.toString(request) +
-                " cost=" + (System.currentTimeMillis() - createTime));
-        cancel(e);
-    }
-
-    protected void cancel(Exception e) {
-        synchronized (lock) {
-            if (!isDoing()) {
-                return;
-            }
-
-            state = FutureState.CANCELED;
-            exception = e;
-            lock.notifyAll();
-        }
-
-        notifyListeners();
-    }
-
-    @Override
-    public boolean isDone() {
-        return state.isDoneState();
-    }
-
-    @Override
-    public boolean isSuccess() {
-        return isDone() && (exception == null);
-    }
-
-    @Override
-    public void addListener(FutureListener listener) {
-        if (listener == null) {
-            throw new NullPointerException("FutureListener is null");
-        }
-
-        boolean notifyNow = false;
-        synchronized (lock) {
-            if (!isDoing()) {
-                notifyNow = true;
-            } else {
-                if (listeners == null) {
-                    listeners = new ArrayList<>(1);
-                }
-
-                listeners.add(listener);
-            }
-        }
-
-        if (notifyNow) {
-            notifyListener(listener);
-        }
-    }
-
-    @Override
-    public void setReturnType(Class<?> clazz) {
-        this.returnType = clazz;
-    }
-
-
-    private void timeoutSoCancel() {
-        this.processTime = System.currentTimeMillis() - createTime;
-
-        synchronized (lock) {
+    private void cancelOnTimeout() {
+        synchronized (this) {
             if (!isDoing()) {
                 return;
             }
@@ -204,7 +137,40 @@ public class DefaultResponseFuture implements ResponseFuture {
                             " cost=" + (System.currentTimeMillis() - createTime),
                     JawsErrorCode.SERVICE_TIMEOUT);
 
-            lock.notifyAll();
+            notifyAll();
+        }
+
+        notifyListeners();
+    }
+
+    @Override
+    public Object getRawValue() {
+        return result;
+    }
+
+    @Override
+    public Exception getException() {
+        return exception;
+    }
+
+    @Override
+    public void cancel() {
+        Exception e = new JawsServiceException(this.getClass().getName() +
+                " task cancel: serverPort=" + serverUrl.getHostPort() + " "
+                + RpcUtils.toString(request) +
+                " cost=" + (System.currentTimeMillis() - createTime));
+        cancel(e);
+    }
+
+    private void cancel(Exception e) {
+        synchronized (this) {
+            if (!isDoing()) {
+                return;
+            }
+
+            state = FutureState.CANCELED;
+            exception = e;
+            notifyAll();
         }
 
         notifyListeners();
@@ -213,58 +179,50 @@ public class DefaultResponseFuture implements ResponseFuture {
     private void notifyListeners() {
         if (listeners != null) {
             for (FutureListener listener : listeners) {
-                notifyListener(listener);
+                listener.onComplete(this);
             }
         }
     }
 
-    private void notifyListener(FutureListener listener) {
-        try {
-            listener.operationComplete(this);
-        } catch (Throwable t) {
-            log.error("{} failed to notify listener: {}",
-                    this.getClass().getName(), listener.getClass().getSimpleName(), t);
+    @Override
+    public void addListener(FutureListener listener) {
+        Objects.requireNonNull(listener, "FutureListener is null");
+
+        // Decide inside the lock, notify outside to avoid blocking on listener callbacks
+        boolean notifyNow = false;
+        synchronized (this) {
+            if (!isDoing()) {
+                notifyNow = true;
+            } else {
+                if (listeners == null) {
+                    listeners = new ArrayList<>();
+                }
+                listeners.add(listener);
+            }
         }
+
+        if (notifyNow) {
+            listener.onComplete(this);
+        }
+    }
+
+    @Override
+    public boolean isDone() {
+        return state.isDoneState();
+    }
+
+    @Override
+    public boolean isSuccess() {
+        return isDone() && (exception == null);
     }
 
     private boolean isDoing() {
         return state.isDoingState();
     }
 
-    protected void done() {
-        synchronized (lock) {
-            if (!isDoing()) {
-                return;
-            }
-
-            state = FutureState.DONE;
-            lock.notifyAll();
-        }
-
-        notifyListeners();
-    }
-
     @Override
     public long getRequestId() {
         return this.request.getRequestId();
-    }
-
-    private Object getValueOrThrowable() {
-        if (exception != null) {
-            throw exception instanceof RuntimeException re ? re :
-                    new JawsServiceException(exception.getMessage(), exception);
-        }
-        return result;
-    }
-
-    @Override
-    public long getProcessTime() {
-        return processTime;
-    }
-
-    @Override
-    public void setProcessTime(long time) {
-        this.processTime = time;
     }
 
     @Override
@@ -274,23 +232,21 @@ public class DefaultResponseFuture implements ResponseFuture {
 
     @Override
     public Map<String, String> getAttachments() {
-        return attachments != null ? attachments : Collections.<String, String>emptyMap();
+        return Collections.emptyMap();
     }
 
     @Override
     public void setAttachment(String key, String value) {
-        if (this.attachments == null) {
-            this.attachments = new HashMap<>();
-        }
-        this.attachments.put(key, value);
+        // no-op: attachments not used on client-side future
+    }
+
+    @Override
+    public long getProcessTime() {
+        return 0;
     }
 
     @Override
     public byte getSerializationNumber() {
         return 0;
-    }
-
-    @Override
-    public void setSerializationNumber(byte number) {
     }
 }

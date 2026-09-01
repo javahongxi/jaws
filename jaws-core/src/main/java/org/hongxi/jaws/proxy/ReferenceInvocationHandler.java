@@ -52,7 +52,7 @@ public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> i
         request.setArguments(args);
 
         if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
-            return invokeAsync(request, method.getReturnType());
+            return invokeAsync(request);
         }
         if (Flow.Publisher.class.isAssignableFrom(method.getReturnType())) {
             return invokeStream(request);

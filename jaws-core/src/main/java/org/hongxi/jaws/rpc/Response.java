@@ -57,13 +57,6 @@ public interface Response {
     long getProcessTime();
 
     /**
-     * Sets the server-side business processing time.
-     *
-     * @param time process time in milliseconds
-     */
-    void setProcessTime(long time);
-
-    /**
      * Returns the request timeout in milliseconds.
      *
      * @return timeout in milliseconds
@@ -91,14 +84,4 @@ public interface Response {
      * @return serialization number
      */
     byte getSerializationNumber();
-
-    /**
-     * Sets the serialization protocol identifier.
-     * <p>
-     * This value acts as a protocol version marker, primarily used on the server side
-     * for backward-compatible deserialization.
-     *
-     * @param number serialization number
-     */
-    void setSerializationNumber(byte number);
 }

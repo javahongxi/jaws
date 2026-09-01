@@ -32,8 +32,8 @@ public class DefaultRequest implements Request, Serializable {
     private String paramDesc;
     private Object[] arguments;
     private Map<String, String> attachments;
-    private int retries = 0;
     private long requestId;
+    private int retries;
     // default serialization is hessian2
     private byte serializationNumber = 0;
 
@@ -111,7 +111,6 @@ public class DefaultRequest implements Request, Serializable {
         return retries;
     }
 
-    @Override
     public void setRetries(int retries) {
         this.retries = retries;
     }
@@ -121,7 +120,6 @@ public class DefaultRequest implements Request, Serializable {
         return serializationNumber;
     }
 
-    @Override
     public void setSerializationNumber(byte number) {
         this.serializationNumber = number;
     }

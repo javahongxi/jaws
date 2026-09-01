@@ -126,9 +126,7 @@ class RandomLoadBalanceTest {
             @Override public void setAttachment(String name, String value) {}
             @Override public long getRequestId() { return 0; }
             @Override public int getRetries() { return 0; }
-            @Override public void setRetries(int retries) {}
             @Override public byte getSerializationNumber() { return 0; }
-            @Override public void setSerializationNumber(byte number) {}
         };
     }
 }

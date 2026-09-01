@@ -75,26 +75,9 @@ public interface Request {
     int getRetries();
 
     /**
-     * Sets the number of retries for this request.
-     *
-     * @param retries retry count
-     */
-    void setRetries(int retries);
-
-    /**
      * Returns the serialization protocol identifier used for encoding this request.
      *
      * @return serialization number
      */
     byte getSerializationNumber();
-
-    /**
-     * Sets the serialization protocol identifier.
-     * <p>
-     * This value acts as a protocol version marker, primarily used on the server side
-     * for backward-compatible deserialization.
-     *
-     * @param number serialization number
-     */
-    void setSerializationNumber(byte number);
 }

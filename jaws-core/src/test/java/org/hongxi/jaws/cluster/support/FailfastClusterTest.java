@@ -36,12 +36,13 @@ class FailfastClusterTest {
         @Override public Exception getException() { return null; }
         @Override public long getRequestId() { return 1L; }
         @Override public long getProcessTime() { return 0; }
-        @Override public void setProcessTime(long time) {}
+        public void setProcessTime(long time) {}
         @Override public int getTimeout() { return 0; }
+        public void setTimeout(int timeout) {}
         @Override public Map<String, String> getAttachments() { return new HashMap<>(); }
         @Override public void setAttachment(String key, String value) {}
         @Override public byte getSerializationNumber() { return 0; }
-        @Override public void setSerializationNumber(byte number) {}
+        public void setSerializationNumber(byte number) {}
     }
 
     private static class StubRequest implements Request {
@@ -53,9 +54,7 @@ class FailfastClusterTest {
         @Override public void setAttachment(String name, String value) {}
         @Override public long getRequestId() { return 1L; }
         @Override public int getRetries() { return 0; }
-        @Override public void setRetries(int retries) {}
         @Override public byte getSerializationNumber() { return 0; }
-        @Override public void setSerializationNumber(byte number) {}
     }
 
     private static class StubReference implements Reference<String> {

@@ -55,7 +55,7 @@ public class GenericRequestHandler extends AbstractRequestHandler {
                     dr.setValue(convertedResult);
                 }
             }
-            response.setSerializationNumber(request.getSerializationNumber());
+            ((DefaultResponse) response).setSerializationNumber(request.getSerializationNumber());
             return response;
         });
     }

@@ -101,7 +101,7 @@ public class AbstractReferenceHandler<T> {
      * Invoke with CompletableFuture return type.
      * The returned CompletableFuture completes when the RPC response arrives.
      */
-    CompletableFuture<Object> invokeAsync(Request request, Class<?> returnType) {
+    CompletableFuture<Object> invokeAsync(Request request) {
         RpcContext context = RpcContext.getContext();
         context.putAttribute(JawsConstants.ASYNC_FLAG, true);
 
@@ -122,7 +122,6 @@ public class AbstractReferenceHandler<T> {
             try {
                 Response response = cluster.call(request);
                 if (response instanceof DefaultResponseFuture responseFuture) {
-                    responseFuture.setReturnType(returnType);
                     responseFuture.addListener(future -> {
                         if (future.isSuccess()) {
                             resultFuture.complete(future.getValue());

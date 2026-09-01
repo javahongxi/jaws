@@ -44,8 +44,8 @@ public class DefaultResponse implements Response, Serializable {
         this.requestId = response.getRequestId();
         this.processTime = response.getProcessTime();
         this.timeout = response.getTimeout();
-        this.serializationNumber = response.getSerializationNumber();
         this.attachments = response.getAttachments();
+        this.serializationNumber = response.getSerializationNumber();
     }
 
     public DefaultResponse(Object value) {
@@ -55,8 +55,9 @@ public class DefaultResponse implements Response, Serializable {
     @Override
     public Object getValue() {
         if (exception != null) {
-            throw (exception instanceof RuntimeException) ? (RuntimeException) exception : new JawsServiceException(
-                    exception.getMessage(), exception);
+            throw (exception instanceof RuntimeException) ?
+                    (RuntimeException) exception :
+                    new JawsServiceException(exception.getMessage(), exception);
         }
 
         return value;
@@ -94,7 +95,6 @@ public class DefaultResponse implements Response, Serializable {
         return processTime;
     }
 
-    @Override
     public void setProcessTime(long time) {
         this.processTime = time;
     }
@@ -102,6 +102,10 @@ public class DefaultResponse implements Response, Serializable {
     @Override
     public int getTimeout() {
         return timeout;
+    }
+
+    public void setTimeout(int timeout) {
+        this.timeout = timeout;
     }
 
     @Override
@@ -126,7 +130,6 @@ public class DefaultResponse implements Response, Serializable {
         return serializationNumber;
     }
 
-    @Override
     public void setSerializationNumber(byte number) {
         this.serializationNumber = number;
     }

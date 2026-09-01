@@ -5,6 +5,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.lifecycle.ShutdownHook;
+import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
@@ -100,7 +101,7 @@ public class FailbackCluster<T> extends AbstractCluster<T> {
             try {
                 Reference<T> refer = task.loadBalance.select(task.request);
                 RpcContext.getContext().setServerUrl(refer.getUrl());
-                task.request.setRetries(task.retryCount + 1);
+                ((DefaultRequest) task.request).setRetries(task.retryCount + 1);
                 Response response = refer.call(task.request);
                 if (response.getException() != null) {
                     throw new RuntimeException(response.getException());

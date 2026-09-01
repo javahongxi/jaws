@@ -11,6 +11,7 @@ import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
+import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
@@ -70,7 +71,7 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
         for (int i = 0; i <= tryCount; i++) {
             Reference<T> refer = references.get(i % references.size());
             try {
-                request.setRetries(i);
+                ((DefaultRequest) request).setRetries(i);
                 RpcContext.getContext().setServerUrl(refer.getUrl());
                 return refer.call(request);
             } catch (RuntimeException e) {

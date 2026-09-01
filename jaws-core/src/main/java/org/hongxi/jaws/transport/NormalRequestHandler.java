@@ -1,5 +1,6 @@
 package org.hongxi.jaws.transport;
 
+import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
 
@@ -16,7 +17,7 @@ public class NormalRequestHandler extends AbstractRequestHandler {
     @Override
     protected CompletableFuture<Object> doHandleAsync(Request request, Provider<?> provider, Method method) {
         return callAsync(request, provider).thenApply(response -> {
-            response.setSerializationNumber(request.getSerializationNumber());
+            ((DefaultResponse) response).setSerializationNumber(request.getSerializationNumber());
             return response;
         });
     }

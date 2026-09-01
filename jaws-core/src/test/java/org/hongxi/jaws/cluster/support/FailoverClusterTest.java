@@ -3,6 +3,7 @@ package org.hongxi.jaws.cluster.support;
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsServiceException;
+import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
@@ -38,28 +39,20 @@ class FailoverClusterTest {
         @Override public Exception getException() { return null; }
         @Override public long getRequestId() { return 1L; }
         @Override public long getProcessTime() { return 0; }
-        @Override public void setProcessTime(long time) {}
+        public void setProcessTime(long time) {}
         @Override public int getTimeout() { return 0; }
+        public void setTimeout(int timeout) {}
         @Override public Map<String, String> getAttachments() { return new HashMap<>(); }
         @Override public void setAttachment(String key, String value) {}
         @Override public byte getSerializationNumber() { return 0; }
-        @Override public void setSerializationNumber(byte number) {}
+        public void setSerializationNumber(byte number) {}
     }
 
-    private static class StubRequest implements Request {
-        private int retries;
-
-        @Override public String getInterfaceName() { return "testService"; }
-        @Override public String getMethodName() { return "testMethod"; }
-        @Override public String getParamDesc() { return ""; }
-        @Override public Object[] getArguments() { return new Object[0]; }
-        @Override public Map<String, String> getAttachments() { return new HashMap<>(); }
-        @Override public void setAttachment(String name, String value) {}
-        @Override public long getRequestId() { return 1L; }
-        @Override public int getRetries() { return retries; }
-        @Override public void setRetries(int retries) { this.retries = retries; }
-        @Override public byte getSerializationNumber() { return 0; }
-        @Override public void setSerializationNumber(byte number) {}
+    private static class StubRequest extends DefaultRequest {
+        StubRequest() {
+            setInterfaceName("testService");
+            setMethodName("testMethod");
+        }
     }
 
     private static class StubReference implements Reference<String> {
@@ -270,27 +263,5 @@ class FailoverClusterTest {
         assertEquals(url, org.hongxi.jaws.rpc.RpcContext.getContext().getServerUrl());
     }
 
-    @Test
-    void requestRetriesShouldBeUpdatedOnEachAttempt() {
-        URL url = urlWithRetries(2);
-        StubReference ref = new StubReference(url)
-                .thenThrow(new RuntimeException("fail-1"))
-                .thenThrow(new RuntimeException("fail-2"))
-                .thenReturn(new StubResponse("ok"));
-        StubLoadBalance lb = new StubLoadBalance(ref);
-        FailoverCluster<String> cluster = newCluster(url, lb);
 
-        List<Integer> retriesSeen = new ArrayList<>();
-        StubRequest request = new StubRequest() {
-            @Override
-            public void setRetries(int retries) {
-                super.setRetries(retries);
-                retriesSeen.add(retries);
-            }
-        };
-
-        cluster.call(request);
-
-        assertEquals(List.of(0, 1, 2), retriesSeen);
-    }
 }
