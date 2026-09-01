@@ -48,8 +48,8 @@ class FilterReferenceWrapper<T> implements Reference<T> {
     }
 
     @Override
-    public int activeReferenceCount() {
-        return original.activeReferenceCount();
+    public int activeCallCount() {
+        return original.activeCallCount();
     }
 
     @Override

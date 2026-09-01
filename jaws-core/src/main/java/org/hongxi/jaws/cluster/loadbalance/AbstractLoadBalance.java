@@ -12,7 +12,11 @@ import org.hongxi.jaws.rpc.URL;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Base implementation of {@link LoadBalance} providing common reference
@@ -35,55 +39,72 @@ import java.util.List;
 public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
 
     public static final int MAX_REFERENCE_COUNT = 10;
+
+    /** Sliding window period (ms); estimator offsets are reset after this period. */
+    private static final long SLIDE_PERIOD = 30_000L;
+
     // volatile: written by the notify thread in onRefresh, read by business threads on every select
     private volatile List<Reference<T>> references;
     private volatile RouterChain<T> routerChain;
+
+    /** Per-reference load estimators, shared by response-aware strategies. */
+    private final ConcurrentMap<Reference<T>, LoadEstimator> estimators = new ConcurrentHashMap<>();
+    private volatile long lastUpdateTime = System.currentTimeMillis();
+    private final AtomicBoolean resetting = new AtomicBoolean(false);
 
     @Override
     public void onRefresh(List<Reference<T>> references) {
         Collections.shuffle(references);
         // Reference replacement only; in-place update of references is not allowed.
         this.references = references;
+        // Discard statistics of references removed from the list to prevent unbounded growth
+        estimators.keySet().retainAll(new HashSet<>(references));
     }
 
     @Override
     public Reference<T> select(Request request) {
         List<Reference<T>> references = applyRouter(this.references, request);
-        if (references == null) {
-            throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call request:" + request);
+        if (references == null || references.isEmpty()) {
+            throw new JawsServiceException(this.getClass().getSimpleName() +
+                    " No available references for call request:" + request);
         }
-        Reference<T> ref = null;
-        if (references.size() > 1) {
-            ref = doSelect(references, request);
-
-        } else if (references.size() == 1) {
-            ref = references.get(0).isAvailable() ? references.get(0) : null;
+    
+        if (references.size() == 1) {
+            Reference<T> ref = references.get(0);
+            if (ref.isAvailable()) {
+                return ref;
+            }
+        } else {
+            Reference<T> ref = doSelect(references, request);
+            if (ref != null) {
+                return ref;
+            }
         }
-
-        if (ref != null) {
-            return ref;
-        }
-        throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call request:" + request);
+        throw new JawsServiceException(this.getClass().getSimpleName() +
+                " No available references for call request:" + request);
     }
 
     @Override
     public List<Reference<T>> selectCandidates(Request request) {
         List<Reference<T>> references = applyRouter(this.references, request);
-
-        if (references == null) {
-            throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call : references_size= 0 "
+        if (references == null || references.isEmpty()) {
+            throw new JawsServiceException(this.getClass().getSimpleName() +
+                    " No available references for call : references_size= 0 "
                     + RpcUtils.toString(request));
         }
 
         List<Reference<T>> candidates = new ArrayList<>();
-        if (references.size() > 1) {
+        if (references.size() == 1) {
+            Reference<T> ref = references.get(0);
+            if (ref.isAvailable()) {
+                candidates.add(ref);
+            }
+        } else {
             doSelectCandidates(references, request, candidates);
-
-        } else if (references.size() == 1 && references.get(0).isAvailable()) {
-            candidates.add(references.get(0));
         }
         if (candidates.isEmpty()) {
-            throw new JawsServiceException(this.getClass().getSimpleName() + " No available references for call : references_size="
+            throw new JawsServiceException(this.getClass().getSimpleName() +
+                    " No available references for call : references_size="
                     + references.size() + " " + RpcUtils.toString(request));
         }
         return candidates;
@@ -107,13 +128,6 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
      */
     protected abstract void doSelectCandidates(List<Reference<T>> references, Request request,
                                                List<Reference<T>> candidates);
-
-    /**
-     * Set the router chain for filtering references before selection.
-     */
-    public void setRouterChain(RouterChain<T> routerChain) {
-        this.routerChain = routerChain;
-    }
 
     /**
      * Add a single router to the chain.
@@ -142,6 +156,26 @@ public abstract class AbstractLoadBalance<T> implements LoadBalance<T> {
             return references;
         }
         return chain.route(references, request);
+    }
+
+    /**
+     * Return the load estimator for the given reference, creating one lazily.
+     */
+    protected LoadEstimator getEstimator(Reference<T> ref) {
+        return estimators.computeIfAbsent(ref, LoadEstimator::new);
+    }
+
+    /**
+     * Reset all estimator offsets if the sliding window period has elapsed,
+     * so that only recent call statistics contribute to load estimates.
+     */
+    protected void resetWindowIfNeeded() {
+        if (System.currentTimeMillis() - lastUpdateTime > SLIDE_PERIOD
+                && resetting.compareAndSet(false, true)) {
+            estimators.values().forEach(LoadEstimator::reset);
+            lastUpdateTime = System.currentTimeMillis();
+            resetting.set(false);
+        }
     }
 
     /**

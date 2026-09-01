@@ -4,14 +4,9 @@ import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Adaptive load balance based on the power of two choices (P2C).
@@ -31,27 +26,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Extension("adaptive")
 public class AdaptiveLoadBalance<T> extends AbstractLoadBalance<T> {
 
-    /* Sliding window period (ms); offsets are asynchronously reset after this period */
-    private static final long SLIDE_PERIOD = 30_000L;
-
-    private final ConcurrentMap<Reference<T>, LoadEstimator> estimators = new ConcurrentHashMap<>();
-
-    private volatile long lastUpdateTime = System.currentTimeMillis();
-
-    private final AtomicBoolean resetting = new AtomicBoolean(false);
-
-    @Override
-    public void onRefresh(List<Reference<T>> references) {
-        super.onRefresh(references);
-        // discard statistics of references removed from the list to prevent unbounded growth
-        estimators.keySet().retainAll(new HashSet<>(references));
-    }
-
     @Override
     protected Reference<T> doSelect(List<Reference<T>> references, Request request) {
         resetWindowIfNeeded();
 
-        List<Reference<T>> available = filterAvailable(references);
+        List<Reference<T>> available = references.stream()
+                .filter(Reference::isAvailable)
+                .toList();
         int count = available.size();
         if (count == 0) {
             return null;
@@ -75,28 +56,19 @@ public class AdaptiveLoadBalance<T> extends AbstractLoadBalance<T> {
                                        List<Reference<T>> candidates) {
         resetWindowIfNeeded();
 
-        List<Reference<T>> available = filterAvailable(references);
         // order by estimated load so that failover tries the least loaded first
-        available.sort(Comparator.comparingLong(
-                ref -> estimators.computeIfAbsent(ref, LoadEstimator::new).estimateLoad()));
+        List<Reference<T>> available = references.stream()
+                .filter(Reference::isAvailable)
+                .sorted(Comparator.comparingLong(ref -> getEstimator(ref).estimateLoad()))
+                .toList();
         for (int i = 0; i < available.size() && candidates.size() < MAX_REFERENCE_COUNT; i++) {
             candidates.add(available.get(i));
         }
     }
 
-    private List<Reference<T>> filterAvailable(List<Reference<T>> references) {
-        List<Reference<T>> available = new ArrayList<>(references.size());
-        for (Reference<T> ref : references) {
-            if (ref.isAvailable()) {
-                available.add(ref);
-            }
-        }
-        return available;
-    }
-
     private Reference<T> chooseLessLoaded(Reference<T> first, Reference<T> second) {
-        long load1 = estimators.computeIfAbsent(first, LoadEstimator::new).estimateLoad();
-        long load2 = estimators.computeIfAbsent(second, LoadEstimator::new).estimateLoad();
+        long load1 = getEstimator(first).estimateLoad();
+        long load2 = getEstimator(second).estimateLoad();
         if (load1 != load2) {
             return load1 < load2 ? first : second;
         }
@@ -108,14 +80,5 @@ public class AdaptiveLoadBalance<T> extends AbstractLoadBalance<T> {
             return second;
         }
         return first;
-    }
-
-    private void resetWindowIfNeeded() {
-        if (System.currentTimeMillis() - lastUpdateTime > SLIDE_PERIOD
-                && resetting.compareAndSet(false, true)) {
-            estimators.values().forEach(LoadEstimator::reset);
-            lastUpdateTime = System.currentTimeMillis();
-            resetting.set(false);
-        }
     }
 }

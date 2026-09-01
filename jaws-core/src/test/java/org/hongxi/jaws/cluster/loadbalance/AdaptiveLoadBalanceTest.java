@@ -107,7 +107,7 @@ class AdaptiveLoadBalanceTest {
     }
 
     private Set<String> estimatorNames() throws Exception {
-        Field field = AdaptiveLoadBalance.class.getDeclaredField("estimators");
+        Field field = AbstractLoadBalance.class.getDeclaredField("estimators");
         field.setAccessible(true);
         Set<String> names = new HashSet<>();
         for (Object key : ((Map<?, ?>) field.get(lb)).keySet()) {

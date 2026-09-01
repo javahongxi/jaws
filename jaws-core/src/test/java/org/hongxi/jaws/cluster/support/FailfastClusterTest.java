@@ -77,7 +77,7 @@ class FailfastClusterTest {
         @Override public URL getUrl() { return url; }
         @Override public URL getServiceUrl() { return url; }
         @Override public Class<String> getInterface() { return String.class; }
-        @Override public int activeReferenceCount() { return 0; }
+        @Override public int activeCallCount() { return 0; }
         @Override public void init() {}
         @Override public void destroy() {}
         @Override public boolean isAvailable() { return true; }

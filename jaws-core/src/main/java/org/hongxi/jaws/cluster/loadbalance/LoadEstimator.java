@@ -16,7 +16,7 @@ import org.hongxi.jaws.rpc.Reference;
  * Shared by load balance strategies that need response-time awareness
  * (shortest response, adaptive P2C).
  */
-final class LoadEstimator {
+public final class LoadEstimator {
 
     private final Reference<?> reference;
 
@@ -45,7 +45,7 @@ final class LoadEstimator {
      * active-call count when the window holds no data yet.
      */
     long estimateLoad() {
-        int active = reference.activeReferenceCount() + 1;
+        int active = reference.activeCallCount() + 1;
         long avgElapsed = averageElapsed();
         return avgElapsed == 0 ? active : avgElapsed * active;
     }

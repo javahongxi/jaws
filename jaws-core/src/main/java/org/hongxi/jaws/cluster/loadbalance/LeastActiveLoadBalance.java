@@ -94,8 +94,8 @@ public class LeastActiveLoadBalance<T> extends AbstractLoadBalance<T> {
         // effective load = activeCount * (maxWeight / weight)
         // lower effective load is better
         int maxWeight = Math.max(weight1, weight2);
-        int effective1 = ref1.activeReferenceCount() * maxWeight / Math.max(weight1, 1);
-        int effective2 = ref2.activeReferenceCount() * maxWeight / Math.max(weight2, 1);
+        int effective1 = ref1.activeCallCount() * maxWeight / Math.max(weight1, 1);
+        int effective2 = ref2.activeCallCount() * maxWeight / Math.max(weight2, 1);
         return effective1 - effective2;
     }
 

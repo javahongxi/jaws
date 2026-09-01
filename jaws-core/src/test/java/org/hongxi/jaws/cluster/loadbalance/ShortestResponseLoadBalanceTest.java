@@ -76,7 +76,7 @@ class ShortestResponseLoadBalanceTest {
     }
 
     private Set<String> slideWindowNames() throws Exception {
-        Field field = ShortestResponseLoadBalance.class.getDeclaredField("slideWindowMap");
+        Field field = AbstractLoadBalance.class.getDeclaredField("estimators");
         field.setAccessible(true);
         Set<String> names = new HashSet<>();
         for (Object key : ((Map<?, ?>) field.get(lb)).keySet()) {

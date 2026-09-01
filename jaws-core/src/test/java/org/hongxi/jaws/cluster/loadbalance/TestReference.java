@@ -42,7 +42,7 @@ class TestReference implements Reference<String> {
     }
 
     @Override
-    public int activeReferenceCount() {
+    public int activeCallCount() {
         return activeCount;
     }
 

@@ -61,9 +61,9 @@ public class JawsReference<T> extends AbstractReference<T> {
     @Override
     protected void decrActiveCount(Response response) {
         if (response instanceof CompletableFuture<?> cf) {
-            cf.whenComplete((r, t) -> activeReferenceCount.decrementAndGet());
+            cf.whenComplete((r, t) -> activeCallCount.decrementAndGet());
         } else {
-            activeReferenceCount.decrementAndGet();
+            activeCallCount.decrementAndGet();
         }
     }
 

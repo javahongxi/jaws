@@ -29,7 +29,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
      * (or after the async future completes). Consumed by load-balancing strategies
      * such as leastActive and shortestResponse to estimate real-time endpoint load.
      */
-    protected AtomicInteger activeReferenceCount = new AtomicInteger(0);
+    protected AtomicInteger activeCallCount = new AtomicInteger(0);
 
     /**
      * Cumulative response time statistics for successful calls, used for shortest-response load balancing
@@ -111,16 +111,16 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
     }
 
     @Override
-    public int activeReferenceCount() {
-        return activeReferenceCount.get();
+    public int activeCallCount() {
+        return activeCallCount.get();
     }
 
     protected void incrActiveCount() {
-        activeReferenceCount.incrementAndGet();
+        activeCallCount.incrementAndGet();
     }
 
     protected void decrActiveCount(Response response) {
-        activeReferenceCount.decrementAndGet();
+        activeCallCount.decrementAndGet();
     }
 
     protected abstract Response doCall(Request request);
