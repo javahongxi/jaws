@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 序列化单元测试用的简单 POJO
+ * Simple POJO for serialization unit tests
  */
 class TestPojo implements Serializable {
 

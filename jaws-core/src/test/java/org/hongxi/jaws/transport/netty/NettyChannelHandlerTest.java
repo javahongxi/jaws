@@ -25,12 +25,13 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * NettyChannelHandler 引用计数与线程池派发单元测试。
+ * Unit tests for NettyChannelHandler reference counting and thread-pool dispatch.
  * <p>
- * 核心回归点：无论消息走异步执行、线程池拒绝还是同步处理路径，
- * {@code DecodedFrame.data()} 携带的 ByteBuf 的引用计数在
- * {@code channelRead} 返回后都必须归零——这是 Codec 接口 ByteBuf 化
- * （readRetainedSlice 零拷贝改造）后新增的正确性约束。
+ * Core regression point: whether a message goes through async execution, thread-pool
+ * rejection, or the sync processing path, the reference count of the ByteBuf carried by
+ * {@code DecodedFrame.data()} must drop to zero after {@code channelRead} returns —
+ * a correctness constraint introduced by converting the Codec interface to ByteBuf
+ * (the readRetainedSlice zero-copy refactor).
  */
 class NettyChannelHandlerTest {
 

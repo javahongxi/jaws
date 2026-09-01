@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Fastjson2SecurityFilter 单元测试
+ * Unit tests for Fastjson2SecurityFilter
  */
 class Fastjson2SecurityFilterTest {
 
@@ -17,11 +17,11 @@ class Fastjson2SecurityFilterTest {
         filter = new Fastjson2SecurityFilter();
     }
 
-    /* ========== 默认白名单测试 ========== */
+    /* ========== Default allowlist tests ========== */
 
     @Test
     void defaultAllowPrefixShouldAllowJavaLang() {
-        /* java.lang. 在默认白名单中 */
+        /* java.lang. is on the default allowlist */
         Class<?> clazz = filter.apply("java.lang.String", null, 0);
         assertNotNull(clazz);
         assertEquals(String.class, clazz);
@@ -29,37 +29,37 @@ class Fastjson2SecurityFilterTest {
 
     @Test
     void defaultAllowPrefixShouldAllowJavaUtil() {
-        /* java.util. 在默认白名单中 */
+        /* java.util. is on the default allowlist */
         Class<?> clazz = filter.apply("java.util.ArrayList", null, 0);
         assertNotNull(clazz);
     }
 
     @Test
     void defaultAllowPrefixShouldAllowJavaIo() {
-        /* java.io. 在默认白名单中 */
+        /* java.io. is on the default allowlist */
         Class<?> clazz = filter.apply("java.io.File", null, 0);
         assertNotNull(clazz);
     }
 
     @Test
     void defaultAllowPrefixShouldAllowJawsPackage() {
-        /* org.hongxi.jaws. 在默认白名单中 */
+        /* org.hongxi.jaws. is on the default allowlist */
         Class<?> clazz = filter.apply("org.hongxi.jaws.serialization.Serialization", null, 0);
         assertNotNull(clazz);
     }
 
-    /* ========== 默认黑名单测试 ========== */
+    /* ========== Default denylist tests ========== */
 
     @Test
     void defaultDenyPrefixShouldBlockJavaxManagement() {
-        /* javax.management. 不在白名单中，且在黑名单中 */
+        /* javax.management. is not on the allowlist and is on the denylist */
         assertThrows(IllegalArgumentException.class, () ->
                 filter.apply("javax.management.SomeClass", null, 0));
     }
 
     @Test
     void defaultDenyPrefixShouldBlockSunPackages() {
-        /* sun. 不在白名单中，且在黑名单中 */
+        /* sun. is not on the allowlist and is on the denylist */
         assertThrows(IllegalArgumentException.class, () ->
                 filter.apply("sun.misc.Unsafe", null, 0));
     }
@@ -73,25 +73,25 @@ class Fastjson2SecurityFilterTest {
     @Test
     void javaLangRuntimeIsAllowedBecauseParentWhitelistMatchesFirst() {
         /*
-         * java.lang.Runtime 虽然以 "java.lang.Runtime" 存在于黑名单中，
-         * 但 "java.lang." 在白名单中，super.apply() 先匹配白名单并返回 Class，
-         * 因此黑名单检查被跳过。这是当前实现的实际行为。
+         * Although java.lang.Runtime exists on the denylist as "java.lang.Runtime",
+         * "java.lang." is on the allowlist; super.apply() matches the allowlist first and returns the Class,
+         * so the denylist check is skipped. This is the actual behavior of the current implementation.
          */
         Class<?> clazz = filter.apply("java.lang.Runtime", null, 0);
         assertNotNull(clazz);
     }
 
-    /* ========== 自定义白名单/黑名单测试 ========== */
+    /* ========== Custom allowlist/denylist tests ========== */
 
     @Test
     void addAllowPrefixShouldPermitNewPackage() {
-        /* com.example 不在默认白名单中，WARN 模式下可以加载但加入白名单后更可靠 */
+        /* com.example is not on the default allowlist; it can be loaded in WARN mode, but adding it to the allowlist is more robust */
         filter.addAllowPrefix("com.example.");
-        /* 加入白名单后，通过父类 acceptNames 直接返回 */
+        /* once allowed, the parent acceptNames path returns directly */
         Class<?> clazz = filter.apply("com.example.MyClass", null, 0);
-        /* 由于 com.example.MyClass 实际不存在，父类可能返回 null，
-         * 但关键是它不应该抛出异常（不被黑名单拦截） */
-        /* 这里主要验证 addAllowPrefix 不抛异常即可 */
+        /* since com.example.MyClass does not actually exist, the parent may return null,
+         * but the key point is that it should not throw (not blocked by the denylist) */
+        /* mainly verify here that addAllowPrefix does not throw */
         assertDoesNotThrow(() -> filter.addAllowPrefix("com.test."));
     }
 
@@ -102,13 +102,13 @@ class Fastjson2SecurityFilterTest {
                 filter.apply("com.dangerous.EvilClass", null, 0));
     }
 
-    /* ========== STRICT 模式测试 ========== */
+    /* ========== STRICT mode tests ========== */
 
     @Test
     void strictModeShouldRejectNonWhitelistedClass() {
         filter.setCheckStatus(Fastjson2SecurityFilter.CheckStatus.STRICT);
 
-        /* com.unknown 不在白名单也不在黑名单，STRICT 模式应拒绝 */
+        /* com.unknown is on neither the allowlist nor the denylist; STRICT mode should reject it */
         assertThrows(IllegalArgumentException.class, () ->
                 filter.apply("com.unknown.SomeClass", null, 0));
     }
@@ -117,7 +117,7 @@ class Fastjson2SecurityFilterTest {
     void strictModeShouldStillAllowWhitelistedClass() {
         filter.setCheckStatus(Fastjson2SecurityFilter.CheckStatus.STRICT);
 
-        /* java.lang.String 在白名单中，STRICT 模式也应允许 */
+        /* java.lang.String is on the allowlist, so STRICT mode should still allow it */
         Class<?> clazz = filter.apply("java.lang.String", null, 0);
         assertNotNull(clazz);
     }
@@ -126,19 +126,19 @@ class Fastjson2SecurityFilterTest {
     void strictModeShouldBlockNonWhitelistedDeniedClass() {
         filter.setCheckStatus(Fastjson2SecurityFilter.CheckStatus.STRICT);
 
-        /* javax.management 不在白名单中且在黑名单中，STRICT 模式应拒绝 */
+        /* javax.management is not on the allowlist and is on the denylist; STRICT mode should reject it */
         assertThrows(IllegalArgumentException.class, () ->
                 filter.apply("javax.management.SomeClass", null, 0));
     }
 
-    /* ========== WARN 模式测试 ========== */
+    /* ========== WARN mode tests ========== */
 
     @Test
     void warnModeShouldAllowNonWhitelistedKnownClass() {
         filter.setCheckStatus(Fastjson2SecurityFilter.CheckStatus.WARN);
 
-        /* WARN 模式下，不在白名单的已知类应该被允许（尝试加载） */
-        /* java.math.BigDecimal 在白名单中，直接通过 */
+        /* in WARN mode, known classes not on the allowlist should be allowed (load attempted) */
+        /* java.math.BigDecimal is on the allowlist and passes directly */
         Class<?> clazz = filter.apply("java.math.BigDecimal", null, 0);
         assertNotNull(clazz);
     }
@@ -147,12 +147,12 @@ class Fastjson2SecurityFilterTest {
     void warnModeShouldNotThrowForUnknownNonDeniedClass() {
         filter.setCheckStatus(Fastjson2SecurityFilter.CheckStatus.WARN);
 
-        /* com.test.Unknown 不在白名单也不在黑名单，WARN 模式尝试加载，
-         * 由于类不存在，loadClassDirectly 返回 null，最终 apply 返回 null，不抛异常 */
+        /* com.test.Unknown is on neither the allowlist nor the denylist; WARN mode tries to load it.
+         * Since the class does not exist, loadClassDirectly returns null, and apply finally returns null without throwing */
         assertDoesNotThrow(() -> filter.apply("com.test.Unknown", null, 0));
     }
 
-    /* ========== CheckStatus getter/setter 测试 ========== */
+    /* ========== CheckStatus getter/setter tests ========== */
 
     @Test
     void defaultCheckStatusShouldBeWarn() {

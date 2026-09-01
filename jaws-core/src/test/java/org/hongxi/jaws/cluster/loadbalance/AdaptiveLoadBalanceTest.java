@@ -15,7 +15,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * AdaptiveLoadBalance 单元测试
+ * Unit tests for AdaptiveLoadBalance
  */
 class AdaptiveLoadBalanceTest {
 
@@ -38,7 +38,7 @@ class AdaptiveLoadBalanceTest {
             assertTrue(selected.isAvailable());
             hit.add(((TestReference) selected).getName());
         }
-        assertEquals(3, hit.size(), "估算负载相同时应按权重/随机命中所有 reference");
+        assertEquals(3, hit.size(), "with equal estimated load, all references should be hit by weight/random");
     }
 
     @Test
@@ -71,7 +71,7 @@ class AdaptiveLoadBalanceTest {
                 idleHits++;
             }
         }
-        assertEquals(200, idleHits, "两个候选时 P2C 必然选中低负载的 reference");
+        assertEquals(200, idleHits, "with two candidates, P2C must always pick the less loaded reference");
     }
 
     @Test
@@ -85,7 +85,7 @@ class AdaptiveLoadBalanceTest {
         List<Reference<String>> candidates = lb.selectCandidates(request);
         assertEquals(3, candidates.size());
         assertEquals("low", ((TestReference) candidates.get(0)).getName(),
-                "候选列表应按估算负载升序，低负载优先重试");
+                "candidates should be ordered by estimated load ascending, less loaded first for retry");
         assertEquals("mid", ((TestReference) candidates.get(1)).getName());
         assertEquals("high", ((TestReference) candidates.get(2)).getName());
     }
@@ -103,7 +103,7 @@ class AdaptiveLoadBalanceTest {
             lb.select(request);
         }
         assertEquals(Set.of("A", "C"), estimatorNames(),
-                "刷新后应清理已移除 reference 的统计数据，保留现存 reference");
+                "refresh should discard statistics of removed references and keep existing ones");
     }
 
     private Set<String> estimatorNames() throws Exception {

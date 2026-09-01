@@ -15,7 +15,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ShortestResponseLoadBalance 单元测试
+ * Unit tests for ShortestResponseLoadBalance
  */
 class ShortestResponseLoadBalanceTest {
 
@@ -38,7 +38,7 @@ class ShortestResponseLoadBalanceTest {
             assertTrue(selected.isAvailable());
             hit.add(((TestReference) selected).getName());
         }
-        assertEquals(3, hit.size(), "估算响应时间相同应按权重/随机命中所有 reference");
+        assertEquals(3, hit.size(), "with equal estimated response time, all references should be hit by weight/random");
     }
 
     @Test
@@ -56,7 +56,7 @@ class ShortestResponseLoadBalanceTest {
                 idleHits++;
             }
         }
-        assertTrue(idleHits > 100, "低负载 reference 应获得更多流量, idleHits=" + idleHits);
+        assertTrue(idleHits > 100, "the less loaded reference should receive more traffic, idleHits=" + idleHits);
     }
 
     @Test
@@ -72,7 +72,7 @@ class ShortestResponseLoadBalanceTest {
             lb.select(request);
         }
         assertEquals(Set.of("A", "C"), slideWindowNames(),
-                "刷新后应清理已移除 reference 的统计数据，保留现存 reference");
+                "refresh should discard statistics of removed references and keep existing ones");
     }
 
     private Set<String> slideWindowNames() throws Exception {

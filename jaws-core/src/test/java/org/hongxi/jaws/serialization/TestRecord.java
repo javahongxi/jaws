@@ -4,7 +4,7 @@ import java.io.Serializable;
 import java.util.List;
 
 /**
- * 序列化单元测试用的 Java Record
+ * Java Record for serialization unit tests
  */
 record TestRecord(String name, int value, List<String> tags) implements Serializable {
 }

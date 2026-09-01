@@ -11,7 +11,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * LeastActiveLoadBalance 单元测试
+ * Unit tests for LeastActiveLoadBalance
  */
 class LeastActiveLoadBalanceTest {
 
@@ -26,7 +26,7 @@ class LeastActiveLoadBalanceTest {
 
     @Test
     void selectShouldPickLeastActiveReference() {
-        /* A=10, B=1, C=5 — B 活跃数最少，应被选中 */
+        /* A=10, B=1, C=5 — B has the least active count and should be selected */
         TestReference refA = new TestReference("A", 10);
         TestReference refB = new TestReference("B", 1);
         TestReference refC = new TestReference("C", 5);
@@ -34,9 +34,9 @@ class LeastActiveLoadBalanceTest {
         lb.onRefresh(refs);
 
         /*
-         * 由于起始 index 是随机的，单次 select 不一定选 B。
-         * 但 B 的 activeCount 最小，只要被扫描到就一定会胜出。
-         * 多次调用，B 应被选中至少一次。
+         * Since the starting index is random, a single select may not pick B.
+         * But B has the smallest activeCount and always wins once scanned.
+         * Over multiple invocations, B should be selected at least once.
          */
         boolean bSelected = false;
         for (int i = 0; i < 200; i++) {
@@ -46,12 +46,12 @@ class LeastActiveLoadBalanceTest {
                 break;
             }
         }
-        assertTrue(bSelected, "活跃数最少的 B 应至少被选中一次");
+        assertTrue(bSelected, "B with the least active count should be selected at least once");
     }
 
     @Test
     void selectShouldNeverPickMostActiveWhenLessActiveExists() {
-        /* A=100, B=1 — 只要 B 被扫描到就会选 B 而非 A */
+        /* A=100, B=1 — B wins over A whenever B is scanned */
         TestReference refA = new TestReference("A", 100);
         TestReference refB = new TestReference("B", 1);
         List<Reference<String>> refs = new ArrayList<>(List.of(refA, refB));
@@ -60,9 +60,9 @@ class LeastActiveLoadBalanceTest {
         for (int i = 0; i < 200; i++) {
             Reference<String> selected = lb.select(request);
             String name = ((TestReference) selected).getName();
-            /* A 的 activeCount 远大于 B，只有当扫描窗口只包含 A 时才可能选 A，
-             * 但 MAX_REFERENCE_COUNT=10 > 2 个 reference，所以 B 总会被扫描到 */
-            assertEquals("B", name, "活跃数最少的 B 应始终被选中");
+            /* A's activeCount is much larger than B's; A can only be picked when the scan window
+             * contains A alone, but MAX_REFERENCE_COUNT=10 > 2 references, so B is always scanned */
+            assertEquals("B", name, "B with the least active count should always be selected");
         }
     }
 

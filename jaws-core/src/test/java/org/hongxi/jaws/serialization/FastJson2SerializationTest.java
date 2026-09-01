@@ -95,7 +95,7 @@ class FastJson2SerializationTest {
 
     @Test
     void serializeRecordRoundtrip() throws Exception {
-        /* fastjson2 JSONB 与 record + List 字段存在兼容性问题，此处使用不含集合字段的 record */
+        /* fastjson2 JSONB has compatibility issues with record + List fields, so use a record without collection fields here */
         record SimpleRecord(String name, int value) implements Serializable {}
 
         SimpleRecord original = new SimpleRecord("record-test", 200);
@@ -116,7 +116,7 @@ class FastJson2SerializationTest {
 
     @Test
     void serializeNestedRecordRoundtrip() throws Exception {
-        /* record 嵌套 record */
+        /* record nesting a record */
         record Inner(String msg) implements Serializable {}
         record Outer(String id, Inner inner) implements Serializable {}
 

@@ -6,7 +6,7 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 
 /**
- * 负载均衡单元测试用的 Reference 轻量级 stub
+ * Lightweight Reference stub for load balance unit tests
  */
 class TestReference implements Reference<String> {
 

@@ -21,11 +21,11 @@ import java.util.Objects;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * JawsCodec 往返编解码单元测试。
+ * Round-trip encode/decode unit tests for JawsCodec.
  * <p>
- * 覆盖请求/响应的 encode → decode 往返一致性、各 flag 消息类型
- * （request / response / void / exception）、协议头校验失败路径，
- * 以及 serializationId 嵌入 flag 高 5 位后的提取与透传。
+ * Covers encode → decode round-trip consistency for request/response, all flag message types
+ * (request / response / void / exception), protocol header validation failure paths,
+ * and the extraction and propagation of serializationId embedded in the flag high 5 bits.
  */
 class JawsCodecTest {
 

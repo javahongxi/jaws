@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 验证 RouterChain 的过滤结果真正参与负载均衡选择（回归测试）
+ * Verifies that RouterChain filtering results actually participate in load balance selection (regression test)
  */
 class RouterAwareLoadBalanceTest {
 
@@ -30,7 +30,7 @@ class RouterAwareLoadBalanceTest {
         for (int i = 0; i < 200; i++) {
             Reference<String> selected = lb.select(taggedRequest);
             assertEquals("gray", ((TestReference) selected).getName(),
-                    "带 tag 的请求只能选中匹配 tag 的 reference");
+                    "a tagged request can only select the reference with the matching tag");
         }
     }
 
@@ -45,7 +45,7 @@ class RouterAwareLoadBalanceTest {
         assertFalse(candidates.isEmpty());
         for (Reference<String> candidate : candidates) {
             assertEquals("gray", ((TestReference) candidate).getName(),
-                    "候选列表只能包含匹配 tag 的 reference");
+                    "candidates can only contain references with the matching tag");
         }
     }
 
@@ -63,7 +63,7 @@ class RouterAwareLoadBalanceTest {
             hitStable |= name.startsWith("stable");
             hitGray |= "gray".equals(name);
         }
-        assertTrue(hitStable && hitGray, "无 tag 请求应能命中所有 reference");
+        assertTrue(hitStable && hitGray, "an untagged request should be able to hit all references");
     }
 
     /**

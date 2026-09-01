@@ -16,7 +16,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * RandomLoadBalance 单元测试
+ * Unit tests for RandomLoadBalance
  */
 class RandomLoadBalanceTest {
 
@@ -49,7 +49,7 @@ class RandomLoadBalanceTest {
         for (int i = 0; i < 500; i++) {
             hit.add(((TestReference) lb.select(request)).getName());
         }
-        assertEquals(3, hit.size(), "随机策略在足够次数下应命中所有 reference");
+        assertEquals(3, hit.size(), "random strategy should hit all references given enough invocations");
     }
 
     @Test
@@ -105,7 +105,7 @@ class RandomLoadBalanceTest {
             assertTrue(name.equals("warming") || name.equals("normal"));
             hitNormal |= "normal".equals(name);
         }
-        assertTrue(hitNormal, "权重路径下应能命中 normal reference");
+        assertTrue(hitNormal, "the normal reference should be reachable on the weighted path");
     }
 
     private List<Reference<String>> createRefs(String... names) {

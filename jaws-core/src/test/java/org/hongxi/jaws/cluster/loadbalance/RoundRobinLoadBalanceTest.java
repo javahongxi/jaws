@@ -13,7 +13,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * RoundRobinLoadBalance 单元测试
+ * Unit tests for RoundRobinLoadBalance
  */
 class RoundRobinLoadBalanceTest {
 
@@ -42,12 +42,12 @@ class RoundRobinLoadBalanceTest {
         List<Reference<String>> refs = createRefs("A", "B", "C");
         lb.onRefresh(refs);
 
-        /* 足够多的调用，确保所有 reference 都被选中 */
+        /* enough invocations to ensure every reference is selected */
         Set<String> hit = new HashSet<>();
         for (int i = 0; i < 300; i++) {
             hit.add(((TestReference) lb.select(request)).getName());
         }
-        assertEquals(3, hit.size(), "轮询策略应命中所有 reference");
+        assertEquals(3, hit.size(), "round-robin should hit all references");
     }
 
     @Test
@@ -62,16 +62,16 @@ class RoundRobinLoadBalanceTest {
             counts[name.charAt(0) - 'A']++;
         }
 
-        /* 轮询应均匀分配，每个约 100 次 */
+        /* round-robin should distribute evenly, about 100 each */
         for (int count : counts) {
-            assertEquals(100, count, "轮询策略应均匀分配调用次数");
+            assertEquals(100, count, "round-robin should distribute invocations evenly");
         }
     }
 
     @Test
     void selectShouldSkipUnavailableReference() {
         List<Reference<String>> refs = createRefs("A", "B", "C");
-        /* 将第一个创建的 reference 标记为不可用 */
+        /* mark the first created reference as unavailable */
         ((TestReference) refs.get(0)).setAvailable(false);
         lb.onRefresh(refs);
 
@@ -86,11 +86,11 @@ class RoundRobinLoadBalanceTest {
         List<Reference<String>> refs = createRefs("A", "B");
         lb.onRefresh(refs);
 
-        /* 平滑加权轮询下，等权重两个节点应严格交替，不出现连续命中 */
+        /* with smooth weighted round-robin, two equal-weight nodes should strictly alternate with no consecutive hits */
         String previous = null;
         for (int i = 0; i < 100; i++) {
             String name = ((TestReference) lb.select(request)).getName();
-            assertNotEquals(previous, name, "平滑轮询不应连续命中同一 reference");
+            assertNotEquals(previous, name, "smooth round-robin should not hit the same reference consecutively");
             previous = name;
         }
     }

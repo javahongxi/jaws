@@ -13,7 +13,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ConsistentHashLoadBalance 单元测试
+ * Unit tests for ConsistentHashLoadBalance
  */
 class ConsistentHashLoadBalanceTest {
 
@@ -32,10 +32,10 @@ class ConsistentHashLoadBalanceTest {
         Request request = mockRequestWithArgs("hello", "world");
         Reference<String> first = lb.select(request);
 
-        /* 相同参数应始终哈希到同一个 reference */
+        /* same arguments should always hash to the same reference */
         for (int i = 0; i < 100; i++) {
             Reference<String> selected = lb.select(request);
-            assertSame(first, selected, "相同参数的请求应始终选中同一个 reference");
+            assertSame(first, selected, "requests with the same arguments should always select the same reference");
         }
     }
 
@@ -45,12 +45,12 @@ class ConsistentHashLoadBalanceTest {
         lb.onRefresh(refs);
 
         Set<Reference<String>> selected = new HashSet<>();
-        /* 用大量不同的参数，验证哈希分布能命中多个 reference */
+        /* use a large number of distinct arguments to verify the hash distribution hits multiple references */
         for (int i = 0; i < 1000; i++) {
             Request request = mockRequestWithArgs("arg-" + i);
             selected.add(lb.select(request));
         }
-        assertTrue(selected.size() > 1, "不同参数应能哈希到不同的 reference");
+        assertTrue(selected.size() > 1, "different arguments should hash to different references");
     }
 
     @Test
@@ -70,22 +70,22 @@ class ConsistentHashLoadBalanceTest {
         List<Reference<String>> refs = createRefs("A", "B", "C");
         lb.onRefresh(refs);
 
-        /* 先确定某参数哈希到哪个 reference */
+        /* first determine which reference a given argument hashes to */
         Request request = mockRequestWithArgs("fallback-test");
         Reference<String> preferred = lb.select(request);
 
-        /* 将该 reference 标记为不可用 */
+        /* mark that reference as unavailable */
         ((TestReference) preferred).setAvailable(false);
 
-        /* 相同参数应选中另一个可用的 reference */
+        /* the same arguments should select another available reference */
         Reference<String> fallback = lb.select(request);
-        assertNotSame(preferred, fallback, "首选 reference 不可用时应选中其他 reference");
+        assertNotSame(preferred, fallback, "when the preferred reference is unavailable, another reference should be selected");
         assertTrue(fallback.isAvailable());
     }
 
     @Test
     void removingProviderShouldKeepMostMappings() {
-        /* 注意：onRefresh 会就地打乱入参列表，必须持有原始对象引用而非按下标取 */
+        /* note: onRefresh shuffles the input list in place, so keep original object references instead of indexing */
         TestReference a = new TestReference("A");
         TestReference b = new TestReference("B");
         TestReference c = new TestReference("C");
@@ -95,13 +95,13 @@ class ConsistentHashLoadBalanceTest {
         refs.add(c);
         lb.onRefresh(refs);
 
-        /* 记录一批请求键各自命中的 reference */
+        /* record which reference each request key hits */
         Reference<String>[] before = new Reference[200];
         for (int i = 0; i < 200; i++) {
             before[i] = lb.select(mockRequestWithArgs("key-" + i));
         }
 
-        /* 移除 B 后，原本命中 A/C 的键应全部保持不变（一致性哈希的核心性质） */
+        /* after removing B, keys that originally hit A/C should all remain unchanged (core property of consistent hashing) */
         List<Reference<String>> remaining = new ArrayList<>();
         remaining.add(a);
         remaining.add(c);
@@ -112,7 +112,7 @@ class ConsistentHashLoadBalanceTest {
                 continue;
             }
             assertSame(before[i], lb.select(mockRequestWithArgs("key-" + i)),
-                    "未下线节点承载的请求键不应被重新映射");
+                    "request keys served by non-removed nodes should not be remapped");
         }
     }
 
@@ -131,11 +131,11 @@ class ConsistentHashLoadBalanceTest {
         List<Reference<String>> refs = createRefs("A", "B", "C");
         lb.onRefresh(refs);
 
-        /* arguments 为 null 时使用 request 自身的 hashCode */
+        /* when arguments is null, the request's own hashCode is used */
         Request request = mockRequestWithArgs((Object[]) null);
         Reference<String> first = lb.select(request);
 
-        /* 同一个 request 对象应返回相同结果 */
+        /* the same request object should return the same result */
         for (int i = 0; i < 50; i++) {
             assertSame(first, lb.select(request));
         }
