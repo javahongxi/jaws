@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Failover cluster: retries on failure by selecting a different reference.
@@ -115,5 +116,59 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
             throw jae;
         }
         throw new JawsServiceException("FailoverCluster call failed, request=" + request, e);
+    }
+
+    @Override
+    public CompletableFuture<Response> callAsync(Request request) {
+        if (!available.get()) {
+            return CompletableFuture.failedFuture(new JawsServiceException(
+                    "Cluster not available, interface=" + getInterface(),
+                    JawsErrorCode.SERVICE_NOT_FOUND, false));
+        }
+
+        List<Reference<T>> references = selectReferences(request);
+        if (references.isEmpty()) {
+            return CompletableFuture.completedFuture(RpcUtils.buildErrorResponse(request,
+                    new JawsServiceException(String.format(
+                            "FailoverCluster No references for request:%s, loadBalance:%s",
+                            request, loadBalance))));
+        }
+
+        URL refUrl = references.get(0).getUrl();
+        int urlRetries = refUrl.getMethodParameter(request.getMethodName(), request.getParamDesc(),
+                UrlParam.Cluster.RETRIES.getName(), UrlParam.Cluster.RETRIES.intValue());
+        int tryCount = resolveRetries(request, urlRetries);
+        if (tryCount < 0) {
+            tryCount = 0;
+        }
+
+        return doCallAsync(request, references, tryCount, 0);
+    }
+
+    private CompletableFuture<Response> doCallAsync(Request request, List<Reference<T>> references,
+                                                     int maxRetries, int attempt) {
+        Reference<T> refer = references.get(attempt % references.size());
+        ((DefaultRequest) request).setRetries(attempt);
+        RpcContext.getContext().setServerUrl(refer.getUrl());
+
+        CompletableFuture<Response> responseFuture;
+        try {
+            responseFuture = refer.callAsync(request);
+        } catch (Exception e) {
+            responseFuture = CompletableFuture.completedFuture(
+                    RpcUtils.buildErrorResponse(request, e));
+        }
+
+        return responseFuture.thenCompose(response -> {
+            Throwable throwable = response.getThrowable();
+            if (throwable == null) {
+                return CompletableFuture.completedFuture(response);
+            }
+            if (ExceptionUtils.isBizException(throwable) || attempt >= maxRetries) {
+                return CompletableFuture.completedFuture(response);
+            }
+            log.warn("FailoverCluster callAsync failed, retrying: {}", request, throwable);
+            return doCallAsync(request, references, maxRetries, attempt + 1);
+        });
     }
 }

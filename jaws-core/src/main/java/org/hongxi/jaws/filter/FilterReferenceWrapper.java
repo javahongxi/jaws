@@ -43,6 +43,14 @@ class FilterReferenceWrapper<T> implements Reference<T> {
     }
 
     @Override
+    public CompletableFuture<Response> callAsync(Request request) {
+        if (isFilterDisabled(request.getInterfaceName())) {
+            return original.callAsync(request);
+        }
+        return filter.filter(original, request);
+    }
+
+    @Override
     public Flow.Publisher<Object> callStream(Request request) {
         return original.callStream(request);
     }

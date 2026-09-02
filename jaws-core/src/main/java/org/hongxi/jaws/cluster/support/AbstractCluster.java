@@ -20,11 +20,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * reference management, and load balance wiring.
  * <p>
  * Subclasses implement {@link #call} to define the fault-tolerance
- * strategy (failover, failfast, failback, etc.).
+ * strategy (failover, failfast, etc.).
  *
  * @see FailoverCluster
  * @see FailfastCluster
- * @see FailbackCluster
  */
 public abstract class AbstractCluster<T> implements Cluster<T> {
 
@@ -108,11 +107,6 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
     @Override
     public List<Reference<T>> getReferences() {
         return references;
-    }
-
-    @Override
-    public LoadBalance<T> getLoadBalance() {
-        return loadBalance;
     }
 
     @Override

@@ -115,39 +115,33 @@ public class AbstractReferenceHandler<T> {
             request.setAttachment(UrlParam.Identity.APPLICATION.getName(), cluster.getUrl().getApplication());
             request.setAttachment(UrlParam.Identity.MODULE.getName(), cluster.getUrl().getModule());
 
-            try {
-                CompletableFuture<Response> responseFuture = cluster.callAsync(request);
-                responseFuture.whenComplete((response, t) -> {
-                    if (t == null) {
-                        if (response.getThrowable() != null) {
-                            resultFuture.completeExceptionally(response.getThrowable());
-                        } else {
-                            resultFuture.complete(response.getValue());
-                        }
+            CompletableFuture<Response> responseFuture = cluster.callAsync(request);
+            responseFuture.whenComplete((response, t) -> {
+                if (t == null) {
+                    Throwable throwable = response.getThrowable();
+                    if (throwable == null) {
+                        resultFuture.complete(response.getValue());
+                    } else if (ExceptionUtils.isBizException(throwable)) {
+                        // biz exceptions always propagate, regardless of throwException
+                        resultFuture.completeExceptionally(throwable);
+                    } else if (!cluster.getUrl().getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
+                        resultFuture.complete(response.getRawValue());
                     } else {
-                        Throwable ex = (t instanceof CompletionException ce) ? ce.getCause() : t;
+                        resultFuture.completeExceptionally(throwable);
+                    }
+                } else {
+                    Throwable ex = (t instanceof CompletionException ce) ? ce.getCause() : t;
+                    if (ExceptionUtils.isBizException(ex)) {
+                        resultFuture.completeExceptionally(ex);
+                    } else if (ex != null && !cluster.getUrl().getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
+                        resultFuture.complete(null);
+                    } else {
                         resultFuture.completeExceptionally(ex != null ? ex
                                 : new JawsServiceException("response future failed"));
                     }
-                });
-                return resultFuture;
-            } catch (RuntimeException e) {
-                if (ExceptionUtils.isBizException(e)) {
-                    Throwable t = e.getCause();
-                    if (t instanceof Exception) {
-                        resultFuture.completeExceptionally(t);
-                    } else {
-                        String msg = t == null
-                                ? "biz exception cause is null, original error: " + e.getMessage()
-                                : "biz exception cause is a non-Exception Throwable: "
-                                        + t.getClass().getName() + ", message: " + t.getMessage();
-                        resultFuture.completeExceptionally(new JawsServiceException(msg));
-                    }
-                } else {
-                    resultFuture.completeExceptionally(e);
                 }
-                return resultFuture;
-            }
+            });
+            return resultFuture;
         }
 
         resultFuture.completeExceptionally(new JawsServiceException(

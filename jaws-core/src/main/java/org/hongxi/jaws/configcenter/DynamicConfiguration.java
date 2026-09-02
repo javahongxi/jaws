@@ -17,8 +17,6 @@ import org.hongxi.jaws.rpc.URL;
  * When a remote config center (e.g., Nacos) is available, the registry module
  * automatically initializes and installs a remote implementation via
  * {@link #init(URL)} during registry creation.
- * <p>
- * Created by shenhongxi on 2026/8/11.
  *
  * @see LocalDynamicConfiguration
  */
@@ -28,11 +26,9 @@ public interface DynamicConfiguration {
     /**
      * Initialize this configuration with a registry URL.
      * <p>
-     * Called by the registry module after creating the registry, allowing
+     * Called by the registry factory after creating the registry, allowing
      * remote implementations (e.g., Nacos, Zookeeper) to establish their
      * connections using the same cluster info.
-     * <p>
-     * Default implementation is a no-op (for local/in-memory configs).
      *
      * @param registryUrl the registry URL containing connection info
      */
@@ -94,25 +90,6 @@ public interface DynamicConfiguration {
         }
         try {
             return Integer.parseInt(value.trim());
-        } catch (NumberFormatException e) {
-            return defaultValue;
-        }
-    }
-
-    /**
-     * Get long configuration value by key with a default.
-     *
-     * @param key          the configuration key
-     * @param defaultValue default value if the key does not exist or parsing fails
-     * @return the parsed long value, or defaultValue
-     */
-    default long getLongConfig(String key, long defaultValue) {
-        String value = getConfig(key);
-        if (value == null || value.isEmpty()) {
-            return defaultValue;
-        }
-        try {
-            return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {
             return defaultValue;
         }

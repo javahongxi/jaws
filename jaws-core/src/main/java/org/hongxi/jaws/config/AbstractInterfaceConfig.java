@@ -124,7 +124,7 @@ public class AbstractInterfaceConfig extends AbstractConfig {
     protected String loadBalance;
 
     /**
-     * Retry policy on failure (e.g., failover, failfast, failback).
+     * Retry policy on failure (e.g., failover, failfast).
      */
     protected String retryPolicy;
 

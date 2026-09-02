@@ -164,7 +164,6 @@ public final class UrlParam {
     public static final class Registry {
         public static final Def<Long> RETRY_PERIOD = new Def<>("registryRetryPeriod", 30 * 1000L);
         public static final Def<Integer> SESSION_TIMEOUT = new Def<>("registrySessionTimeout", 60 * 1000);
-        public static final Def<Integer> FAILBACK_PERIOD = new Def<>("failbackPeriod", 5000);
         public static final Def<Boolean> LOCAL_FILE_CACHE_ENABLED = new Def<>("cacheEnabled", true);
         public static final Def<String> CACHE_FILE = new Def<>("cacheFile", "");
 

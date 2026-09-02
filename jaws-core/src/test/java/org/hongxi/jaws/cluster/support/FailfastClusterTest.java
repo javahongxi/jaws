@@ -11,8 +11,12 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -59,19 +63,29 @@ class FailfastClusterTest {
     private static class StubReference implements Reference<String> {
         private final URL url;
         private final Response response;
-        private final RuntimeException exception;
+        private final RuntimeException syncException;
+        private final CompletableFuture<Response> asyncFuture;
         private int callCount = 0;
 
         StubReference(URL url, Response response) {
             this.url = url;
             this.response = response;
-            this.exception = null;
+            this.syncException = null;
+            this.asyncFuture = null;
         }
 
         StubReference(URL url, RuntimeException exception) {
             this.url = url;
             this.response = null;
-            this.exception = exception;
+            this.syncException = exception;
+            this.asyncFuture = null;
+        }
+
+        StubReference(URL url, CompletableFuture<Response> asyncFuture) {
+            this.url = url;
+            this.response = null;
+            this.syncException = null;
+            this.asyncFuture = asyncFuture;
         }
 
         @Override public URL getUrl() { return url; }
@@ -86,10 +100,22 @@ class FailfastClusterTest {
         @Override
         public Response call(Request request) {
             callCount++;
-            if (exception != null) {
-                throw exception;
+            if (syncException != null) {
+                throw syncException;
             }
             return response;
+        }
+
+        @Override
+        public CompletableFuture<Response> callAsync(Request request) {
+            callCount++;
+            if (asyncFuture != null) {
+                return asyncFuture;
+            }
+            if (syncException != null) {
+                throw syncException;
+            }
+            return CompletableFuture.completedFuture(response);
         }
 
         int getCallCount() { return callCount; }
@@ -149,6 +175,56 @@ class FailfastClusterTest {
 
         assertTrue(thrown.getMessage().contains("FailfastCluster call failed"));
         assertEquals(ex, thrown.getCause());
+        assertEquals(1, ref.getCallCount());
+    }
+
+    /* ==================== callAsync tests ==================== */
+
+    @Test
+    void callAsyncShouldReturnResponseFromReference() {
+        StubResponse expected = new StubResponse();
+        StubReference ref = new StubReference(testUrl, expected);
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailfastCluster<String> cluster = newCluster(lb);
+
+        CompletableFuture<Response> future = cluster.callAsync(request);
+
+        assertNotNull(future);
+        assertSame(expected, future.join());
+        assertEquals(1, ref.getCallCount());
+    }
+
+    @Test
+    void callAsyncShouldPropagateThrowableFromResponse() {
+        RuntimeException ex = new RuntimeException("async fail");
+        org.hongxi.jaws.rpc.DefaultResponse errorResp = new org.hongxi.jaws.rpc.DefaultResponse(1L);
+        errorResp.setThrowable(ex);
+        StubReference ref = new StubReference(testUrl, CompletableFuture.completedFuture(errorResp));
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailfastCluster<String> cluster = newCluster(lb);
+
+        CompletableFuture<Response> future = cluster.callAsync(request);
+        Response result = future.join();
+
+        assertSame(ex, result.getThrowable());
+        assertEquals(1, ref.getCallCount());
+    }
+
+    @Test
+    void callAsyncShouldHandleSyncExceptionFromReference() {
+        RuntimeException ex = new RuntimeException("sync throw");
+        StubReference ref = new StubReference(testUrl, ex);
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailfastCluster<String> cluster = newCluster(lb);
+
+        // callAsync catches the sync throw and returns completedFuture(errorResponse)
+        CompletableFuture<Response> future = cluster.callAsync(request);
+        Response result = future.join();
+
+        assertNotNull(result.getThrowable());
         assertEquals(1, ref.getCallCount());
     }
 

@@ -14,6 +14,8 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * Failfast cluster: fails immediately on the first error without retrying.
  */
@@ -46,6 +48,24 @@ public class FailfastCluster<T> extends AbstractCluster<T> {
                 throw jae;
             }
             throw new JawsServiceException("FailfastCluster call failed, request=" + request, e);
+        }
+    }
+
+    @Override
+    public CompletableFuture<Response> callAsync(Request request) {
+        if (!available.get()) {
+            return CompletableFuture.failedFuture(new JawsServiceException(
+                    "Cluster not available, interface=" + getInterface(),
+                    JawsErrorCode.SERVICE_NOT_FOUND, false));
+        }
+
+        try {
+            Reference<T> refer = loadBalance.select(request);
+            RpcContext.getContext().setServerUrl(refer.getUrl());
+            return refer.callAsync(request);
+        } catch (Exception e) {
+            return CompletableFuture.completedFuture(
+                    RpcUtils.buildErrorResponse(request, e));
         }
     }
 }

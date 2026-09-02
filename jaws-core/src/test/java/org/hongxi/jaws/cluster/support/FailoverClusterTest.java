@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,13 +31,21 @@ class FailoverClusterTest {
 
     private static class StubResponse implements Response {
         private final Object value;
+        private final Throwable throwable;
 
-        StubResponse() { this("ok"); }
-        StubResponse(Object value) { this.value = value; }
+        StubResponse() { this("ok", null); }
+        StubResponse(Object value) { this(value, null); }
+        StubResponse(Object value, Throwable throwable) { this.value = value; this.throwable = throwable; }
 
-        @Override public Object getValue() { return value; }
+        @Override public Object getValue() {
+            if (throwable != null) {
+                throw throwable instanceof RuntimeException re ? re
+                        : new org.hongxi.jaws.exception.JawsServiceException(throwable.getMessage(), throwable);
+            }
+            return value;
+        }
         @Override public Object getRawValue() { return value; }
-        @Override public Throwable getThrowable() { return null; }
+        @Override public Throwable getThrowable() { return throwable; }
         @Override public long getRequestId() { return 1L; }
         @Override public long getProcessTime() { return 0; }
         public void setProcessTime(long time) {}
@@ -59,6 +68,7 @@ class FailoverClusterTest {
         private final AtomicInteger callCount = new AtomicInteger(0);
         private final List<Response> responses = new ArrayList<>();
         private final List<RuntimeException> exceptions = new ArrayList<>();
+        private boolean asyncMode = false;
 
         StubReference(URL url) { this.url = url; }
 
@@ -71,6 +81,12 @@ class FailoverClusterTest {
         StubReference thenThrow(RuntimeException ex) {
             responses.add(null);
             exceptions.add(ex);
+            return this;
+        }
+
+        /** Enable async mode: callAsync returns completedFuture with response/throwable instead of throwing */
+        StubReference asyncMode() {
+            this.asyncMode = true;
             return this;
         }
 
@@ -95,6 +111,25 @@ class FailoverClusterTest {
                 return responses.get(idx);
             }
             return new StubResponse();
+        }
+
+        @Override
+        public CompletableFuture<Response> callAsync(Request request) {
+            int idx = callCount.getAndIncrement();
+            if (asyncMode) {
+                // In async mode, return completedFuture with throwable instead of throwing
+                Response resp;
+                if (idx < responses.size() && responses.get(idx) != null) {
+                    resp = responses.get(idx);
+                } else if (idx < exceptions.size() && exceptions.get(idx) != null) {
+                    resp = new StubResponse(null, exceptions.get(idx));
+                } else {
+                    resp = new StubResponse();
+                }
+                return CompletableFuture.completedFuture(resp);
+            }
+            // Sync mode: delegate to call()
+            return CompletableFuture.completedFuture(call(request));
         }
     }
 
@@ -260,6 +295,99 @@ class FailoverClusterTest {
         cluster.call(request);
 
         assertEquals(url, org.hongxi.jaws.rpc.RpcContext.getContext().getServerUrl());
+    }
+
+    /* ==================== callAsync tests ==================== */
+
+    @Test
+    void callAsyncFirstCallSucceeds() {
+        URL url = urlWithRetries(2);
+        StubReference ref = new StubReference(url)
+                .asyncMode()
+                .thenReturn(new StubResponse("async-result"));
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailoverCluster<String> cluster = newCluster(url, lb);
+
+        Response result = cluster.callAsync(request).join();
+
+        assertEquals("async-result", result.getValue());
+        assertEquals(1, ref.getCallCount());
+    }
+
+    @Test
+    void callAsyncRetryThenSucceed() {
+        URL url = urlWithRetries(2);
+        StubReference ref = new StubReference(url)
+                .asyncMode()
+                .thenThrow(new RuntimeException("timeout"))
+                .thenReturn(new StubResponse("retry-ok"));
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailoverCluster<String> cluster = newCluster(url, lb);
+
+        Response result = cluster.callAsync(request).join();
+
+        assertEquals("retry-ok", result.getValue());
+        assertEquals(2, ref.getCallCount());
+    }
+
+    @Test
+    void callAsyncAllRetriesFailShouldReturnLastErrorResponse() {
+        URL url = urlWithRetries(1);
+        RuntimeException firstEx = new RuntimeException("err-1");
+        RuntimeException secondEx = new RuntimeException("err-2");
+        StubReference ref = new StubReference(url)
+                .asyncMode()
+                .thenThrow(firstEx)
+                .thenThrow(secondEx);
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailoverCluster<String> cluster = newCluster(url, lb);
+
+        // callAsync returns completedFuture with throwable set (not failed future)
+        Response result = cluster.callAsync(request).join();
+
+        assertEquals(secondEx, result.getThrowable());
+        assertEquals(2, ref.getCallCount());
+    }
+
+    @Test
+    void callAsyncBizExceptionShouldNotRetry() {
+        URL url = urlWithRetries(3);
+        JawsBizException bizEx = new JawsBizException("biz error");
+        StubReference ref = new StubReference(url)
+                .asyncMode()
+                .thenThrow(bizEx);
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailoverCluster<String> cluster = newCluster(url, lb);
+
+        Response result = cluster.callAsync(request).join();
+
+        assertSame(bizEx, result.getThrowable());
+        assertEquals(1, ref.getCallCount());
+    }
+
+    @Test
+    void callAsyncMultipleReferencesShouldRoundRobin() {
+        URL url1 = urlWithRetries(2);
+        URL url2 = new URL("jaws", "127.0.0.2", 8080, "testService", url1.getParameters());
+        StubReference ref1 = new StubReference(url1)
+                .asyncMode()
+                .thenThrow(new RuntimeException("fail-1"));
+        StubReference ref2 = new StubReference(url2)
+                .asyncMode()
+                .thenReturn(new StubResponse("from-ref2"));
+        StubLoadBalance lb = new StubLoadBalance(ref1, ref2);
+        StubRequest request = new StubRequest();
+        FailoverCluster<String> cluster = newCluster(url1, lb);
+
+        Response result = cluster.callAsync(request).join();
+
+        assertEquals("from-ref2", result.getValue());
+        assertEquals(1, ref1.getCallCount());
+        assertEquals(1, ref2.getCallCount());
     }
 
 
