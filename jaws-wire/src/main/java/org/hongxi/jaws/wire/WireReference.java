@@ -6,7 +6,6 @@ import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.AbstractReference;
 import org.hongxi.jaws.rpc.DefaultRequest;
-import java.util.concurrent.CompletableFuture;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
@@ -104,15 +103,6 @@ public class WireReference<T> extends AbstractReference<T> {
 
         WireClient wireClient = (WireClient) client;
         return wireClient.requestStream(streamRequest, methodInfo.responseParser());
-    }
-
-    @Override
-    protected void decrActiveCount(Response response) {
-        if (response instanceof CompletableFuture<?> cf) {
-            cf.whenComplete((r, t) -> activeCallCount.decrementAndGet());
-        } else {
-            activeCallCount.decrementAndGet();
-        }
     }
 
     @Override

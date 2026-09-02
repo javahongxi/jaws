@@ -1,7 +1,6 @@
 package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
@@ -102,10 +101,7 @@ public class AbstractReferenceHandler<T> {
      * The returned CompletableFuture completes when the RPC response arrives.
      */
     CompletableFuture<Object> invokeAsync(Request request) {
-        RpcContext context = RpcContext.getContext();
-        context.putAttribute(JawsConstants.ASYNC_FLAG, true);
-
-        Map<String, String> attachments = context.getRpcAttachments();
+        Map<String, String> attachments = RpcContext.getContext().getRpcAttachments();
         if (!attachments.isEmpty()) {
             for (Map.Entry<String, String> entry : attachments.entrySet()) {
                 request.setAttachment(entry.getKey(), entry.getValue());
@@ -120,25 +116,20 @@ public class AbstractReferenceHandler<T> {
             request.setAttachment(UrlParam.Identity.MODULE.getName(), cluster.getUrl().getModule());
 
             try {
-                Response response = cluster.call(request);
-                if (response instanceof CompletableFuture<?> cf) {
-                    cf.whenComplete((r, t) -> {
-                        if (t == null) {
-                            resultFuture.complete(((Response) r).getValue());
+                CompletableFuture<Response> responseFuture = cluster.callAsync(request);
+                responseFuture.whenComplete((response, t) -> {
+                    if (t == null) {
+                        if (response.getThrowable() != null) {
+                            resultFuture.completeExceptionally(response.getThrowable());
                         } else {
-                            Throwable ex = (t instanceof CompletionException ce) ? ce.getCause() : t;
-                            resultFuture.completeExceptionally(ex != null ? ex
-                                    : new JawsServiceException("response future failed"));
+                            resultFuture.complete(response.getValue());
                         }
-                    });
-                } else {
-                    // Synchronous response (e.g., injvm or cached)
-                    if (response.getThrowable() != null) {
-                        resultFuture.completeExceptionally(response.getThrowable());
                     } else {
-                        resultFuture.complete(response.getValue());
+                        Throwable ex = (t instanceof CompletionException ce) ? ce.getCause() : t;
+                        resultFuture.completeExceptionally(ex != null ? ex
+                                : new JawsServiceException("response future failed"));
                     }
-                }
+                });
                 return resultFuture;
             } catch (RuntimeException e) {
                 if (ExceptionUtils.isBizException(e)) {
@@ -170,9 +161,7 @@ public class AbstractReferenceHandler<T> {
      * {@code callStream} method, and return the resulting {@link Flow.Publisher}.
      */
     Flow.Publisher<Object> invokeStream(Request request) throws Throwable {
-        RpcContext context = RpcContext.getContext();
-
-        Map<String, String> attachments = context.getRpcAttachments();
+        Map<String, String> attachments = RpcContext.getContext().getRpcAttachments();
         if (!attachments.isEmpty()) {
             for (Map.Entry<String, String> entry : attachments.entrySet()) {
                 request.setAttachment(entry.getKey(), entry.getValue());

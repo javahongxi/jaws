@@ -25,8 +25,6 @@ public class JawsConstants {
     public static final String ENDPOINT_TYPE_SERVICE = "service";
     public static final String ENDPOINT_TYPE_REFERENCE = "reference";
 
-    public static final String ASYNC_FLAG = "async";
-
     /** Attachment key for tag-based routing (gray release). */
     public static final String TAG_ATTACHMENT = "tag";
 

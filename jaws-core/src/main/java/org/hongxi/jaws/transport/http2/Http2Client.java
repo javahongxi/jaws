@@ -8,7 +8,6 @@ import io.netty.handler.codec.http2.DefaultHttp2ResetFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
@@ -21,7 +20,6 @@ import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.ResponseFuture;
-import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.transport.StreamPublisher;
@@ -74,12 +72,6 @@ public class Http2Client extends AbstractHttp2Client {
         if (!isAvailable()) {
             throw new JawsServiceException("HTTP/2 channel is not available: url="
                     + url.getUri() + RpcUtils.toString(request));
-        }
-
-        boolean async = false;
-        Object asyncFlag = RpcContext.getContext().getAttribute(JawsConstants.ASYNC_FLAG);
-        if (asyncFlag instanceof Boolean b) {
-            async = b;
         }
 
         int urlTimeout = url.getMethodParameter(
@@ -148,7 +140,7 @@ public class Http2Client extends AbstractHttp2Client {
                     + url.getUri() + " " + RpcUtils.toString(request), e);
         }
 
-        return async ? responseFuture : new DefaultResponse(responseFuture);
+        return responseFuture;
     }
 
     /**

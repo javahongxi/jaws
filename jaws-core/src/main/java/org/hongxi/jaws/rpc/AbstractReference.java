@@ -59,9 +59,14 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
         long startTime = System.nanoTime();
         try {
             response = doCall(request);
+            // Synchronous path: if the transport returned a pending future,
+            // block here so that the finally-block stats are accurate.
+            if (response instanceof DefaultResponseFuture) {
+                response = new DefaultResponse(response);
+            }
             return response;
         } finally {
-            decrActiveCount(response);
+            decrActiveCount();
             if (response != null && response.getThrowable() == null) {
                 long elapsed = System.nanoTime() - startTime;
                 succeededElapsed.addAndGet(elapsed);
@@ -84,7 +89,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
         try {
             response = doCall(request);
         } catch (Exception e) {
-            decrActiveCount(null);
+            decrActiveCount();
             return CompletableFuture.failedFuture(e);
         }
 
@@ -92,7 +97,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
         // runs when the network layer completes the future.
         if (response instanceof CompletableFuture<?> cf) {
             return cf.whenComplete((r, t) -> {
-                decrActiveCount(response);
+                decrActiveCount();
                 if (t == null) {
                     long elapsed = System.nanoTime() - startTime;
                     succeededElapsed.addAndGet(elapsed);
@@ -101,7 +106,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
             }).thenApply(r -> (Response) r);
         }
 
-        decrActiveCount(response);
+        decrActiveCount();
         if (response.getThrowable() == null) {
             long elapsed = System.nanoTime() - startTime;
             succeededElapsed.addAndGet(elapsed);
@@ -119,7 +124,7 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
         activeCallCount.incrementAndGet();
     }
 
-    protected void decrActiveCount(Response response) {
+    protected void decrActiveCount() {
         activeCallCount.decrementAndGet();
     }
 

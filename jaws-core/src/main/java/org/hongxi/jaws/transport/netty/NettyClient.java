@@ -9,18 +9,15 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.transport.ChannelState;
-import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.ResponseFuture;
-import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractClient;
 import org.hongxi.jaws.transport.Channel;
@@ -77,13 +74,6 @@ public class NettyClient extends AbstractClient {
                     + url.getUri() + RpcUtils.toString(request));
         }
 
-        boolean async = false;
-        Object asyncFlag = RpcContext.getContext().getAttribute(JawsConstants.ASYNC_FLAG);
-        if (asyncFlag instanceof Boolean b) {
-            async = b;
-        }
-
-        Response response;
         try {
             if (!channel.isAvailable()) {
                 channel.reconnect();
@@ -92,7 +82,7 @@ public class NettyClient extends AbstractClient {
                 throw new JawsServiceException("NettyChannel is not available: url="
                         + url.getUri() + RpcUtils.toString(request));
             }
-            response = channel.request(request);
+            return channel.request(request);
         } catch (Exception e) {
             log.error("request failed: url={} {}, {}", url.getUri(),
                     RpcUtils.toString(request), e.getMessage());
@@ -104,8 +94,6 @@ public class NettyClient extends AbstractClient {
                         url.getUri() + " " + RpcUtils.toString(request), e);
             }
         }
-
-        return async ? response : new DefaultResponse(response);
     }
 
     @Override
