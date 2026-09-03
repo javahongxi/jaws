@@ -1,2 +1,3 @@
 org.hongxi.jaws.cluster.support.FailoverCluster
 org.hongxi.jaws.cluster.support.FailfastCluster
+org.hongxi.jaws.cluster.support.FailsafeCluster

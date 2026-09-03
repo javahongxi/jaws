@@ -1,36 +1,40 @@
 package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.LoadBalance;
-import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.common.util.ExceptionUtils;
-import org.hongxi.jaws.common.util.RpcUtils;
-import org.hongxi.jaws.exception.JawsErrorCode;
-import org.hongxi.jaws.exception.JawsAbstractException;
-import org.hongxi.jaws.exception.JawsServiceException;
+import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Failfast cluster: fails immediately on the first error without retrying.
+ * Failsafe cluster: catches all exceptions and returns an empty response,
+ * logging the error instead of propagating it. Suitable for non-critical
+ * operations (e.g. audit logging, metrics reporting) where failure must
+ * not affect the caller.
  */
-@Extension("failfast")
-public class FailfastCluster<T> extends AbstractCluster<T> {
+@Extension("failsafe")
+public class FailsafeCluster<T> extends AbstractCluster<T> {
 
-    public FailfastCluster(URL url, LoadBalance<T> loadBalance) {
+    private static final Logger log = LoggerFactory.getLogger(FailsafeCluster.class);
+
+    public FailsafeCluster(URL url, LoadBalance<T> loadBalance) {
         super(url, loadBalance);
     }
 
     @Override
     public Response call(Request request) {
         if (!available.get()) {
-            throw new JawsServiceException("Cluster not available, interface=" + getInterface(),
-                    JawsErrorCode.SERVICE_NOT_FOUND, false);
+            log.warn("FailsafeCluster: cluster not available, interface={}, returning empty response",
+                    getInterface());
+            return new DefaultResponse(request.getRequestId());
         }
 
         try {
@@ -41,22 +45,17 @@ public class FailfastCluster<T> extends AbstractCluster<T> {
             if (ExceptionUtils.isBizException(e)) {
                 throw (RuntimeException) e;
             }
-            if (!url.getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
-                return RpcUtils.buildErrorResponse(request, e);
-            }
-            if (e instanceof JawsAbstractException jae) {
-                throw jae;
-            }
-            throw new JawsServiceException("FailfastCluster call failed, request=" + request, e);
+            log.warn("FailsafeCluster: call failed, returning empty response, request={}", request, e);
+            return new DefaultResponse(request.getRequestId());
         }
     }
 
     @Override
     public CompletableFuture<Response> callAsync(Request request) {
         if (!available.get()) {
-            return CompletableFuture.failedFuture(new JawsServiceException(
-                    "Cluster not available, interface=" + getInterface(),
-                    JawsErrorCode.SERVICE_NOT_FOUND, false));
+            log.warn("FailsafeCluster: cluster not available, interface={}, returning empty response",
+                    getInterface());
+            return CompletableFuture.completedFuture(new DefaultResponse(request.getRequestId()));
         }
 
         Reference<T> refer = loadBalance.select(request);
@@ -65,8 +64,8 @@ public class FailfastCluster<T> extends AbstractCluster<T> {
             if (ExceptionUtils.isBizException(ex)) {
                 throw ex instanceof RuntimeException re ? re : new RuntimeException(ex);
             }
-            Exception e = ex instanceof Exception exc ? exc : new RuntimeException(ex);
-            return RpcUtils.buildErrorResponse(request, e);
+            log.warn("FailsafeCluster: callAsync failed, returning empty response, request={}", request, ex);
+            return new DefaultResponse(request.getRequestId());
         });
     }
 }

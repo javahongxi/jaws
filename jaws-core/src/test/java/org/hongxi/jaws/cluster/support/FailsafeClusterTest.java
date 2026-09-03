@@ -1,6 +1,8 @@
 package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.LoadBalance;
+import org.hongxi.jaws.exception.JawsBizException;
+import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
@@ -18,12 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * FailfastCluster unit tests
+ * FailsafeCluster unit tests
  */
-class FailfastClusterTest {
+class FailsafeClusterTest {
 
     private URL testUrl;
 
@@ -135,7 +136,7 @@ class FailfastClusterTest {
         }
     }
 
-    /* ==================== test cases ==================== */
+    /* ==================== call() tests ==================== */
 
     @Test
     void callShouldReturnResponseFromSelectedReference() {
@@ -143,11 +144,11 @@ class FailfastClusterTest {
         StubReference ref = new StubReference(testUrl, expected);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        FailfastCluster<String> cluster = newCluster(lb);
+        FailsafeCluster<String> cluster = newCluster(lb);
 
         Response result = cluster.call(request);
 
-        assertEquals(expected, result);
+        assertSame(expected, result);
         assertEquals(1, ref.getCallCount());
     }
 
@@ -156,7 +157,7 @@ class FailfastClusterTest {
         StubReference ref = new StubReference(testUrl, new StubResponse());
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        FailfastCluster<String> cluster = newCluster(lb);
+        FailsafeCluster<String> cluster = newCluster(lb);
 
         cluster.call(request);
 
@@ -164,21 +165,49 @@ class FailfastClusterTest {
     }
 
     @Test
-    void callShouldPropagateExceptionWithoutRetry() {
+    void callShouldReturnEmptyResponseOnFrameworkException() {
         RuntimeException ex = new RuntimeException("network error");
         StubReference ref = new StubReference(testUrl, ex);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        FailfastCluster<String> cluster = newCluster(lb);
+        FailsafeCluster<String> cluster = newCluster(lb);
 
-        RuntimeException thrown = assertThrows(RuntimeException.class, () -> cluster.call(request));
+        Response result = cluster.call(request);
 
-        assertTrue(thrown.getMessage().contains("FailfastCluster call failed"));
-        assertEquals(ex, thrown.getCause());
+        assertNotNull(result);
+        assertNull(result.getThrowable());
+        assertNull(result.getValue());
         assertEquals(1, ref.getCallCount());
     }
 
-    /* ==================== callAsync tests ==================== */
+    @Test
+    void callShouldPropagateBizException() {
+        JawsBizException bizEx = new JawsBizException("biz error");
+        StubReference ref = new StubReference(testUrl, bizEx);
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailsafeCluster<String> cluster = newCluster(lb);
+
+        assertThrows(JawsBizException.class, () -> cluster.call(request));
+        assertEquals(1, ref.getCallCount());
+    }
+
+    @Test
+    void callShouldReturnEmptyResponseWhenClusterNotAvailable() {
+        StubReference ref = new StubReference(testUrl, new StubResponse());
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailsafeCluster<String> cluster = new FailsafeCluster<>(testUrl, lb);
+        // not calling cluster.init(), so available == false
+
+        Response result = cluster.call(request);
+
+        assertNotNull(result);
+        assertNull(result.getThrowable());
+        assertEquals(0, ref.getCallCount());
+    }
+
+    /* ==================== callAsync() tests ==================== */
 
     @Test
     void callAsyncShouldReturnResponseFromReference() {
@@ -186,7 +215,7 @@ class FailfastClusterTest {
         StubReference ref = new StubReference(testUrl, expected);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        FailfastCluster<String> cluster = newCluster(lb);
+        FailsafeCluster<String> cluster = newCluster(lb);
 
         CompletableFuture<Response> future = cluster.callAsync(request);
 
@@ -196,19 +225,32 @@ class FailfastClusterTest {
     }
 
     @Test
-    void callAsyncShouldPropagateThrowableFromResponse() {
-        RuntimeException ex = new RuntimeException("async fail");
-        org.hongxi.jaws.rpc.DefaultResponse errorResp = new org.hongxi.jaws.rpc.DefaultResponse(1L);
-        errorResp.setThrowable(ex);
-        StubReference ref = new StubReference(testUrl, CompletableFuture.completedFuture(errorResp));
+    void callAsyncShouldReturnEmptyResponseOnAsyncExceptionalCompletion() {
+        RuntimeException ex = new RuntimeException("async network error");
+        StubReference ref = new StubReference(testUrl, CompletableFuture.failedFuture(ex));
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        FailfastCluster<String> cluster = newCluster(lb);
+        FailsafeCluster<String> cluster = newCluster(lb);
 
         CompletableFuture<Response> future = cluster.callAsync(request);
         Response result = future.join();
 
-        assertSame(ex, result.getThrowable());
+        assertNotNull(result);
+        assertNull(result.getThrowable());
+        assertEquals(1, ref.getCallCount());
+    }
+
+    @Test
+    void callAsyncShouldPropagateBizExceptionOnAsyncExceptionalCompletion() {
+        JawsBizException bizEx = new JawsBizException("async biz error");
+        StubReference ref = new StubReference(testUrl, CompletableFuture.failedFuture(bizEx));
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailsafeCluster<String> cluster = newCluster(lb);
+
+        CompletableFuture<Response> future = cluster.callAsync(request);
+
+        assertThrows(Exception.class, () -> future.join());
         assertEquals(1, ref.getCallCount());
     }
 
@@ -218,15 +260,30 @@ class FailfastClusterTest {
         StubReference ref = new StubReference(testUrl, ex);
         StubLoadBalance lb = new StubLoadBalance(ref);
         StubRequest request = new StubRequest();
-        FailfastCluster<String> cluster = newCluster(lb);
+        FailsafeCluster<String> cluster = newCluster(lb);
 
-        // Sync exception from refer.callAsync() propagates directly (no try-catch)
         assertThrows(RuntimeException.class, () -> cluster.callAsync(request));
         assertEquals(1, ref.getCallCount());
     }
 
-    private FailfastCluster<String> newCluster(LoadBalance<String> lb) {
-        FailfastCluster<String> cluster = new FailfastCluster<>(testUrl, lb);
+    @Test
+    void callAsyncShouldReturnEmptyResponseWhenClusterNotAvailable() {
+        StubReference ref = new StubReference(testUrl, new StubResponse());
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        StubRequest request = new StubRequest();
+        FailsafeCluster<String> cluster = new FailsafeCluster<>(testUrl, lb);
+        // not calling cluster.init(), so available == false
+
+        CompletableFuture<Response> future = cluster.callAsync(request);
+        Response result = future.join();
+
+        assertNotNull(result);
+        assertNull(result.getThrowable());
+        assertEquals(0, ref.getCallCount());
+    }
+
+    private FailsafeCluster<String> newCluster(LoadBalance<String> lb) {
+        FailsafeCluster<String> cluster = new FailsafeCluster<>(testUrl, lb);
         cluster.init();
         return cluster;
     }

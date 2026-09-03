@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @see FailoverCluster
  * @see FailfastCluster
+ * @see FailsafeCluster
  */
 public abstract class AbstractCluster<T> implements Cluster<T> {
 

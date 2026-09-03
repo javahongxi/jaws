@@ -151,13 +151,16 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
         ((DefaultRequest) request).setRetries(attempt);
         RpcContext.getContext().setServerUrl(refer.getUrl());
 
-        CompletableFuture<Response> responseFuture;
-        try {
-            responseFuture = refer.callAsync(request);
-        } catch (Exception e) {
-            responseFuture = CompletableFuture.completedFuture(
-                    RpcUtils.buildErrorResponse(request, e));
-        }
+        // Convert async exceptional completion to normal completion with error response,
+        // so the retry logic in thenCompose can handle it uniformly.
+        // Business exceptions are re-thrown to preserve exceptional completion semantics.
+        CompletableFuture<Response> responseFuture = refer.callAsync(request).exceptionally(ex -> {
+            if (ExceptionUtils.isBizException(ex)) {
+                throw ex instanceof RuntimeException re ? re : new RuntimeException(ex);
+            }
+            Exception e = ex instanceof Exception exc ? exc : new RuntimeException(ex);
+            return RpcUtils.buildErrorResponse(request, e);
+        });
 
         return responseFuture.thenCompose(response -> {
             Throwable throwable = response.getThrowable();
