@@ -21,26 +21,29 @@
     <properties>
         <java.version>17</java.version>
 
-        <spring-boot.version>3.5.14</spring-boot.version>
-
+        <commons-lang3.version>3.17.0</commons-lang3.version>
         <curator.version>5.9.0</curator.version>
         <fastjson2.version>2.0.63</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
         <hessian-lite.version>4.0.5</hessian-lite.version>
+        <junit.version>5.12.2</junit.version>
+        <logback.version>1.5.32</logback.version>
+        <micrometer-core.version>1.15.11</micrometer-core.version>
+        <micrometer-tracing.version>1.5.11</micrometer-tracing.version>
         <nacos.version>3.2.3</nacos.version>
+        <netty.version>4.1.132.Final</netty.version>
         <protobuf.version>4.34.1</protobuf.version>
         <protostuff.version>1.8.0</protostuff.version>
+        <slf4j.version>2.0.17</slf4j.version>
         <zookeeper.version>3.9.5</zookeeper.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring-boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-all</artifactId>
+                <version>${netty.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.dubbo</groupId>
@@ -91,6 +94,43 @@
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-core</artifactId>
+                <version>${micrometer-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-tracing</artifactId>
+                <version>${micrometer-tracing.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-tracing-bridge-otel</artifactId>
+                <version>${micrometer-tracing.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
