@@ -67,7 +67,7 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
     protected abstract void initStreamChannel(io.netty.channel.Channel streamChannel);
 
     /**
-     * Hook for connection-level (non-stream) handlers, invoked between
+     * Hook for optional channel-level handlers, invoked between
      * {@code http2_codec} and {@code http2_multiplex}. Default no-op;
      * subclasses may install e.g. a keepalive PING policy guard. Handlers
      * must use {@code acceptInboundMessage} filtering — stream frames still
@@ -75,7 +75,7 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
      *
      * @param pipeline the connection channel pipeline
      */
-    protected void addConnectionHandler(ChannelPipeline pipeline) {
+    protected void addOptionalChannelHandlers(ChannelPipeline pipeline) {
         // no-op by default
     }
 
@@ -99,9 +99,9 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
 
         pipeline.addLast("http2_codec", Http2FrameCodecBuilder.forServer().build());
 
-        // Optional connection-level guard installed by the subclass
+        // Optional channel-level handlers installed by the subclass
         // (e.g. gRPC keepalive PING permitting on the wire server)
-        addConnectionHandler(pipeline);
+        addOptionalChannelHandlers(pipeline);
 
         pipeline.addLast("http2_multiplex", new Http2MultiplexHandler(
                 new ChannelInitializer<>() {

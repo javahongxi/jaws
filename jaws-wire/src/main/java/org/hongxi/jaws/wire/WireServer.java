@@ -94,7 +94,7 @@ public class WireServer extends AbstractHttp2Server {
     }
 
     @Override
-    protected void addConnectionHandler(ChannelPipeline pipeline) {
+    protected void addOptionalChannelHandlers(ChannelPipeline pipeline) {
         // gRPC keepalive guard: permit client PINGs no faster than
         // permitPingIntervalMs (default 5min, same as grpc-java); faster PINGs
         // get GOAWAY too_many_pings. Set 0 to permit all.
