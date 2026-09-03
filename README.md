@@ -17,7 +17,7 @@ Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC �
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
 - **多种负载均衡** — random、roundRobin、leastActive、shortestResponse、adaptive、consistentHash
-- **高可用容错** — failover（失败切换）、failfast（快速失败）
+- **高可用容错** — failover（失败重试）、failfast（快速失败）、failsafe（故障安全）
 - **路由链 / Router** — 可扩展的调用时路由过滤链，内置标签路由（灰度发布）与动态配置路由
 - **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
 - **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
