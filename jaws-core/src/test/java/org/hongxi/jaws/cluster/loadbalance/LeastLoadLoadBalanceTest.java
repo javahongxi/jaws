@@ -15,16 +15,16 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for ShortestResponseLoadBalance
+ * Unit tests for LeastLoadLoadBalance
  */
-class ShortestResponseLoadBalanceTest {
+class LeastLoadLoadBalanceTest {
 
-    private ShortestResponseLoadBalance<String> lb;
+    private LeastLoadLoadBalance<String> lb;
     private Request request;
 
     @BeforeEach
     void setUp() {
-        lb = new ShortestResponseLoadBalance<>();
+        lb = new LeastLoadLoadBalance<>();
         request = mockRequest();
     }
 
@@ -38,7 +38,7 @@ class ShortestResponseLoadBalanceTest {
             assertTrue(selected.isAvailable());
             hit.add(((TestReference) selected).getName());
         }
-        assertEquals(3, hit.size(), "with equal estimated response time, all references should be hit by weight/random");
+        assertEquals(3, hit.size(), "with equal estimated load, all references should be hit by weight/random");
     }
 
     @Test

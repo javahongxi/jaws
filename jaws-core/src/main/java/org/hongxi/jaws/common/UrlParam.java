@@ -73,7 +73,7 @@ public final class UrlParam {
     // ---- Cluster / Routing ----
 
     public static final class Cluster {
-        public static final Def<String> LOAD_BALANCE = new Def<>("loadBalance", "leastActive");
+        public static final Def<String> LOAD_BALANCE = new Def<>("loadBalance", "adaptive");
         public static final Def<String> RETRY_POLICY = new Def<>("retryPolicy", "failover");
         public static final Def<Integer> RETRIES = new Def<>("retries", 0);
         public static final Def<Integer> WARMUP = new Def<>("warmup", 10 * 60 * 1000);

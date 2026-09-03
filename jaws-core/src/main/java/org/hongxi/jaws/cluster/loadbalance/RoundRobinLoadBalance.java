@@ -39,13 +39,11 @@ public class RoundRobinLoadBalance<T> extends AbstractLoadBalance<T> {
         // the increase-pick-subtract sequence must be atomic, otherwise
         // concurrent selections may all pick the same maximum
         synchronized (this) {
-            int size = references.size();
             int totalWeight = 0;
             Reference<T> selected = null;
             SmoothWeight selectedWeight = null;
 
-            for (int i = 0; i < size; i++) {
-                Reference<T> ref = references.get(i);
+            for (Reference<T> ref : references) {
                 if (!ref.isAvailable()) {
                     continue;
                 }

@@ -27,10 +27,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@link #doSelect} with the filtered list when more than one reference
  * survives.
  * Subclasses define the concrete strategy (random, round robin,
- * consistent hash, least active, shortest response, etc.).
+ * consistent hash, least active, least load, etc.).
  *
  * @see RandomLoadBalance
- * @see ShortestResponseLoadBalance
+ * @see LeastLoadLoadBalance
  * @see #getWarmupWeight
  *
  * <p>

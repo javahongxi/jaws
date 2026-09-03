@@ -1,6 +1,6 @@
 org.hongxi.jaws.cluster.loadbalance.RandomLoadBalance
 org.hongxi.jaws.cluster.loadbalance.RoundRobinLoadBalance
 org.hongxi.jaws.cluster.loadbalance.LeastActiveLoadBalance
-org.hongxi.jaws.cluster.loadbalance.ShortestResponseLoadBalance
+org.hongxi.jaws.cluster.loadbalance.LeastLoadLoadBalance
 org.hongxi.jaws.cluster.loadbalance.AdaptiveLoadBalance
 org.hongxi.jaws.cluster.loadbalance.ConsistentHashLoadBalance

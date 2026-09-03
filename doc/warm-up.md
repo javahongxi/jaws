@@ -10,7 +10,7 @@
 
 ## 支持的负载均衡策略
 
-Random / RoundRobin / LeastActive / ShortestResponse
+Random / RoundRobin / LeastActive / LeastLoad
 
 > ConsistentHash 不支持 warmup（哈希策略不适用权重）
 

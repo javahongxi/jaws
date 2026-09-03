@@ -44,7 +44,7 @@ Jaws 已具备多注册中心能力：
 
 | 能力维度              | Jaws                                                                                     | Dubbo                                                        | 差距评估   |
 |-----------------------|------------------------------------------------------------------------------------------|--------------------------------------------------------------|------------|
-| **负载均衡**          | random / roundRobin / leastActive / shortestResponse / adaptive / consistentHash（6 种） | 同左（p2c 等）                                               | **持平**   |
+| **负载均衡**          | random / roundRobin / leastActive / leastLoad / adaptive / consistentHash（6 种） | 同左（p2c 等）                                               | **持平**   |
 | **高可用容错**        | failover / failfast（2 种）                                                             | failover / failfast / failback / forking / available（5 种） | 小幅差距   |
 | **路由链**            | Router SPI + TagRouter + DynamicConfigRouter（IP/Group/Tag 规则）                        | Router SPI + 条件路由 / 标签路由 / 脚本路由                  | 小幅差距   |
 | **动态配置**          | 全局/服务级/方法级三层热更新                                                             | 同左 + 更丰富的配置中心集成                                  | **持平**   |

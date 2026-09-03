@@ -8,15 +8,15 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Shortest response load balance.
+ * Least load balance.
  *
  * <pre>
- * Select the Reference with the shortest average response time among successful calls.
+ * Select the Reference with the least estimated load among successful calls.
  * If only one, use it directly;
  * If multiple with different weights, select by weighted random;
  * If weights are the same, select randomly.
  *
- * Estimated response time = average response time * (active connections + 1)
+ * Estimated load = average elapsed time * (active connections + 1)
  *
  * Uses a sliding window mechanism to periodically reset statistics offsets,
  * preventing historical data from diluting recent trends.
@@ -24,8 +24,8 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * @see LeastActiveLoadBalance
  */
-@Extension("shortestResponse")
-public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
+@Extension("leastLoad")
+public class LeastLoadLoadBalance<T> extends AbstractLoadBalance<T> {
 
     @Override
     protected Reference<T> doSelect(List<Reference<T>> references, Request request) {
@@ -33,9 +33,9 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
 
         int length = references.size();
 
-        long shortestResponse = Long.MAX_VALUE;
-        int shortestCount = 0;
-        int[] shortestIndexes = new int[length];
+        long leastLoad = Long.MAX_VALUE;
+        int leastCount = 0;
+        int[] leastIndexes = new int[length];
         int[] weights = new int[length];
         int totalWeight = 0;
         int firstWeight = 0;
@@ -47,19 +47,19 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
                 continue;
             }
 
-            long estimateResponse = getEstimator(ref).estimateLoad();
+            long estimatedLoad = getEstimator(ref).estimateLoad();
             int weight = getWarmupWeight(ref, 100);
             weights[i] = weight;
 
-            if (estimateResponse < shortestResponse) {
-                shortestResponse = estimateResponse;
-                shortestCount = 1;
-                shortestIndexes[0] = i;
+            if (estimatedLoad < leastLoad) {
+                leastLoad = estimatedLoad;
+                leastCount = 1;
+                leastIndexes[0] = i;
                 totalWeight = weight;
                 firstWeight = weight;
                 sameWeight = true;
-            } else if (estimateResponse == shortestResponse) {
-                shortestIndexes[shortestCount++] = i;
+            } else if (estimatedLoad == leastLoad) {
+                leastIndexes[leastCount++] = i;
                 totalWeight += weight;
                 if (sameWeight && i > 0 && weight != firstWeight) {
                     sameWeight = false;
@@ -67,20 +67,20 @@ public class ShortestResponseLoadBalance<T> extends AbstractLoadBalance<T> {
             }
         }
 
-        if (shortestCount == 1) {
-            return references.get(shortestIndexes[0]);
+        if (leastCount == 1) {
+            return references.get(leastIndexes[0]);
         }
         if (!sameWeight && totalWeight > 0) {
             int offsetWeight = ThreadLocalRandom.current().nextInt(totalWeight);
-            for (int i = 0; i < shortestCount; i++) {
-                int shortestIndex = shortestIndexes[i];
-                offsetWeight -= weights[shortestIndex];
+            for (int i = 0; i < leastCount; i++) {
+                int leastIndex = leastIndexes[i];
+                offsetWeight -= weights[leastIndex];
                 if (offsetWeight < 0) {
-                    return references.get(shortestIndex);
+                    return references.get(leastIndex);
                 }
             }
         }
-        return references.get(shortestIndexes[ThreadLocalRandom.current().nextInt(shortestCount)]);
+        return references.get(leastIndexes[ThreadLocalRandom.current().nextInt(leastCount)]);
     }
 
     @Override

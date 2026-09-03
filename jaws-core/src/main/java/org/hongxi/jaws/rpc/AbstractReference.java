@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * per-endpoint call statistics: an {@link java.util.concurrent.atomic.AtomicInteger
  * AtomicInteger} tracks in-flight calls, while atomic counters accumulate successful
  * call count and elapsed time. Both feed load-balancing strategies such as leastActive
- * and shortestResponse.
+ * and leastLoad.
  * <p>
  * Subclasses implement {@link #doCall(Request)} to perform the actual remote
  * invocation.
@@ -27,12 +27,12 @@ public abstract class AbstractReference<T> extends AbstractEndpoint implements R
      * Current number of in-flight RPC calls on this reference (endpointType=reference).
      * Incremented before each invocation and decremented after the response is received
      * (or after the async future completes). Consumed by load-balancing strategies
-     * such as leastActive and shortestResponse to estimate real-time endpoint load.
+     * such as leastActive and leastLoad to estimate real-time endpoint load.
      */
     protected AtomicInteger activeCallCount = new AtomicInteger(0);
 
     /**
-     * Cumulative response time statistics for successful calls, used for shortest-response load balancing
+     * Cumulative elapsed statistics for successful calls, used for least-load load balancing
      */
     private final AtomicLong succeededElapsed = new AtomicLong(0);
     private final AtomicLong succeededCount = new AtomicLong(0);

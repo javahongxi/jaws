@@ -20,7 +20,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * <p>
  * Created by shenhongxi on 2026/8/23.
  *
- * @see ShortestResponseLoadBalance
+ * @see LeastLoadLoadBalance
  * @see LoadEstimator
  */
 @Extension("adaptive")
