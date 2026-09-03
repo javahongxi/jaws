@@ -4,7 +4,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http2.DefaultHttp2GoAwayFrame;
-import io.netty.handler.codec.http2.DefaultHttp2PingFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2PingFrame;
 import org.slf4j.Logger;
@@ -77,18 +76,7 @@ public class WireKeepaliveHandler extends ChannelInboundHandlerAdapter {
             }
             lastPingTimeNanos = now;
         }
-        // ACKs (ping.ack()) are informational; the PING echo itself is done by
-        // Http2FrameCodec's auto-ACK, and Http2PingFrame carries no refcount.
-    }
-
-    /**
-     * Send a server-initiated keepalive PING. The Http2FrameCodec will
-     * auto-ACK the client's response; a missing ACK within the transport-level
-     * timeout surfaces through the connection going idle / closing.
-     *
-     * @param ctx the connection context
-     */
-    public static void sendKeepalivePing(ChannelHandlerContext ctx) {
-        ctx.writeAndFlush(new DefaultHttp2PingFrame(0, false));
+        // ACK PING frames are silently consumed here — the actual PING reply
+        // is handled by Http2FrameCodec's auto-ACK; no refcount to release.
     }
 }
