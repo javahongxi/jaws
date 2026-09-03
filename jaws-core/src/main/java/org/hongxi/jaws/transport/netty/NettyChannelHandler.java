@@ -135,32 +135,36 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             inflightRequests.incrementAndGet();
         }
         RpcContext.init(request);
-        messageHandler.handleAsync(request).whenComplete((res, throwable) -> {
-            try {
-                RpcContext.init(request);
-                DefaultResponse response;
-                if (throwable != null) {
-                    log.error("Failed to process request: {}", RpcUtils.toString(request), throwable);
-                    response = RpcUtils.buildErrorResponse(request,
-                            new JawsServiceException("process request failed: " + throwable.getMessage()));
-                } else if (res instanceof DefaultResponse dr) {
-                    response = dr;
-                } else if (res instanceof Response r) {
-                    response = new DefaultResponse(r);
-                } else {
-                    response = new DefaultResponse(res);
-                }
-                response.setRequestId(request.getRequestId());
-                response.setProcessTime(System.currentTimeMillis() - processStartTime);
-
-                sendResponse(ctx, response);
-            } finally {
-                if (inflightRequests != null) {
-                    inflightRequests.decrementAndGet();
-                }
-                RpcContext.destroy();
-            }
-        });
+        messageHandler.handleAsync(request)
+                .handle((result, throwable) -> {
+                    DefaultResponse response;
+                    if (throwable != null) {
+                        log.error("Failed to process request: {}", RpcUtils.toString(request), throwable);
+                        response = new DefaultResponse();
+                        response.setThrowable(new RuntimeException(
+                                "process request failed: " + throwable.getMessage(), throwable));
+                    } else if (result instanceof DefaultResponse dr) {
+                        response = dr;
+                    } else if (result instanceof Response r) {
+                        response = new DefaultResponse(r);
+                    } else {
+                        response = new DefaultResponse(result);
+                    }
+                    response.setRequestId(request.getRequestId());
+                    response.setProcessTime(System.currentTimeMillis() - processStartTime);
+                    return response;
+                })
+                .thenAccept(response -> sendResponse(ctx, response))
+                .exceptionally(e -> {
+                    log.error("Failed to send response: requestId={}", request.getRequestId(), e);
+                    return null;
+                })
+                .whenComplete((v, e) -> {
+                    if (inflightRequests != null) {
+                        inflightRequests.decrementAndGet();
+                    }
+                    RpcContext.destroy();
+                });
     }
 
     private void sendResponse(ChannelHandlerContext ctx, Response response) {

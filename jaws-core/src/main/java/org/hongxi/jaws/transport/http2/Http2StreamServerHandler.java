@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Flow;
 import java.util.concurrent.RejectedExecutionException;
@@ -231,51 +231,57 @@ class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
      * Dispatch a unary (request-response) invocation.
      */
     private void dispatchUnary(ChannelHandlerContext ctx, Request request, long startTime) {
-        CompletableFuture<Object> future = messageHandler.handleAsync(request);
-        future.whenComplete((result, throwable) -> {
-            try {
-                RpcContext.init(request);
-                DefaultResponse response;
-                if (throwable != null) {
-                    log.error("HTTP/2 invoke failed: {}", request, throwable);
-                    response = new DefaultResponse();
-                    response.setThrowable(new RuntimeException(
-                            "process request failed: " + throwable.getMessage(), throwable));
-                } else if (result instanceof DefaultResponse dr) {
-                    response = dr;
-                } else if (result instanceof Response r) {
-                    response = new DefaultResponse(r);
-                } else {
-                    response = new DefaultResponse(result);
-                }
-                response.setRequestId(request.getRequestId());
-                response.setProcessTime(System.currentTimeMillis() - startTime);
-
-                if (ctx.channel().isActive()) {
-                    byte[] responseBytes = Http2PayloadCodec.encodeResponse(response, serialization);
-                    Http2Headers respHeaders = new DefaultHttp2Headers()
-                            .status(Http2Constants.STATUS_OK)
-                            .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE);
-                    ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
-                    ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                            Unpooled.wrappedBuffer(responseBytes), true))
-                            .addListener(f -> {
-                                if (!f.isSuccess()) {
-                                    log.error("Failed to write unary response: requestId={}",
-                                            request.getRequestId(), f.cause());
-                                }
-                            });
-                }
-            } catch (Exception e) {
-                log.error("Failed to encode HTTP/2 response: requestId={}",
-                        request.getRequestId(), e);
-                sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
-                        "Failed to encode response: " + e.getMessage());
-            } finally {
-                RpcContext.destroy();
-                inflightRequests.decrementAndGet();
-            }
-        });
+        messageHandler.handleAsync(request)
+                .handle((result, throwable) -> {
+                    DefaultResponse response;
+                    if (throwable != null) {
+                        log.error("HTTP/2 invoke failed: {}", request, throwable);
+                        response = new DefaultResponse();
+                        response.setThrowable(new RuntimeException(
+                                "process request failed: " + throwable.getMessage(), throwable));
+                    } else if (result instanceof DefaultResponse dr) {
+                        response = dr;
+                    } else if (result instanceof Response r) {
+                        response = new DefaultResponse(r);
+                    } else {
+                        response = new DefaultResponse(result);
+                    }
+                    response.setRequestId(request.getRequestId());
+                    response.setProcessTime(System.currentTimeMillis() - startTime);
+                    return response;
+                })
+                .thenAccept(response -> {
+                    if (ctx.channel().isActive()) {
+                        try {
+                            byte[] responseBytes = Http2PayloadCodec.encodeResponse(response, serialization);
+                            Http2Headers respHeaders = new DefaultHttp2Headers()
+                                    .status(Http2Constants.STATUS_OK)
+                                    .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE);
+                            ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
+                            ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                    Unpooled.wrappedBuffer(responseBytes), true))
+                                    .addListener(f -> {
+                                        if (!f.isSuccess()) {
+                                            log.error("Failed to write unary response: requestId={}",
+                                                    request.getRequestId(), f.cause());
+                                        }
+                                    });
+                        } catch (Exception e) {
+                            throw new CompletionException(e);
+                        }
+                    }
+                })
+                .exceptionally(e -> {
+                    log.error("Failed to encode HTTP/2 response: requestId={}",
+                            request.getRequestId(), e);
+                    sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
+                            "Failed to encode response: " + e.getMessage());
+                    return null;
+                })
+                .whenComplete((v, e) -> {
+                    RpcContext.destroy();
+                    inflightRequests.decrementAndGet();
+                });
     }
 
     /**

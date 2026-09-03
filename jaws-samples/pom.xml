@@ -26,6 +26,7 @@
         <module>jaws-sample-netty-consumer</module>
         <module>jaws-sample-http2-provider</module>
         <module>jaws-sample-http2-consumer</module>
+        <module>jaws-sample-http-provider</module>
         <module>jaws-sample-wire-api</module>
         <module>jaws-sample-wire-provider</module>
         <module>jaws-sample-wire-consumer</module>

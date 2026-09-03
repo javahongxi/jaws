@@ -49,9 +49,7 @@ class WireMessageHandler implements MessageHandler {
         try {
             methodInfo = protoTypes.getMethodInfo(request.getMethodName());
         } catch (IllegalArgumentException e) {
-            CompletableFuture<Object> failed = new CompletableFuture<>();
-            failed.completeExceptionally(e);
-            return failed;
+            return CompletableFuture.failedFuture(e);
         }
 
         try {
@@ -80,9 +78,7 @@ class WireMessageHandler implements MessageHandler {
         } catch (InvalidProtocolBufferException e) {
             log.error("Wire message decode failed: interface={} method={}",
                     request.getInterfaceName(), request.getMethodName(), e);
-            CompletableFuture<Object> failed = new CompletableFuture<>();
-            failed.completeExceptionally(e);
-            return failed;
+            return CompletableFuture.failedFuture(e);
         }
     }
 
