@@ -26,8 +26,8 @@ import java.util.concurrent.atomic.LongAdder;
  *
  * Deployment modes:
  * - role=all (default): provider + consumer in the same process, using in-process local registry
- * - role=provider / role=consumer: separate processes, connected via direct registry,
- *   consumer points directly to provider's host:port (no external registry needed)
+ * - role=provider / role=consumer: separate processes, consumer uses setDirectUrl
+ *   to connect directly to provider's host:port (no external registry needed)
  *
  * System properties (passed via -D):
  *   protocol      - Protocol type: injvm (default) or jaws
@@ -162,8 +162,9 @@ public class JawsBenchmark {
         serviceConfig.setGroup("benchmark");
         serviceConfig.setVersion("1.0");
         serviceConfig.setProtocol(createProtocolConfig());
-        serviceConfig.setRegistry(createRegistryConfig());
-
+        if ("all".equals(ROLE)) {
+            serviceConfig.setRegistry(createRegistryConfig());
+        }
         serviceConfig.export();
     }
 
@@ -177,7 +178,11 @@ public class JawsBenchmark {
         ref.setGroup("benchmark");
         ref.setVersion("1.0");
         ref.setProtocol(createProtocolConfig());
-        ref.setRegistry(createRegistryConfig());
+        if (!"all".equals(ROLE)) {
+            ref.setDirectUrl(HOST + ":" + PORT);
+        } else {
+            ref.setRegistry(createRegistryConfig());
+        }
         ref.setRequestTimeout(30000);
         return ref;
     }
@@ -197,16 +202,9 @@ public class JawsBenchmark {
     private static RegistryConfig createRegistryConfig() {
         RegistryConfig registry = new RegistryConfig();
         registry.setId("benchmarkRegistry");
-        if ("all".equals(ROLE)) {
-            // Same process: in-process local registry
-            registry.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
-            registry.setAddress("127.0.0.1");
-            registry.setPort(0);
-        } else {
-            // Separate processes: direct connect, consumer points to provider's host:port
-            registry.setProtocol("direct");
-            registry.setAddress(HOST + ":" + PORT);
-        }
+        registry.setProtocol(JawsConstants.REGISTRY_PROTOCOL_LOCAL);
+        registry.setAddress("127.0.0.1");
+        registry.setPort(0);
         return registry;
     }
 
