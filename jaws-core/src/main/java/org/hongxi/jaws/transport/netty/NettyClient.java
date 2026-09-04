@@ -107,45 +107,18 @@ public class NettyClient extends AbstractClient {
             throw new JawsFrameworkException("NettyClient init failed: connect timeout must be positive but was " + timeout);
         }
 
-        final int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
-
-        bootstrap = new Bootstrap();
-        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout);
-        bootstrap.option(ChannelOption.TCP_NODELAY, true);
-        bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
-        bootstrap.group(nioEventLoopGroup)
+        bootstrap = new Bootstrap()
+                .group(nioEventLoopGroup)
                 .channel(NioSocketChannel.class)
                 .handler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) throws Exception {
-                        ChannelPipeline pipeline = ch.pipeline();
-                        long heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
-                        if (heartbeat > 0) {
-                            pipeline.addLast("idle_state",
-                                    new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
-                            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
-                        }
-                        pipeline.addLast("decoder", new NettyDecoder(NettyClient.this, codec, maxContentLength));
-                        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, codec, (Object message) -> {
-                            Response response = (Response) message;
-                            // removeCallback: atomically claim + clean up the map entry,
-                            // so the timeout timer won't attempt a duplicate completion
-                            ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
-
-                            if (responseFuture == null) {
-                                log.warn("received response from server, but no responseFuture found, requestId={}",
-                                        response.getRequestId());
-                                return CompletableFuture.completedFuture(null);
-                            }
-                            if (response.getThrowable() != null) {
-                                responseFuture.onFailure(response);
-                            } else {
-                                responseFuture.onSuccess(response);
-                            }
-                            return CompletableFuture.completedFuture(null);
-                        }));
+                        NettyClient.this.initChannel(ch);
                     }
-                });
+                })
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout)
+                .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.SO_KEEPALIVE, true);
 
         // Create single connection
         channel = new NettyChannel(this);
@@ -156,6 +129,36 @@ public class NettyClient extends AbstractClient {
         // Set available state
         state = ChannelState.ALIVE;
         return true;
+    }
+
+    private void initChannel(SocketChannel ch) {
+        ChannelPipeline pipeline = ch.pipeline();
+        long heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
+        if (heartbeat > 0) {
+            pipeline.addLast("idle_state",
+                    new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
+            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
+        }
+        int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
+        pipeline.addLast("decoder", new NettyDecoder(NettyClient.this, codec, maxContentLength));
+        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, codec, (Object message) -> {
+            Response response = (Response) message;
+            // removeCallback: atomically claim + clean up the map entry,
+            // so the timeout timer won't attempt a duplicate completion
+            ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
+
+            if (responseFuture == null) {
+                log.warn("received response from server, but no responseFuture found, requestId={}",
+                        response.getRequestId());
+                return CompletableFuture.completedFuture(null);
+            }
+            if (response.getThrowable() != null) {
+                responseFuture.onFailure(response);
+            } else {
+                responseFuture.onSuccess(response);
+            }
+            return CompletableFuture.completedFuture(null);
+        }));
     }
 
     @Override

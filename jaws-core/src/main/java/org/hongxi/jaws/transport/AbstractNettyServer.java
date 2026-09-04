@@ -63,40 +63,6 @@ public abstract class AbstractNettyServer implements Server {
         this.serverName = serverName;
     }
 
-    /**
-     * Assemble the per-connection pipeline for a newly accepted channel.
-     *
-     * @param ch the newly accepted connection channel
-     */
-    protected abstract void initChannel(SocketChannel ch) throws Exception;
-
-    /**
-     * Hook called inside {@link #open()} after the event loops and business
-     * pool are ready but before the bind, for subclass-specific preparation
-     * (e.g. building an SSL context or a sharable pipeline handler).
-     * Failures thrown here trigger the same cleanup as a bind failure.
-     */
-    protected void onOpen() throws Exception {
-        // no-op by default
-    }
-
-    /**
-     * Hook for extra steps in {@link #stopAccept()} after the listening
-     * socket is closed, e.g. sending GOAWAY on existing HTTP/2 connections.
-     */
-    protected void stopAcceptExtra() {
-        // no-op by default
-    }
-
-    /**
-     * Hook to release protocol-specific connection resources during
-     * {@link #close(int)} and failure cleanup, e.g. tracked connection
-     * channels of an HTTP/2 server.
-     */
-    protected void closeConnections() {
-        // no-op by default
-    }
-
     @Override
     public synchronized boolean open() {
         if (isAvailable()) {
@@ -128,20 +94,21 @@ public abstract class AbstractNettyServer implements Server {
         try {
             onOpen();
 
-            ServerBootstrap bootstrap = new ServerBootstrap();
-            bootstrap.group(bossGroup, workerGroup)
+            ServerBootstrap bootstrap = new ServerBootstrap()
+                    .group(bossGroup, workerGroup)
                     .channel(NioServerSocketChannel.class)
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
                             AbstractNettyServer.this.initChannel(ch);
                         }
-                    });
-            bootstrap.childOption(ChannelOption.TCP_NODELAY, true);
-            bootstrap.childOption(ChannelOption.SO_KEEPALIVE, true);
+                    })
+                    .childOption(ChannelOption.TCP_NODELAY, true)
+                    .childOption(ChannelOption.SO_KEEPALIVE, true);
 
-            ChannelFuture channelFuture = bootstrap.bind(new InetSocketAddress(url.getPort()));
-            channelFuture.syncUninterruptibly();
+            ChannelFuture channelFuture = bootstrap
+                    .bind(new InetSocketAddress(url.getPort()))
+                    .syncUninterruptibly();
             serverChannel = channelFuture.channel();
             state = ChannelState.ALIVE;
             log.info("{} server started on port {}: url={}", serverName, url.getPort(), url);
@@ -151,6 +118,40 @@ public abstract class AbstractNettyServer implements Server {
         }
 
         return true;
+    }
+
+    /**
+     * Assemble the per-connection pipeline for a newly accepted channel.
+     *
+     * @param ch the newly accepted connection channel
+     */
+    protected abstract void initChannel(SocketChannel ch);
+
+    /**
+     * Hook called inside {@link #open()} after the event loops and business
+     * pool are ready but before the bind, for subclass-specific preparation
+     * (e.g. building an SSL context or a sharable pipeline handler).
+     * Failures thrown here trigger the same cleanup as a bind failure.
+     */
+    protected void onOpen() {
+        // no-op by default
+    }
+
+    /**
+     * Hook for extra steps in {@link #stopAccept()} after the listening
+     * socket is closed, e.g. sending GOAWAY on existing HTTP/2 connections.
+     */
+    protected void stopAcceptExtra() {
+        // no-op by default
+    }
+
+    /**
+     * Hook to release protocol-specific connection resources during
+     * {@link #close(int)} and failure cleanup, e.g. tracked connection
+     * channels of an HTTP/2 server.
+     */
+    protected void closeConnections() {
+        // no-op by default
     }
 
     @Override
