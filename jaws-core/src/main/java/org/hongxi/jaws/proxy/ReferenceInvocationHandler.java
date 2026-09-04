@@ -22,13 +22,13 @@ import java.util.stream.Collectors;
  * are always handled locally, even if the interface re-declares them, and
  * methods returning {@link CompletableFuture} are invoked asynchronously.
  *
- * @see AbstractReferenceHandler
+ * @see ReferenceInvoker
  * @see JdkProxyFactory
  *
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-public class ReferenceInvocationHandler<T> extends AbstractReferenceHandler<T> implements InvocationHandler {
+public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implements InvocationHandler {
 
     public ReferenceInvocationHandler(Class<T> interfaceClass, List<Cluster<T>> clusters) {
         super(clusters, interfaceClass.getName());

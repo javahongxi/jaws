@@ -35,14 +35,14 @@ import java.util.concurrent.Flow;
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-public class AbstractReferenceHandler<T> {
+public class ReferenceInvoker<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractReferenceHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(ReferenceInvoker.class);
 
     protected List<Cluster<T>> clusters;
     protected String interfaceName;
 
-    AbstractReferenceHandler(List<Cluster<T>> clusters, String interfaceName) {
+    ReferenceInvoker(List<Cluster<T>> clusters, String interfaceName) {
         this.clusters = clusters;
         this.interfaceName = interfaceName;
     }

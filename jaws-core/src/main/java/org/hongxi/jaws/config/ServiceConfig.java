@@ -43,12 +43,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * resources.
  *
  * @see ReferenceConfig
- * @see AbstractInterfaceConfig
+ * @see InterfaceConfig
  *
  * <p>
  * Created by shenhongxi on 2021/3/6.
  */
-public class ServiceConfig<T> extends AbstractInterfaceConfig {
+public class ServiceConfig<T> extends InterfaceConfig {
 
     @Serial
     private static final long serialVersionUID = -3342374271064293224L;

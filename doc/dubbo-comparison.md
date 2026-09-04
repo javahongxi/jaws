@@ -36,7 +36,7 @@ Jaws 已具备多注册中心能力：
 
 - **Provider 端**：`ServiceConfig.register()` 遍历所有 `registryUrls` 逐个注册
 - **Consumer 端**：`RegistryDirectory` 用 `registryReferences` 按注册中心分组管理，独立订阅、独立通知，最终合并统一 reference 列表
-- **配置方式**：通过 `AbstractInterfaceConfig.setRegistries(List<RegistryConfig>)` 配置多个注册中心
+- **配置方式**：通过 `InterfaceConfig.setRegistries(List<RegistryConfig>)` 配置多个注册中心
 
 核心差距在于：注册中心列表是全局的，所有服务共享同一组注册中心，不支持 per-service 指定注册中心。
 

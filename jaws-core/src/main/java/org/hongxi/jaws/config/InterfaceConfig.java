@@ -32,7 +32,7 @@ import java.util.Map;
  * <p>
  * Created by shenhongxi on 2021/3/5.
  */
-public class AbstractInterfaceConfig extends AbstractConfig {
+public class InterfaceConfig extends BaseConfig {
 
     @Serial
     private static final long serialVersionUID = 4841644071068578653L;

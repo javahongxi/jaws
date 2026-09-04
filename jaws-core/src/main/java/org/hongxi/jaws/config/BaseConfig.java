@@ -18,11 +18,11 @@ import java.util.Map;
  *
  * @see #collectParams(Map)
  */
-public class AbstractConfig implements Serializable {
+public class BaseConfig implements Serializable {
     @Serial
     private static final long serialVersionUID = 6221123514996466731L;
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractConfig.class);
+    private static final Logger log = LoggerFactory.getLogger(BaseConfig.class);
 
     /**
      * Suffixes to strip when deriving the config tag name (e.g. "ServiceConfig" -> "service").
@@ -75,8 +75,8 @@ public class AbstractConfig implements Serializable {
      * @param parameters
      * @param configs
      */
-    protected static void collectConfigParams(Map<String, String> parameters, AbstractConfig... configs) {
-        for (AbstractConfig config : configs) {
+    protected static void collectConfigParams(Map<String, String> parameters, BaseConfig... configs) {
+        for (BaseConfig config : configs) {
             if (config != null) {
                 config.appendConfigParams(parameters);
             }

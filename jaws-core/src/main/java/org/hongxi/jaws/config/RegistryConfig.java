@@ -18,7 +18,7 @@ import java.util.Map;
  * <p>
  * Created by shenhongxi on 2021/3/5.
  */
-public class RegistryConfig extends AbstractConfig {
+public class RegistryConfig extends BaseConfig {
 
     @Serial
     private static final long serialVersionUID = 3236055928361714933L;

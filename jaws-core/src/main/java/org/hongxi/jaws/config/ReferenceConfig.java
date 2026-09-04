@@ -29,12 +29,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@link GenericService} so consumers need no interface JAR.
  *
  * @see ServiceConfig
- * @see AbstractInterfaceConfig
+ * @see InterfaceConfig
  *
  * <p>
  * Created by shenhongxi on 2021/4/23.
  */
-public class ReferenceConfig<T> extends AbstractInterfaceConfig {
+public class ReferenceConfig<T> extends InterfaceConfig {
 
     @Serial
     private static final long serialVersionUID = -2299754608229467887L;

@@ -17,7 +17,7 @@ import java.util.Map;
  * <p>
  * Created by shenhongxi on 2021/3/5.
  */
-public class ProtocolConfig extends AbstractConfig {
+public class ProtocolConfig extends BaseConfig {
 
     @Serial
     private static final long serialVersionUID = 7605496816982926360L;

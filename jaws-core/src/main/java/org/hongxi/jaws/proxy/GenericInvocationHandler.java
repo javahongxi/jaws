@@ -27,7 +27,7 @@ import java.util.List;
  *
  * @see GenericService
  */
-public class GenericInvocationHandler<T> extends AbstractReferenceHandler<T> implements InvocationHandler {
+public class GenericInvocationHandler<T> extends ReferenceInvoker<T> implements InvocationHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GenericInvocationHandler.class);
 
