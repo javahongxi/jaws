@@ -19,7 +19,7 @@ import java.io.IOException;
  *
  * <p><b>Usage scenarios:</b>
  * <ul>
- *   <li>{@link #encode(Channel, Object, ByteBuf)} is invoked by {@code NettyChannel}
+ *   <li>{@link #encode(Channel, Object, ByteBuf)} is invoked by {@code NettyClient}
  *       when an outgoing RPC {@code Request} or {@code Response} object needs
  *       to be serialized. The codec writes directly into the provided {@link ByteBuf},
  *       avoiding intermediate byte[] allocation.</li>
@@ -58,7 +58,7 @@ public interface Codec {
     /**
      * Encodes the given message object directly into the provided {@link ByteBuf}.
      *
-     * <p>Called by {@code NettyChannel} when an outgoing {@code Request} or
+     * <p>Called by {@code NettyClient} when an outgoing {@code Request} or
      * {@code Response} object is ready to be sent. The implementation writes
      * the protocol header and serialized body directly into the target buffer,
      * eliminating intermediate byte[] allocation.

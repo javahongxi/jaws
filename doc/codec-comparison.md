@@ -14,7 +14,7 @@ JawsCodec         (协议层 - 业务编解码, magic=0x4A57, 直接操作 ByteB
 
 - **NettyDecoder**：继承 `ByteToMessageDecoder`，校验 `0x4A57` magic，读取协议帧头（version、flag、requestId、bodyLength），等待完整 body 后通过 `readRetainedSlice()` 提取完整协议帧（header + body）封装为 `DecodedFrame` record 传递给下游
 - **NettyChannelHandler**：服务端接收 `DecodedFrame`，通过 `threadPoolExecutor` 将 decode 调度到业务线程；客户端在 IO 线程直接 decode。编码时 `Codec.encode()` 直接写入 `ByteBuf`，由 `ctx.channel().writeAndFlush()` 发送
-- **NettyChannel**：客户端发送请求时分配 `ByteBuf`，调用 `Codec.encode()` 直接写入，通过 `channel.writeAndFlush()` 发送
+- **NettyClient**：客户端发送请求时分配 `ByteBuf`，调用 `Codec.encode()` 直接写入，通过 `channel.writeAndFlush()` 发送
 - **JawsCodec**：协议层编解码，处理 `0x4A57` 协议帧的业务语义，编码采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式，解码通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化
 
 > 注：早期版本有独立的 `NettyEncoder`（`MessageToByteEncoder<byte[]>`），Codec 升级为直接操作 `ByteBuf` 后已移除，编码路径减少一次中间层。
@@ -89,7 +89,7 @@ JawsCodec.encodeRequest() / encodeResponse()
   ① out.writerIndex(headerStart + HEADER_LENGTH)     预留 header 空间
   ② ByteBufOutputStream(out) → ObjectOutput 直写 body  [零拷贝，无中间 byte[]]
   ③ writeHeader() 回填 header 到预留位置               [原地回写]
-NettyChannel / NettyChannelHandler
+NettyClient / NettyChannelHandler
   ④ channel.writeAndFlush(buf)                        [Netty 直接发送]
 ```
 
