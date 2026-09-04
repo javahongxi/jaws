@@ -57,6 +57,7 @@ public class NettyClient extends AbstractClient {
 
     private final Codec codec;
     private final InetSocketAddress remoteAddress;
+    private final boolean needReconnect;
 
     // volatile: written under the instance lock in open(), read by
     // business threads without locking in request()/isAvailable()
@@ -68,12 +69,21 @@ public class NettyClient extends AbstractClient {
         this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
                 .getExtension(url.getParameter(UrlParam.Transport.CODEC));
         this.remoteAddress = new InetSocketAddress(url.getHost(), url.getPort());
+        this.needReconnect = url.getBoolParameter(UrlParam.Client.SEND_RECONNECT);
         log.info("init netty client. url: {}-{}, use codec: {}",
                 url.getHost(), url.getPath(), codec.getClass().getSimpleName());
     }
 
     @Override
     public Response request(Request request) {
+        // Transport-level reconnect: if the channel has died, try to
+        // re-establish the connection before failing the request.
+        if (needReconnect && !isAvailable()) {
+            // Clear error-fusing UNALIVE state so that open() can proceed
+            // to create a new connection instead of returning early.
+            resetErrorCount();
+            open();
+        }
         if (!isAvailable()) {
             throw new JawsServiceException("NettyClient is unavailable: url="
                     + url.getUri() + RpcUtils.toString(request));
@@ -139,7 +149,11 @@ public class NettyClient extends AbstractClient {
 
     @Override
     public synchronized boolean open() {
-        if (isAvailable()) {
+        // Return early only when both the lifecycle state AND the native
+        // channel are healthy.  Checking channel.isActive() here fixes a
+        // gap where the channel has died but state is still ALIVE — without
+        // this check open() would return true without reconnecting.
+        if (isAvailable() && channel != null && channel.isActive()) {
             return true;
         }
 

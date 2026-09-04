@@ -155,6 +155,13 @@ public final class UrlParam {
         public static final Def<Boolean> THROW_EXCEPTION = new Def<>("throwException", true);
         public static final Def<Integer> FUSING_THRESHOLD = new Def<>("fusingThreshold", 10);
 
+        /**
+         * Whether to attempt reconnection in the request path when the
+         * client channel is found to be disconnected.  Mirrors Dubbo's
+         * {@code sendReconnect} parameter.
+         */
+        public static final Def<Boolean> SEND_RECONNECT = new Def<>("sendReconnect", true);
+
         private Client() {
         }
     }
