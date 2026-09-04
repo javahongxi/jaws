@@ -177,6 +177,7 @@ public class NettyClient extends AbstractClient {
 
         // Connect to remote server
         ChannelFuture channelFuture = null;
+        boolean connected = false;
         try {
             long start = System.currentTimeMillis();
             channelFuture = bootstrap.connect(remoteAddress);
@@ -189,6 +190,7 @@ public class NettyClient extends AbstractClient {
                     localAddress = inetAddr;
                 }
                 state = ChannelState.ALIVE;
+                connected = true;
                 log.info("NettyClient opened successfully: url={}", url);
                 return true;
             }
@@ -205,16 +207,9 @@ public class NettyClient extends AbstractClient {
                         ", cost: " + (System.currentTimeMillis() - start) +
                         ", completed: " + completed + ", success: " + success);
             }
-        } catch (JawsServiceException e) {
-            throw e;
-        } catch (Exception e) {
-            if (channelFuture != null) {
-                channelFuture.channel().close();
-            }
-            throw new JawsServiceException("NettyClient failed to connect to server, url: " +
-                    url.getUri(), e);
         } finally {
-            if (channel == null) {
+            if (!connected) {
+                channel = null;
                 incrErrorCount();
             }
         }

@@ -1,7 +1,6 @@
 package org.hongxi.jaws.transport.http2;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
@@ -26,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -130,11 +130,29 @@ public abstract class AbstractHttp2Client extends AbstractClient {
     }
 
     private void doConnect(int index) {
-        ChannelFuture future = bootstrap.connect(url.getHost(), url.getPort()).syncUninterruptibly();
-        if (!future.isSuccess()) {
-            throw new JawsServiceException(clientName + " connect failed: url=" + url.getUri(), future.cause());
+        int timeout = url.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
+        long start = System.currentTimeMillis();
+        io.netty.channel.ChannelFuture future = bootstrap.connect(url.getHost(), url.getPort());
+        boolean completed = future.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
+        boolean success = future.isSuccess();
+
+        if (completed && success) {
+            channels[index] = future.channel();
+            return;
         }
-        channels[index] = future.channel();
+
+        future.cancel(true);
+        if (future.cause() != null) {
+            throw new JawsServiceException(clientName
+                    + " failed to connect to server, url: " + url.getUri()
+                    + ", completed: " + completed + ", success: " + success,
+                    future.cause());
+        } else {
+            throw new JawsServiceException(clientName
+                    + " connect to server timeout, url: " + url.getUri()
+                    + ", cost: " + (System.currentTimeMillis() - start)
+                    + "ms, completed: " + completed + ", success: " + success);
+        }
     }
 
     /**
