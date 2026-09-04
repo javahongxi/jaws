@@ -92,11 +92,8 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                     + " init failed: connect timeout must be positive but was " + timeout);
         }
 
-        bootstrap = new Bootstrap();
-        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout);
-        bootstrap.option(ChannelOption.TCP_NODELAY, true);
-        bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
-        bootstrap.group(nioEventLoopGroup)
+        bootstrap = new Bootstrap()
+                .group(nioEventLoopGroup)
                 .channel(NioSocketChannel.class)
                 .handler(new ChannelInitializer<SocketChannel>() {
                     @Override
@@ -104,8 +101,8 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                         ChannelPipeline pipeline = ch.pipeline();
                         // Add TLS if configured (before HTTP/2 codec)
                         if (sslContext != null) {
-                            pipeline.addLast("ssl", sslContext.newHandler(ch.alloc(),
-                                    url.getHost(), url.getPort()));
+                            pipeline.addLast("ssl",
+                                    sslContext.newHandler(ch.alloc(), url.getHost(), url.getPort()));
                         }
                         // HTTP/2 framing & flow control; liveness relies on TCP keepalive
                         // and HTTP/2 PINGs instead of application-level heartbeats
@@ -113,7 +110,10 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                         pipeline.addLast("http2_multiplex", new Http2MultiplexHandler(
                                 new io.netty.channel.ChannelInboundHandlerAdapter()));
                     }
-                });
+                })
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout)
+                .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.SO_KEEPALIVE, true);
 
         // Open multiple connections if configured
         int connectionCount = Math.max(1, url.getIntParameter(UrlParam.Transport.CONNECTIONS));
