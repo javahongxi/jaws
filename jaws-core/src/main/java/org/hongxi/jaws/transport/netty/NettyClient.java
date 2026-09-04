@@ -58,7 +58,7 @@ public class NettyClient extends AbstractClient {
     private final Codec codec;
     private final InetSocketAddress remoteAddress;
 
-    // volatile: written under the instance lock in open()/close(), read by
+    // volatile: written under the instance lock in open(), read by
     // business threads without locking in request()/isAvailable()
     private volatile io.netty.channel.Channel channel;
     private volatile InetSocketAddress localAddress;
@@ -92,8 +92,7 @@ public class NettyClient extends AbstractClient {
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
         registerCallback(request.getRequestId(), responseFuture);
 
-        // Snapshot the volatile field so this request uses a single channel
-        // reference even if the channel is swapped mid-flight
+        // Snapshot the volatile channel reference for this request
         io.netty.channel.Channel ch = channel;
         ByteBuf buf = null;
         try {
