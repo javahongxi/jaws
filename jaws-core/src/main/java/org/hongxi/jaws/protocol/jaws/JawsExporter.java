@@ -1,7 +1,5 @@
 package org.hongxi.jaws.protocol.jaws;
 
-import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.rpc.AbstractExporter;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.URL;

@@ -10,9 +10,9 @@
 
     <modules>
         <module>jaws-core</module>
+        <module>jaws-wire</module>
         <module>jaws-registry-zookeeper</module>
         <module>jaws-registry-nacos</module>
-        <module>jaws-wire</module>
         <module>jaws-spring-boot</module>
         <module>jaws-extensions</module>
         <module>jaws-samples</module>
@@ -73,11 +73,6 @@
                 <version>${protobuf.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.google.guava</groupId>
-                <artifactId>guava</artifactId>
-                <version>${guava.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>org.apache.zookeeper</groupId>
                 <artifactId>zookeeper</artifactId>
                 <version>${zookeeper.version}</version>
@@ -97,10 +92,16 @@
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos.version}</version>
             </dependency>
+
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>
                 <version>${commons-lang3.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
             </dependency>
 
             <dependency>

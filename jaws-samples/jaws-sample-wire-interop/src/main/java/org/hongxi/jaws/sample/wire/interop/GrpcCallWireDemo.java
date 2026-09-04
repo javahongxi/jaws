@@ -167,7 +167,7 @@ public class GrpcCallWireDemo {
                 CountDownLatch streamLatch = new CountDownLatch(1);
                 asyncStub.sayHelloStream(
                         HelloRequest.newBuilder().setName("grpc-stream-client").build(),
-                        new StreamObserver<HelloReply>() {
+                        new StreamObserver<>() {
                             @Override
                             public void onNext(HelloReply value) {
                                 System.out.println("  stream item: " + value.getMessage());
@@ -197,7 +197,7 @@ public class GrpcCallWireDemo {
                         .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers))
                         .sayHelloStream(
                                 HelloRequest.newBuilder().setName("grpc-stream-client").build(),
-                                new StreamObserver<HelloReply>() {
+                                new StreamObserver<>() {
                                     @Override
                                     public void onNext(HelloReply value) {
                                         itemCount[0]++;
