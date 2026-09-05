@@ -7,9 +7,7 @@ import org.hongxi.jaws.config.ReferenceConfig;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.sample.api.DemoService;
-import org.hongxi.jaws.sample.api.OrderService;
 import org.hongxi.jaws.sample.api.model.Contacts;
-import org.hongxi.jaws.sample.api.model.Order;
 import org.hongxi.jaws.sample.api.model.Phone;
 import org.hongxi.jaws.sample.api.model.User;
 
@@ -28,8 +26,9 @@ import java.util.concurrent.CompletableFuture;
  *
  * <pre>
  * The adaptive provider speaks three protocols on a single port; this consumer
- * uses the jaws binary protocol (best performance) to exercise DemoService and
- * OrderService. HTTP/1.1 and HTTP/2 access can be verified separately via curl
+ * uses the jaws binary protocol (best performance) to exercise DemoService,
+ * then re-invokes DemoService over HTTP/2 transport to verify multi-transport
+ * connectivity. HTTP/1.1 access can be verified separately via curl
  * (see AdaptiveProvider javadoc for curl commands).
  * </pre>
  *
@@ -110,37 +109,31 @@ public class AdaptiveConsumer {
         asyncHello.join();
         asyncUser.join();
 
-        /* Reference OrderService with directUrl via HTTP/2 transport */
-        System.out.println("\n--- OrderService invocation (HTTP/2 transport) ---");
-        ReferenceConfig<OrderService> orderRef = new ReferenceConfig<>();
-        orderRef.setInterface(OrderService.class);
-        orderRef.setApplication("sample-adaptive-consumer");
-        orderRef.setModule("sample-adaptive");
-        orderRef.setGroup("test");
-        orderRef.setVersion("2.0");
-        orderRef.setProtocol(createProtocolConfig("http2"));
-        orderRef.setDirectUrl(DIRECT_URL);
+        /* Reference DemoService with directUrl via HTTP/2 transport */
+        System.out.println("\n--- DemoService invocation (HTTP/2 transport) ---");
+        ReferenceConfig<DemoService> http2Ref = new ReferenceConfig<>();
+        http2Ref.setInterface(DemoService.class);
+        http2Ref.setApplication("sample-adaptive-consumer");
+        http2Ref.setModule("sample-adaptive");
+        http2Ref.setGroup("test");
+        http2Ref.setVersion("2.0");
+        http2Ref.setProtocol(createProtocolConfig("http2"));
+        http2Ref.setDirectUrl(DIRECT_URL);
 
-        OrderService orderService = orderRef.getRef();
+        DemoService http2Demo = http2Ref.getRef();
 
-        User buyer = new User("lily", 24);
-        Order order1 = orderService.createOrder(buyer, List.of("item-A", "item-B"));
-        System.out.println("createOrder => " + order1);
+        String r2 = http2Demo.hello("lily");
+        System.out.println("hello => " + r2);
 
-        Order order2 = orderService.createOrder(buyer, List.of("item-C"));
-        System.out.println("createOrder => " + order2);
+        User user2 = new User("lily", 24);
+        User renamed2 = http2Demo.rename(user2, "lucy");
+        System.out.println("rename => " + renamed2);
 
-        Order fetched = orderService.getOrder(order1.getId());
-        System.out.println("getOrder => " + fetched);
+        List<User> users2 = http2Demo.getUsers();
+        System.out.println("getUsers => " + users2);
 
-        List<Order> buyerOrders = orderService.getOrdersByBuyer(buyer);
-        System.out.println("getOrdersByBuyer => " + buyerOrders);
-
-        int total = orderService.countOrders();
-        System.out.println("countOrders => " + total);
-
-        boolean canceled = orderService.cancelOrder(order2.getId());
-        System.out.println("cancelOrder => " + canceled);
+        Map<String, User> map2 = http2Demo.map(users2);
+        System.out.println("map => " + map2);
 
         URL serverUrl2 = RpcContext.getContext().getServerUrl();
         if (serverUrl2 != null) {

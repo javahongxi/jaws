@@ -250,11 +250,11 @@ cmd_stop() {
 #
 # Generic one-shot run: start provider -> run consumer -> stop provider.
 # $1 name  $2 provider module  $3 provider main  $4 consumer module  $5 consumer main
-# $6 default port  $7 expected "exported" log lines  $8 prerequisite hint  $9 port
+# $6 default port  $7 prerequisite hint  $8 port
 #
 run_pair() {
     local name="$1" provider_module="$2" provider_main="$3" consumer_module="$4" consumer_main="$5"
-    local default_port="$6" expected_exports="$7" hint="$8" port="${9:-}"
+    local default_port="$6" hint="$7" port="${8:-}"
     [ -z "$port" ] && port="$default_port"
 
     ensure_built
@@ -275,18 +275,14 @@ run_pair() {
     local pid=$!
     echo "$pid" > "$pid_file"
 
-    # 2. Wait for provider to finish service export (poll log, max 15 seconds)
+    # 2. Wait for provider to accept connections on the port (max 15 seconds)
     echo -n "[2/4] Waiting for Provider ready "
     local max_wait=15
     local waited=0
     while [ $waited -lt $max_wait ]; do
-        if grep -q "exported" "$log_file" 2>/dev/null; then
-            local count
-            count=$(grep -c "exported" "$log_file")
-            if [ "$count" -ge "$expected_exports" ]; then
-                echo " ready (${waited}s)"
-                break
-            fi
+        if (echo >/dev/tcp/127.0.0.1/$port) 2>/dev/null; then
+            echo " ready (${waited}s)"
+            break
         fi
         sleep 1
         waited=$((waited + 1))
@@ -324,32 +320,32 @@ run_pair() {
 
 cmd_run() {
     run_pair "zk" "$PROVIDER_MODULE" "$PROVIDER_MAIN" "$CONSUMER_MODULE" "$CONSUMER_MAIN" \
-        10000 2 "Make sure ZooKeeper is running at 127.0.0.1:2181" "${1:-}"
+        10000 "Make sure ZooKeeper is running at 127.0.0.1:2181" "${1:-}"
 }
 
 cmd_run_nacos() {
     run_pair "nacos" "$NACOS_PROVIDER_MODULE" "$NACOS_PROVIDER_MAIN" "$NACOS_CONSUMER_MODULE" "$NACOS_CONSUMER_MAIN" \
-        10000 2 "Make sure Nacos is running at 127.0.0.1:8848" "${1:-}"
+        10000 "Make sure Nacos is running at 127.0.0.1:8848" "${1:-}"
 }
 
 cmd_run_netty() {
     run_pair "netty" "$NETTY_PROVIDER_MODULE" "$NETTY_PROVIDER_MAIN" "$NETTY_CONSUMER_MODULE" "$NETTY_CONSUMER_MAIN" \
-        10000 2 "" "${1:-}"
+        10000 "" "${1:-}"
 }
 
 cmd_run_http2() {
     run_pair "http2" "$HTTP2_PROVIDER_MODULE" "$HTTP2_PROVIDER_MAIN" "$HTTP2_CONSUMER_MODULE" "$HTTP2_CONSUMER_MAIN" \
-        10000 3 "" "${1:-}"
+        10000 "" "${1:-}"
 }
 
 cmd_run_wire() {
     run_pair "wire" "$WIRE_PROVIDER_MODULE" "$WIRE_PROVIDER_MAIN" "$WIRE_CONSUMER_MODULE" "$WIRE_CONSUMER_MAIN" \
-        50051 1 "" "${1:-}"
+        50051 "" "${1:-}"
 }
 
 cmd_run_adaptive() {
     run_pair "adaptive" "$ADAPTIVE_PROVIDER_MODULE" "$ADAPTIVE_PROVIDER_MAIN" "$ADAPTIVE_CONSUMER_MODULE" "$ADAPTIVE_CONSUMER_MAIN" \
-        10000 3 "" "${1:-}"
+        10000 "" "${1:-}"
 }
 
 cmd_consumer() {

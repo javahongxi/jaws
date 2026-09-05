@@ -4,11 +4,7 @@ import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.adaptive.provider.service.DemoServiceImpl;
-import org.hongxi.jaws.sample.adaptive.provider.service.OrderServiceImpl;
-import org.hongxi.jaws.sample.adaptive.provider.service.StreamServiceImpl;
 import org.hongxi.jaws.sample.api.DemoService;
-import org.hongxi.jaws.sample.api.OrderService;
-import org.hongxi.jaws.sample.api.StreamService;
 
 /**
  * Adaptive transport provider — single port serves three protocols simultaneously.
@@ -68,30 +64,6 @@ public class AdaptiveProvider {
         demoServiceConfig.setProtocol(protocolConfig);
         demoServiceConfig.export();
         System.out.println("DemoService exported (adaptive, single port for all protocols).");
-
-        /* Export OrderService */
-        ServiceConfig<OrderService> orderServiceConfig = new ServiceConfig<>();
-        orderServiceConfig.setRef(new OrderServiceImpl());
-        orderServiceConfig.setApplication("sample-adaptive-provider");
-        orderServiceConfig.setModule("sample-adaptive");
-        orderServiceConfig.setInterface(OrderService.class);
-        orderServiceConfig.setGroup("test");
-        orderServiceConfig.setVersion("2.0");
-        orderServiceConfig.setProtocol(protocolConfig);
-        orderServiceConfig.export();
-        System.out.println("OrderService exported (adaptive, single port for all protocols).");
-
-        /* Export StreamService (server streaming over HTTP/2) */
-        ServiceConfig<StreamService> streamServiceConfig = new ServiceConfig<>();
-        streamServiceConfig.setRef(new StreamServiceImpl());
-        streamServiceConfig.setApplication("sample-adaptive-provider");
-        streamServiceConfig.setModule("sample-adaptive");
-        streamServiceConfig.setInterface(StreamService.class);
-        streamServiceConfig.setGroup("test");
-        streamServiceConfig.setVersion("2.0");
-        streamServiceConfig.setProtocol(protocolConfig);
-        streamServiceConfig.export();
-        System.out.println("StreamService exported (server streaming over HTTP/2).");
 
         System.out.println("Adaptive provider listening on port " + PORT
                 + " — accepts Jaws binary, HTTP/2, and HTTP/1.1 on the same port.");

@@ -12,6 +12,7 @@ Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC �
 
 - **自定义协议** — 基于 Netty TCP 自研 jaws 二进制协议，编解码全链路零拷贝
 - **HTTP/2 传输** — 可切换至 HTTP/2 传输层，支持 Server Streaming，网关与 Service Mesh 友好
+- **自适应协议** — 支持单端口同时启用 jaws 二进制、HTTP/2、HTTP/1.1 三种协议，自动路由到对应解码器
 - **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持 gzip 压缩、健康检查、deadline 与 keepalive 语义
 - **多种序列化** — 内置 fastjson2 / hessian2 / protostuff，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
@@ -19,7 +20,6 @@ Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC �
 - **多种负载均衡** — random、roundRobin、leastActive、leastLoad、adaptive、consistentHash
 - **高可用容错** — failover（失败重试）、failfast（快速失败）、failsafe（故障安全）
 - **路由链 / Router** — 可扩展的调用时路由过滤链，内置标签路由（灰度发布）与动态配置路由
-- **SPI 扩展** — 所有核心组件（Protocol、Cluster、LoadBalance、Filter、Serialization 等）均通过 SPI 可插拔
 - **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
 - **优雅停机** — 四阶段停机（停止接收 → 等待在途请求 → 注销注册中心 → 关闭连接），零损伤发布
 - **可观测性** — 可选 Micrometer 指标采集和 OpenTelemetry 链路追踪，通过 Filter SPI 自动生效
@@ -52,6 +52,7 @@ Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC �
 ./run-sample.sh netty              # Netty 直连（无需注册中心）
 ./run-sample.sh http2              # HTTP/2 直连（含 Server Streaming，无需注册中心）
 ./run-sample.sh wire               # Wire gRPC 线格式直连（无需注册中心，兼容 grpcurl）
+./run-sample.sh adaptive           # Adaptive 自适应协议直连（单端口多协议，无需注册中心）
 ./run-sample.sh run                # ZooKeeper 注册中心（需要 ZK 在 127.0.0.1:2181）
 ./run-sample.sh nacos              # Nacos 注册中心（需要 Nacos 在 127.0.0.1:8848）
 
