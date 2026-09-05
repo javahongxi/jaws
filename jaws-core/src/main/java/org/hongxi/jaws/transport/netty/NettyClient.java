@@ -169,12 +169,10 @@ public class NettyClient extends AbstractClient {
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true);
 
-        // Connect to remote server
-        ChannelFuture channelFuture = null;
         boolean connected = false;
         try {
             long start = System.currentTimeMillis();
-            channelFuture = bootstrap.connect(remoteAddress);
+            ChannelFuture channelFuture = bootstrap.connect(remoteAddress);
             boolean completed = channelFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
             boolean success = channelFuture.isSuccess();
 
@@ -189,7 +187,10 @@ public class NettyClient extends AbstractClient {
                 return true;
             }
 
-            channelFuture.cancel(true);
+            // Close the channel if it was opened but connect failed or timed out
+            if (channelFuture.channel().isOpen()) {
+                channelFuture.channel().close();
+            }
             if (channelFuture.cause() != null) {
                 throw new JawsServiceException(
                         "NettyClient failed to connect to server, url: " + url.getUri() +

@@ -1,10 +1,7 @@
 package org.hongxi.jaws.transport.http2;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -132,21 +129,24 @@ public abstract class AbstractHttp2Client extends AbstractClient {
     private void doConnect(int index) {
         int timeout = url.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         long start = System.currentTimeMillis();
-        io.netty.channel.ChannelFuture future = bootstrap.connect(url.getHost(), url.getPort());
-        boolean completed = future.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
-        boolean success = future.isSuccess();
+        ChannelFuture channelFuture = bootstrap.connect(url.getHost(), url.getPort());
+        boolean completed = channelFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
+        boolean success = channelFuture.isSuccess();
 
         if (completed && success) {
-            channels[index] = future.channel();
+            channels[index] = channelFuture.channel();
             return;
         }
 
-        future.cancel(true);
-        if (future.cause() != null) {
+        // Close the channel if it was opened but connect failed or timed out
+        if (channelFuture.channel().isOpen()) {
+            channelFuture.channel().close();
+        }
+        if (channelFuture.cause() != null) {
             throw new JawsServiceException(clientName
                     + " failed to connect to server, url: " + url.getUri()
                     + ", completed: " + completed + ", success: " + success,
-                    future.cause());
+                    channelFuture.cause());
         } else {
             throw new JawsServiceException(clientName
                     + " connect to server timeout, url: " + url.getUri()
