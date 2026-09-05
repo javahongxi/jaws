@@ -84,4 +84,11 @@ public interface Response {
      * @return serialization number
      */
     byte getSerializationNumber();
+
+    /**
+     * Sets the serialization protocol identifier for encoding this response.
+     *
+     * @param number serialization number
+     */
+    void setSerializationNumber(byte number);
 }

@@ -6,7 +6,6 @@ import io.netty.buffer.ByteBufOutputStream;
 import org.hongxi.jaws.serialization.ObjectInput;
 import org.hongxi.jaws.serialization.ObjectOutput;
 import org.hongxi.jaws.serialization.Serialization;
-import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.common.util.ReflectUtils;
@@ -15,7 +14,6 @@ import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
-import org.hongxi.jaws.transport.Channel;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -74,10 +72,10 @@ public final class JawsCodec {
     public static final byte FLAG_RESPONSE_EXCEPTION = 0x02;
     public static final byte FLAG_RESPONSE_VOID = 0x03;
 
-    public static void encode(Channel channel, Object message, ByteBuf out) throws IOException {
+    public static void encode(Object message, ByteBuf out) throws IOException {
         try {
             if (message instanceof Request request) {
-                encodeRequest(channel, request, out);
+                encodeRequest(request, out);
             } else if (message instanceof Response response) {
                 encodeResponse(response, out);
             } else {
@@ -93,7 +91,7 @@ public final class JawsCodec {
     /**
      * Decode data from client request or server response.
      */
-    public static Object decode(Channel channel, ByteBuf in) throws IOException {
+    public static Object decode(ByteBuf in) throws IOException {
         if (in.readableBytes() <= HEADER_LENGTH) {
             throw new JawsFrameworkException("decode error: invalid frame format");
         }
@@ -165,9 +163,9 @@ public final class JawsCodec {
      * <p>
      * Body layout: interface_name, method_name, param_desc, serialized param values, attachments.
      */
-    private static void encodeRequest(Channel channel, Request request, ByteBuf out) throws IOException {
+    private static void encodeRequest(Request request, ByteBuf out) throws IOException {
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
-                .getExtension(channel.getUrl().getParameter(UrlParam.Transport.SERIALIZATION));
+                .getExtensionByNumber(request.getSerializationNumber());
 
         // Reserve header space
         int headerStart = out.writerIndex();

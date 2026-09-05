@@ -12,6 +12,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
@@ -23,6 +24,7 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.ResponseFuture;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.transport.AbstractClient;
 import org.hongxi.jaws.transport.Client;
 import org.slf4j.Logger;
@@ -101,7 +103,10 @@ public class NettyClient extends AbstractClient {
         ByteBuf buf = null;
         try {
             buf = ch.alloc().buffer();
-            JawsCodec.encode(this, request, buf);
+            Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
+                    .getExtension(url.getParameter(UrlParam.Transport.SERIALIZATION));
+            request.setSerializationNumber(serialization.getSerializationNumber());
+            JawsCodec.encode(request, buf);
         } catch (Exception e) {
             if (buf != null) {
                 buf.release();

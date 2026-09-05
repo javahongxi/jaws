@@ -118,6 +118,7 @@ public class DefaultResponse implements Response, Serializable {
         return serializationNumber;
     }
 
+    @Override
     public void setSerializationNumber(byte number) {
         this.serializationNumber = number;
     }

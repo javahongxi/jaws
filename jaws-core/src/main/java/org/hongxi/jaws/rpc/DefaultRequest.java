@@ -120,6 +120,7 @@ public class DefaultRequest implements Request, Serializable {
         return serializationNumber;
     }
 
+    @Override
     public void setSerializationNumber(byte number) {
         this.serializationNumber = number;
     }

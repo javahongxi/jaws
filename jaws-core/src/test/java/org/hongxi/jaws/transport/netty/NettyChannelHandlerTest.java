@@ -194,8 +194,9 @@ class NettyChannelHandlerTest {
         request.setMethodName("hello");
         request.setParamDesc("");
         request.setArguments(null);
+        request.setSerializationNumber((byte) 0);
         try {
-            JawsCodec.encode(fakeChannel(), request, buf);
+            JawsCodec.encode(request, buf);
         } catch (Exception e) {
             throw new IllegalStateException("failed to encode sample request", e);
         }

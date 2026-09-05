@@ -80,4 +80,11 @@ public interface Request {
      * @return serialization number
      */
     byte getSerializationNumber();
+
+    /**
+     * Sets the serialization protocol identifier used for encoding this request.
+     *
+     * @param number serialization number
+     */
+    void setSerializationNumber(byte number);
 }

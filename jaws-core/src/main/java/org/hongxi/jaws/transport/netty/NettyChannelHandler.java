@@ -106,7 +106,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     private void processFrame(ChannelHandlerContext ctx, DecodedFrame frame) {
         try {
-            Object decoded = JawsCodec.decode(channel, frame.data());
+            Object decoded = JawsCodec.decode(frame.data());
             if (decoded instanceof Request request) {
                 processRequest(ctx, request);
             } else if (decoded instanceof Response response) {
@@ -167,7 +167,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private void sendResponse(ChannelHandlerContext ctx, Response response) {
         ByteBuf buf = ctx.alloc().buffer();
         try {
-            JawsCodec.encode(channel, response, buf);
+            JawsCodec.encode(response, buf);
         } catch (Exception e) {
             buf.release();
             log.error("encode response error: requestId={}", response.getRequestId(), e);

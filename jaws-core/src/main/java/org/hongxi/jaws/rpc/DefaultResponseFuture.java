@@ -125,4 +125,9 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
     public byte getSerializationNumber() {
         return 0;
     }
+
+    @Override
+    public void setSerializationNumber(byte number) {
+        // no-op: client-side future is never encoded
+    }
 }

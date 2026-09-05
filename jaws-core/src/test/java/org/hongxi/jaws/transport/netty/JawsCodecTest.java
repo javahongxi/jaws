@@ -7,9 +7,6 @@ import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
-import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.Channel;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -17,7 +14,6 @@ import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -28,15 +24,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * and the extraction and propagation of serializationId embedded in the flag high 5 bits.
  */
 class JawsCodecTest {
-
-    private Channel channel;
-
-    @BeforeEach
-    void setUp() {
-        Map<String, String> params = new HashMap<>();
-        params.put("serialization", "hessian2");
-        channel = new FakeChannel(new URL("jaws", "127.0.0.1", 18001, "test", params));
-    }
 
     // ---------- request round-trip ----------
 
@@ -52,11 +39,12 @@ class JawsCodecTest {
         attachments.put("traceId", "t-123");
         attachments.put("token", "abc");
         request.setAttachments(attachments);
+        request.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        JawsCodec.encode(channel, request, buf);
+        JawsCodec.encode(request, buf);
 
-        Object decoded = JawsCodec.decode(channel, buf);
+        Object decoded = JawsCodec.decode(buf);
 
         assertInstanceOf(Request.class, decoded);
         Request result = (Request) decoded;
@@ -80,10 +68,11 @@ class JawsCodecTest {
         request.setMethodName("ping");
         request.setParamDesc("");
         request.setArguments(null);
+        request.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        JawsCodec.encode(channel, request, buf);
-        Object decoded = JawsCodec.decode(channel, buf);
+        JawsCodec.encode(request, buf);
+        Object decoded = JawsCodec.decode(buf);
 
         assertInstanceOf(Request.class, decoded);
         Request result = (Request) decoded;
@@ -100,10 +89,11 @@ class JawsCodecTest {
         request.setMethodName("submit");
         request.setParamDesc("org.hongxi.jaws.transport.netty.JawsCodecTest$CodecPojo");
         request.setArguments(new Object[]{new CodecPojo("x", 9)});
+        request.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        JawsCodec.encode(channel, request, buf);
-        Object decoded = JawsCodec.decode(channel, buf);
+        JawsCodec.encode(request, buf);
+        Object decoded = JawsCodec.decode(buf);
 
         Request result = (Request) decoded;
         assertEquals(1, result.getArguments().length);
@@ -112,11 +102,7 @@ class JawsCodecTest {
 
     @Test
     void requestRoundtripWithProtostuff() throws IOException {
-        // protostuff = number 2: resolved from the serializationId in the flag high 5 bits
-        Map<String, String> params = new HashMap<>();
-        params.put("serialization", "protostuff");
-        Channel protostuffChannel = new FakeChannel(new URL("jaws", "127.0.0.1", 18001, "test", params));
-
+        // protostuff = number 2
         DefaultRequest request = new DefaultRequest();
         request.setRequestId(9L);
         request.setInterfaceName("org.hongxi.jaws.QuxService");
@@ -124,10 +110,11 @@ class JawsCodecTest {
         request.setParamDesc("java.lang.String," + CodecBean.class.getName() + ",java.util.List");
         request.setArguments(new Object[]{"hi", new CodecBean("x", 9),
                 new java.util.ArrayList<>(java.util.List.of(new CodecBean("y", 7)))});
+        request.setSerializationNumber((byte) 2);
 
         ByteBuf buf = Unpooled.buffer();
-        JawsCodec.encode(protostuffChannel, request, buf);
-        Object decoded = JawsCodec.decode(protostuffChannel, buf);
+        JawsCodec.encode(request, buf);
+        Object decoded = JawsCodec.decode(buf);
 
         Request result = (Request) decoded;
         assertEquals(2, result.getSerializationNumber()); // protostuff = 2
@@ -148,8 +135,8 @@ class JawsCodecTest {
         response.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        JawsCodec.encode(channel, response, buf);
-        Object decoded = JawsCodec.decode(channel, buf);
+        JawsCodec.encode(response, buf);
+        Object decoded = JawsCodec.decode(buf);
 
         assertInstanceOf(Response.class, decoded);
         Response result = (Response) decoded;
@@ -167,8 +154,8 @@ class JawsCodecTest {
         response.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        JawsCodec.encode(channel, response, buf);
-        Object decoded = JawsCodec.decode(channel, buf);
+        JawsCodec.encode(response, buf);
+        Object decoded = JawsCodec.decode(buf);
 
         Response result = (Response) decoded;
         assertEquals(43L, result.getRequestId());
@@ -184,8 +171,8 @@ class JawsCodecTest {
         response.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        JawsCodec.encode(channel, response, buf);
-        Object decoded = JawsCodec.decode(channel, buf);
+        JawsCodec.encode(response, buf);
+        Object decoded = JawsCodec.decode(buf);
 
         Response result = (Response) decoded;
         assertEquals(44L, result.getRequestId());
@@ -203,8 +190,8 @@ class JawsCodecTest {
         response.setSerializationNumber((byte) 1);
 
         ByteBuf buf = Unpooled.buffer();
-        JawsCodec.encode(channel, response, buf);
-        Object decoded = JawsCodec.decode(channel, buf);
+        JawsCodec.encode(response, buf);
+        Object decoded = JawsCodec.decode(buf);
 
         Response result = (Response) decoded;
         assertEquals("payload", result.getValue());
@@ -225,7 +212,7 @@ class JawsCodecTest {
         buf.writeBytes(new byte[8]); // some body so the frame passes the length check
 
         JawsFrameworkException ex = assertThrows(JawsFrameworkException.class,
-                () -> JawsCodec.decode(channel, buf));
+                () -> JawsCodec.decode(buf));
         assertTrue(ex.getMessage().contains("unknown serializationId"));
         // regression guard: exception must be thrown without retaining any slice
         // (buffer is test-owned and unreleased, but the code path must not retain)
@@ -242,7 +229,7 @@ class JawsCodecTest {
         buf.writeInt(0);
         buf.writeBytes(new byte[16]);
 
-        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(channel, buf));
+        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(buf));
     }
 
     @Test
@@ -255,7 +242,7 @@ class JawsCodecTest {
         buf.writeInt(0);
         buf.writeBytes(new byte[16]);
 
-        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(channel, buf));
+        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(buf));
     }
 
     @Test
@@ -268,13 +255,13 @@ class JawsCodecTest {
         buf.writeInt(100); // claims 100 bytes of body...
         buf.writeBytes(new byte[10]); // ...but only 10 present
 
-        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(channel, buf));
+        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(buf));
     }
 
     @Test
     void encodeRejectsUnsupportedMessageType() {
         ByteBuf buf = Unpooled.buffer();
-        assertThrows(JawsFrameworkException.class, () -> JawsCodec.encode(channel, "not-a-message", buf));
+        assertThrows(JawsFrameworkException.class, () -> JawsCodec.encode("not-a-message", buf));
     }
 
     // ---------- heartbeat ----------
@@ -294,33 +281,6 @@ class JawsCodecTest {
     }
 
     // ---------- helpers ----------
-
-    /** Minimal fake transport channel backed by a URL with serialization params. */
-    private record FakeChannel(URL url) implements Channel {
-
-        @Override
-        public boolean open() {
-            return true;
-        }
-
-        @Override
-        public void close() {
-        }
-
-        @Override
-        public void close(int timeout) {
-        }
-
-        @Override
-        public boolean isAvailable() {
-            return true;
-        }
-
-        @Override
-        public URL getUrl() {
-            return url;
-        }
-    }
 
     /** Simple POJO argument for round-trip tests. */
     static class CodecPojo implements Serializable {

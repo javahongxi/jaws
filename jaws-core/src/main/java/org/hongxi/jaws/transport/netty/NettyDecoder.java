@@ -108,8 +108,9 @@ public class NettyDecoder extends ByteToMessageDecoder {
                 Exception e = new JawsServiceException(
                         "NettyDecoder transport data content length exceeds limit, size: " + bodyLength + " > " + maxContentLength);
                 Response response = RpcUtils.buildErrorResponse(requestId, e);
+                response.setSerializationNumber((byte) ((flag & JawsCodec.SERIALIZATION_MASK) >> 3));
                 ByteBuf msg = ctx.alloc().buffer();
-                JawsCodec.encode(channel, response, msg);
+                JawsCodec.encode(response, msg);
                 ctx.channel().writeAndFlush(msg);
             }
             return;
