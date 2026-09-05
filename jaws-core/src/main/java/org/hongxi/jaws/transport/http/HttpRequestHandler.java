@@ -56,7 +56,7 @@ import java.util.concurrent.RejectedExecutionException;
  *
  * @author shenhongxi
  */
-class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
+public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
     private static final Logger log = LoggerFactory.getLogger(HttpRequestHandler.class);
 
     private static final String INVOKE_PATH = "/invoke";
@@ -67,9 +67,9 @@ class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
     private final ExecutorService serverExecutor;
     private final Map<String, Class<?>> interfaceClasses;
 
-    HttpRequestHandler(MessageHandler messageHandler,
-                       ExecutorService serverExecutor,
-                       Map<String, Class<?>> interfaceClasses) {
+    public HttpRequestHandler(MessageHandler messageHandler,
+                              ExecutorService serverExecutor,
+                              Map<String, Class<?>> interfaceClasses) {
         this.messageHandler = messageHandler;
         this.serverExecutor = serverExecutor;
         this.interfaceClasses = interfaceClasses;

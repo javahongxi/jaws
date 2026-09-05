@@ -32,6 +32,8 @@
         <module>jaws-sample-wire-consumer</module>
         <module>jaws-sample-wire-interop</module>
         <module>jaws-sample-gray</module>
+        <module>jaws-sample-adaptive-provider</module>
+        <module>jaws-sample-adaptive-consumer</module>
     </modules>
 
     <dependencies>

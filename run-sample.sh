@@ -23,6 +23,8 @@ HTTP2_PROVIDER_MODULE="jaws-samples/jaws-sample-http2-provider"
 HTTP2_CONSUMER_MODULE="jaws-samples/jaws-sample-http2-consumer"
 WIRE_PROVIDER_MODULE="jaws-samples/jaws-sample-wire-provider"
 WIRE_CONSUMER_MODULE="jaws-samples/jaws-sample-wire-consumer"
+ADAPTIVE_PROVIDER_MODULE="jaws-samples/jaws-sample-adaptive-provider"
+ADAPTIVE_CONSUMER_MODULE="jaws-samples/jaws-sample-adaptive-consumer"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -37,6 +39,8 @@ HTTP2_CONSUMER_MAIN="org.hongxi.jaws.sample.http2.consumer.Http2Consumer"
 WIRE_PROVIDER_MAIN="org.hongxi.jaws.sample.wire.provider.WireProvider"
 WIRE_CONSUMER_MAIN="org.hongxi.jaws.sample.wire.consumer.WireConsumer"
 WIRE_BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.WireBenchmark"
+ADAPTIVE_PROVIDER_MAIN="org.hongxi.jaws.sample.adaptive.provider.AdaptiveProvider"
+ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsumer"
 
 usage() {
     cat <<'EOF'
@@ -58,6 +62,7 @@ usage() {
     netty [port]       One-shot Netty direct-connect sample (no registry required)
     http2 [port]       One-shot HTTP/2 direct-connect sample (incl. Server Streaming, no registry required)
     wire [port]        One-shot Wire (gRPC wire format) direct-connect sample (no registry required, default port 50051)
+    adaptive [port]    One-shot Adaptive direct-connect sample (single port, multi-protocol, no registry required)
     consumer           Run ZkConsumer (provider must be started first)
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
@@ -89,6 +94,7 @@ usage() {
     ./run-sample.sh netty              # One-shot Netty direct-connect provider + consumer
     ./run-sample.sh http2              # One-shot HTTP/2 direct-connect (with streaming) provider + consumer
     ./run-sample.sh wire               # One-shot Wire direct-connect provider + consumer
+    ./run-sample.sh adaptive           # One-shot Adaptive direct-connect (multi-protocol) provider + consumer
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
@@ -341,6 +347,11 @@ cmd_run_wire() {
         50051 1 "" "${1:-}"
 }
 
+cmd_run_adaptive() {
+    run_pair "adaptive" "$ADAPTIVE_PROVIDER_MODULE" "$ADAPTIVE_PROVIDER_MAIN" "$ADAPTIVE_CONSUMER_MODULE" "$ADAPTIVE_CONSUMER_MAIN" \
+        10000 3 "" "${1:-}"
+}
+
 cmd_consumer() {
     ensure_built
     echo "Running ZkConsumer..."
@@ -433,6 +444,7 @@ case "${1:-}" in
     netty)         cmd_run_netty "${2:-}" ;;
     http2)         cmd_run_http2 "${2:-}" ;;
     wire)          cmd_run_wire "${2:-}" ;;
+    adaptive)      cmd_run_adaptive "${2:-}" ;;
     consumer)    cmd_consumer ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;

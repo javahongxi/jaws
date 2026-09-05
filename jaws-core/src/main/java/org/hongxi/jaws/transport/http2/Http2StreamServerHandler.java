@@ -58,7 +58,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * @author shenhongxi
  */
-class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
+public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(Http2StreamServerHandler.class);
 
     private final MessageHandler messageHandler;
@@ -73,7 +73,7 @@ class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
     private boolean overLimit;
     private boolean dispatched;
 
-    Http2StreamServerHandler(MessageHandler messageHandler,
+    public Http2StreamServerHandler(MessageHandler messageHandler,
                              ExecutorService serverExecutor,
                              String defaultSerializationName,
                              AtomicInteger inflightRequests,
