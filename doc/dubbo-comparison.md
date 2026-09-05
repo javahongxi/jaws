@@ -80,7 +80,7 @@ Jaws 已实现标签路由能力：
 | **REST/HTTP**      | REST 桥接（Servlet）                                                   | 原生 rest 协议（JAX-RS）                              | **差距较大**    |
 | **Injvm**          | 支持                                                                   | 支持                                                  | **持平**        |
 | **多协议同时暴露** | 支持同一端口自适应 jaws / HTTP/2 / HTTP/1.1 三种协议（AdaptiveServer） | 支持同一端口多协议自动路由（Port Unification Server） | **持平**        |
-| **MCP 桥接**       | 支持（Dubbo 无此能力）                                                 | 不支持                                                | **Jaws 领先**   |
+| **MCP 桥接**       | 不支持                                                                 | 支持（Dubbo MCP Server）                              | **Dubbo 领先**  |
 
 ### REST 协议架构差异
 
@@ -137,7 +137,6 @@ Jaws 的 REST 是桥接层，在已有 jaws RPC 服务之上套 HTTP 入口，UR
 
 ## 十、Jaws 的差异化点
 
-- **MCP 桥接（领先）** — Dubbo 目前没有此能力，Jaws 可将 RPC 服务直接暴露为 AI Agent 可调用的 MCP Tools
 - **gRPC 线格式兼容（新能力）** — `jaws-wire` 模块实现标准 gRPC 线格式（5 字节长度前缀帧 + trailers 状态码），通过 WireProtocol 完整支持注册中心/负载均衡/Filter 链，兼容 grpcurl 等标准 gRPC 工具，无 grpc-java 依赖
 - **HTTP/2 传输轻量可插拔（设计取舍）** — 通过 `TransportFactory` SPI 零侵入接入基于 Netty `Http2FrameCodec` + `Http2MultiplexHandler` 自研的 HTTP/2 传输，无 grpc-java/protobuf 依赖，复用 Jaws 序列化体系，可获得多路复用、流控、网关穿透与 Server Streaming 能力
 - **Adaptive 单端口多协议（设计亮点）** — AdaptiveServer 通过首字节检测自动路由到 Jaws 二进制 / HTTP/2 / HTTP/1.1 三种协议 pipeline，单端口即可服务所有客户端，与 Dubbo Port Unification Server 能力对等
