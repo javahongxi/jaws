@@ -1,4 +1,4 @@
-package org.hongxi.jaws.protocol.jaws;
+package org.hongxi.jaws.transport.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -29,12 +29,10 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class JawsCodecTest {
 
-    private JawsCodec codec;
     private Channel channel;
 
     @BeforeEach
     void setUp() {
-        codec = new JawsCodec();
         Map<String, String> params = new HashMap<>();
         params.put("serialization", "hessian2");
         channel = new FakeChannel(new URL("jaws", "127.0.0.1", 18001, "test", params));
@@ -56,9 +54,9 @@ class JawsCodecTest {
         request.setAttachments(attachments);
 
         ByteBuf buf = Unpooled.buffer();
-        codec.encode(channel, request, buf);
+        JawsCodec.encode(channel, request, buf);
 
-        Object decoded = codec.decode(channel, buf);
+        Object decoded = JawsCodec.decode(channel, buf);
 
         assertInstanceOf(Request.class, decoded);
         Request result = (Request) decoded;
@@ -84,8 +82,8 @@ class JawsCodecTest {
         request.setArguments(null);
 
         ByteBuf buf = Unpooled.buffer();
-        codec.encode(channel, request, buf);
-        Object decoded = codec.decode(channel, buf);
+        JawsCodec.encode(channel, request, buf);
+        Object decoded = JawsCodec.decode(channel, buf);
 
         assertInstanceOf(Request.class, decoded);
         Request result = (Request) decoded;
@@ -100,12 +98,12 @@ class JawsCodecTest {
         request.setRequestId(8L);
         request.setInterfaceName("org.hongxi.jaws.BazService");
         request.setMethodName("submit");
-        request.setParamDesc("org.hongxi.jaws.protocol.jaws.JawsCodecTest$CodecPojo");
+        request.setParamDesc("org.hongxi.jaws.transport.netty.JawsCodecTest$CodecPojo");
         request.setArguments(new Object[]{new CodecPojo("x", 9)});
 
         ByteBuf buf = Unpooled.buffer();
-        codec.encode(channel, request, buf);
-        Object decoded = codec.decode(channel, buf);
+        JawsCodec.encode(channel, request, buf);
+        Object decoded = JawsCodec.decode(channel, buf);
 
         Request result = (Request) decoded;
         assertEquals(1, result.getArguments().length);
@@ -128,8 +126,8 @@ class JawsCodecTest {
                 new java.util.ArrayList<>(java.util.List.of(new CodecBean("y", 7)))});
 
         ByteBuf buf = Unpooled.buffer();
-        codec.encode(protostuffChannel, request, buf);
-        Object decoded = codec.decode(protostuffChannel, buf);
+        JawsCodec.encode(protostuffChannel, request, buf);
+        Object decoded = JawsCodec.decode(protostuffChannel, buf);
 
         Request result = (Request) decoded;
         assertEquals(2, result.getSerializationNumber()); // protostuff = 2
@@ -150,8 +148,8 @@ class JawsCodecTest {
         response.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        codec.encode(channel, response, buf);
-        Object decoded = codec.decode(channel, buf);
+        JawsCodec.encode(channel, response, buf);
+        Object decoded = JawsCodec.decode(channel, buf);
 
         assertInstanceOf(Response.class, decoded);
         Response result = (Response) decoded;
@@ -169,8 +167,8 @@ class JawsCodecTest {
         response.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        codec.encode(channel, response, buf);
-        Object decoded = codec.decode(channel, buf);
+        JawsCodec.encode(channel, response, buf);
+        Object decoded = JawsCodec.decode(channel, buf);
 
         Response result = (Response) decoded;
         assertEquals(43L, result.getRequestId());
@@ -186,8 +184,8 @@ class JawsCodecTest {
         response.setSerializationNumber((byte) 0);
 
         ByteBuf buf = Unpooled.buffer();
-        codec.encode(channel, response, buf);
-        Object decoded = codec.decode(channel, buf);
+        JawsCodec.encode(channel, response, buf);
+        Object decoded = JawsCodec.decode(channel, buf);
 
         Response result = (Response) decoded;
         assertEquals(44L, result.getRequestId());
@@ -205,8 +203,8 @@ class JawsCodecTest {
         response.setSerializationNumber((byte) 1);
 
         ByteBuf buf = Unpooled.buffer();
-        codec.encode(channel, response, buf);
-        Object decoded = codec.decode(channel, buf);
+        JawsCodec.encode(channel, response, buf);
+        Object decoded = JawsCodec.decode(channel, buf);
 
         Response result = (Response) decoded;
         assertEquals("payload", result.getValue());
@@ -227,7 +225,7 @@ class JawsCodecTest {
         buf.writeBytes(new byte[8]); // some body so the frame passes the length check
 
         JawsFrameworkException ex = assertThrows(JawsFrameworkException.class,
-                () -> codec.decode(channel, buf));
+                () -> JawsCodec.decode(channel, buf));
         assertTrue(ex.getMessage().contains("unknown serializationId"));
         // regression guard: exception must be thrown without retaining any slice
         // (buffer is test-owned and unreleased, but the code path must not retain)
@@ -244,7 +242,7 @@ class JawsCodecTest {
         buf.writeInt(0);
         buf.writeBytes(new byte[16]);
 
-        assertThrows(JawsFrameworkException.class, () -> codec.decode(channel, buf));
+        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(channel, buf));
     }
 
     @Test
@@ -257,7 +255,7 @@ class JawsCodecTest {
         buf.writeInt(0);
         buf.writeBytes(new byte[16]);
 
-        assertThrows(JawsFrameworkException.class, () -> codec.decode(channel, buf));
+        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(channel, buf));
     }
 
     @Test
@@ -270,13 +268,13 @@ class JawsCodecTest {
         buf.writeInt(100); // claims 100 bytes of body...
         buf.writeBytes(new byte[10]); // ...but only 10 present
 
-        assertThrows(JawsFrameworkException.class, () -> codec.decode(channel, buf));
+        assertThrows(JawsFrameworkException.class, () -> JawsCodec.decode(channel, buf));
     }
 
     @Test
     void encodeRejectsUnsupportedMessageType() {
         ByteBuf buf = Unpooled.buffer();
-        assertThrows(JawsFrameworkException.class, () -> codec.encode(channel, "not-a-message", buf));
+        assertThrows(JawsFrameworkException.class, () -> JawsCodec.encode(channel, "not-a-message", buf));
     }
 
     // ---------- heartbeat ----------
@@ -284,7 +282,7 @@ class JawsCodecTest {
     @Test
     void encodeHeartbeatProducesValidFrame() {
         ByteBuf buf = Unpooled.buffer();
-        codec.encodeHeartbeat(buf);
+        JawsCodec.encodeHeartbeat(buf);
 
         assertEquals(JawsCodec.HEADER_LENGTH, buf.readableBytes());
         assertEquals(JawsCodec.MAGIC, buf.readShort());

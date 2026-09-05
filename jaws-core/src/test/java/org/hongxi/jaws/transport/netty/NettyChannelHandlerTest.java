@@ -3,10 +3,8 @@ package org.hongxi.jaws.transport.netty;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
-import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Request;
-import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
@@ -17,7 +15,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -71,7 +68,7 @@ class NettyChannelHandlerTest {
 
         FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, new JawsCodec(), messageHandler, saturated);
+        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler, saturated);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -110,7 +107,7 @@ class NettyChannelHandlerTest {
 
         FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, new JawsCodec(), messageHandler, executor);
+        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler, executor);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -147,7 +144,7 @@ class NettyChannelHandlerTest {
     void syncProcessedMessageReleasesByteBuf() throws InterruptedException {
         FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, new JawsCodec(), messageHandler);
+        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -170,7 +167,7 @@ class NettyChannelHandlerTest {
     void unsupportedMessageTypeClosesChannel() throws InterruptedException {
         FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, new JawsCodec(), messageHandler);
+        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler);
         embeddedChannel = new EmbeddedChannel(handler);
 
         // exceptionCaught logs and closes the channel; writeInbound does not propagate
@@ -199,7 +196,7 @@ class NettyChannelHandlerTest {
         request.setParamDesc("");
         request.setArguments(null);
         try {
-            new JawsCodec().encode(fakeChannel(), request, buf);
+            JawsCodec.encode(fakeChannel(), request, buf);
         } catch (Exception e) {
             throw new IllegalStateException("failed to encode sample request", e);
         }

@@ -2,8 +2,6 @@ package org.hongxi.jaws.transport.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
-import org.hongxi.jaws.transport.Codec;
-import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -17,12 +15,12 @@ class EventBitCollisionTest {
 
     @Test
     void exceptionResponseMustNotBeConsumedAsHeartbeat() {
-        NettyDecoder decoder = new NettyDecoder(null, null, 0);
+        NettyDecoder decoder = new NettyDecoder(null, 0);
         EmbeddedChannel ch = new EmbeddedChannel(decoder);
 
         // Craft a frame: magic, version=1, flag = FLAG_RESPONSE_EXCEPTION, requestId=42, bodyLen=0
         ByteBuf buf = ch.alloc().buffer(16);
-        buf.writeShort(Codec.MAGIC);
+        buf.writeShort(JawsCodec.MAGIC);
         buf.writeByte(1);
         buf.writeByte(JawsCodec.FLAG_RESPONSE_EXCEPTION);
         buf.writeLong(42L);
@@ -39,13 +37,13 @@ class EventBitCollisionTest {
 
     @Test
     void heartbeatFrameIsStillConsumed() {
-        NettyDecoder decoder = new NettyDecoder(null, null, 0);
+        NettyDecoder decoder = new NettyDecoder(null, 0);
         EmbeddedChannel ch = new EmbeddedChannel(decoder);
 
         ByteBuf buf = ch.alloc().buffer(16);
-        buf.writeShort(Codec.MAGIC);
+        buf.writeShort(JawsCodec.MAGIC);
         buf.writeByte(1);
-        buf.writeByte(Codec.FLAG_EVENT); // 0x04
+        buf.writeByte(JawsCodec.FLAG_EVENT); // 0x04
         buf.writeLong(0L);
         buf.writeInt(0);
 

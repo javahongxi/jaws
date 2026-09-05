@@ -3,7 +3,6 @@ package org.hongxi.jaws.transport.netty;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
-import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.common.util.NetUtils;
@@ -26,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Sharable terminal handler of the Netty pipeline that bridges the transport
  * layer and the business layer. Each {@link DecodedFrame} is decoded
- * by the {@link Codec} and dispatched to the {@link MessageHandler}; on the
+ * by the {@link JawsCodec} and dispatched to the {@link MessageHandler}; on the
  * server side this runs on a business {@link ExecutorService} so the
  * Netty event loop is never blocked, and a full pool results in an immediate
  * error response rather than queuing. Heartbeat frames never reach this
@@ -43,27 +42,25 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private static final String CONTENT_LENGTH = "Content-Length";
 
     private final Channel channel;
-    private final Codec codec;
     private final MessageHandler messageHandler;
     private ExecutorService serverExecutor;
     /** Tracks in-flight requests for graceful shutdown; null on the client side. */
     private AtomicInteger inflightRequests;
 
-    public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler) {
+    public NettyChannelHandler(Channel channel, MessageHandler messageHandler) {
         this.channel = channel;
-        this.codec = codec;
         this.messageHandler = messageHandler;
     }
 
-    public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler,
+    public NettyChannelHandler(Channel channel, MessageHandler messageHandler,
                                ExecutorService serverExecutor) {
-        this(channel, codec, messageHandler);
+        this(channel, messageHandler);
         this.serverExecutor = serverExecutor;
     }
 
-    public NettyChannelHandler(Channel channel, Codec codec, MessageHandler messageHandler,
+    public NettyChannelHandler(Channel channel, MessageHandler messageHandler,
                                ExecutorService serverExecutor, AtomicInteger inflightRequests) {
-        this(channel, codec, messageHandler, serverExecutor);
+        this(channel, messageHandler, serverExecutor);
         this.inflightRequests = inflightRequests;
     }
 
@@ -109,7 +106,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     private void processFrame(ChannelHandlerContext ctx, DecodedFrame frame) {
         try {
-            Object decoded = codec.decode(channel, frame.data());
+            Object decoded = JawsCodec.decode(channel, frame.data());
             if (decoded instanceof Request request) {
                 processRequest(ctx, request);
             } else if (decoded instanceof Response response) {
@@ -170,7 +167,7 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private void sendResponse(ChannelHandlerContext ctx, Response response) {
         ByteBuf buf = ctx.alloc().buffer();
         try {
-            codec.encode(channel, response, buf);
+            JawsCodec.encode(channel, response, buf);
         } catch (Exception e) {
             buf.release();
             log.error("encode response error: requestId={}", response.getRequestId(), e);

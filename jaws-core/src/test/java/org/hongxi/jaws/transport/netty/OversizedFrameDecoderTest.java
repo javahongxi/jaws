@@ -2,8 +2,6 @@ package org.hongxi.jaws.transport.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
-import org.hongxi.jaws.transport.Codec;
-import org.hongxi.jaws.protocol.jaws.JawsCodec;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -21,7 +19,7 @@ class OversizedFrameDecoderTest {
 
     @Test
     void oversizedFrameBodySplitAcrossChunksMustNotDesynchronizeStream() {
-        NettyDecoder decoder = new NettyDecoder(null, null, 10);
+        NettyDecoder decoder = new NettyDecoder(null, 10);
         EmbeddedChannel ch = new EmbeddedChannel(decoder);
 
         byte[] oversizedBody = new byte[100];
@@ -29,7 +27,7 @@ class OversizedFrameDecoderTest {
 
         // Oversized response frame: header + 100-byte body (limit is 10)
         ByteBuf buf = ch.alloc().buffer(16 + oversizedBody.length);
-        buf.writeShort(Codec.MAGIC);
+        buf.writeShort(JawsCodec.MAGIC);
         buf.writeByte(1);
         buf.writeByte(JawsCodec.FLAG_RESPONSE);
         buf.writeLong(1L);
@@ -44,7 +42,7 @@ class OversizedFrameDecoderTest {
 
         // A valid frame right after must still be decodable
         ByteBuf valid = ch.alloc().buffer(16);
-        valid.writeShort(Codec.MAGIC);
+        valid.writeShort(JawsCodec.MAGIC);
         valid.writeByte(1);
         valid.writeByte(JawsCodec.FLAG_RESPONSE);
         valid.writeLong(2L);

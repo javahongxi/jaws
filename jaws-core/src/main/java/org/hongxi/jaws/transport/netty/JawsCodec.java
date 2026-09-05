@@ -1,15 +1,13 @@
-package org.hongxi.jaws.protocol.jaws;
+package org.hongxi.jaws.transport.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
-import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.serialization.ObjectInput;
 import org.hongxi.jaws.serialization.ObjectOutput;
 import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
-import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
@@ -30,7 +28,7 @@ import java.util.Map;
  * <pre>
  * Bytes 0-1   : magic (0x4A57)
  * Byte  2     : version
- * Byte  3     : flag (low 2 bits = data type, bit 2 = event/heartbeat, high 5 bits = serializationId)
+ * Byte  3     : flag (low 3 bits = data type, bit 2 = event/heartbeat, high 5 bits = serializationId)
  * Bytes 4-11  : request id
  * Bytes 12-15 : body content length
  * </pre>
@@ -40,23 +38,43 @@ import java.util.Map;
  * and business objects are written to / read from the same stream without
  * per-field byte[] allocation.
  */
-@Extension("jaws")
-public class JawsCodec implements Codec {
+public final class JawsCodec {
+
+    private JawsCodec() {
+    }
+
+    /** Protocol header length in bytes. */
+    public static final int HEADER_LENGTH = 16;
+
+    /** Magic number written at the beginning of every protocol frame ('JW'). */
+    public static final short MAGIC = (short) 0x4A57;
+
+    /**
+     * Bit mask for the data-type portion of the flag byte. Data types use the
+     * low 2 bits (0-3); bit 2 is reserved for {@link #FLAG_EVENT} and must not
+     * be used by data-type flags, so event frames never collide with data frames.
+     */
+    public static final byte MASK = 0x07;
+
+    /** Flag value indicating a request frame. */
+    public static final byte FLAG_REQUEST = 0x00;
+
+    /** Bit flag indicating an event frame (e.g. heartbeat). */
+    public static final byte FLAG_EVENT = 0x04;
 
     public static final byte VERSION = 1;
     public static final byte SERIALIZATION_MASK = (byte) 0xF8;
 
     /**
      * Flag values use only the low 2 bits (bit 2 is reserved for FLAG_EVENT,
-     * see {@link Codec#FLAG_EVENT}), so data-type flags never collide with
+     * see {@link #FLAG_EVENT}), so data-type flags never collide with
      * the event bit: 0x00=request, 0x01=response, 0x02=exception, 0x03=void.
      */
     public static final byte FLAG_RESPONSE = 0x01;
     public static final byte FLAG_RESPONSE_EXCEPTION = 0x02;
     public static final byte FLAG_RESPONSE_VOID = 0x03;
 
-    @Override
-    public void encode(Channel channel, Object message, ByteBuf out) throws IOException {
+    public static void encode(Channel channel, Object message, ByteBuf out) throws IOException {
         try {
             if (message instanceof Request request) {
                 encodeRequest(channel, request, out);
@@ -75,8 +93,7 @@ public class JawsCodec implements Codec {
     /**
      * Decode data from client request or server response.
      */
-    @Override
-    public Object decode(Channel channel, ByteBuf in) throws IOException {
+    public static Object decode(Channel channel, ByteBuf in) throws IOException {
         if (in.readableBytes() <= HEADER_LENGTH) {
             throw new JawsFrameworkException("decode error: invalid frame format");
         }
@@ -148,7 +165,7 @@ public class JawsCodec implements Codec {
      * <p>
      * Body layout: interface_name, method_name, param_desc, serialized param values, attachments.
      */
-    private void encodeRequest(Channel channel, Request request, ByteBuf out) throws IOException {
+    private static void encodeRequest(Channel channel, Request request, ByteBuf out) throws IOException {
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtension(channel.getUrl().getParameter(UrlParam.Transport.SERIALIZATION));
 
@@ -193,7 +210,7 @@ public class JawsCodec implements Codec {
      * <p>
      * Body layout: process_time, class_name, serialized result or exception.
      */
-    private void encodeResponse(Response response, ByteBuf out) throws IOException {
+    private static void encodeResponse(Response response, ByteBuf out) throws IOException {
         // Use the serialization carried on the response (copied from request by handler),
         // so the response is encoded with the same serialization the client used.
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
@@ -238,8 +255,7 @@ public class JawsCodec implements Codec {
      * <p>
      * Called by {@code HeartbeatHandler} when an idle event is detected.
      */
-    @Override
-    public void encodeHeartbeat(ByteBuf out) {
+    public static void encodeHeartbeat(ByteBuf out) {
         out.writeShort(MAGIC);
         out.writeByte(VERSION);
         out.writeByte(FLAG_EVENT);
@@ -250,7 +266,7 @@ public class JawsCodec implements Codec {
     /**
      * Write the 16-byte protocol header at the reserved position in the ByteBuf.
      */
-    private void writeHeader(ByteBuf out, int headerStart, byte flag, long requestId, int bodyLength) {
+    private static void writeHeader(ByteBuf out, int headerStart, byte flag, long requestId, int bodyLength) {
         int currentIndex = out.writerIndex();
         out.writerIndex(headerStart);
 
@@ -268,7 +284,7 @@ public class JawsCodec implements Codec {
         out.writerIndex(currentIndex);
     }
 
-    private Object decodeRequest(ObjectInput input, long requestId, byte serializationId)
+    private static Object decodeRequest(ObjectInput input, long requestId, byte serializationId)
             throws IOException, ClassNotFoundException {
         String interfaceName = input.readUTF();
         String methodName = input.readUTF();
@@ -286,7 +302,7 @@ public class JawsCodec implements Codec {
         return rpcRequest;
     }
 
-    private Object[] decodeRequestParameter(ObjectInput input, String parameterDesc)
+    private static Object[] decodeRequestParameter(ObjectInput input, String parameterDesc)
             throws IOException, ClassNotFoundException {
         if (parameterDesc == null || parameterDesc.isEmpty()) {
             return null;
@@ -303,7 +319,7 @@ public class JawsCodec implements Codec {
         return paramObjs;
     }
 
-    private Map<String, String> decodeRequestAttachments(ObjectInput input) throws IOException {
+    private static Map<String, String> decodeRequestAttachments(ObjectInput input) throws IOException {
         int size = input.readInt();
 
         if (size <= 0) {
@@ -319,7 +335,7 @@ public class JawsCodec implements Codec {
         return attachments;
     }
 
-    private Object decodeResponse(ObjectInput input, byte dataType, long requestId, byte serializationId)
+    private static Object decodeResponse(ObjectInput input, byte dataType, long requestId, byte serializationId)
             throws IOException, ClassNotFoundException {
         long processTime = input.readLong();
 

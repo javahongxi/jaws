@@ -10,10 +10,8 @@ import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
 import io.netty.handler.codec.http2.Http2MultiplexHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractNettyServer;
-import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.http.HttpRequestHandler;
 import org.hongxi.jaws.transport.http2.Http2StreamServerHandler;
@@ -54,7 +52,6 @@ import java.util.concurrent.TimeUnit;
 public class AdaptiveServer extends AbstractNettyServer {
 
     private final MessageHandler messageHandler;
-    private final Codec codec;
     private final int maxContentLength;
     private final String serializationName;
     private final long heartbeat;
@@ -65,8 +62,6 @@ public class AdaptiveServer extends AbstractNettyServer {
     public AdaptiveServer(URL url, MessageHandler messageHandler) {
         super(url, "AdaptiveServer");
         this.messageHandler = messageHandler;
-        this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
-                .getExtension(url.getParameter(UrlParam.Transport.CODEC));
         this.maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
         this.serializationName = url.getParameter(UrlParam.Transport.SERIALIZATION);
         this.heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
@@ -104,11 +99,11 @@ public class AdaptiveServer extends AbstractNettyServer {
         if (heartbeat > 0) {
             pipeline.addLast("idle_state", new IdleStateHandler(
                     heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
-            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
+            pipeline.addLast("heartbeat", new HeartbeatHandler());
         }
-        pipeline.addLast("decoder", new NettyDecoder(this, codec, maxContentLength));
+        pipeline.addLast("decoder", new NettyDecoder(this, maxContentLength));
         pipeline.addLast("handler", new NettyChannelHandler(
-                this, codec, messageHandler, serverExecutor, inflightRequests));
+                this, messageHandler, serverExecutor, inflightRequests));
     }
 
     /**

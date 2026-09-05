@@ -4,10 +4,8 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractNettyServer;
-import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.transport.MessageHandler;
 
 import java.util.concurrent.TimeUnit;
@@ -27,15 +25,12 @@ import java.util.concurrent.TimeUnit;
  */
 public class NettyServer extends AbstractNettyServer {
 
-    private final Codec codec;
     private final MessageHandler messageHandler;
     private final int maxContentLength;
 
     public NettyServer(URL url, MessageHandler messageHandler) {
         super(url, "NettyServer");
         this.messageHandler = messageHandler;
-        this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
-                .getExtension(url.getParameter(UrlParam.Transport.CODEC));
         this.maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
     }
 
@@ -46,10 +41,10 @@ public class NettyServer extends AbstractNettyServer {
         if (heartbeat > 0) {
             pipeline.addLast("idle_state",
                     new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
-            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
+            pipeline.addLast("heartbeat", new HeartbeatHandler());
         }
-        pipeline.addLast("decoder", new NettyDecoder(this, codec, maxContentLength));
+        pipeline.addLast("decoder", new NettyDecoder(this, maxContentLength));
         // serverExecutor is ready before bind, so it is safe to build the handler here
-        pipeline.addLast("handler", new NettyChannelHandler(this, codec, messageHandler, serverExecutor, inflightRequests));
+        pipeline.addLast("handler", new NettyChannelHandler(this, messageHandler, serverExecutor, inflightRequests));
     }
 }

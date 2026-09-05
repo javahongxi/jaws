@@ -12,7 +12,6 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
@@ -26,7 +25,6 @@ import org.hongxi.jaws.rpc.ResponseFuture;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractClient;
 import org.hongxi.jaws.transport.Client;
-import org.hongxi.jaws.transport.Codec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,7 +53,6 @@ public class NettyClient extends AbstractClient {
 
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
 
-    private final Codec codec;
     private final InetSocketAddress remoteAddress;
     private final boolean needReconnect;
 
@@ -66,12 +63,9 @@ public class NettyClient extends AbstractClient {
 
     public NettyClient(URL url) {
         super(url);
-        this.codec = ExtensionLoader.getExtensionLoader(Codec.class)
-                .getExtension(url.getParameter(UrlParam.Transport.CODEC));
         this.remoteAddress = new InetSocketAddress(url.getHost(), url.getPort());
         this.needReconnect = url.getBoolParameter(UrlParam.Client.SEND_RECONNECT);
-        log.info("init netty client. url: {}-{}, use codec: {}",
-                url.getHost(), url.getPath(), codec.getClass().getSimpleName());
+        log.info("init netty client. url: {}-{}", url.getHost(), url.getPath());
     }
 
     @Override
@@ -107,7 +101,7 @@ public class NettyClient extends AbstractClient {
         ByteBuf buf = null;
         try {
             buf = ch.alloc().buffer();
-            codec.encode(this, request, buf);
+            JawsCodec.encode(this, request, buf);
         } catch (Exception e) {
             if (buf != null) {
                 buf.release();
@@ -221,11 +215,11 @@ public class NettyClient extends AbstractClient {
         if (heartbeat > 0) {
             pipeline.addLast("idle_state",
                     new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
-            pipeline.addLast("heartbeat", new HeartbeatHandler(codec));
+            pipeline.addLast("heartbeat", new HeartbeatHandler());
         }
         int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
-        pipeline.addLast("decoder", new NettyDecoder(NettyClient.this, codec, maxContentLength));
-        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, codec, (Object message) -> {
+        pipeline.addLast("decoder", new NettyDecoder(NettyClient.this, maxContentLength));
+        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (Object message) -> {
             Response response = (Response) message;
             // removeCallback: atomically claim + clean up the map entry,
             // so the timeout timer won't attempt a duplicate completion

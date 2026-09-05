@@ -3,7 +3,6 @@ package org.hongxi.jaws.transport.netty;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
-import org.hongxi.jaws.transport.Codec;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -18,7 +17,7 @@ import java.util.List;
  * Netty {@link ByteToMessageDecoder} that frames the jaws protocol:
  * a 16-byte header (magic, version, flag, requestId, body length) followed
  * by the body. The flag byte distinguishes requests from responses and, when
- * {@code (flag & Codec.FLAG_EVENT) != 0}, indicates a heartbeat frame that is
+ * {@code (flag & JawsCodec.FLAG_EVENT) != 0}, indicates a heartbeat frame that is
  * consumed here and never forwarded to the business layer.
  * <p>
  * Bodies exceeding {@code maxContentLength} are rejected (answered with an
@@ -33,7 +32,6 @@ public class NettyDecoder extends ByteToMessageDecoder {
     private static final Logger log = LoggerFactory.getLogger(NettyDecoder.class);
 
     private final Channel channel;
-    private final Codec codec;
     private final int maxContentLength;
 
     /**
@@ -43,9 +41,8 @@ public class NettyDecoder extends ByteToMessageDecoder {
      */
     private long bytesToSkip;
 
-    public NettyDecoder(Channel channel, Codec codec, int maxContentLength) {
+    public NettyDecoder(Channel channel, int maxContentLength) {
         this.channel = channel;
-        this.codec = codec;
         this.maxContentLength = maxContentLength;
     }
 
@@ -61,7 +58,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
             }
         }
 
-        if (in.readableBytes() < Codec.HEADER_LENGTH) {
+        if (in.readableBytes() < JawsCodec.HEADER_LENGTH) {
             return;
         }
 
@@ -69,7 +66,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
 
         // bytes 0-1: magic
         short magic = in.readShort();
-        if (magic != Codec.MAGIC) {
+        if (magic != JawsCodec.MAGIC) {
             in.resetReaderIndex();
             throw new JawsFrameworkException("NettyDecoder magic not match: " + magic);
         }
@@ -80,7 +77,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         byte flag = in.readByte();
 
         // Heartbeat frame: event bit set — consume and skip, do not pass to business layer
-        if ((flag & Codec.FLAG_EVENT) != 0) {
+        if ((flag & JawsCodec.FLAG_EVENT) != 0) {
             in.skipBytes(8); // skip requestId (bytes 4-11)
             int bodyLen = in.readInt(); // bytes 12-15
             in.skipBytes(Math.max(0, bodyLen));
@@ -92,7 +89,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         // bytes 12-15: body length
         int bodyLength = in.readInt();
 
-        boolean isRequest = (flag & Codec.MASK) == Codec.FLAG_REQUEST;
+        boolean isRequest = (flag & JawsCodec.MASK) == JawsCodec.FLAG_REQUEST;
 
         if (bodyLength < 0) {
             throw new JawsFrameworkException("NettyDecoder negative body length: " + bodyLength);
@@ -112,7 +109,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
                         "NettyDecoder transport data content length exceeds limit, size: " + bodyLength + " > " + maxContentLength);
                 Response response = RpcUtils.buildErrorResponse(requestId, e);
                 ByteBuf msg = ctx.alloc().buffer();
-                codec.encode(channel, response, msg);
+                JawsCodec.encode(channel, response, msg);
                 ctx.channel().writeAndFlush(msg);
             }
             return;
@@ -127,7 +124,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
         in.resetReaderIndex();
         // Retain the buffer since the caller (ByteToMessageDecoder pipeline) may release it;
         // NettyChannelHandler is responsible for releasing after processing.
-        ByteBuf frame = in.readRetainedSlice(Codec.HEADER_LENGTH + bodyLength);
+        ByteBuf frame = in.readRetainedSlice(JawsCodec.HEADER_LENGTH + bodyLength);
 
         DecodedFrame decodedFrame = new DecodedFrame(isRequest, requestId, frame);
         out.add(decodedFrame);
