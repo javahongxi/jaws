@@ -5,7 +5,7 @@ import java.util.Map;
 
 /**
  * Configuration of a single RPC protocol, covering endpoint address (host,
- * port), serialization and codec selection, transport factory, and
+ * port), serialization selection, transport factory, and
  * server/client tuning knobs such as worker thread pool, queue size,
  * max connections, max content length, and heartbeat interval.
  * <p>
@@ -41,11 +41,6 @@ public class ProtocolConfig extends BaseConfig {
      * The serialization method.
      */
     private String serialization;
-
-    /**
-     * The protocol codec.
-     */
-    private String codec;
 
     /**
      * The transport factory.
@@ -124,7 +119,6 @@ public class ProtocolConfig extends BaseConfig {
     protected void collectParams(Map<String, String> params) {
         putIfPresent(params, "protocol", name);
         putIfPresent(params, "serialization", serialization);
-        putIfPresent(params, "codec", codec);
         putIfPresent(params, "transportFactory", transportFactory);
         putIfPresent(params, "maxServerConnections", maxServerConnections);
         putIfPresent(params, "minWorkerThreads", minWorkerThreads);
@@ -169,14 +163,6 @@ public class ProtocolConfig extends BaseConfig {
 
     public void setSerialization(String serialization) {
         this.serialization = serialization;
-    }
-
-    public String getCodec() {
-        return codec;
-    }
-
-    public void setCodec(String codec) {
-        this.codec = codec;
     }
 
     public String getTransportFactory() {

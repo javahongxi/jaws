@@ -7,17 +7,17 @@
 ```
 NettyDecoder      (Netty 层 - 帧检测 + 半包等待，输出 DecodedFrame)
         ↕
-NettyChannelHandler (业务层 - 调用 Codec 编解码，服务端线程池调度)
+NettyChannelHandler (业务层 - 调用 JawsCodec 编解码，服务端线程池调度)
         ↕
 JawsCodec         (协议层 - 业务编解码, magic=0x4A57, 直接操作 ByteBuf)
 ```
 
 - **NettyDecoder**：继承 `ByteToMessageDecoder`，校验 `0x4A57` magic，读取协议帧头（version、flag、requestId、bodyLength），等待完整 body 后通过 `readRetainedSlice()` 提取完整协议帧（header + body）封装为 `DecodedFrame` record 传递给下游
-- **NettyChannelHandler**：服务端接收 `DecodedFrame`，通过 `threadPoolExecutor` 将 decode 调度到业务线程；客户端在 IO 线程直接 decode。编码时 `Codec.encode()` 直接写入 `ByteBuf`，由 `ctx.channel().writeAndFlush()` 发送
-- **NettyClient**：客户端发送请求时分配 `ByteBuf`，调用 `Codec.encode()` 直接写入，通过 `channel.writeAndFlush()` 发送
+- **NettyChannelHandler**：服务端接收 `DecodedFrame`，通过 `threadPoolExecutor` 将 decode 调度到业务线程；客户端在 IO 线程直接 decode。编码时 `JawsCodec.encode()` 直接写入 `ByteBuf`，由 `ctx.channel().writeAndFlush()` 发送
+- **NettyClient**：客户端发送请求时分配 `ByteBuf`，调用 `JawsCodec.encode()` 直接写入，通过 `channel.writeAndFlush()` 发送
 - **JawsCodec**：协议层编解码，处理 `0x4A57` 协议帧的业务语义，编码采用「预留 header 空间 + body 直写 ByteBuf + 回填 header」模式，解码通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化
 
-> 注：早期版本有独立的 `NettyEncoder`（`MessageToByteEncoder<byte[]>`），Codec 升级为直接操作 `ByteBuf` 后已移除，编码路径减少一次中间层。
+> 注：编解码路径经历了两层演进：① 早期移除独立的 `NettyEncoder`（`MessageToByteEncoder<byte[]>`），Codec 升级为直接操作 `ByteBuf`，编码路径减少一次中间层；② 随后拆除 `Codec` 接口，所有编解码方法收归 `JawsCodec` 静态方法，调用方不再依赖任何抽象接口。
 
 ### Dubbo 编解码结构
 
@@ -33,7 +33,7 @@ DubboCodec         (RPC 层 - 覆盖 body 编解码逻辑)
 - **ExchangeCodec**：操作 Dubbo 自建的 `ChannelBuffer` 抽象（`dubbo-remoting-api` 模块，不依赖 Netty），一次完成头解析和 body 流式解码，通过 `decodeBody()` 模板方法留给子类扩展
 - **DubboCodec**：通过继承覆盖 `encodeRequestData`/`decodeBody` 等方法，注入 RPC 语义
 
-**架构对比**：Jaws 的 `Codec` 接口直接操作 Netty `ByteBuf`，编解码全程无桥接开销；Dubbo 的 `Codec2` 操作自建 `ChannelBuffer` 抽象，保持了 `dubbo-remoting-api` 的传输层无关性，但在与 Netty 交互时通过 `NettyCodecAdapter` 桥接，产生额外的分配和拷贝。Jaws 将帧检测（NettyDecoder）与协议语义解析（JawsCodec）分离，中间通过 `DecodedFrame` record 解耦，职责边界清晰；Dubbo 通过继承体系在同一个 Codec 类中完成（ExchangeCodec + DubboCodec），少一层间接调用。
+**架构对比**：Jaws 的 `JawsCodec` 直接操作 Netty `ByteBuf`，编解码全程无桥接开销；Dubbo 的 `Codec2` 操作自建 `ChannelBuffer` 抽象，保持了 `dubbo-remoting-api` 的传输层无关性，但在与 Netty 交互时通过 `NettyCodecAdapter` 桥接，产生额外的分配和拷贝。Jaws 将帧检测（NettyDecoder）与协议语义解析（JawsCodec）分离，中间通过 `DecodedFrame` record 解耦，职责边界清晰；Dubbo 通过继承体系在同一个 Codec 类中完成（ExchangeCodec + DubboCodec），少一层间接调用。
 
 ## 二、线上数据格式
 
@@ -157,7 +157,7 @@ Codec 层内部 0 次额外 body 拷贝，但 header 读取有 1 次 `byte[16]` 
 
 | 维度 | Jaws | Dubbo |
 |------|------|-------|
-| Codec 接口 | 直接操作 Netty `ByteBuf` | 操作自建 `ChannelBuffer` 抽象 |
+| JawsCodec | 直接操作 Netty `ByteBuf` | 操作自建 `ChannelBuffer` 抽象 |
 | 编码路径（Codec 层） | 0 次中间分配，body 直写 ByteBuf | 0 次中间分配，body 直写 ChannelBuffer |
 | 编码路径（Netty 桥接） | 无桥接层 | 1 次 HeapChannelBuffer 分配 + toByteBuffer() 转换 |
 | 解码路径（Codec 层） | 0 次中间分配，`retainedSlice` + `ByteBufInputStream` | 0 次中间 body 拷贝，`ChannelBufferInputStream` |
@@ -170,7 +170,7 @@ Jaws 的编解码路径**优于** Dubbo：
 - **解码**：Jaws 通过 `retainedSlice` + `ByteBufInputStream` 零拷贝反序列化，全程在 Netty ByteBuf 上操作。Dubbo 在 Codec 层同样零拷贝，但 NettyCodecAdapter 桥接层需将 Netty ChannelBuffer 通过 `toByteBuffer()` 转换后拷贝到 Dubbo ChannelBuffer
 - **Serialization**：双方均已升级为流式 API（`ObjectOutput`/`ObjectInput`），Hessian2 实现零中间 byte[] 拷贝，此维度持平
 
-根本差异在于：Jaws 的 `Codec` 接口直接依赖 Netty `ByteBuf`，消除了桥接开销；Dubbo 的 `Codec2` 接口通过自建 `ChannelBuffer` 抽象保持传输层无关性（`dubbo-remoting-api` 不依赖 Netty），代价是在 Netty 传输层引入桥接拷贝。这是架构设计上的取舍 — 模块纯净性 vs 运行时效率。
+根本差异在于：Jaws 的 `JawsCodec` 直接依赖 Netty `ByteBuf`，消除了桥接开销；Dubbo 的 `Codec2` 接口通过自建 `ChannelBuffer` 抽象保持传输层无关性（`dubbo-remoting-api` 不依赖 Netty），代价是在 Netty 传输层引入桥接拷贝。这是架构设计上的取舍 — 模块纯净性 vs 运行时效率。
 
 ## 五、Jaws 设计的优点
 
@@ -181,7 +181,7 @@ Jaws 的编解码路径**优于** Dubbo：
 5. **每消息序列化协议** — flag 高 5 位嵌入 serializationId，编码时写入、解码时提取，支持同一服务端接收不同客户端的序列化方式，通过 `@SpiMeta(number)` + `ExtensionLoader.getExtensionByNumber()` 实现 O(1) 查找
 6. **序列化链路闭环** — 编码从 URL 配置取序列化方式写入 flag → 解码从 flag 提取 serializationId → handler 拷贝到 response → encodeResponse 使用 response 上的 serializationNumber，全链路一致
 7. **OOM 保护** — NettyDecoder 有 `maxContentLength` 检查，超大消息跳过并对 request 返回错误响应；NettyChannelHandler 有线程池拒绝策略
-8. **编码降级** — NettyDecoder 在 OOM 拦截时，若消息为 request，会调用 `codec.encode()` 构造错误响应返回对端，避免对端超时等待
+8. **编码降级** — NettyDecoder 在 OOM 拦截时，若消息为 request，会调用 `JawsCodec.encode()` 构造错误响应返回对端，避免对端超时等待
 9. **代码简洁** — JawsCodec 整体约 360 行，逻辑直白易读，没有复杂的继承体系
 10. **心跳/事件支持** — flag bit 2 作为 event 标记，`NettyDecoder` 识别后直接消费不进业务线程池；`HeartbeatHandler` + `IdleStateHandler` 实现双向心跳检测，可选配置启用
 

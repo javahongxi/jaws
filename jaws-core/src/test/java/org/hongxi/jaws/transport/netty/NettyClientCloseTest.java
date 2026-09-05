@@ -6,9 +6,6 @@ import org.hongxi.jaws.rpc.ResponseFuture;
 import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -58,9 +55,7 @@ class NettyClientCloseTest {
     }
 
     private NettyClient newNettyClient() {
-        Map<String, String> params = new HashMap<>();
-        params.put("codec", "jaws");
-        return new NettyClient(new URL("jaws", "127.0.0.1", 18003, "test", params));
+        return new NettyClient(new URL("jaws", "127.0.0.1", 18003, "test"));
     }
 
     private ResponseFuture newPendingFuture(NettyClient client, long requestId) {

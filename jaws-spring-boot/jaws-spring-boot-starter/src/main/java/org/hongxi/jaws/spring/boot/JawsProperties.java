@@ -152,11 +152,6 @@ public class JawsProperties {
         private String transportFactory = "netty";
 
         /**
-         * Codec type.
-         */
-        private String codec;
-
-        /**
          * Heartbeat interval in milliseconds. 0 means disabled.
          */
         private Long heartbeat;
@@ -204,14 +199,6 @@ public class JawsProperties {
 
         public void setTransportFactory(String transportFactory) {
             this.transportFactory = transportFactory;
-        }
-
-        public String getCodec() {
-            return codec;
-        }
-
-        public void setCodec(String codec) {
-            this.codec = codec;
         }
 
         public Long getHeartbeat() {

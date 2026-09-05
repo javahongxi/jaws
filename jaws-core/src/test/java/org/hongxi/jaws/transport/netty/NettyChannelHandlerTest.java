@@ -184,7 +184,6 @@ class NettyChannelHandlerTest {
     private FakeChannel fakeChannel() {
         Map<String, String> params = new HashMap<>();
         params.put("serialization", "hessian2");
-        params.put("codec", "jaws");
         return new FakeChannel(new URL("jaws", "127.0.0.1", 18002, "test", params));
     }
 

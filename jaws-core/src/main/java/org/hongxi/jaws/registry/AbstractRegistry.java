@@ -137,15 +137,14 @@ public abstract class AbstractRegistry implements Registry {
      * <p>
      * These fall into two categories:
      * <ul>
-     *   <li>Provider-local settings (e.g. thread pool, server connections, codec, transportFactory)
+     *   <li>Provider-local settings (e.g. thread pool, server connections, transportFactory)
      *       that are transport/server concerns and not needed by consumers.</li>
      *   <li>Consumer-local settings (e.g. retries, loadBalance, retryPolicy, check)
      *       that each consumer configures independently and should not be inherited from the provider.</li>
      * </ul>
      */
     private URL removeRegistryUnnecessaryParams(URL url) {
-        // Transport SPI: codec is a local transport concern, consumer applies default on connect
-        url.getParameters().remove(UrlParam.Transport.CODEC.getName());
+        // Transport SPI
         url.getParameters().remove(UrlParam.Transport.TRANSPORT_FACTORY.getName());
 
         // Provider-local server settings

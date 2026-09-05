@@ -87,7 +87,6 @@ public final class UrlParam {
 
     public static final class Transport {
         public static final Def<String> PROTOCOL = new Def<>("protocol", JawsConstants.PROTOCOL_JAWS);
-        public static final Def<String> CODEC = new Def<>("codec", JawsConstants.PROTOCOL_JAWS);
         public static final Def<String> SERIALIZATION = new Def<>("serialization", "hessian2");
         public static final Def<String> TRANSPORT_FACTORY = new Def<>("transportFactory", "netty");
         public static final Def<String> PROXY = new Def<>("proxy", "jdk");
