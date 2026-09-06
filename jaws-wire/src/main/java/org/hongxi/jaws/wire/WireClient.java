@@ -152,7 +152,7 @@ public class WireClient extends AbstractHttp2Client {
                                         "Wire stream write failed", f.cause()));
                                 future.onFailure(errorResponse);
                             }
-                            incrErrorCount();
+                            // incrErrorCount is handled by whenComplete callback above
                         }
                     });
         } catch (Exception e) {
@@ -163,7 +163,7 @@ public class WireClient extends AbstractHttp2Client {
                         "WireClient request failed: url=" + url.getUri() + " path=" + grpcPath, e));
                 future.onFailure(errorResponse);
             }
-            incrErrorCount();
+            // incrErrorCount is handled by whenComplete callback above
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
             }
