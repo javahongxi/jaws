@@ -35,6 +35,7 @@
         <module>jaws-sample-gray</module>
         <module>jaws-sample-adaptive-provider</module>
         <module>jaws-sample-adaptive-consumer</module>
+        <module>jaws-sample-mcp-provider</module>
     </modules>
 
     <dependencies>
