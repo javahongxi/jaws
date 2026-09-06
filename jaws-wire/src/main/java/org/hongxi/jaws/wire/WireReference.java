@@ -2,7 +2,6 @@ package org.hongxi.jaws.wire;
 
 import com.google.protobuf.Message;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.AbstractReference;
 import org.hongxi.jaws.rpc.DefaultRequest;
@@ -19,10 +18,10 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Wire protocol reference. Converts protobuf {@link Message} arguments to raw
- * bytes for transmission via {@link WireClient}. The response {@code Message}
- * passes through directly so that the Jaws proxy returns the typed protobuf
- * object to the caller.
+ * Wire protocol reference. Delegates to {@link WireClient} for gRPC
+ * transmission using typed protobuf {@link Message} arguments directly.
+ * The response {@code Message} passes through so that the Jaws proxy returns
+ * the typed protobuf object to the caller.
  * <p>
  * The protobuf request/response types are extracted from the service interface
  * via {@link WireProtoTypes}.
@@ -56,21 +55,9 @@ public class WireReference<T> extends AbstractReference<T> {
     @Override
     protected Response doCall(Request request) {
         request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
-
-        Object[] args = request.getArguments();
-        if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
-            throw new JawsServiceException(
-                    "WireReference doCall failed: argument must be a protobuf Message, url="
-                            + url.getUri());
-        }
-
-        // Convert Message to raw protobuf bytes for the wire transport
-        byte[] requestBytes = requestMessage.toByteArray();
-
         WireProtoTypes.MethodInfo methodInfo = protoTypes.getMethodInfo(request.getMethodName());
         WireClient wireClient = (WireClient) client;
-        return wireClient.sendRawBytes(
-                request, requestBytes, methodInfo.responseParser());
+        return wireClient.request(request, methodInfo.responseParser());
     }
 
     @Override

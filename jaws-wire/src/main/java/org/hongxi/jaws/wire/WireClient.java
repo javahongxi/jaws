@@ -3,7 +3,6 @@ package org.hongxi.jaws.wire;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
 import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
 import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
@@ -32,7 +31,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
 /**
  * gRPC client implementation based on Netty HTTP/2. The Netty bootstrap
@@ -58,9 +56,8 @@ import java.util.function.Function;
  * same as grpc-java) fail the call.
  * <p>
  * The response parser must be provided as the {@code responseParser} parameter
- * in {@link #request(Request, Parser)}, {@link #requestStream(Request, Parser)},
- * or {@link #sendRawBytes(Request, byte[], Parser)} — gRPC responses cannot
- * be decoded without a target protobuf type.
+ * in {@link #request(Request, Parser)} or {@link #requestStream(Request, Parser)}
+ * — gRPC responses cannot be decoded without a target protobuf type.
  *
  * @author shenhongxi
  */
@@ -108,35 +105,7 @@ public class WireClient extends AbstractHttp2Client {
                     "WireClient request argument must be a protobuf Message; got: "
                             + (args != null && args.length > 0 ? args[0].getClass().getName() : "null"));
         }
-        return doUnaryCall(request, responseParser,
-                alloc -> WireFrameCodec.encode(requestMessage, alloc, compression));
-    }
 
-    /**
-     * Send raw protobuf bytes as a gRPC frame. Used by the SPI protocol layer
-     * where arguments are opaque bytes rather than typed {@link Message} instances.
-     *
-     * @param request     the RPC request (interface/method used for gRPC path)
-     * @param rawBytes    raw protobuf bytes (without the 5-byte gRPC header)
-     * @param responseParser the parser for decoding the response message
-     * @return the response containing the decoded protobuf message
-     */
-    public Response sendRawBytes(Request request, byte[] rawBytes,
-                                 Parser<? extends Message> responseParser) {
-        if (!isAvailable()) {
-            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
-        }
-        return doUnaryCall(request, responseParser,
-                alloc -> WireFrameCodec.encodeRawBytes(rawBytes, alloc, compression));
-    }
-
-    /**
-     * Shared unary call flow: open a stream, send HEADERS + DATA(END_STREAM),
-     * and wait for the response within the request timeout. The request frame
-     * is encoded with the stream channel's allocator right before writing.
-     */
-    private Response doUnaryCall(Request request, Parser<? extends Message> responseParser,
-                                Function<ByteBufAllocator, ByteBuf> frameEncoder) {
         // Build gRPC path: /{interfaceName}/{methodName}
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
@@ -160,7 +129,7 @@ public class WireClient extends AbstractHttp2Client {
                     .open().syncUninterruptibly().getNow();
 
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            ByteBuf content = frameEncoder.apply(streamChannel.alloc());
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
             streamChannel.write(new DefaultHttp2HeadersFrame(headers));
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
