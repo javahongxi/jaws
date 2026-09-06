@@ -28,7 +28,7 @@
         <hessian-lite.version>4.0.5</hessian-lite.version>
         <junit.version>5.12.2</junit.version>
         <logback.version>1.5.32</logback.version>
-        <micrometer-core.version>1.15.11</micrometer-core.version>
+        <micrometer-core.version>1.15.12</micrometer-core.version>
         <micrometer-tracing.version>1.5.11</micrometer-tracing.version>
         <nacos.version>3.2.3</nacos.version>
         <netty.version>4.1.132.Final</netty.version>
