@@ -57,6 +57,7 @@ public class NettyClient extends AbstractClient {
 
     private final InetSocketAddress remoteAddress;
     private final boolean needReconnect;
+    private final Serialization serialization;
 
     // volatile: written under the instance lock in open(), read by
     // business threads without locking in request()/isAvailable()
@@ -67,6 +68,8 @@ public class NettyClient extends AbstractClient {
         super(url);
         this.remoteAddress = new InetSocketAddress(url.getHost(), url.getPort());
         this.needReconnect = url.getBoolParameter(UrlParam.Client.SEND_RECONNECT);
+        this.serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
+                .getExtension(url.getParameter(UrlParam.Transport.SERIALIZATION));
         log.info("init netty client. url: {}-{}", url.getHost(), url.getPath());
     }
 
@@ -95,6 +98,8 @@ public class NettyClient extends AbstractClient {
                     "NettyClient request failed: request timeout must be positive but was " + timeout);
         }
 
+        request.setSerializationNumber(serialization.getSerializationNumber());
+
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
         registerCallback(request.getRequestId(), responseFuture);
 
@@ -103,9 +108,6 @@ public class NettyClient extends AbstractClient {
         ByteBuf buf = null;
         try {
             buf = ch.alloc().buffer();
-            Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
-                    .getExtension(url.getParameter(UrlParam.Transport.SERIALIZATION));
-            request.setSerializationNumber(serialization.getSerializationNumber());
             JawsCodec.encode(request, buf);
         } catch (Exception e) {
             if (buf != null) {
