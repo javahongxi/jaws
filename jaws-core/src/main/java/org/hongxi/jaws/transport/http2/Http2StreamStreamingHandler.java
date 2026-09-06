@@ -41,6 +41,7 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private final StreamPublisher publisher;
 
     private String status;
+    private boolean endStreamReceived;
 
     Http2StreamStreamingHandler(Serialization serialization, StreamPublisher publisher) {
         this.serialization = serialization;
@@ -53,6 +54,7 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
             if (msg instanceof Http2HeadersFrame headersFrame) {
                 status = Objects.toString(headersFrame.headers().status(), null);
                 if (headersFrame.isEndStream()) {
+                    endStreamReceived = true;
                     // Server ended immediately after headers (possibly an error)
                     if (!Http2Constants.STATUS_OK.equals(status)) {
                         publisher.completeExceptionally(new JawsServiceException(
@@ -100,6 +102,7 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
             }
 
             if (dataFrame.isEndStream()) {
+                endStreamReceived = true;
                 publisher.complete();
             }
         } finally {
@@ -109,8 +112,15 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
-        publisher.completeExceptionally(
-                new JawsServiceException("HTTP/2 stream closed before streaming completed"));
+        // Only fail the publisher if the stream was not already completed
+        // normally (END_STREAM received). Without this guard, a race between
+        // channelInactive and channelRead for the END_STREAM DATA frame could
+        // cause completeExceptionally to fire before complete, surfacing a
+        // spurious error to the subscriber.
+        if (!endStreamReceived) {
+            publisher.completeExceptionally(
+                    new JawsServiceException("HTTP/2 stream closed before streaming completed"));
+        }
     }
 
     @Override
