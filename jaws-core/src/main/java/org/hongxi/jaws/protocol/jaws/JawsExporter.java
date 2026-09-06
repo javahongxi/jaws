@@ -9,6 +9,7 @@ import org.hongxi.jaws.transport.TransportFactory;
 import org.hongxi.jaws.transport.TransportResolver;
 import org.hongxi.jaws.transport.adaptive.AdaptiveServer;
 import org.hongxi.jaws.transport.http.HttpServer;
+import org.hongxi.jaws.transport.http.rest.RestAnnotationScanner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,8 +41,13 @@ public class JawsExporter<T> extends AbstractExporter<T> {
         // Register interface class for JSON argument type conversion (HTTP / adaptive transport)
         if (server instanceof HttpServer httpServer) {
             httpServer.addInterfaceClass(provider.getInterface().getName(), provider.getInterface());
+            // Scan for Spring Web / JAX-RS annotations and register REST mappings
+            RestAnnotationScanner.scan(provider.getInterface(), provider.getImpl().getClass(),
+                    httpServer.getRestMappingRegistry());
         } else if (server instanceof AdaptiveServer adaptiveServer) {
             adaptiveServer.addInterfaceClass(provider.getInterface().getName(), provider.getInterface());
+            RestAnnotationScanner.scan(provider.getInterface(), provider.getImpl().getClass(),
+                    adaptiveServer.getRestMappingRegistry());
         }
     }
 

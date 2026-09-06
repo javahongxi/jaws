@@ -14,6 +14,7 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractNettyServer;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.http.HttpRequestHandler;
+import org.hongxi.jaws.transport.http.rest.RestMappingRegistry;
 import org.hongxi.jaws.transport.http2.Http2StreamServerHandler;
 import org.hongxi.jaws.transport.netty.HeartbeatHandler;
 import org.hongxi.jaws.transport.netty.NettyChannelHandler;
@@ -58,6 +59,7 @@ public class AdaptiveServer extends AbstractNettyServer {
 
     /** Interface classes registered for HTTP/1.1 JSON argument type conversion. */
     private final ConcurrentMap<String, Class<?>> interfaceClasses = new ConcurrentHashMap<>();
+    private final RestMappingRegistry restMappingRegistry = new RestMappingRegistry();
 
     public AdaptiveServer(URL url, MessageHandler messageHandler) {
         super(url, "AdaptiveServer");
@@ -77,6 +79,13 @@ public class AdaptiveServer extends AbstractNettyServer {
      */
     public void addInterfaceClass(String interfaceName, Class<?> interfaceClass) {
         interfaceClasses.put(interfaceName, interfaceClass);
+    }
+
+    /**
+     * @return the REST mapping registry for annotation-driven route registration.
+     */
+    public RestMappingRegistry getRestMappingRegistry() {
+        return restMappingRegistry;
     }
 
     @Override
@@ -130,6 +139,6 @@ public class AdaptiveServer extends AbstractNettyServer {
         pipeline.addLast("http_codec", new HttpServerCodec());
         pipeline.addLast("aggregator", new HttpObjectAggregator(maxContentLength));
         pipeline.addLast("http_handler", new HttpRequestHandler(
-                messageHandler, serverExecutor, interfaceClasses));
+                messageHandler, serverExecutor, interfaceClasses, restMappingRegistry));
     }
 }

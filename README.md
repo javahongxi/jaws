@@ -6,12 +6,13 @@
 
 > 取名自《大白鲨》(*Jaws*)——**J**ava **A**sync **W**ire **S**ervice：Java 生态、异步调用、线级协议、服务治理，四个词正是一个 RPC 框架的四层解剖。
 
-Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC 框架。它用不到 Dubbo 1/10 的代码量，完整实现了一个工业级 RPC 的核心机制，支持多种传输协议（Netty 二进制、HTTP/2、gRPC 线格式）、Server Streaming、自适应负载均衡与高可用容错，实测 13 万+ QPS。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快十倍。
+Jaws 是一个**核心约 2.5 万行、可以从头读到尾**的轻量级 RPC 框架。它用不到 Dubbo 1/10 的代码量，完整实现了一个工业级 RPC 的核心机制，支持多种传输协议（Netty 二进制、HTTP/2、gRPC 线格式）、Server Streaming、自适应负载均衡与高可用容错，实测 13 万+ QPS。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快十倍。
 
 ## 特性
 
 - **自定义协议** — 基于 Netty TCP 自研 jaws 二进制协议，编解码全链路零拷贝
 - **HTTP/2 传输** — 可切换至 HTTP/2 传输层，支持 Server Streaming，网关与 Service Mesh 友好
+- **HTTP/1.1 REST** — 注解驱动 REST 路由映射，兼容 Spring Web 与 JAX-RS 注解体系，泛化调用兜底
 - **自适应协议** — 支持单端口同时启用 jaws 二进制、HTTP/2、HTTP/1.1 三种协议，自动路由到对应解码器
 - **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持 gzip 压缩、健康检查、deadline 与 keepalive 语义
 - **多种序列化** — 内置 fastjson2 / hessian2 / protostuff，消费端指定序列化方式，协议头携带序列化标识
@@ -22,7 +23,6 @@ Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC �
 - **路由链 / Router** — 可扩展的调用时路由过滤链，内置标签路由（灰度发布）与动态配置路由
 - **连接预热 / Warm-up** — 新启动的 Provider 权重随时间线性增长，避免冷启动被打爆
 - **优雅停机** — 四阶段停机（停止接收 → 等待在途请求 → 注销注册中心 → 关闭连接），零损伤发布
-- **可观测性** — 可选 Micrometer 指标采集和 OpenTelemetry 链路追踪，通过 Filter SPI 自动生效
 - **动态配置** — 支持全局/服务级/方法级三层热更新（超时、重试、路由规则、Filter 开关等）
 - **泛化调用** — 无需依赖接口 JAR 包即可发起 RPC 调用，适用于网关、测试平台等场景
 

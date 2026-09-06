@@ -7,18 +7,24 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http.QueryStringDecoder;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.transport.http.rest.ParameterBinding;
+import org.hongxi.jaws.transport.http.rest.RestMapping;
+import org.hongxi.jaws.transport.http.rest.RestMappingRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -66,13 +72,16 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
     private final MessageHandler messageHandler;
     private final ExecutorService serverExecutor;
     private final Map<String, Class<?>> interfaceClasses;
+    private final RestMappingRegistry restMappingRegistry;
 
     public HttpRequestHandler(MessageHandler messageHandler,
                               ExecutorService serverExecutor,
-                              Map<String, Class<?>> interfaceClasses) {
+                              Map<String, Class<?>> interfaceClasses,
+                              RestMappingRegistry restMappingRegistry) {
         this.messageHandler = messageHandler;
         this.serverExecutor = serverExecutor;
         this.interfaceClasses = interfaceClasses;
+        this.restMappingRegistry = restMappingRegistry;
     }
 
     @Override
@@ -88,6 +97,17 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
             }
             sendHealthResponse(ctx);
             return;
+        }
+
+        // REST mapping: annotation-driven routes
+        if (restMappingRegistry != null && !restMappingRegistry.isEmpty()) {
+            String path = extractPath(uri);
+            Optional<RestMappingRegistry.MatchedMapping> matched =
+                    restMappingRegistry.match(request.method(), path);
+            if (matched.isPresent()) {
+                handleRestRequest(ctx, request, matched.get(), uri);
+                return;
+            }
         }
 
         // RPC invoke: POST /invoke
@@ -144,6 +164,151 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
 
         // Dispatch on business thread pool
         dispatch(ctx, rpcRequest);
+    }
+
+    /**
+     * Handle a REST-mapped request: extract parameters from path variables,
+     * query string, and JSON body, then dispatch to the RPC pipeline.
+     */
+    private void handleRestRequest(ChannelHandlerContext ctx, FullHttpRequest request,
+                                   RestMappingRegistry.MatchedMapping matched, String uri) {
+        RestMapping mapping = matched.getMapping();
+        Map<String, String> pathVariables = matched.getPathVariables();
+        Method javaMethod = mapping.getJavaMethod();
+        List<ParameterBinding> bindings = mapping.getParameterBindings();
+
+        // Parse query string
+        QueryStringDecoder queryDecoder = new QueryStringDecoder(uri);
+        Map<String, List<String>> queryParams = queryDecoder.parameters();
+
+        // Parse JSON body if present (for POST/PUT/PATCH with REQUEST_BODY binding)
+        JSONObject jsonBody = null;
+        boolean hasRequestBody = bindings.stream()
+                .anyMatch(b -> b.getSource() == ParameterBinding.Source.REQUEST_BODY);
+        if (hasRequestBody && request.content().readableBytes() > 0) {
+            String body = request.content().toString(StandardCharsets.UTF_8);
+            try {
+                jsonBody = JSON.parseObject(body);
+            } catch (Exception e) {
+                sendHttpResponse(ctx, HttpResponseStatus.BAD_REQUEST,
+                        errorJson("Invalid JSON body: " + e.getMessage()));
+                return;
+            }
+        }
+
+        // Build arguments array
+        Class<?>[] paramTypes = javaMethod.getParameterTypes();
+        Object[] args = new Object[paramTypes.length];
+        for (int i = 0; i < bindings.size(); i++) {
+            ParameterBinding binding = bindings.get(i);
+            args[i] = resolveArgument(binding, pathVariables, queryParams, jsonBody, paramTypes[i]);
+        }
+
+        // Build DefaultRequest
+        DefaultRequest rpcRequest = new DefaultRequest();
+        rpcRequest.setInterfaceName(mapping.getInterfaceName());
+        rpcRequest.setMethodName(mapping.getMethodName());
+        rpcRequest.setArguments(args);
+
+        dispatch(ctx, rpcRequest);
+    }
+
+    /**
+     * Resolve a single method argument from the appropriate HTTP source.
+     */
+    private static Object resolveArgument(ParameterBinding binding,
+                                          Map<String, String> pathVariables,
+                                          Map<String, List<String>> queryParams,
+                                          JSONObject jsonBody,
+                                          Class<?> targetType) {
+        Object rawValue = switch (binding.getSource()) {
+            case PATH_VARIABLE -> pathVariables.get(binding.getName());
+            case QUERY_PARAM -> {
+                List<String> values = queryParams.get(binding.getName());
+                yield (values != null && !values.isEmpty()) ? values.get(0) : null;
+            }
+            case REQUEST_BODY -> jsonBody;
+            case NONE -> null;
+        };
+
+        if (rawValue == null) {
+            return getDefaultValue(targetType);
+        }
+
+        // For REQUEST_BODY, the raw value is a JSONObject — convert via JSON round-trip
+        if (binding.getSource() == ParameterBinding.Source.REQUEST_BODY) {
+            if (targetType.isInstance(rawValue)) {
+                return rawValue;
+            }
+            String jsonStr = JSON.toJSONString(rawValue);
+            return JSON.parseObject(jsonStr, targetType);
+        }
+
+        // For path variables and query params, the raw value is a String — convert
+        return convertStringValue(rawValue.toString(), targetType);
+    }
+
+    /**
+     * Convert a string value to the target type.
+     */
+    private static Object convertStringValue(String value, Class<?> targetType) {
+        if (targetType == String.class || targetType == CharSequence.class) {
+            return value;
+        }
+        try {
+            if (targetType == int.class || targetType == Integer.class) {
+                return Integer.parseInt(value);
+            }
+            if (targetType == long.class || targetType == Long.class) {
+                return Long.parseLong(value);
+            }
+            if (targetType == double.class || targetType == Double.class) {
+                return Double.parseDouble(value);
+            }
+            if (targetType == float.class || targetType == Float.class) {
+                return Float.parseFloat(value);
+            }
+            if (targetType == short.class || targetType == Short.class) {
+                return Short.parseShort(value);
+            }
+            if (targetType == byte.class || targetType == Byte.class) {
+                return Byte.parseByte(value);
+            }
+            if (targetType == boolean.class || targetType == Boolean.class) {
+                return Boolean.parseBoolean(value);
+            }
+        } catch (NumberFormatException e) {
+            return getDefaultValue(targetType);
+        }
+        // Complex type from string: try JSON parse
+        try {
+            return JSON.parseObject(value, targetType);
+        } catch (Exception e) {
+            return getDefaultValue(targetType);
+        }
+    }
+
+    /**
+     * Returns the default value for a type: 0 for numeric primitives, false for boolean, null for objects.
+     */
+    private static Object getDefaultValue(Class<?> type) {
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == double.class) return 0.0d;
+        if (type == float.class) return 0.0f;
+        if (type == short.class) return (short) 0;
+        if (type == byte.class) return (byte) 0;
+        if (type == boolean.class) return false;
+        if (type == char.class) return '\0';
+        return null;
+    }
+
+    /**
+     * Extract the path portion from a URI (strip query string).
+     */
+    private static String extractPath(String uri) {
+        int queryIndex = uri.indexOf('?');
+        return queryIndex >= 0 ? uri.substring(0, queryIndex) : uri;
     }
 
     private void dispatch(ChannelHandlerContext ctx, Request request) {

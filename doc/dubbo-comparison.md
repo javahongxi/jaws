@@ -77,24 +77,25 @@ Jaws 已实现标签路由能力：
 | **自有协议**       | jaws（二进制）                                                         | dubbo（二进制）                                       | **持平**        |
 | **传输层**         | Netty（默认）/ HTTP/2（可选，基于 Netty 自研）                         | Netty                                                 | **Jaws 更灵活** |
 | **应用层协议**     | jaws（二进制）/ wire（gRPC 线格式，protobuf 序列化）                   | dubbo（二进制）/ Triple（兼容 gRPC，IDL + 流式）      | **持平**        |
-| **REST/HTTP**      | REST 桥接（Servlet）                                                   | 原生 rest 协议（JAX-RS）                              | **差距较大**    |
+| **REST/HTTP**      | 注解驱动 REST 路由（Spring Web + JAX-RS 双注解兼容）               | 原生 rest 协议（JAX-RS）/ Triple REST（Spring MVC + JAX-RS） | **基本持平**    |
 | **Injvm**          | 支持                                                                   | 支持                                                  | **持平**        |
 | **多协议同时暴露** | 支持同一端口自适应 jaws / HTTP/2 / HTTP/1.1 三种协议（AdaptiveServer） | 支持同一端口多协议自动路由（Port Unification Server） | **持平**        |
 | **MCP 桥接**       | 不支持                                                                 | 支持（Dubbo MCP Server）                              | **Dubbo 领先**  |
 
 ### REST 协议架构差异
 
-Dubbo 的 REST 是独立的一等公民协议（`rest://`），底层嵌入 Servlet 容器，支持 JAX-RS 注解（`@Path`/`@GET`/`@POST`），可自定义 URL 路径、HTTP 方法、参数位置。
+Jaws 在 HTTP/1.1 传输层之上构建了注解驱动的 REST 路由映射层，同时兼容 Spring Web（`@RequestMapping`/`@GetMapping`/`@PathVariable` 等）和 JAX-RS（`@Path`/`@GET`/`@PathParam` 等）两套注解体系，通过反射探测注解类实现零编译期依赖。`POST /invoke` 泛化调用作为兜底保留。
 
-Jaws 的 REST 是桥接层，在已有 jaws RPC 服务之上套 HTTP 入口，URL 结构自动生成固定为 `/rest/invoke/{interface}/{method}`，无 JAX-RS 注解支持。
+Dubbo 3.3 将 REST 重新定位为 Triple 协议之上的访问层（Triple REST），不再是独立协议，同时兼容 Spring MVC 和 JAX-RS 注解。Dubbo 早期的 REST 是独立 `rest://` 协议，底层嵌入 Servlet 容器。
 
-| 维度     | Dubbo REST 协议                    | Jaws REST 桥接                           |
-|----------|------------------------------------|------------------------------------------|
-| 定位     | 一等公民协议，`rest://` 独立暴露   | 桥接层，底层仍是 jaws 协议               |
-| 注解     | JAX-RS（`@Path`/`@GET`/`@POST`）   | 无注解，自动根据 RPC 方法生成            |
-| 参数绑定 | `@PathParam`/`@QueryParam`/`@Body` | 统一 JSON body                           |
-| 独立部署 | 可独立监听端口，不依赖 RPC 协议    | 依赖 Spring Boot 内嵌 Servlet            |
-| 灵活性   | 完全自定义 URL/Method/参数位置     | 固定 `/rest/invoke/{interface}/{method}` |
+| 维度     | Dubbo Triple REST                            | Jaws REST 路由映射                                       |
+|----------|----------------------------------------------|----------------------------------------------------------|
+| 定位     | Triple 协议上的 REST 访问层                  | HTTP/1.1 传输层上的注解驱动路由映射层                    |
+| 注解     | Spring MVC + JAX-RS                          | Spring Web + JAX-RS（双体系，零编译期依赖）              |
+| 参数绑定 | `@PathVariable`/`@RequestParam`/`@RequestBody` | `@PathVariable`/`@RequestParam`/`@RequestBody` + `@PathParam`/`@QueryParam` |
+| 泛化调用 | 支持                                         | `POST /invoke` 泛化调用兜底                              |
+| 部署模型 | 复用 Triple 端口                             | 复用 Netty HTTP/1.1 端口（AdaptiveServer 多协议自适应）  |
+| 灵活性   | 完全自定义 URL/Method/参数位置               | 完全自定义 URL/Method/参数位置                           |
 
 ## 六、工程化与生态
 
@@ -139,10 +140,10 @@ Jaws 的 REST 是桥接层，在已有 jaws RPC 服务之上套 HTTP 入口，UR
 
 - **gRPC 线格式兼容（新能力）** — `jaws-wire` 模块实现标准 gRPC 线格式（5 字节长度前缀帧 + trailers 状态码），通过 WireProtocol 完整支持注册中心/负载均衡/Filter 链，兼容 grpcurl 等标准 gRPC 工具，无 grpc-java 依赖
 - **HTTP/2 传输轻量可插拔（设计取舍）** — 通过 `TransportFactory` SPI 零侵入接入基于 Netty `Http2FrameCodec` + `Http2MultiplexHandler` 自研的 HTTP/2 传输，无 grpc-java/protobuf 依赖，复用 Jaws 序列化体系，可获得多路复用、流控、网关穿透与 Server Streaming 能力
-- **Adaptive 单端口多协议（设计亮点）** — AdaptiveServer 通过首字节检测自动路由到 Jaws 二进制 / HTTP/2 / HTTP/1.1 三种协议 pipeline，单端口即可服务所有客户端，与 Dubbo Port Unification Server 能力对等
+- **Adaptive 单端口多协议（设计亮点）** — AdaptiveServer 通过首字节检测自动路由到 Jaws 二进制 / HTTP/2 / HTTP/1.1 三种协议 pipeline，HTTP/1.1 上叠加注解驱动 REST 路由（Spring Web + JAX-RS），单端口即可服务所有客户端，与 Dubbo Port Unification Server 能力对等
 - **编解码设计简洁性** — JawsCodec 分层清晰，Dubbo 的继承体系更复杂
 - **独立 version 字段** — header 层即可做版本校验，Dubbo 需解析 body
 
 ## 总结
 
-Jaws 在**核心 RPC 链路**（协议、编解码、零拷贝、心跳、优雅停机、异步调用）上已与 Dubbo **基本持平**，在**标签路由/灰度发布**、**多注册中心**、**HTTP/2 传输（含 Server Streaming）**、**Adaptive 单端口多协议**、**gRPC 线格式兼容**能力上已补齐。通过 `jaws-wire` 模块支持标准 gRPC 线格式与 protobuf 序列化，兼容 grpcurl 等标准工具，且无 grpc-java 依赖。但在**生态广度**（序列化种类、注册中心种类、运维工具）和**流量治理深度**（限流熔断）上差距较大。这些差距本质上是 Dubbo 多年社区积累的结果。
+Jaws 在**核心 RPC 链路**（协议、编解码、零拷贝、心跳、优雅停机、异步调用）上已与 Dubbo **基本持平**，在**标签路由/灰度发布**、**多注册中心**、**HTTP/2 传输（含 Server Streaming）**、**Adaptive 单端口多协议**、**gRPC 线格式兼容**、**注解驱动 REST 路由（Spring Web + JAX-RS 双体系）**能力上已补齐。通过 `jaws-wire` 模块支持标准 gRPC 线格式与 protobuf 序列化，兼容 grpcurl 等标准工具，且无 grpc-java 依赖。但在**生态广度**（序列化种类、注册中心种类、运维工具）和**流量治理深度**（限流熔断）上差距较大。这些差距本质上是 Dubbo 多年社区积累的结果。

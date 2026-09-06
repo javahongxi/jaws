@@ -8,6 +8,7 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractNettyServer;
 import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.transport.http.rest.RestMappingRegistry;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -38,6 +39,7 @@ public class HttpServer extends AbstractNettyServer {
     private final MessageHandler messageHandler;
     private final int maxContentLength;
     private final ConcurrentMap<String, Class<?>> interfaceClasses = new ConcurrentHashMap<>();
+    private final RestMappingRegistry restMappingRegistry = new RestMappingRegistry();
 
     public HttpServer(URL url, MessageHandler messageHandler) {
         super(url, "HttpServer");
@@ -57,13 +59,21 @@ public class HttpServer extends AbstractNettyServer {
         interfaceClasses.put(interfaceName, interfaceClass);
     }
 
+    /**
+     * @return the REST mapping registry for annotation-driven route registration.
+     *         Lazily initialized; always non-null.
+     */
+    public RestMappingRegistry getRestMappingRegistry() {
+        return restMappingRegistry;
+    }
+
     @Override
     protected void initChannel(SocketChannel ch) {
         ChannelPipeline pipeline = ch.pipeline();
         pipeline.addLast("http_codec", new HttpServerCodec());
         pipeline.addLast("aggregator", new HttpObjectAggregator(maxContentLength));
         pipeline.addLast("http_handler", new HttpRequestHandler(
-                messageHandler, serverExecutor, interfaceClasses));
+                messageHandler, serverExecutor, interfaceClasses, restMappingRegistry));
     }
 
     @Override
