@@ -117,35 +117,28 @@ public class NettyClient extends AbstractClient {
             throw new JawsServiceException("encode request error: url=" + url.getUri(), e);
         }
 
-        ChannelFuture writeFuture = ch.writeAndFlush(buf);
-        boolean completed = writeFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
-        if (completed && writeFuture.isSuccess()) {
-            responseFuture.whenComplete((r, t) -> {
-                if (t == null || ExceptionUtils.isBizException(t)) {
-                    resetErrorCount();
-                } else {
-                    incrErrorCount();
-                }
-            });
-            return responseFuture;
-        }
+        // Async write: return immediately, block only in AbstractReference.call()
+        ch.writeAndFlush(buf).addListener((ChannelFuture writeFuture) -> {
+            if (writeFuture.isSuccess()) {
+                responseFuture.whenComplete((r, t) -> {
+                    if (t == null || ExceptionUtils.isBizException(t)) {
+                        resetErrorCount();
+                    } else {
+                        incrErrorCount();
+                    }
+                });
+            } else {
+                removeCallback(request.getRequestId());
+                responseFuture.completeExceptionally(new JawsServiceException(
+                        "NettyClient failed to send request to server: url="
+                                + url.getUri() + " local=" + localAddress + " "
+                                + RpcUtils.toString(request),
+                        writeFuture.cause()));
+                incrErrorCount();
+            }
+        });
 
-        writeFuture.cancel(true);
-        responseFuture = (DefaultResponseFuture) removeCallback(request.getRequestId());
-        if (responseFuture != null) {
-            responseFuture.cancel();
-        }
-        incrErrorCount();
-
-        if (writeFuture.cause() != null) {
-            throw new JawsServiceException("NettyClient failed to send request to server: url="
-                    + url.getUri() + " local=" + localAddress + " "
-                    + RpcUtils.toString(request), writeFuture.cause());
-        } else {
-            throw new JawsServiceException("NettyClient timed out sending request to server: url="
-                    + url.getUri() + " local=" + localAddress + " "
-                    + RpcUtils.toString(request));
-        }
+        return responseFuture;
     }
 
     @Override
