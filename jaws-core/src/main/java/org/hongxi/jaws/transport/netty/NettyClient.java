@@ -19,6 +19,7 @@ import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
+import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
@@ -128,12 +129,18 @@ public class NettyClient extends AbstractClient {
                     }
                 });
             } else {
-                removeCallback(request.getRequestId());
-                responseFuture.completeExceptionally(new JawsServiceException(
-                        "NettyClient failed to send request to server: url="
-                                + url.getUri() + " local=" + localAddress + " "
-                                + RpcUtils.toString(request),
-                        writeFuture.cause()));
+                // removeCallback: atomically claim + clean up the map entry,
+                // so the timeout timer won't attempt a duplicate completion
+                ResponseFuture future = removeCallback(request.getRequestId());
+                if (future != null) {
+                    DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+                    errorResponse.setThrowable(new JawsServiceException(
+                            "NettyClient failed to send request to server: url="
+                                    + url.getUri() + " local=" + localAddress + " "
+                                    + RpcUtils.toString(request),
+                            writeFuture.cause()));
+                    future.onFailure(errorResponse);
+                }
                 incrErrorCount();
             }
         });

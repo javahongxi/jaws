@@ -99,29 +99,30 @@ public class Http2Client extends AbstractHttp2Client {
             Http2Headers headers = buildRequestHeaders(request);
             streamChannel.write(new DefaultHttp2HeadersFrame(headers));
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(payload), true))
-                    .addListener(f -> {
-                        if (!f.isSuccess()) {
+                    .addListener(writeFuture -> {
+                        if (writeFuture.isSuccess()) {
+                            // Register error fusing only after the write succeeds,
+                            // so the write-failure branch below won't double-count.
+                            responseFuture.whenComplete((r, t) -> {
+                                if (t == null || ExceptionUtils.isBizException(t)) {
+                                    resetErrorCount();
+                                } else {
+                                    incrErrorCount();
+                                }
+                            });
+                        } else {
                             // removeCallback: atomically claim + clean up the map entry,
                             // so the timeout timer won't attempt a duplicate completion
                             ResponseFuture future = removeCallback(request.getRequestId());
                             if (future != null) {
                                 DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
                                 errorResponse.setThrowable(new JawsServiceException(
-                                        "HTTP/2 stream write failed", f.cause()));
+                                        "HTTP/2 stream write failed", writeFuture.cause()));
                                 future.onFailure(errorResponse);
                             }
                             incrErrorCount();
                         }
                     });
-
-            // Error fusing: reset on success / biz-exception, increment on failure
-            responseFuture.whenComplete((r, t) -> {
-                if (t == null || ExceptionUtils.isBizException(t)) {
-                    resetErrorCount();
-                } else {
-                    incrErrorCount();
-                }
-            });
         } catch (Exception e) {
             // write path failed before/as the callback was registered
             ResponseFuture future = removeCallback(request.getRequestId());
