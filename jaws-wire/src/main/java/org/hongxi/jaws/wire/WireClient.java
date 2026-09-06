@@ -162,6 +162,7 @@ public class WireClient extends AbstractHttp2Client {
                 errorResponse.setThrowable(new JawsServiceException(
                         "WireClient request failed: url=" + url.getUri() + " path=" + grpcPath, e));
                 future.onFailure(errorResponse);
+                // incrErrorCount is handled by whenComplete callback above
             } else {
                 incrErrorCount();
             }
