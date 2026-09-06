@@ -6,7 +6,7 @@
 
 > 取名自《大白鲨》(*Jaws*)——**J**ava **A**sync **W**ire **S**ervice：Java 生态、异步调用、线级协议、服务治理，四个词正是一个 RPC 框架的四层解剖。
 
-Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC 框架。它用不到 Dubbo 1/10 的代码量，完整实现了一个工业级 RPC 的核心机制，支持多种传输协议（Netty 二进制、HTTP/2、gRPC 线格式）、Server Streaming、自适应负载均衡与高可用容错，实测 10 万 QPS。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快十倍。
+Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC 框架。它用不到 Dubbo 1/10 的代码量，完整实现了一个工业级 RPC 的核心机制，支持多种传输协议（Netty 二进制、HTTP/2、gRPC 线格式）、Server Streaming、自适应负载均衡与高可用容错，实测 13 万+ QPS。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快十倍。
 
 ## 特性
 
@@ -67,7 +67,7 @@ Jaws 是一个**核心约 2.3 万行、可以从头读到尾**的轻量级 RPC �
 ./run-sample.sh consumer           # 运行 consumer（需要先启动 provider）
 ./run-sample.sh stop               # 停止所有后台 provider 并清理
 
-# 性能测试（8 核实测 10 万 QPS，详见 doc/benchmark.md）
+# 性能测试（8 核实测 13 万+ QPS，详见 doc/benchmark.md）
 THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws
 ```
 

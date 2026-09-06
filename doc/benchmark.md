@@ -120,3 +120,23 @@ consumer 直接指向 provider 的 `HOST:PORT`，无需外部注册中心。用�
 - **netty TCP 比 HTTP/2 高约 25%**（97.8k vs 73.6k），平均延迟低 ~68us。开销来自 HTTP/2 帧编解码（HEADERS/DATA 帧组装拆解）和 stream 多路复用的管理成本。
 - **尾延迟差距更大**：netty P99.9 为 662us，http2/wire 约 2ms（3 倍），说明 HTTP/2 帧处理在偶发毛刺时开销更明显。
 - 对于追求 gRPC 互操作的场景，wire/http2 的 ~73k QPS 已是合理水平；对于纯内网高性能场景，netty TCP 仍是首选。
+
+## 性能优化与复验（2026-09-06）
+
+jaws + netty + fastjson2，20 线程、WARMUP=5s、DURATION=40s：
+
+| 场景 | QPS | 说明 |
+|------|-----|------|
+| 优化前（8/27 基线） | 97,792 | 业务线程 `writeAndFlush` 后 `awaitUninterruptibly` 等 flush，一个请求阻塞两次（等写 + 等响应） |
+| 优化后·同进程 ×4 | 138,209 / 138,322 / 134,864 / 135,943 | `ROLE=all`，provider + consumer 同 JVM |
+| 优化后·分进程 ×4 | 129,287 / 136,217 / 139,210 / 136,975 | provider/consumer 独立 JVM 直连；首跑 129,287 偏低为冷启动差异，仅重启 consumer 的后三轮 13.6 万–13.9 万 |
+
+峰值 **139,210**；剔除冷启动首跑后 8 轮稳定区间 13.5 万–13.9 万，同进程与分进程口径一致（均为真实 TCP 回环）。新天花板：8 核约 **13.9 万 QPS 峰值 / 13.7 万 稳态**（约 17k QPS/核）。
+
+wire 对照（同轮复验，gRPC wire format + protobuf）：同进程 74,779 / 75,011 / 72,919，分进程 74,422 / 75,444 / 74,808——约 **7.5 万**，与 8/27 基线一致（wire 写路径本就是异步，未受本轮优化影响）。**TCP 净领先约 83%**（~13.7 万 vs ~7.5 万），即 HTTP/2 帧编解码 + 流多路复用管理 + 应用层双层流控的固有协议税。
+
+改动内容：
+
+- **写路径异步化**：`NettyClient` 移除 `writeAndFlush().awaitUninterruptibly()`，改为 `addListener` 异步处理；写失败经 `responseFuture.completeExceptionally` 送达调用方，不再同步抛出
+
+上方 8/23、8/24、8/27 三节为本次优化前的历史基线。
