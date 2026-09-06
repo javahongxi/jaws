@@ -18,6 +18,23 @@ public final class McpMessageCodec {
 
     public static final String JSONRPC_VERSION = "2.0";
 
+    /**
+     * The MCP specification version this implementation conforms to.
+     * <p>
+     * MCP spec evolution:
+     * <ul>
+     *   <li>2024-11-05 — initial HTTP+SSE transport (deprecated)</li>
+     *   <li>2025-03-26 — Streamable HTTP (stateful, with initialize handshake)</li>
+     *   <li>2025-11-25 — Streamable HTTP revision</li>
+     *   <li>2026-07-28 — Streamable HTTP (stateless, no sessions, no GET stream)</li>
+     * </ul>
+     * Current implementation targets <b>2025-03-26</b> (stateful Streamable HTTP),
+     * which is compatible with mainstream MCP clients (Cursor, Claude Desktop, etc.).
+     *
+     * @see <a href="https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http">MCP Streamable HTTP spec</a>
+     */
+    public static final String MCP_SPEC_VERSION = "2025-03-26";
+
     // JSON-RPC error codes
     public static final int PARSE_ERROR = -32700;
     public static final int INVALID_REQUEST = -32600;

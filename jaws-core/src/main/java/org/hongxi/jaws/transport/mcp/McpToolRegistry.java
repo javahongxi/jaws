@@ -29,12 +29,15 @@ public class McpToolRegistry {
 
     /**
      * Functional interface for tool execution.
-     *
-     * @param arguments the tool arguments as a JSON-like map
-     * @return the tool result (will be serialized to JSON)
      */
     @FunctionalInterface
     public interface Executor {
+        /**
+         * Execute the tool.
+         *
+         * @param arguments the tool arguments as a JSON-like map
+         * @return the tool result (will be serialized to JSON)
+         */
         Object execute(Map<String, Object> arguments) throws Exception;
     }
 

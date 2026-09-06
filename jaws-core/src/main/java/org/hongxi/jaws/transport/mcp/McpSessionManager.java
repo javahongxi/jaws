@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Manages MCP session lifecycle for the Streamable HTTP transport.
@@ -28,13 +29,12 @@ public class McpSessionManager {
 
     /** Header name for MCP session identification. */
     public static final String MCP_SESSION_ID = "Mcp-Session-Id";
-    public static final String LAST_EVENT_ID = "Last-Event-ID";
     public static final String PROTOCOL_VERSION = "MCP-Protocol-Version";
 
-    /** The latest MCP protocol version this server supports. */
-    public static final String SUPPORTED_PROTOCOL_VERSION = "2025-03-26";
+    /** The MCP protocol version this server advertises in responses. */
+    public static final String SUPPORTED_PROTOCOL_VERSION = McpMessageCodec.MCP_SPEC_VERSION;
 
-    private final ConcurrentHashMap<String, McpSession> sessions = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, McpSession> sessions = new ConcurrentHashMap<>();
 
     /**
      * Represents an individual MCP session.

@@ -1,5 +1,13 @@
 # MCP (Model Context Protocol) 传输
 
+> **实现规范版本**: `2025-03-26` (Streamable HTTP, stateful)
+>
+> MCP 规范演进：
+> - `2024-11-05` — 初始 HTTP+SSE 传输（已废弃）
+> - `2025-03-26` — Streamable HTTP（有状态，含 initialize 握手）← **当前实现**
+> - `2025-11-25` — Streamable HTTP 修订版
+> - `2026-07-28` — Streamable HTTP（无状态，移除会话和 GET 流）
+
 Jaws 原生支持 MCP Streamable HTTP 传输，将 RPC 服务接口自动暴露为 AI Agent 可调用的 MCP Tools。无需额外 SDK，Cursor、Claude Desktop、MCP Inspector 等 MCP 客户端可直接连接。
 
 ## 架构原理
