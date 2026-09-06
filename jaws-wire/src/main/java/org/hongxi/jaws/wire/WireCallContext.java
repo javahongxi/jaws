@@ -1,6 +1,5 @@
 package org.hongxi.jaws.wire;
 
-import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -16,7 +15,7 @@ import java.util.Map;
 public final class WireCallContext {
 
     /** Shared context for calls without any custom metadata. */
-    public static final WireCallContext EMPTY = new WireCallContext(Collections.emptyMap());
+    public static final WireCallContext EMPTY = new WireCallContext(Map.of());
 
     private final Map<String, String> attachments;
 

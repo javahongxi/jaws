@@ -2,7 +2,6 @@ package org.hongxi.jaws.rpc;
 
 import org.hongxi.jaws.exception.JawsServiceException;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -108,7 +107,7 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
 
     @Override
     public Map<String, String> getAttachments() {
-        return Collections.emptyMap();
+        return Map.of();
     }
 
     @Override

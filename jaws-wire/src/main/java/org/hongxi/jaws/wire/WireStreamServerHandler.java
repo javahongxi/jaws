@@ -15,7 +15,6 @@ import io.netty.util.ReferenceCountUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -77,7 +76,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     /** Inbound message encoding declared by the grpc-encoding header. */
     protected String requestEncoding = WireConstants.ENCODING_IDENTITY;
     /** Custom metadata (non-reserved request headers) for the current call. */
-    protected Map<String, String> attachments = Collections.emptyMap();
+    protected Map<String, String> attachments = Map.of();
 
     protected ByteBuf accumulator;
     /** Set when the inbound message exceeded {@link #maxMessageSize}. */

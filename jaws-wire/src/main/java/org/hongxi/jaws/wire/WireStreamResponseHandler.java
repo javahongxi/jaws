@@ -16,6 +16,7 @@ import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -26,8 +27,8 @@ import java.util.function.Function;
  * size), extracts the gRPC frame via {@link WireFrameCodec} (decompressing
  * per the response's {@code grpc-encoding} header), decodes the protobuf
  * response message, and completes the {@link DefaultResponseFuture} when the
- * trailers HEADERS frame (END_STREAM) arrives. A response builder function
- * wraps the decoded message into a {@link DefaultResponse} so that the
+ * trailers HEADERS frame (END_STREAM) arrives. Custom metadata carried in
+ * the trailers is collected and set as response attachments so that the
  * caller receives a framework-level {@code Response} object.
  *
  * @author shenhongxi
@@ -42,6 +43,8 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     private final Function<Message, DefaultResponse> responseBuilder;
     /** Removes the callback from the client's pending map after the future is completed. */
     private final Runnable onCompletion;
+    /** Non-reserved trailer metadata collected when the trailers HEADERS frame arrives; may be empty. */
+    private Map<String, String> trailerMetadata = Map.of();
 
     private ByteBuf accumulator;
     private int grpcStatus = -1;
@@ -94,6 +97,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             if (messageSeq != null) {
                 grpcMessage = messageSeq.toString();
             }
+            trailerMetadata = WireMetadata.fromHeaders(headersFrame.headers());
         } else {
             // Initial response HEADERS: capture the response message encoding
             CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
@@ -168,7 +172,11 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             }
             try {
                 Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
-                responseFuture.onSuccess(responseBuilder.apply(response));
+                DefaultResponse successResponse = responseBuilder.apply(response);
+                if (!trailerMetadata.isEmpty()) {
+                    successResponse.setAttachments(trailerMetadata);
+                }
+                responseFuture.onSuccess(successResponse);
             } finally {
                 frame.release();
             }

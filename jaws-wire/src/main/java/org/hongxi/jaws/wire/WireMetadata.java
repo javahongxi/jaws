@@ -71,7 +71,7 @@ public final class WireMetadata {
      */
     public static Map<String, String> fromHeaders(Http2Headers headers) {
         if (headers == null || headers.isEmpty()) {
-            return Collections.emptyMap();
+            return Map.of();
         }
         Map<String, String> metadata = new LinkedHashMap<>();
         for (Map.Entry<CharSequence, CharSequence> entry : headers) {
