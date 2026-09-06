@@ -13,24 +13,21 @@ import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
+import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.exception.JawsAbstractException;
-import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
+import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
+import org.hongxi.jaws.rpc.ResponseFuture;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.StreamPublisher;
 import org.hongxi.jaws.transport.http2.AbstractHttp2Client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow;
-import java.util.concurrent.TimeUnit;
 
 /**
  * gRPC client implementation based on Netty HTTP/2. The Netty bootstrap
@@ -89,10 +86,13 @@ public class WireClient extends AbstractHttp2Client {
 
     /**
      * Send a gRPC request with an explicit response parser.
+     * Returns a pending {@link DefaultResponseFuture} immediately; the actual
+     * blocking happens in {@code AbstractReference.call()} for the synchronous
+     * path, while {@code callAsync()} can chain on the future directly.
      *
      * @param request        the RPC request; {@code arguments[0]} must be a protobuf {@link Message}
      * @param responseParser the parser for the expected response message type
-     * @return the response containing the decoded protobuf message
+     * @return a pending response future completed asynchronously by the stream handler
      */
     public Response request(Request request, Parser<? extends Message> responseParser) {
         if (!isAvailable()) {
@@ -115,18 +115,29 @@ public class WireClient extends AbstractHttp2Client {
                 UrlParam.Transport.REQUEST_TIMEOUT.intValue());
         int timeout = resolveTimeout(request, urlTimeout);
 
-        io.netty.channel.Channel streamChannel = null;
-        CompletableFuture<Message> responseFuture = new CompletableFuture<>();
-        Map<String, String> trailerMetadata = new HashMap<>();
+        DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
 
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
-            // Open a new HTTP/2 stream
-            streamChannel = new Http2StreamChannelBootstrap(connChannel)
-                    .handler(new WireStreamResponseHandler(
-                            responseParser, responseFuture, maxMessageSize, trailerMetadata))
+            // Open a new HTTP/2 stream; the handler completes the future
+            // when the gRPC response END_STREAM arrives
+            io.netty.channel.Channel streamChannel = new Http2StreamChannelBootstrap(connChannel)
+                    .handler(newResponseHandler(responseParser, responseFuture))
                     .open().syncUninterruptibly().getNow();
+
+            // Register callback for timeout + OOM protection; timeout → cancel
+            // triggers whenComplete below → RST_STREAM(CANCEL) so the server
+            // stops working on it (gRPC cancellation semantics)
+            registerCallback(request.getRequestId(), responseFuture);
+            responseFuture.whenComplete((r, t) -> {
+                if (t == null || ExceptionUtils.isBizException(t)) {
+                    resetErrorCount();
+                } else {
+                    incrErrorCount();
+                    cancelStream(streamChannel);
+                }
+            });
 
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
             ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
@@ -134,48 +145,51 @@ public class WireClient extends AbstractHttp2Client {
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
-                            responseFuture.completeExceptionally(
-                                    new JawsServiceException("Wire stream write failed", f.cause()));
+                            ResponseFuture future = removeCallback(request.getRequestId());
+                            if (future != null) {
+                                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+                                errorResponse.setThrowable(new JawsServiceException(
+                                        "Wire stream write failed", f.cause()));
+                                future.onFailure(errorResponse);
+                            }
                             incrErrorCount();
                         }
                     });
-
-            // Wait for response synchronously
-            Message responseMessage = responseFuture.get(timeout, TimeUnit.MILLISECONDS);
-
-            DefaultResponse response = new DefaultResponse(request.getRequestId());
-            response.setValue(responseMessage);
-            if (!trailerMetadata.isEmpty()) {
-                response.setAttachments(trailerMetadata);
-            }
-            // Success — reset the error fusing counter
-            resetErrorCount();
-            return response;
-        } catch (java.util.concurrent.TimeoutException e) {
-            // Cancel the call: RST_STREAM(CANCEL) tells the server to stop
-            // working on it (gRPC cancellation semantics)
-            cancelStream(streamChannel);
-            incrErrorCount();
-            throw new JawsServiceException("Wire request timeout: url=" + url.getUri()
-                    + " path=" + grpcPath + " timeout=" + timeout + "ms");
         } catch (Exception e) {
-            // Unwrap ExecutionException to check for business exceptions
-            Throwable cause = (e instanceof ExecutionException ee) ? ee.getCause() : e;
-            if (cause instanceof JawsBizException biz) {
-                // Business exception — not a framework error, reset error count
-                resetErrorCount();
-                throw biz;
+            ResponseFuture future = removeCallback(request.getRequestId());
+            if (future != null) {
+                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+                errorResponse.setThrowable(new JawsServiceException(
+                        "WireClient request failed: url=" + url.getUri() + " path=" + grpcPath, e));
+                future.onFailure(errorResponse);
             }
-            if (cause instanceof RuntimeException re) {
-                log.error("Wire request failed: url={} path={}", url.getUri(), grpcPath, e);
-                incrErrorCount();
-                throw re;
-            }
-            log.error("Wire request failed: url={} path={}", url.getUri(), grpcPath, e);
             incrErrorCount();
+            if (e instanceof JawsAbstractException jae) {
+                throw jae;
+            }
             throw new JawsServiceException("WireClient request failed: url="
                     + url.getUri() + " path=" + grpcPath, e);
         }
+
+        // Return the pending future; AbstractReference.call() blocks on
+        // getValue() for the sync path, callAsync() chains on it directly
+        return responseFuture;
+    }
+
+    /**
+     * Create the per-stream handler that decodes the gRPC response and
+     * completes the {@link DefaultResponseFuture} with a {@link DefaultResponse}
+     * wrapping the protobuf message and any trailer metadata.
+     */
+    private WireStreamResponseHandler newResponseHandler(
+            Parser<? extends Message> responseParser, DefaultResponseFuture responseFuture) {
+        return new WireStreamResponseHandler(responseParser, responseFuture, maxMessageSize,
+                message -> {
+                    DefaultResponse response = new DefaultResponse(responseFuture.getRequestId());
+                    response.setValue(message);
+                    return response;
+                },
+                () -> removeCallback(responseFuture.getRequestId()));
     }
 
     /**

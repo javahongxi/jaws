@@ -11,11 +11,12 @@ import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
+import org.hongxi.jaws.rpc.DefaultResponse;
+import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 /**
  * Per-stream response handler for the gRPC client ({@link WireClient}).
@@ -24,9 +25,10 @@ import java.util.concurrent.CompletableFuture;
  * It accumulates response DATA frames (guarded by the max-inbound-message
  * size), extracts the gRPC frame via {@link WireFrameCodec} (decompressing
  * per the response's {@code grpc-encoding} header), decodes the protobuf
- * response message, and completes the {@link CompletableFuture} when the
- * trailers HEADERS frame (END_STREAM) arrives. Custom metadata carried in
- * the trailers is collected into an optional map for the caller.
+ * response message, and completes the {@link DefaultResponseFuture} when the
+ * trailers HEADERS frame (END_STREAM) arrives. A response builder function
+ * wraps the decoded message into a {@link DefaultResponse} so that the
+ * caller receives a framework-level {@code Response} object.
  *
  * @author shenhongxi
  */
@@ -34,10 +36,12 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(WireStreamResponseHandler.class);
 
     private final Parser<? extends Message> responseParser;
-    private final CompletableFuture<Message> responseFuture;
+    private final DefaultResponseFuture responseFuture;
     private final int maxMessageSize;
-    /** Filled with non-reserved trailer metadata when trailers arrive; may be null. */
-    private final Map<String, String> trailerMetadata;
+    /** Wraps a decoded protobuf {@link Message} into a framework {@link DefaultResponse}. */
+    private final Function<Message, DefaultResponse> responseBuilder;
+    /** Removes the callback from the client's pending map after the future is completed. */
+    private final Runnable onCompletion;
 
     private ByteBuf accumulator;
     private int grpcStatus = -1;
@@ -45,13 +49,15 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     private String responseEncoding = WireConstants.ENCODING_IDENTITY;
 
     WireStreamResponseHandler(Parser<? extends Message> responseParser,
-                              CompletableFuture<Message> responseFuture,
+                              DefaultResponseFuture responseFuture,
                               int maxMessageSize,
-                              Map<String, String> trailerMetadata) {
+                              Function<Message, DefaultResponse> responseBuilder,
+                              Runnable onCompletion) {
         this.responseParser = responseParser;
         this.responseFuture = responseFuture;
         this.maxMessageSize = maxMessageSize;
-        this.trailerMetadata = trailerMetadata;
+        this.responseBuilder = responseBuilder;
+        this.onCompletion = onCompletion;
     }
 
     @Override
@@ -62,13 +68,19 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
             } else if (msg instanceof Http2ResetFrame resetFrame) {
-                responseFuture.completeExceptionally(new RuntimeException(
+                DefaultResponse errorResponse = responseBuilder.apply(null);
+                errorResponse.setThrowable(new RuntimeException(
                         "gRPC stream reset: errorCode=" + resetFrame.errorCode()));
+                responseFuture.onFailure(errorResponse);
+                onCompletion.run();
             } else {
                 ReferenceCountUtil.release(msg);
             }
         } catch (Exception e) {
-            responseFuture.completeExceptionally(e);
+            DefaultResponse errorResponse = responseBuilder.apply(null);
+            errorResponse.setThrowable(e);
+            responseFuture.onFailure(errorResponse);
+            onCompletion.run();
         }
     }
 
@@ -81,9 +93,6 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             CharSequence messageSeq = headersFrame.headers().get(WireConstants.GRPC_MESSAGE);
             if (messageSeq != null) {
                 grpcMessage = messageSeq.toString();
-            }
-            if (trailerMetadata != null) {
-                trailerMetadata.putAll(WireMetadata.fromHeaders(headersFrame.headers()));
             }
         } else {
             // Initial response HEADERS: capture the response message encoding
@@ -109,8 +118,11 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             // Guard against oversized responses: fail the call and reset the
             // stream instead of buffering unbounded data
             if (accumulator.readableBytes() > maxMessageSize + WireConstants.GRPC_HEADER_SIZE) {
-                responseFuture.completeExceptionally(new RuntimeException(
+                DefaultResponse errorResponse = responseBuilder.apply(null);
+                errorResponse.setThrowable(new RuntimeException(
                         "gRPC response exceeds maxInboundMessageSize: " + maxMessageSize));
+                responseFuture.onFailure(errorResponse);
+                onCompletion.run();
                 ctx.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
                 ctx.close();
                 return;
@@ -131,31 +143,41 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             if (grpcStatus != WireConstants.STATUS_OK && grpcStatus >= 0) {
                 // Surface a semantically typed exception: DEADLINE_EXCEEDED carries the
                 // jaws timeout error code, UNAVAILABLE is flagged retryable
-                responseFuture.completeExceptionally(
-                        WireStatus.toException(grpcStatus, grpcMessage));
+                DefaultResponse errorResponse = responseBuilder.apply(null);
+                errorResponse.setThrowable(WireStatus.toException(grpcStatus, grpcMessage));
+                responseFuture.onFailure(errorResponse);
+                onCompletion.run();
                 return;
             }
 
             if (accumulator == null || accumulator.readableBytes() == 0) {
-                responseFuture.completeExceptionally(
-                        new RuntimeException("No response data received"));
+                DefaultResponse errorResponse = responseBuilder.apply(null);
+                errorResponse.setThrowable(new RuntimeException("No response data received"));
+                responseFuture.onFailure(errorResponse);
+                onCompletion.run();
                 return;
             }
 
             ByteBuf frame = WireFrameCodec.tryExtractFrame(accumulator);
             if (frame == null) {
-                responseFuture.completeExceptionally(
-                        new RuntimeException("Incomplete gRPC response frame"));
+                DefaultResponse errorResponse = responseBuilder.apply(null);
+                errorResponse.setThrowable(new RuntimeException("Incomplete gRPC response frame"));
+                responseFuture.onFailure(errorResponse);
+                onCompletion.run();
                 return;
             }
             try {
                 Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
-                responseFuture.complete(response);
+                responseFuture.onSuccess(responseBuilder.apply(response));
             } finally {
                 frame.release();
             }
+            onCompletion.run();
         } catch (Exception e) {
-            responseFuture.completeExceptionally(e);
+            DefaultResponse errorResponse = responseBuilder.apply(null);
+            errorResponse.setThrowable(e);
+            responseFuture.onFailure(errorResponse);
+            onCompletion.run();
         } finally {
             if (accumulator != null && accumulator.refCnt() > 0) {
                 accumulator.release();
@@ -166,8 +188,11 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
         if (!responseFuture.isDone()) {
-            responseFuture.completeExceptionally(
-                    new RuntimeException("gRPC stream closed before response received"));
+            DefaultResponse errorResponse = responseBuilder.apply(null);
+            errorResponse.setThrowable(new RuntimeException(
+                    "gRPC stream closed before response received"));
+            responseFuture.onFailure(errorResponse);
+            onCompletion.run();
         }
     }
 
@@ -175,7 +200,10 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Wire client stream error", cause);
         if (!responseFuture.isDone()) {
-            responseFuture.completeExceptionally(cause);
+            DefaultResponse errorResponse = responseBuilder.apply(null);
+            errorResponse.setThrowable(cause);
+            responseFuture.onFailure(errorResponse);
+            onCompletion.run();
         }
         ctx.close();
     }
