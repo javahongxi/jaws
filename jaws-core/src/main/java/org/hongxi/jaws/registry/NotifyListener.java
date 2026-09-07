@@ -10,6 +10,7 @@ import java.util.List;
  * Created by shenhongxi on 2021/3/7.
  */
 
+@FunctionalInterface
 public interface NotifyListener {
 
     void notify(URL registryUrl, List<URL> urls);

@@ -13,6 +13,7 @@ import java.util.List;
  *
  * @param <T> service type
  */
+@FunctionalInterface
 public interface Router<T> {
 
     /**

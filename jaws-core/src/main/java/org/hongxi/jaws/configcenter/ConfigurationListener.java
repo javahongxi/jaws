@@ -5,6 +5,7 @@ package org.hongxi.jaws.configcenter;
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
+@FunctionalInterface
 public interface ConfigurationListener {
 
     /**

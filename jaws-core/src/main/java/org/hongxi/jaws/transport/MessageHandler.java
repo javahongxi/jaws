@@ -12,6 +12,7 @@ import java.util.concurrent.Flow;
  * <p>
  * This interface is natively async to avoid blocking transport threads.
  */
+@FunctionalInterface
 public interface MessageHandler {
 
     /**
