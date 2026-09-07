@@ -41,13 +41,13 @@ public class McpExporter<T> extends AbstractExporter<T> {
     private static final Logger log = LoggerFactory.getLogger(McpExporter.class);
 
     /** Shared MCP servers keyed by host:port — multiple services share one server. */
-    private static final ConcurrentMap<String, McpServer> SERVER_MAP = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, McpServer> serverMap = new ConcurrentHashMap<>();
 
     private final McpServer server;
 
     public McpExporter(Provider<T> provider, URL url) {
         super(provider, url);
-        server = SERVER_MAP.computeIfAbsent(url.getHostPort(), k -> new McpServer(url));
+        server = serverMap.computeIfAbsent(url.getHostPort(), k -> new McpServer(url));
         registerTools(provider, server.getToolRegistry());
     }
 
@@ -65,7 +65,7 @@ public class McpExporter<T> extends AbstractExporter<T> {
 
     @Override
     public void destroy() {
-        SERVER_MAP.remove(url.getHostPort());
+        serverMap.remove(url.getHostPort());
         server.close();
         log.info("McpExporter destroy: url={}", url);
     }
