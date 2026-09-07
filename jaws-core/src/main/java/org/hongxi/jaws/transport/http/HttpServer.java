@@ -9,14 +9,18 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.AbstractNettyServer;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.http.rest.RestMappingRegistry;
+import org.hongxi.jaws.transport.http.mcp.McpToolRegistry;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Lightweight HTTP/1.1 server that exposes a {@code POST /invoke} endpoint for
- * invoking Jaws RPC services with JSON payloads, plus a {@code GET /health}
- * probe for load-balancer health checks.
+ * Lightweight HTTP/1.1 server that exposes:
+ * <ul>
+ *   <li>{@code POST /invoke} — JSON RPC invocation</li>
+ *   <li>{@code POST /mcp} — MCP (Model Context Protocol) Stateless Streamable HTTP</li>
+ *   <li>{@code GET /health} — health check probe</li>
+ * </ul>
  * <p>
  * The Netty pipeline is:
  * <pre>
@@ -40,6 +44,7 @@ public class HttpServer extends AbstractNettyServer {
     private final int maxContentLength;
     private final ConcurrentMap<String, Class<?>> interfaceClasses = new ConcurrentHashMap<>();
     private final RestMappingRegistry restMappingRegistry = new RestMappingRegistry();
+    private final McpToolRegistry mcpToolRegistry = new McpToolRegistry();
 
     public HttpServer(URL url, MessageHandler messageHandler) {
         super(url, "HttpServer");
@@ -67,13 +72,20 @@ public class HttpServer extends AbstractNettyServer {
         return restMappingRegistry;
     }
 
+    /**
+     * @return the MCP tool registry for registering MCP tools
+     */
+    public McpToolRegistry getMcpToolRegistry() {
+        return mcpToolRegistry;
+    }
+
     @Override
     protected void initChannel(SocketChannel ch) {
         ChannelPipeline pipeline = ch.pipeline();
         pipeline.addLast("http_codec", new HttpServerCodec());
         pipeline.addLast("aggregator", new HttpObjectAggregator(maxContentLength));
         pipeline.addLast("http_handler", new HttpRequestHandler(
-                messageHandler, serverExecutor, interfaceClasses, restMappingRegistry));
+                messageHandler, serverExecutor, interfaceClasses, restMappingRegistry, mcpToolRegistry));
     }
 
     @Override

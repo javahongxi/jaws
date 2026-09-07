@@ -1,95 +1,98 @@
-package org.hongxi.jaws.protocol.mcp;
+package org.hongxi.jaws.transport.http.mcp;
 
 import com.alibaba.fastjson2.JSON;
-import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.rpc.AbstractExporter;
 import org.hongxi.jaws.rpc.Provider;
-import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.mcp.McpServer;
-import org.hongxi.jaws.transport.mcp.McpToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
 
 /**
- * MCP protocol exporter that bridges Jaws service methods to MCP tools.
+ * Registry of MCP tools exposed through the Streamable HTTP transport.
  * <p>
- * When a service is exported via the {@code mcp} protocol, this exporter:
- * <ol>
- *   <li>Creates (or reuses) an {@link McpServer} on the configured port</li>
- *   <li>Auto-registers each public interface method as an MCP tool, generating
- *       a JSON Schema from the method's parameter types and wiring the executor
- *       to invoke the actual service implementation via reflection</li>
- *   <li>Delegates lifecycle (open/close/drain) to the underlying Netty server</li>
- * </ol>
+ * Each tool has a name, description, JSON Schema input specification, and
+ * an execution function. Tools are the MCP mechanism for AI agents to invoke
+ * server-side capabilities — analogous to Jaws RPC service methods.
  * <p>
- * This enables any Jaws service to be directly callable from MCP clients
- * (Cursor, Claude Desktop, MCP Inspector) without manual tool registration.
+ * The {@link #register(Provider)} method automatically registers each public
+ * interface method of a {@link Provider} as an MCP tool.
  *
- * @see McpProtocol
- * @see McpServer
+ * @author shenhongxi
  */
-public class McpExporter<T> extends AbstractExporter<T> {
-
-    private static final Logger log = LoggerFactory.getLogger(McpExporter.class);
-
-    /** Shared MCP servers keyed by host:port — multiple services share one server. */
-    private static final ConcurrentMap<String, McpServer> serverMap = new ConcurrentHashMap<>();
-
-    private final McpServer server;
-
-    public McpExporter(Provider<T> provider, URL url) {
-        super(provider, url);
-        server = serverMap.computeIfAbsent(url.getHostPort(), k -> new McpServer(url));
-        registerTools(provider, server.getToolRegistry());
-    }
-
-    // ---- Lifecycle ----
-
-    @Override
-    protected boolean doInit() {
-        return server.open();
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return server.isAvailable();
-    }
-
-    @Override
-    public void destroy() {
-        serverMap.remove(url.getHostPort());
-        server.close();
-        log.info("McpExporter destroy: url={}", url);
-    }
-
-    @Override
-    public void stopAccept() {
-        server.stopAccept();
-    }
-
-    @Override
-    public void drainInflightRequests(long timeout) {
-        server.drainInflightRequests(timeout);
-    }
-
-    // ---- Tool auto-registration ----
+public class McpToolRegistry {
+    private static final Logger log = LoggerFactory.getLogger(McpToolRegistry.class);
 
     /**
-     * Register each public interface method as an MCP tool.
+     * An MCP tool that can be listed and called by MCP clients.
+     *
+     * @param name        unique tool name (e.g. "hello")
+     * @param description human-readable description for the AI model
+     * @param inputSchema JSON Schema object describing the tool's parameters
+     * @param executor    function that executes the tool with the given arguments
+     */
+    public record Tool(String name, String description, Map<String, Object> inputSchema, Executor executor) {
+    }
+
+    /**
+     * Functional interface for tool execution.
+     */
+    @FunctionalInterface
+    public interface Executor {
+        /**
+         * Execute the tool.
+         *
+         * @param arguments the tool arguments as a JSON-like map
+         * @return the tool result (will be serialized to JSON)
+         */
+        Object execute(Map<String, Object> arguments) throws Exception;
+    }
+
+    private final ConcurrentHashMap<String, Tool> tools = new ConcurrentHashMap<>();
+
+    /**
+     * Register a tool.
+     *
+     * @param tool the tool to register
+     */
+    public void register(Tool tool) {
+        tools.put(tool.name(), tool);
+    }
+
+    /**
+     * Look up a tool by name.
+     *
+     * @param name the tool name
+     * @return the tool, or null if not found
+     */
+    public Tool get(String name) {
+        return tools.get(name);
+    }
+
+    /**
+     * @return all registered tools as an unmodifiable snapshot
+     */
+    public Map<String, Tool> getAll() {
+        return Map.copyOf(tools);
+    }
+
+    public boolean isEmpty() {
+        return tools.isEmpty();
+    }
+
+    /**
+     * Register each public interface method of a {@link Provider} as an MCP tool.
+     * <p>
      * Overloaded methods (same name, different parameters) are skipped with a warning
      * because MCP tools are identified by name only.
+     *
+     * @param provider the Jaws provider whose interface methods become MCP tools
      */
-    private void registerTools(Provider<T> provider, McpToolRegistry registry) {
-        Class<T> interfaceClass = provider.getInterface();
-        T impl = provider.getImpl();
+    public void register(Provider<?> provider) {
+        Class<?> interfaceClass = provider.getInterface();
+        Object impl = provider.getImpl();
         Set<String> seenNames = new HashSet<>();
 
         for (Method method : interfaceClass.getMethods()) {
@@ -106,21 +109,13 @@ public class McpExporter<T> extends AbstractExporter<T> {
             String description = interfaceClass.getSimpleName() + "." + method.getName();
             Map<String, Object> inputSchema = buildInputSchema(method);
 
-            registry.register(new McpToolRegistry.Tool(toolName, description, inputSchema, args -> {
+            register(new Tool(toolName, description, inputSchema, args -> {
                 Object[] methodArgs = resolveArguments(method, args);
                 Object result = method.invoke(impl, methodArgs);
 
                 // Handle async return values
-                if (result instanceof CompletableFuture<?> future) {
-                    long timeoutMs = url.getMethodParameter(
-                            method.getName(), "",
-                            UrlParam.Transport.REQUEST_TIMEOUT.getName(),
-                            UrlParam.Transport.REQUEST_TIMEOUT.intValue());
-                    if (timeoutMs > 0) {
-                        result = future.orTimeout(timeoutMs, TimeUnit.MILLISECONDS).join();
-                    } else {
-                        result = future.join();
-                    }
+                if (result instanceof java.util.concurrent.CompletableFuture<?> future) {
+                    result = future.join();
                 }
 
                 return result;
@@ -130,21 +125,6 @@ public class McpExporter<T> extends AbstractExporter<T> {
         }
     }
 
-    /**
-     * Build a JSON Schema object for the method's parameters.
-     * <p>
-     * Example output for {@code void hello(String name, int count)}:
-     * <pre>
-     * {
-     *   "type": "object",
-     *   "properties": {
-     *     "name": {"type": "string", "description": "String"},
-     *     "count": {"type": "integer", "description": "int"}
-     *   },
-     *   "required": ["name", "count"]
-     * }
-     * </pre>
-     */
     private static Map<String, Object> buildInputSchema(Method method) {
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
@@ -168,9 +148,6 @@ public class McpExporter<T> extends AbstractExporter<T> {
         return schema;
     }
 
-    /**
-     * Map a Java type to its JSON Schema type string.
-     */
     private static String jsonSchemaType(Class<?> type) {
         if (type == String.class || type == CharSequence.class) {
             return "string";
@@ -191,11 +168,6 @@ public class McpExporter<T> extends AbstractExporter<T> {
         return "object";
     }
 
-    /**
-     * Convert MCP tool arguments (a flat {@code Map<String, Object>}) to the
-     * method's parameter array, using the same type-coercion strategy as the
-     * HTTP transport's {@code convertValue}.
-     */
     private static Object[] resolveArguments(Method method, Map<String, Object> args) {
         Parameter[] params = method.getParameters();
         Object[] resolved = new Object[params.length];
@@ -207,10 +179,6 @@ public class McpExporter<T> extends AbstractExporter<T> {
         return resolved;
     }
 
-    /**
-     * Convert a single value to the target type.
-     * Handles primitives, wrappers, strings, and complex objects (via JSON round-trip).
-     */
     private static Object convertValue(Object value, Class<?> targetType) {
         if (value == null) {
             return defaultForPrimitive(targetType);
@@ -233,7 +201,6 @@ public class McpExporter<T> extends AbstractExporter<T> {
         if (targetType == String.class || targetType == CharSequence.class) {
             return value.toString();
         }
-        // Complex object: JSON round-trip
         return JSON.parseObject(JSON.toJSONString(value), targetType);
     }
 

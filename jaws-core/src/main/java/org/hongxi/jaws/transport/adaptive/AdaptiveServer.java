@@ -16,6 +16,7 @@ import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.http.HttpRequestHandler;
 import org.hongxi.jaws.transport.http.rest.RestMappingRegistry;
 import org.hongxi.jaws.transport.http2.Http2StreamServerHandler;
+import org.hongxi.jaws.transport.http.mcp.McpToolRegistry;
 import org.hongxi.jaws.transport.netty.HeartbeatHandler;
 import org.hongxi.jaws.transport.netty.NettyChannelHandler;
 import org.hongxi.jaws.transport.netty.NettyDecoder;
@@ -60,6 +61,7 @@ public class AdaptiveServer extends AbstractNettyServer {
     /** Interface classes registered for HTTP/1.1 JSON argument type conversion. */
     private final ConcurrentMap<String, Class<?>> interfaceClasses = new ConcurrentHashMap<>();
     private final RestMappingRegistry restMappingRegistry = new RestMappingRegistry();
+    private final McpToolRegistry mcpToolRegistry = new McpToolRegistry();
 
     public AdaptiveServer(URL url, MessageHandler messageHandler) {
         super(url, "AdaptiveServer");
@@ -86,6 +88,13 @@ public class AdaptiveServer extends AbstractNettyServer {
      */
     public RestMappingRegistry getRestMappingRegistry() {
         return restMappingRegistry;
+    }
+
+    /**
+     * @return the MCP tool registry for registering MCP tools
+     */
+    public McpToolRegistry getMcpToolRegistry() {
+        return mcpToolRegistry;
     }
 
     @Override
@@ -139,6 +148,6 @@ public class AdaptiveServer extends AbstractNettyServer {
         pipeline.addLast("http_codec", new HttpServerCodec());
         pipeline.addLast("aggregator", new HttpObjectAggregator(maxContentLength));
         pipeline.addLast("http_handler", new HttpRequestHandler(
-                messageHandler, serverExecutor, interfaceClasses, restMappingRegistry));
+                messageHandler, serverExecutor, interfaceClasses, restMappingRegistry, mcpToolRegistry));
     }
 }

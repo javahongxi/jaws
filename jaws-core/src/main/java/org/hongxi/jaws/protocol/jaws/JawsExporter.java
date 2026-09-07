@@ -44,10 +44,13 @@ public class JawsExporter<T> extends AbstractExporter<T> {
             // Scan for Spring Web / JAX-RS annotations and register REST mappings
             RestAnnotationScanner.scan(provider.getInterface(), provider.getImpl().getClass(),
                     httpServer.getRestMappingRegistry());
+            // Auto-register interface methods as MCP tools
+            httpServer.getMcpToolRegistry().register(provider);
         } else if (server instanceof AdaptiveServer adaptiveServer) {
             adaptiveServer.addInterfaceClass(provider.getInterface().getName(), provider.getInterface());
             RestAnnotationScanner.scan(provider.getInterface(), provider.getImpl().getClass(),
                     adaptiveServer.getRestMappingRegistry());
+            adaptiveServer.getMcpToolRegistry().register(provider);
         }
     }
 

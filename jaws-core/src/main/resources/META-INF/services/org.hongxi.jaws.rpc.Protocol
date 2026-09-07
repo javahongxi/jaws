@@ -1,3 +1,2 @@
 org.hongxi.jaws.protocol.InjvmProtocol
 org.hongxi.jaws.protocol.jaws.JawsProtocol
-org.hongxi.jaws.protocol.mcp.McpProtocol

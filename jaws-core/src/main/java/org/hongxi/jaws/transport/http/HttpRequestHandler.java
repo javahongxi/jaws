@@ -17,6 +17,8 @@ import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.http.rest.ParameterBinding;
 import org.hongxi.jaws.transport.http.rest.RestMapping;
 import org.hongxi.jaws.transport.http.rest.RestMappingRegistry;
+import org.hongxi.jaws.transport.http.mcp.McpHandler;
+import org.hongxi.jaws.transport.http.mcp.McpToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,6 +38,8 @@ import java.util.concurrent.RejectedExecutionException;
  *   <li>{@code GET /health} — returns 200 OK with body "OK", no RPC dispatch</li>
  *   <li>{@code POST /invoke} — JSON body dispatched to the Jaws
  *       {@link MessageHandler} pipeline on the business executor</li>
+ *   <li>{@code POST /mcp} — MCP Stateless Streamable HTTP endpoint,
+ *       delegated to {@link McpHandler}</li>
  * </ul>
  * <p>
  * Request JSON format:
@@ -66,6 +70,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
     private static final Logger log = LoggerFactory.getLogger(HttpRequestHandler.class);
 
     private static final String INVOKE_PATH = "/invoke";
+    private static final String MCP_PATH = "/mcp";
     private static final String HEALTH_PATH = "/health";
     private static final String JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
@@ -73,15 +78,18 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
     private final ExecutorService serverExecutor;
     private final Map<String, Class<?>> interfaceClasses;
     private final RestMappingRegistry restMappingRegistry;
+    private final McpHandler mcpHandler;
 
     public HttpRequestHandler(MessageHandler messageHandler,
                               ExecutorService serverExecutor,
                               Map<String, Class<?>> interfaceClasses,
-                              RestMappingRegistry restMappingRegistry) {
+                              RestMappingRegistry restMappingRegistry,
+                              McpToolRegistry mcpToolRegistry) {
         this.messageHandler = messageHandler;
         this.serverExecutor = serverExecutor;
         this.interfaceClasses = interfaceClasses;
         this.restMappingRegistry = restMappingRegistry;
+        this.mcpHandler = new McpHandler(mcpToolRegistry, serverExecutor);
     }
 
     @Override
@@ -99,9 +107,20 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
             return;
         }
 
+        // MCP endpoint: POST /mcp
+        String path = extractPath(uri);
+        if (MCP_PATH.equals(path)) {
+            if (!HttpMethod.POST.equals(request.method())) {
+                sendHttpResponse(ctx, HttpResponseStatus.METHOD_NOT_ALLOWED,
+                        errorJson("Only POST is supported for /mcp"));
+                return;
+            }
+            mcpHandler.handlePost(ctx, request);
+            return;
+        }
+
         // REST mapping: annotation-driven routes
         if (restMappingRegistry != null && !restMappingRegistry.isEmpty()) {
-            String path = extractPath(uri);
             Optional<RestMappingRegistry.MatchedMapping> matched =
                     restMappingRegistry.match(request.method(), path);
             if (matched.isPresent()) {
@@ -113,7 +132,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         // RPC invoke: POST /invoke
         if (!INVOKE_PATH.equals(uri) && !uri.startsWith(INVOKE_PATH + "?")) {
             sendHttpResponse(ctx, HttpResponseStatus.NOT_FOUND,
-                    errorJson("Unknown endpoint: " + uri + ". Use POST /invoke or GET /health"));
+                    errorJson("Unknown endpoint: " + uri + ". Use POST /invoke, POST /mcp, or GET /health"));
             return;
         }
         if (!HttpMethod.POST.equals(request.method())) {

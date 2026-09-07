@@ -10,6 +10,9 @@ import org.hongxi.jaws.sample.http.provider.service.DemoServiceImpl;
  * HTTP/1.1 transport provider — uses {@code transportFactory=http} to expose
  * Jaws RPC services as a JSON endpoint accessible from {@code curl} or any
  * standard HTTP client.
+ * <p>
+ * The MCP endpoint ({@code POST /mcp}) is also available on the same port,
+ * with interface methods auto-registered as MCP tools.
  *
  * <pre>
  * Demo scenario:
@@ -28,6 +31,12 @@ import org.hongxi.jaws.sample.http.provider.service.DemoServiceImpl;
  * curl -X POST http://localhost:10000/invoke \
  *   -H "content-type: application/json" \
  *   -d '{"interface":"org.hongxi.jaws.sample.api.DemoService","method":"hello","group":"test","version":"2.0","args":["lily"]}'
+ *
+ * # MCP: list tools
+ * curl -X POST http://localhost:10000/mcp \
+ *   -H "Content-Type: application/json" \
+ *   -H "Accept: application/json, text/event-stream" \
+ *   -d '{"jsonrpc":"2.0","method":"tools/list","id":1,"params":{}}'
  * </pre>
  */
 public class HttpProvider {
