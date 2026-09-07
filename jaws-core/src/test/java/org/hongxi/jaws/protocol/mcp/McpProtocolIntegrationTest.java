@@ -66,7 +66,9 @@ class McpProtocolIntegrationTest {
         assertNotNull(mcpProtocol, "McpProtocol must be loadable via ExtensionLoader");
 
         port = findFreePort();
-        httpClient = HttpClient.newHttpClient();
+        httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     @AfterEach
