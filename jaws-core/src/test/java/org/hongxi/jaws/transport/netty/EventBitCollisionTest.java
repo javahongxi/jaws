@@ -15,7 +15,7 @@ class EventBitCollisionTest {
 
     @Test
     void exceptionResponseMustNotBeConsumedAsHeartbeat() {
-        NettyDecoder decoder = new NettyDecoder(null, 0);
+        NettyDecoder decoder = new NettyDecoder(0);
         EmbeddedChannel ch = new EmbeddedChannel(decoder);
 
         // Craft a frame: magic, version=1, flag = FLAG_RESPONSE_EXCEPTION, requestId=42, bodyLen=0
@@ -37,7 +37,7 @@ class EventBitCollisionTest {
 
     @Test
     void heartbeatFrameIsStillConsumed() {
-        NettyDecoder decoder = new NettyDecoder(null, 0);
+        NettyDecoder decoder = new NettyDecoder(0);
         EmbeddedChannel ch = new EmbeddedChannel(decoder);
 
         ByteBuf buf = ch.alloc().buffer(16);

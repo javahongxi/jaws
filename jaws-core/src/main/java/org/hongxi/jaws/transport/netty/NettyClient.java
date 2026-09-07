@@ -226,8 +226,8 @@ public class NettyClient extends AbstractClient {
             pipeline.addLast("heartbeat", new HeartbeatHandler());
         }
         int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
-        pipeline.addLast("decoder", new NettyDecoder(NettyClient.this, maxContentLength));
-        pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this, (Object message) -> {
+        pipeline.addLast("decoder", new NettyDecoder(maxContentLength));
+        pipeline.addLast("handler", new NettyChannelHandler((Object message) -> {
             Response response = (Response) message;
             // removeCallback: atomically claim + clean up the map entry,
             // so the timeout timer won't attempt a duplicate completion

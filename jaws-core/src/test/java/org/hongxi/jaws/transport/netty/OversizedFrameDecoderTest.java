@@ -19,7 +19,7 @@ class OversizedFrameDecoderTest {
 
     @Test
     void oversizedFrameBodySplitAcrossChunksMustNotDesynchronizeStream() {
-        NettyDecoder decoder = new NettyDecoder(null, 10);
+        NettyDecoder decoder = new NettyDecoder(10);
         EmbeddedChannel ch = new EmbeddedChannel(decoder);
 
         byte[] oversizedBody = new byte[100];

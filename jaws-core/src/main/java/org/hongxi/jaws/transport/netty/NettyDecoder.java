@@ -7,7 +7,6 @@ import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Response;
-import org.hongxi.jaws.transport.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +30,6 @@ import java.util.List;
 public class NettyDecoder extends ByteToMessageDecoder {
     private static final Logger log = LoggerFactory.getLogger(NettyDecoder.class);
 
-    private final Channel channel;
     private final int maxContentLength;
 
     /**
@@ -41,8 +39,7 @@ public class NettyDecoder extends ByteToMessageDecoder {
      */
     private long bytesToSkip;
 
-    public NettyDecoder(Channel channel, int maxContentLength) {
-        this.channel = channel;
+    public NettyDecoder(int maxContentLength) {
         this.maxContentLength = maxContentLength;
     }
 

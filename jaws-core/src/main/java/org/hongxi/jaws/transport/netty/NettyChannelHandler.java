@@ -13,7 +13,6 @@ import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
-import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,26 +40,24 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
 
     private static final String CONTENT_LENGTH = "Content-Length";
 
-    private final Channel channel;
     private final MessageHandler messageHandler;
     private ExecutorService serverExecutor;
     /** Tracks in-flight requests for graceful shutdown; null on the client side. */
     private AtomicInteger inflightRequests;
 
-    public NettyChannelHandler(Channel channel, MessageHandler messageHandler) {
-        this.channel = channel;
+    public NettyChannelHandler(MessageHandler messageHandler) {
         this.messageHandler = messageHandler;
     }
 
-    public NettyChannelHandler(Channel channel, MessageHandler messageHandler,
+    public NettyChannelHandler(MessageHandler messageHandler,
                                ExecutorService serverExecutor) {
-        this(channel, messageHandler);
+        this(messageHandler);
         this.serverExecutor = serverExecutor;
     }
 
-    public NettyChannelHandler(Channel channel, MessageHandler messageHandler,
+    public NettyChannelHandler(MessageHandler messageHandler,
                                ExecutorService serverExecutor, AtomicInteger inflightRequests) {
-        this(channel, messageHandler, serverExecutor);
+        this(messageHandler, serverExecutor);
         this.inflightRequests = inflightRequests;
     }
 

@@ -5,14 +5,10 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Request;
-import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.Channel;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.SynchronousQueue;
@@ -66,9 +62,8 @@ class NettyChannelHandlerTest {
         assertTrue(taskStarted.await(5, TimeUnit.SECONDS));
         this.executor = saturated;
 
-        FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler, saturated);
+        NettyChannelHandler handler = new NettyChannelHandler(messageHandler, saturated);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -105,9 +100,8 @@ class NettyChannelHandlerTest {
         executor = new ThreadPoolExecutor(1, 1, 0L,
                 TimeUnit.MILLISECONDS, new SynchronousQueue<>());
 
-        FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler, executor);
+        NettyChannelHandler handler = new NettyChannelHandler(messageHandler, executor);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -142,9 +136,8 @@ class NettyChannelHandlerTest {
 
     @Test
     void syncProcessedMessageReleasesByteBuf() throws InterruptedException {
-        FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler);
+        NettyChannelHandler handler = new NettyChannelHandler(messageHandler);
         embeddedChannel = new EmbeddedChannel(handler);
 
         ByteBuf data = Unpooled.buffer();
@@ -165,9 +158,8 @@ class NettyChannelHandlerTest {
 
     @Test
     void unsupportedMessageTypeClosesChannel() throws InterruptedException {
-        FakeChannel jawsChannel = fakeChannel();
         CountingHandler messageHandler = new CountingHandler();
-        NettyChannelHandler handler = new NettyChannelHandler(jawsChannel, messageHandler);
+        NettyChannelHandler handler = new NettyChannelHandler(messageHandler);
         embeddedChannel = new EmbeddedChannel(handler);
 
         // exceptionCaught logs and closes the channel; writeInbound does not propagate
@@ -180,12 +172,6 @@ class NettyChannelHandlerTest {
     }
 
     // ---------- helpers ----------
-
-    private FakeChannel fakeChannel() {
-        Map<String, String> params = new HashMap<>();
-        params.put("serialization", "hessian2");
-        return new FakeChannel(new URL("jaws", "127.0.0.1", 18002, "test", params));
-    }
 
     private void encodeSampleRequest(ByteBuf buf, long requestId) {
         DefaultRequest request = new DefaultRequest();
@@ -211,38 +197,6 @@ class NettyChannelHandlerTest {
             outbound = channel.readOutbound();
         }
         return outbound;
-    }
-
-    /** Fake jaws Channel satisfying the URL lookup contract. */
-    private static class FakeChannel implements Channel {
-        private final URL url;
-
-        FakeChannel(URL url) {
-            this.url = url;
-        }
-
-        @Override
-        public boolean open() {
-            return true;
-        }
-
-        @Override
-        public void close() {
-        }
-
-        @Override
-        public void close(int timeout) {
-        }
-
-        @Override
-        public boolean isAvailable() {
-            return true;
-        }
-
-        @Override
-        public URL getUrl() {
-            return url;
-        }
     }
 
     /** Counts handled requests; returns a fixed successful response. */

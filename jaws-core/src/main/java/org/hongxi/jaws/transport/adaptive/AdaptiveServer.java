@@ -110,9 +110,9 @@ public class AdaptiveServer extends AbstractNettyServer {
                     heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
             pipeline.addLast("heartbeat", new HeartbeatHandler());
         }
-        pipeline.addLast("decoder", new NettyDecoder(this, maxContentLength));
+        pipeline.addLast("decoder", new NettyDecoder(maxContentLength));
         pipeline.addLast("handler", new NettyChannelHandler(
-                this, messageHandler, serverExecutor, inflightRequests));
+                messageHandler, serverExecutor, inflightRequests));
     }
 
     /**
