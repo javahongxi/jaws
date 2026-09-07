@@ -19,14 +19,6 @@ import java.util.Set;
  * <p>
  * This transport is <b>server-only</b>: it does not support outbound client
  * connections. Use {@code netty} or {@code http2} for consumer-side transport.
- * <p>
- * Transport matrix:
- * <ul>
- *   <li>{@code netty} — TCP + Jaws binary protocol</li>
- *   <li>{@code http2} — HTTP/2 + Jaws binary serialization</li>
- *   <li>{@code http} — HTTP/1.1 + JSON (RPC invoke)</li>
- *   <li>{@code mcp} — HTTP/1.1 + JSON-RPC 2.0 + SSE (MCP Streamable HTTP)</li>
- * </ul>
  *
  * @author shenhongxi
  */
@@ -35,7 +27,7 @@ public class McpTransportFactory extends AbstractTransportFactory {
 
     @Override
     public Set<String> supportedProtocols() {
-        return Set.of("jaws");
+        return Set.of("mcp");
     }
 
     @Override
