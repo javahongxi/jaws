@@ -18,6 +18,8 @@ import org.hongxi.jaws.rpc.Response;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Codec implementation for the Jaws protocol.
@@ -71,6 +73,14 @@ public final class JawsCodec {
     public static final byte FLAG_RESPONSE = 0x01;
     public static final byte FLAG_RESPONSE_EXCEPTION = 0x02;
     public static final byte FLAG_RESPONSE_VOID = 0x03;
+
+    /**
+     * Cache of {@code paramDesc → Class<?>[]} to avoid repeated
+     * {@code String.split} + {@code Class.forName} on every request.
+     * Method signatures are finite and stable after startup, so this
+     * map converges quickly and eliminates per-request reflection overhead.
+     */
+    private static final ConcurrentMap<String, Class<?>[]> paramClassCache = new ConcurrentHashMap<>();
 
     public static void encode(Object message, ByteBuf out) throws IOException {
         try {
@@ -306,10 +316,15 @@ public final class JawsCodec {
             return null;
         }
 
-        Class<?>[] classTypes = ReflectUtils.forNames(parameterDesc);
+        Class<?>[] classTypes = paramClassCache.computeIfAbsent(parameterDesc, k -> {
+            try {
+                return ReflectUtils.forNames(k);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+        });
 
         Object[] paramObjs = new Object[classTypes.length];
-
         for (int i = 0; i < classTypes.length; i++) {
             paramObjs[i] = input.readObject(classTypes[i]);
         }

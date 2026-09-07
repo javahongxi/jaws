@@ -2,6 +2,7 @@ package org.hongxi.jaws.rpc;
 
 import org.hongxi.jaws.common.UrlParam;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -12,7 +13,11 @@ import java.util.Map;
 public class RpcContext {
     private static final ThreadLocal<RpcContext> LOCAL_CONTEXT = ThreadLocal.withInitial(RpcContext::new);
     private final Map<Object, Object> attributes = new HashMap<>();
-    private final Map<String, String> attachments = new HashMap<>();
+    /**
+     * Lazily initialized: null when no attachments are present (the common
+     * case), created on first {@link #setRpcAttachment} call.
+     */
+    private Map<String, String> attachments;
     private Request request;
     private Response response;
     // The actual service address recorded after the consumer-side invocation
@@ -32,8 +37,10 @@ public class RpcContext {
             context.setRequest(request);
             Map<String, String> reqAttachments = request.getAttachments();
             if (reqAttachments != null && !reqAttachments.isEmpty()) {
-                context.attachments.putAll(reqAttachments);
+                context.attachments = new HashMap<>(reqAttachments);
             }
+            // else: attachments stays null — avoids HashMap allocation
+            // for the common case where no attachments are carried
         }
         LOCAL_CONTEXT.set(context);
         return context;
@@ -63,19 +70,24 @@ public class RpcContext {
     }
 
     public void setRpcAttachment(String key, String value) {
+        if (attachments == null) {
+            attachments = new HashMap<>();
+        }
         attachments.put(key, value);
     }
 
     public String getRpcAttachment(String key) {
-        return attachments.get(key);
+        return attachments != null ? attachments.get(key) : null;
     }
 
     public void removeRpcAttachment(String key) {
-        attachments.remove(key);
+        if (attachments != null) {
+            attachments.remove(key);
+        }
     }
 
     public Map<String, String> getRpcAttachments() {
-        return attachments;
+        return attachments != null ? attachments : Collections.emptyMap();
     }
 
     public Request getRequest() {
