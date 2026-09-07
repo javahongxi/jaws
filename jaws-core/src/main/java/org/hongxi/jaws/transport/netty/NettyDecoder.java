@@ -86,11 +86,11 @@ public class NettyDecoder extends ByteToMessageDecoder {
         // bytes 12-15: body length
         int bodyLength = in.readInt();
 
-        boolean isRequest = (flag & JawsCodec.MASK) == JawsCodec.FLAG_REQUEST;
-
         if (bodyLength < 0) {
             throw new JawsFrameworkException("NettyDecoder negative body length: " + bodyLength);
         }
+
+        boolean isRequest = (flag & JawsCodec.MASK) == JawsCodec.FLAG_REQUEST;
 
         // Reject oversized messages to prevent OOM, without closing the connection
         if (maxContentLength > 0 && bodyLength > maxContentLength) {
@@ -113,13 +113,13 @@ public class NettyDecoder extends ByteToMessageDecoder {
             return;
         }
 
-        if (in.readableBytes() < bodyLength) {
-            in.resetReaderIndex();
+        // Reset reader index to the start of the frame so the caller gets the complete header + body.
+        in.resetReaderIndex();
+        if (in.readableBytes() < JawsCodec.HEADER_LENGTH + bodyLength) {
             return;
         }
 
         // Pass ByteBuf directly to JawsCodec.decode (zero-copy, no frame byte[] allocation)
-        in.resetReaderIndex();
         // Retain the buffer since the caller (ByteToMessageDecoder pipeline) may release it;
         // NettyChannelHandler is responsible for releasing after processing.
         ByteBuf frame = in.readRetainedSlice(JawsCodec.HEADER_LENGTH + bodyLength);
