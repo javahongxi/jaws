@@ -3,20 +3,15 @@ package org.hongxi.jaws.wire;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Parser;
 import org.hongxi.jaws.wire.reflection.ErrorResponse;
-import org.hongxi.jaws.wire.reflection.ExtensionNumberResponse;
-import org.hongxi.jaws.wire.reflection.ExtensionRequest;
 import org.hongxi.jaws.wire.reflection.FileDescriptorResponse;
 import org.hongxi.jaws.wire.reflection.ListServiceResponse;
 import org.hongxi.jaws.wire.reflection.ServerReflectionRequest;
-import org.hongxi.jaws.wire.reflection.ServerReflectionRequest.MessageRequestCase;
 import org.hongxi.jaws.wire.reflection.ServerReflectionResponse;
 import org.hongxi.jaws.wire.reflection.ServiceResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
