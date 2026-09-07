@@ -26,12 +26,10 @@ import java.util.concurrent.TimeUnit;
 public class NettyServer extends AbstractNettyServer {
 
     private final MessageHandler messageHandler;
-    private final int maxContentLength;
 
     public NettyServer(URL url, MessageHandler messageHandler) {
         super(url, "NettyServer");
         this.messageHandler = messageHandler;
-        this.maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
     }
 
     @Override
@@ -43,6 +41,7 @@ public class NettyServer extends AbstractNettyServer {
                     new IdleStateHandler(heartbeat * 3, heartbeat, 0, TimeUnit.MILLISECONDS));
             pipeline.addLast("heartbeat", new HeartbeatHandler());
         }
+        int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
         pipeline.addLast("decoder", new NettyDecoder(maxContentLength));
         // serverExecutor is ready before bind, so it is safe to build the handler here
         pipeline.addLast("handler", new NettyChannelHandler(messageHandler, serverExecutor, inflightRequests));
