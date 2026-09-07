@@ -167,7 +167,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
         ch.writeInbound(new DefaultHttp2DataFrame(
@@ -196,7 +196,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         ch.writeInbound(requestHeaders("/no.Such/Method"));
 
@@ -219,7 +219,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        DIRECT_EXECUTOR, 10, null));
+                        null, DIRECT_EXECUTOR, 10, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
         ch.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(new byte[100]), true));
@@ -250,7 +250,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         Http2Headers extra = new DefaultHttp2Headers()
                 .set(WireConstants.GRPC_ENCODING, WireConstants.ENCODING_GZIP);
@@ -275,7 +275,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         Http2Headers extra = new DefaultHttp2Headers().set(WireConstants.GRPC_ENCODING, "zstd");
         ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
@@ -311,7 +311,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         Http2Headers extra = new DefaultHttp2Headers()
                 .set("x-trace-id", "abc123")
@@ -349,7 +349,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         Http2Headers extra = new DefaultHttp2Headers().set(WireStatus.GRPC_TIMEOUT, "5m");
         ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
@@ -406,7 +406,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Watch"));
         ch.writeInbound(new DefaultHttp2DataFrame(
@@ -430,7 +430,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        REJECTING_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, REJECTING_EXECUTOR, MAX_MESSAGE_SIZE, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
         ch.writeInbound(new DefaultHttp2DataFrame(

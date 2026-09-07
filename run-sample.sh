@@ -144,7 +144,7 @@ build_classpath() {
     local project_cp="jaws-core/target/classes:jaws-samples/jaws-sample-api/target/classes"
     case "$deps" in *curator*) project_cp="$project_cp:jaws-registry-zookeeper/target/classes" ;; esac
     case "$deps" in *nacos-client*) project_cp="$project_cp:jaws-registry-nacos/target/classes" ;; esac
-    case "$deps" in *protobuf-java*) project_cp="$project_cp:jaws-wire/target/classes:jaws-samples/jaws-sample-wire-api/target/classes" ;; esac
+    case "$deps" in *protobuf-java*) project_cp="$project_cp:jaws-wire-proto/target/classes:jaws-wire/target/classes:jaws-samples/jaws-sample-wire-api/target/classes" ;; esac
     echo "$project_cp:$deps"
 }
 

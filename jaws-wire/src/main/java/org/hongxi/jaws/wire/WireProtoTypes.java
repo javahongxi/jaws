@@ -1,5 +1,6 @@
 package org.hongxi.jaws.wire;
 
+import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 
@@ -8,7 +9,9 @@ import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Flow;
 
 /**
@@ -38,7 +41,9 @@ public final class WireProtoTypes {
     /**
      * Per-method protobuf type metadata.
      */
-    public record MethodInfo(Parser<? extends Message> requestParser,
+    public record MethodInfo(Class<? extends Message> requestClass,
+                             Class<? extends Message> responseClass,
+                             Parser<? extends Message> requestParser,
                              Parser<? extends Message> responseParser,
                              boolean streaming) {}
 
@@ -117,6 +122,7 @@ public final class WireProtoTypes {
             }
 
             MethodInfo info = new MethodInfo(
+                    asMessageClass(requestType), asMessageClass(responseType),
                     resolveParser(requestType), resolveParser(responseType), streaming);
             // Register under the Java method name (camelCase: sayHello)
             map.put(method.getName(), info);
@@ -156,6 +162,47 @@ public final class WireProtoTypes {
                 "Cannot resolve Flow.Publisher type argument for streaming method: "
                         + method.getDeclaringClass().getName() + "." + method.getName()
                         + ". The type argument must be a concrete protobuf Message class.");
+    }
+
+    /**
+     * Collect all unique protobuf {@link Descriptors.FileDescriptor}s from the
+     * request and response message types, including transitive dependencies.
+     *
+     * @return the collected file descriptors
+     */
+    public Set<Descriptors.FileDescriptor> getFileDescriptors() {
+        Set<Descriptors.FileDescriptor> result = new HashSet<>();
+        for (MethodInfo info : methodInfoMap.values()) {
+            collectFromFileDescriptor(info.requestClass(), result);
+            collectFromFileDescriptor(info.responseClass(), result);
+        }
+        return result;
+    }
+
+    private static void collectFromFileDescriptor(Class<? extends Message> messageClass,
+                                                   Set<Descriptors.FileDescriptor> collected) {
+        try {
+            Message defaultInstance = (Message) messageClass.getMethod("getDefaultInstance").invoke(null);
+            Descriptors.FileDescriptor fd = ((Message) defaultInstance).getDescriptorForType().getFile();
+            collectFileDescriptorRecursive(fd, collected);
+        } catch (Exception e) {
+            // Skip types that don't expose getDefaultInstance
+        }
+    }
+
+    private static void collectFileDescriptorRecursive(Descriptors.FileDescriptor fd,
+                                                        Set<Descriptors.FileDescriptor> collected) {
+        if (!collected.add(fd)) {
+            return;
+        }
+        for (Descriptors.FileDescriptor dep : fd.getDependencies()) {
+            collectFileDescriptorRecursive(dep, collected);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Class<? extends Message> asMessageClass(Class<?> clazz) {
+        return (Class<? extends Message>) clazz;
     }
 
     /**

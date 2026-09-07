@@ -1,5 +1,6 @@
 package org.hongxi.jaws.wire;
 
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -12,6 +13,8 @@ import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
+import org.hongxi.jaws.wire.reflection.ServerReflectionRequest;
+import org.hongxi.jaws.wire.reflection.ServerReflectionResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +63,8 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
 
     /** Dispatch strategy: registry-based routing or SPI pipeline bridge. */
     private final WireCallDispatcher dispatcher;
+    /** Reflection service instance; null if reflection is not enabled. */
+    private final WireReflectionService reflectionService;
     protected final ExecutorService serverExecutor;
     /** Max size of a single inbound gRPC message in bytes. */
     protected final int maxMessageSize;
@@ -86,6 +91,9 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     /** Set when the caller canceled the stream (RST_STREAM) or it closed. */
     protected volatile boolean canceled;
 
+    /** True when the path is the reflection bidi-stream; frames are processed individually. */
+    private boolean reflectionPath;
+
     /**
      * Whether the initial response HEADERS frame has been written to the
      * stream; once set, subsequent errors must use trailers rather than
@@ -94,9 +102,11 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     private boolean responseHeadersSent;
 
     WireStreamServerHandler(WireCallDispatcher dispatcher,
+                            WireReflectionService reflectionService,
                             ExecutorService serverExecutor,
                             int maxMessageSize, String compression) {
         this.dispatcher = dispatcher;
+        this.reflectionService = reflectionService;
         this.serverExecutor = serverExecutor;
         this.maxMessageSize = maxMessageSize;
         this.compression = compression;
@@ -175,12 +185,19 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             }
         }
 
-        if (!dispatcher.resolvePath(ctx, path)) {
+        // Reflection is a bidirectional stream handled at the stream-handler
+        // level (like health check in Provider mode). It bypasses the
+        // dispatcher's path resolution entirely.
+        reflectionPath = WireReflectionService.REFLECTION_PATH.equals(path)
+                && reflectionService != null;
+
+        if (!reflectionPath && !dispatcher.resolvePath(ctx, path)) {
             sendError(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + path);
             return;
         }
 
-        if (endStream) {
+        // Non-reflection paths require END_STREAM to carry the request payload
+        if (endStream && !reflectionPath) {
             sendError(ctx, WireConstants.STATUS_INTERNAL, "Missing request payload");
         }
     }
@@ -208,11 +225,48 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 return;
             }
 
+            // Reflection is a bidirectional stream: process each gRPC frame
+            // immediately and respond without waiting for END_STREAM.
+            if (reflectionPath) {
+                processReflectionFrames(ctx);
+                return;
+            }
+
             if (dataFrame.isEndStream()) {
                 dispatch(ctx);
             }
         } finally {
             dataFrame.release();
+        }
+    }
+
+    /**
+     * Process complete gRPC frames from the accumulator for the reflection
+     * bidi-stream. Each frame is decoded as a {@link ServerReflectionRequest},
+     * handled by the {@link WireReflectionService}, and the response is written
+     * immediately — no waiting for END_STREAM.
+     */
+    private void processReflectionFrames(ChannelHandlerContext ctx) {
+        while (accumulator != null && accumulator.readableBytes() >= WireConstants.GRPC_HEADER_SIZE) {
+            ByteBuf frame = WireFrameCodec.tryExtractFrame(accumulator);
+            if (frame == null) {
+                break; // incomplete frame, wait for more data
+            }
+            try {
+                ServerReflectionRequest request = WireFrameCodec.decode(
+                        frame, WireReflectionService.getRequestParser(), requestEncoding);
+                ServerReflectionResponse response = reflectionService.handleRequest(request);
+                sendResponseHeaders(ctx);
+                ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), compression);
+                ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
+            } catch (InvalidProtocolBufferException e) {
+                log.error("Reflection request decode failed", e);
+                sendError(ctx, WireConstants.STATUS_INTERNAL,
+                        "Invalid reflection request: " + e.getMessage());
+                return;
+            } finally {
+                frame.release();
+            }
         }
     }
 

@@ -9,18 +9,13 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>jaws-wire</artifactId>
+    <artifactId>jaws-wire-proto</artifactId>
+    <description>Generated protobuf classes (health, reflection) for jaws-wire</description>
 
     <dependencies>
         <dependency>
-            <groupId>org.hongxi</groupId>
-            <artifactId>jaws-core</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.hongxi</groupId>
-            <artifactId>jaws-wire-proto</artifactId>
-            <version>${project.version}</version>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
         </dependency>
     </dependencies>
 

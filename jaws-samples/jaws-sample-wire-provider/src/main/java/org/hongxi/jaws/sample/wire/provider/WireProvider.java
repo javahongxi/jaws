@@ -23,9 +23,9 @@ import org.hongxi.jaws.sample.wire.provider.service.GreeterServiceImpl;
  * <p>
  * The consumer connects directly via {@code directUrl} without registry discovery.
  * <p>
- * Test with grpcurl:
+ * Test with grpcurl (no proto file needed, via server reflection):
  * <pre>
- *   grpcurl -plaintext -proto greeter.proto -d '{"name":"World"}' \
+ *   grpcurl -plaintext -d '{"name":"World"}' \
  *     localhost:50051 greeter.Greeter/SayHello
  * </pre>
  */
@@ -54,8 +54,8 @@ public class WireProvider {
         System.out.println("Responses compressed with gzip for callers advertising grpc-accept-encoding.");
         System.out.println("Provider listening on port " + PORT + ". Consumer should use directUrl=127.0.0.1:" + PORT);
         System.out.println();
-        System.out.println("Test with grpcurl:");
-        System.out.println("  grpcurl -plaintext -import-path <proto-dir> -proto greeter.proto \\");
-        System.out.println("    -d '{\"name\":\"World\"}' localhost:" + PORT + " greeter.Greeter/SayHello");
+        System.out.println("Test with grpcurl (server reflection enabled, no proto file needed):");
+        System.out.println("  grpcurl -plaintext -d '{\"name\":\"World\"}' \\");
+        System.out.println("    localhost:" + PORT + " greeter.Greeter/SayHello");
     }
 }

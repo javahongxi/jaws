@@ -48,6 +48,9 @@ public class WireExporter<T> extends AbstractExporter<T> {
         WireMessageHandler wireHandler = new WireMessageHandler(
                 baseHandler, protoTypes);
 
+        // Register the service interface for gRPC server reflection
+        WireServer.addProviderServiceInterface(url.getHostPort(), provider.getInterface());
+
         transportFactory = TransportResolver.resolve(url);
         server = transportFactory.createServer(url, wireHandler);
     }
@@ -68,6 +71,8 @@ public class WireExporter<T> extends AbstractExporter<T> {
         if (messageHandler != null) {
             messageHandler.removeProvider(provider);
         }
+        // Unregister the service interface from gRPC server reflection
+        WireServer.removeProviderServiceInterface(url.getHostPort(), provider.getInterface());
         transportFactory.releaseServer(server);
         log.info("WireExporter destroy: url={}", url);
     }
