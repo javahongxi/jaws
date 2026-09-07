@@ -335,12 +335,10 @@ public final class JawsCodec {
 
     private static Object decodeResponse(ObjectInput input, byte dataType, long requestId, byte serializationId)
             throws IOException, ClassNotFoundException {
-        long processTime = input.readLong();
-
         DefaultResponse response = new DefaultResponse();
         response.setRequestId(requestId);
         response.setSerializationNumber(serializationId);
-        response.setProcessTime(processTime);
+        response.setProcessTime(input.readLong());
 
         if (dataType == FLAG_RESPONSE_VOID) {
             return response;
@@ -358,8 +356,6 @@ public final class JawsCodec {
         } else {
             throw new JawsFrameworkException("decode error: unsupported response dataType " + dataType);
         }
-
-        response.setRequestId(requestId);
 
         return response;
     }

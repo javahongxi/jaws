@@ -38,8 +38,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class NettyChannelHandler extends ChannelDuplexHandler {
     private static final Logger log = LoggerFactory.getLogger(NettyChannelHandler.class);
 
-    private static final String CONTENT_LENGTH = "Content-Length";
-
     private final MessageHandler messageHandler;
     private ExecutorService serverExecutor;
     /** Tracks in-flight requests for graceful shutdown; null on the client side. */
@@ -170,7 +168,6 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
             log.error("encode response error: requestId={}", response.getRequestId(), e);
             return;
         }
-        response.setAttachment(CONTENT_LENGTH, String.valueOf(buf.readableBytes()));
         if (ctx.channel().isActive()) {
             ctx.channel().writeAndFlush(buf);
         } else {
