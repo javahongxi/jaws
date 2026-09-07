@@ -68,8 +68,9 @@ Jaws 是一个**核心约 2.6 万行、可以从头读到尾**的轻量级 RPC �
 ./run-sample.sh consumer           # 运行 consumer（需要先启动 provider）
 ./run-sample.sh stop               # 停止所有后台 provider 并清理
 
-# 性能测试（8 核实测 13 万+ QPS，详见 doc/benchmark.md）
-THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws
+# 性能测试（8 核实测约 14 万 QPS，详见 doc/benchmark.md）
+ROLE=provider THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws  # 启动服务端
+ROLE=consumer THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws  # 启动消费端
 ```
 
 ## 代码示例
