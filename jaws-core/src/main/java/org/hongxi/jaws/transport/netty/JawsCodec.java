@@ -99,7 +99,12 @@ public final class JawsCodec {
     }
 
     /**
-     * Decode data from client request or server response.
+     * Decode a complete frame (header + body) from ByteBuf.
+     * <p>
+     * This method parses the 16-byte header and delegates body decoding to
+     * {@link #decodeBody}. It is primarily used by tests; the production
+     * Netty path parses the header once in {@link NettyDecoder} and calls
+     * {@code decodeBody} directly to avoid redundant header parsing.
      */
     public static Object decode(ByteBuf in) throws IOException {
         if (in.readableBytes() <= HEADER_LENGTH) {
@@ -122,9 +127,7 @@ public final class JawsCodec {
 
         // byte 3: flag (low 3 bits = data type, high 5 bits = serializationId)
         byte flag = in.readByte();
-        byte dataType = (byte) (flag & MASK);
-        byte serializationId = (byte) ((flag & SERIALIZATION_MASK) >> 3);
-        boolean isResponse = (dataType != FLAG_REQUEST);
+        boolean isRequest = (flag & MASK) == FLAG_REQUEST;
 
         // bytes 4-11: requestId
         long requestId = in.readLong();
@@ -136,35 +139,54 @@ public final class JawsCodec {
             throw new JawsFrameworkException("decode error: body length mismatch");
         }
 
-        // Resolve serialization from the id embedded in the protocol header
-        // (must happen before the retainedSlice below, otherwise an unknown id
-        // would throw and leak the sliced body buffer)
+        // Slice body region from ByteBuf (zero-copy, no body byte[] allocation)
+        ByteBuf bodyBuf = in.retainedSlice(in.readerIndex(), bodyLength);
+        in.skipBytes(bodyLength);
+
+        try {
+            return decodeBody(bodyBuf, isRequest, requestId, flag);
+        } finally {
+            bodyBuf.release();
+        }
+    }
+
+    /**
+     * Decode only the body portion of a frame, using pre-extracted header fields.
+     * <p>
+     * Called by {@link NettyChannelHandler} after {@link NettyDecoder} has already
+     * parsed the 16-byte header. The ByteBuf should contain only the body payload
+     * (no header bytes). This eliminates redundant header parsing on the hot path.
+     *
+     * @param bodyBuf   body-only ByteBuf (caller retains/releases)
+     * @param isRequest whether the frame is a request
+     * @param requestId request id from the header
+     * @param flag      the flag byte from the header (contains dataType + serializationId)
+     * @return decoded {@link Request} or {@link Response}
+     */
+    public static Object decodeBody(ByteBuf bodyBuf, boolean isRequest, long requestId, byte flag) {
+        byte dataType = (byte) (flag & MASK);
+        byte serializationId = (byte) ((flag & SERIALIZATION_MASK) >> 3);
+
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtensionByNumber(serializationId);
         if (serialization == null) {
             throw new JawsFrameworkException("decode error: unknown serializationId " + serializationId);
         }
 
-        // Slice body region from ByteBuf (zero-copy, no body byte[] allocation)
-        ByteBuf bodyBuf = in.retainedSlice(in.readerIndex(), bodyLength);
-        in.skipBytes(bodyLength);
-
         try (ByteBufInputStream bodyIn = new ByteBufInputStream(bodyBuf)) {
             ObjectInput input = serialization.deserialize(bodyIn);
-            if (isResponse) {
-                return decodeResponse(input, dataType, requestId, serializationId);
-            } else {
+            if (isRequest) {
                 return decodeRequest(input, requestId, serializationId);
+            } else {
+                return decodeResponse(input, dataType, requestId, serializationId);
             }
         } catch (ClassNotFoundException e) {
-            throw new JawsFrameworkException("decode " + (isResponse ? "response" : "request") +
+            throw new JawsFrameworkException("decode " + (isRequest ? "request" : "response") +
                     " error: class not found", e);
         } catch (JawsAbstractException e) {
             throw e;
         } catch (Exception e) {
-            throw new JawsFrameworkException("decode error: isResponse=" + isResponse, e);
-        } finally {
-            bodyBuf.release();
+            throw new JawsFrameworkException("decode error: isRequest=" + isRequest, e);
         }
     }
 

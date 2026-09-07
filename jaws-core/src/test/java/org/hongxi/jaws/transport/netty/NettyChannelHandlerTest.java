@@ -68,7 +68,9 @@ class NettyChannelHandlerTest {
 
         ByteBuf data = Unpooled.buffer();
         encodeSampleRequest(data, 99L);
-        DecodedFrame message = new DecodedFrame(true, 99L, data);
+        // Skip the 16-byte header — NettyChannelHandler now receives body-only ByteBuf
+        data.skipBytes(JawsCodec.HEADER_LENGTH);
+        DecodedFrame message = new DecodedFrame(true, 99L, JawsCodec.FLAG_REQUEST, data);
 
         // refCnt == 1 while in flight
         assertEquals(1, data.refCnt());
@@ -106,7 +108,8 @@ class NettyChannelHandlerTest {
 
         ByteBuf data = Unpooled.buffer();
         encodeSampleRequest(data, 100L);
-        DecodedFrame message = new DecodedFrame(true, 100L, data);
+        data.skipBytes(JawsCodec.HEADER_LENGTH);
+        DecodedFrame message = new DecodedFrame(true, 100L, JawsCodec.FLAG_REQUEST, data);
 
         embeddedChannel.writeInbound(message);
 
@@ -142,7 +145,8 @@ class NettyChannelHandlerTest {
 
         ByteBuf data = Unpooled.buffer();
         encodeSampleRequest(data, 101L);
-        DecodedFrame message = new DecodedFrame(true, 101L, data);
+        data.skipBytes(JawsCodec.HEADER_LENGTH);
+        DecodedFrame message = new DecodedFrame(true, 101L, JawsCodec.FLAG_REQUEST, data);
 
         embeddedChannel.writeInbound(message);
 

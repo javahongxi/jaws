@@ -68,8 +68,12 @@ public class NettyDecoder extends ByteToMessageDecoder {
             throw new JawsFrameworkException("NettyDecoder magic not match: " + magic);
         }
 
-        // byte 2: version (skip, validated by JawsCodec.decode)
-        in.skipBytes(1);
+        // byte 2: version
+        byte version = in.readByte();
+        if (version != JawsCodec.VERSION) {
+            in.resetReaderIndex();
+            throw new JawsFrameworkException("NettyDecoder unsupported protocol version: " + version);
+        }
         // byte 3: flag
         byte flag = in.readByte();
 
@@ -103,7 +107,8 @@ public class NettyDecoder extends ByteToMessageDecoder {
             bytesToSkip = bodyLength - drained;
             if (isRequest) {
                 Exception e = new JawsServiceException(
-                        "NettyDecoder transport data content length exceeds limit, size: " + bodyLength + " > " + maxContentLength);
+                        "NettyDecoder transport data content length exceeds limit, size: "
+                                + bodyLength + " > " + maxContentLength);
                 Response response = RpcUtils.buildErrorResponse(requestId, e);
                 response.setSerializationNumber((byte) ((flag & JawsCodec.SERIALIZATION_MASK) >> 3));
                 ByteBuf msg = ctx.alloc().buffer();
@@ -113,18 +118,17 @@ public class NettyDecoder extends ByteToMessageDecoder {
             return;
         }
 
-        // Reset reader index to the start of the frame so the caller gets the complete header + body.
+        // Reset reader index, skip header, and slice only the body (header already parsed)
         in.resetReaderIndex();
         if (in.readableBytes() < JawsCodec.HEADER_LENGTH + bodyLength) {
             return;
         }
+        in.skipBytes(JawsCodec.HEADER_LENGTH);
 
-        // Pass ByteBuf directly to JawsCodec.decode (zero-copy, no frame byte[] allocation)
-        // Retain the buffer since the caller (ByteToMessageDecoder pipeline) may release it;
-        // NettyChannelHandler is responsible for releasing after processing.
-        ByteBuf frame = in.readRetainedSlice(JawsCodec.HEADER_LENGTH + bodyLength);
+        // Pass body-only ByteBuf to JawsCodec.decodeBody (zero-copy, no header re-parsing)
+        ByteBuf body = in.readRetainedSlice(bodyLength);
 
-        DecodedFrame decodedFrame = new DecodedFrame(isRequest, requestId, frame);
+        DecodedFrame decodedFrame = new DecodedFrame(isRequest, requestId, flag, body);
         out.add(decodedFrame);
     }
 }
