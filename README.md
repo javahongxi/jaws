@@ -15,7 +15,7 @@ Jaws 是一个**核心约 2.6 万行、可以从头读到尾**的轻量级 RPC �
 - **HTTP/1.1 REST** — 注解驱动 REST 路由映射，兼容 Spring Web 与 JAX-RS 注解体系，泛化调用兜底
 - **自适应协议** — 支持单端口同时启用 jaws 二进制、HTTP/2、HTTP/1.1 三种协议，自动路由到对应解码器
 - **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持 gzip 压缩、健康检查、deadline 与 keepalive 语义
-- **MCP 协议** — 零 SDK 依赖自研 MCP Streamable HTTP 传输(JSON-RPC 2.0 + SSE)，服务接口方法自动暴露为 MCP Tools
+- **MCP 协议** — 零 SDK 依赖自研 MCP Streamable HTTP 传输，服务接口方法自动暴露为 MCP Tools
 - **多种序列化** — 内置 fastjson2、hessian2、protostuff、fury，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
