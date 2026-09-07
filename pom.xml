@@ -24,6 +24,7 @@
         <commons-lang3.version>3.17.0</commons-lang3.version>
         <curator.version>5.9.0</curator.version>
         <fastjson2.version>2.0.63</fastjson2.version>
+        <fury.version>0.10.3</fury.version>
         <guava.version>33.6.0-jre</guava.version>
         <hessian-lite.version>4.0.5</hessian-lite.version>
         <junit.version>5.12.2</junit.version>
@@ -93,6 +94,11 @@
                 <version>${nacos.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>org.apache.fury</groupId>
+                <artifactId>fury-core</artifactId>
+                <version>${fury.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>

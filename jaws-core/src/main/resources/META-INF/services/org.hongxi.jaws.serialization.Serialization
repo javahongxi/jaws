@@ -1,3 +1,4 @@
 org.hongxi.jaws.serialization.Hessian2Serialization
 org.hongxi.jaws.serialization.FastJson2Serialization
 org.hongxi.jaws.serialization.ProtostuffSerialization
+org.hongxi.jaws.serialization.FurySerialization
