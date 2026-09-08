@@ -37,6 +37,8 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private final Parser<? extends Message> responseParser;
     private final StreamPublisher publisher;
     private final int maxMessageSize;
+    /** Max size of inbound HTTP/2 headers (metadata) in bytes; 0 = unlimited. */
+    private final int maxInboundMetadataSize;
 
     private ByteBuf accumulator;
     private int grpcStatus = -1;
@@ -45,10 +47,12 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
 
     WireStreamStreamingHandler(Parser<? extends Message> responseParser,
                                StreamPublisher publisher,
-                               int maxMessageSize) {
+                               int maxMessageSize,
+                               int maxInboundMetadataSize) {
         this.responseParser = responseParser;
         this.publisher = publisher;
         this.maxMessageSize = maxMessageSize;
+        this.maxInboundMetadataSize = maxInboundMetadataSize;
     }
 
     @Override
@@ -70,6 +74,13 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void onHeaders(Http2HeadersFrame headersFrame) {
+        // Defense-in-depth: reject oversized inbound metadata
+        if (maxInboundMetadataSize > 0 && WireMetadata.estimateHeaderSize(headersFrame.headers()) > maxInboundMetadataSize) {
+            publisher.completeExceptionally(new RuntimeException(
+                    "gRPC response metadata exceeds maxInboundMetadataSize: " + maxInboundMetadataSize));
+            return;
+        }
+
         CharSequence statusSeq = headersFrame.headers().get(WireConstants.GRPC_STATUS);
         if (statusSeq != null) {
             grpcStatus = Integer.parseInt(statusSeq.toString());

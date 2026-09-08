@@ -31,14 +31,7 @@ public final class WireStatus {
     private WireStatus() {
     }
 
-    // ---- Extended grpc-status codes beyond the legacy set in WireConstants ----
-
-    /** Deadline expired before the call completed. */
-    public static final int STATUS_DEADLINE_EXCEEDED = 4;
-    /** Some resource has been exhausted (e.g. thread pool / queue full). */
-    public static final int STATUS_RESOURCE_EXHAUSTED = 8;
-    /** The service is currently unavailable — retryable by standard clients. */
-    public static final int STATUS_UNAVAILABLE = 14;
+    // ---- Extended grpc-status codes now consolidated in WireConstants ----
 
     /**
      * Map a provider-side failure to the grpc-status code a standard gRPC
@@ -55,18 +48,25 @@ public final class WireStatus {
             return WireConstants.STATUS_UNKNOWN;
         }
         if (isDeadlineExpired(e)) {
-            return STATUS_DEADLINE_EXCEEDED;
+            return WireConstants.STATUS_DEADLINE_EXCEEDED;
         }
         JawsServiceException jse = asJawsServiceException(e);
         if (jse != null && jse.getErrorCode() == JawsErrorCode.SERVICE_TIMEOUT) {
-            return STATUS_DEADLINE_EXCEEDED;
+            return WireConstants.STATUS_DEADLINE_EXCEEDED;
         }
         if (jse != null && (jse.getErrorCode() == JawsErrorCode.SERVICE_METHOD_NOT_FOUND
                 || jse.getErrorCode() == JawsErrorCode.SERVICE_NOT_FOUND)) {
             return WireConstants.STATUS_NOT_FOUND;
         }
         if (isConnectivityFailure(e)) {
-            return STATUS_UNAVAILABLE;
+            return WireConstants.STATUS_UNAVAILABLE;
+        }
+        if (e instanceof IllegalArgumentException
+                || e instanceof com.google.protobuf.InvalidProtocolBufferException) {
+            return WireConstants.STATUS_INVALID_ARGUMENT;
+        }
+        if (e instanceof UnsupportedOperationException) {
+            return WireConstants.STATUS_UNIMPLEMENTED;
         }
         return WireConstants.STATUS_INTERNAL;
     }
@@ -80,7 +80,7 @@ public final class WireStatus {
      * @return true if the failure is retryable per gRPC semantics
      */
     public static boolean isRetryable(int grpcStatus) {
-        return grpcStatus == STATUS_UNAVAILABLE;
+        return grpcStatus == WireConstants.STATUS_UNAVAILABLE;
     }
 
     /**
@@ -88,7 +88,7 @@ public final class WireStatus {
      * @return true if the status means the deadline expired
      */
     public static boolean isDeadlineExceeded(int grpcStatus) {
-        return grpcStatus == STATUS_DEADLINE_EXCEEDED;
+        return grpcStatus == WireConstants.STATUS_DEADLINE_EXCEEDED;
     }
 
     /**
@@ -124,12 +124,20 @@ public final class WireStatus {
             case WireConstants.STATUS_OK -> "OK";
             case WireConstants.STATUS_CANCELED -> "CANCELLED";
             case WireConstants.STATUS_UNKNOWN -> "UNKNOWN";
+            case WireConstants.STATUS_INVALID_ARGUMENT -> "INVALID_ARGUMENT";
+            case WireConstants.STATUS_DEADLINE_EXCEEDED -> "DEADLINE_EXCEEDED";
             case WireConstants.STATUS_NOT_FOUND -> "NOT_FOUND";
-            case STATUS_DEADLINE_EXCEEDED -> "DEADLINE_EXCEEDED";
+            case WireConstants.STATUS_ALREADY_EXISTS -> "ALREADY_EXISTS";
+            case WireConstants.STATUS_PERMISSION_DENIED -> "PERMISSION_DENIED";
+            case WireConstants.STATUS_RESOURCE_EXHAUSTED -> "RESOURCE_EXHAUSTED";
+            case WireConstants.STATUS_FAILED_PRECONDITION -> "FAILED_PRECONDITION";
+            case WireConstants.STATUS_ABORTED -> "ABORTED";
+            case WireConstants.STATUS_OUT_OF_RANGE -> "OUT_OF_RANGE";
             case WireConstants.STATUS_UNIMPLEMENTED -> "UNIMPLEMENTED";
-            case STATUS_RESOURCE_EXHAUSTED -> "RESOURCE_EXHAUSTED";
             case WireConstants.STATUS_INTERNAL -> "INTERNAL";
-            case STATUS_UNAVAILABLE -> "UNAVAILABLE";
+            case WireConstants.STATUS_UNAVAILABLE -> "UNAVAILABLE";
+            case WireConstants.STATUS_DATA_LOSS -> "DATA_LOSS";
+            case WireConstants.STATUS_UNAUTHENTICATED -> "UNAUTHENTICATED";
             default -> "UNKNOWN_STATUS_" + grpcStatus;
         };
     }

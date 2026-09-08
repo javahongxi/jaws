@@ -39,10 +39,19 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     private final Parser<? extends Message> responseParser;
     private final DefaultResponseFuture responseFuture;
     private final int maxMessageSize;
+    /** Max size of inbound HTTP/2 headers (metadata) in bytes; 0 = unlimited. */
+    private final int maxInboundMetadataSize;
     /** Wraps a decoded protobuf {@link Message} into a framework {@link DefaultResponse}. */
     private final Function<Message, DefaultResponse> responseBuilder;
     /** Removes the callback from the client's pending map after the future is completed. */
     private final Runnable onCompletion;
+    /**
+     * When true (default), {@code onCompletion} runs on every completion path
+     * (success and failure). When false (retry-enabled calls), it runs only on
+     * success; failure paths leave the callback in the map so the retry loop
+     * can issue another attempt or remove it on the final failure.
+     */
+    private final boolean autoRemoveCallback;
     /** Non-reserved trailer metadata collected when the trailers HEADERS frame arrives; may be empty. */
     private Map<String, String> trailerMetadata = Map.of();
 
@@ -56,11 +65,23 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                               int maxMessageSize,
                               Function<Message, DefaultResponse> responseBuilder,
                               Runnable onCompletion) {
+        this(responseParser, responseFuture, maxMessageSize, 0, responseBuilder, onCompletion, true);
+    }
+
+    WireStreamResponseHandler(Parser<? extends Message> responseParser,
+                              DefaultResponseFuture responseFuture,
+                              int maxMessageSize,
+                              int maxInboundMetadataSize,
+                              Function<Message, DefaultResponse> responseBuilder,
+                              Runnable onCompletion,
+                              boolean autoRemoveCallback) {
         this.responseParser = responseParser;
         this.responseFuture = responseFuture;
         this.maxMessageSize = maxMessageSize;
+        this.maxInboundMetadataSize = maxInboundMetadataSize;
         this.responseBuilder = responseBuilder;
         this.onCompletion = onCompletion;
+        this.autoRemoveCallback = autoRemoveCallback;
     }
 
     @Override
@@ -75,7 +96,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 errorResponse.setThrowable(new RuntimeException(
                         "gRPC stream reset: errorCode=" + resetFrame.errorCode()));
                 responseFuture.onFailure(errorResponse);
-                onCompletion.run();
+                maybeComplete();
             } else {
                 ReferenceCountUtil.release(msg);
             }
@@ -83,11 +104,21 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             DefaultResponse errorResponse = responseBuilder.apply(null);
             errorResponse.setThrowable(e);
             responseFuture.onFailure(errorResponse);
-            onCompletion.run();
+            maybeComplete();
         }
     }
 
     private void onHeaders(Http2HeadersFrame headersFrame) {
+        // Defense-in-depth: reject oversized inbound metadata
+        if (maxInboundMetadataSize > 0 && WireMetadata.estimateHeaderSize(headersFrame.headers()) > maxInboundMetadataSize) {
+            DefaultResponse errorResponse = responseBuilder.apply(null);
+            errorResponse.setThrowable(new RuntimeException(
+                    "gRPC response metadata exceeds maxInboundMetadataSize: " + maxInboundMetadataSize));
+            responseFuture.onFailure(errorResponse);
+            maybeComplete();
+            return;
+        }
+
         // Distinguish initial response HEADERS from trailers HEADERS
         CharSequence statusSeq = headersFrame.headers().get(WireConstants.GRPC_STATUS);
         if (statusSeq != null) {
@@ -98,6 +129,9 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 grpcMessage = messageSeq.toString();
             }
             trailerMetadata = WireMetadata.fromHeaders(headersFrame.headers());
+            // Parse rich error details if present (currently extracted but not
+            // yet attached to the response; reserved for future use)
+            WireErrorDetails.fromTrailers(headersFrame.headers());
         } else {
             // Initial response HEADERS: capture the response message encoding
             CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
@@ -126,7 +160,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 errorResponse.setThrowable(new RuntimeException(
                         "gRPC response exceeds maxInboundMessageSize: " + maxMessageSize));
                 responseFuture.onFailure(errorResponse);
-                onCompletion.run();
+                maybeComplete();
                 ctx.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
                 ctx.close();
                 return;
@@ -150,7 +184,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 DefaultResponse errorResponse = responseBuilder.apply(null);
                 errorResponse.setThrowable(WireStatus.toException(grpcStatus, grpcMessage));
                 responseFuture.onFailure(errorResponse);
-                onCompletion.run();
+                maybeComplete();
                 return;
             }
 
@@ -158,7 +192,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 DefaultResponse errorResponse = responseBuilder.apply(null);
                 errorResponse.setThrowable(new RuntimeException("No response data received"));
                 responseFuture.onFailure(errorResponse);
-                onCompletion.run();
+                maybeComplete();
                 return;
             }
 
@@ -167,7 +201,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 DefaultResponse errorResponse = responseBuilder.apply(null);
                 errorResponse.setThrowable(new RuntimeException("Incomplete gRPC response frame"));
                 responseFuture.onFailure(errorResponse);
-                onCompletion.run();
+                maybeComplete();
                 return;
             }
             try {
@@ -185,7 +219,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             DefaultResponse errorResponse = responseBuilder.apply(null);
             errorResponse.setThrowable(e);
             responseFuture.onFailure(errorResponse);
-            onCompletion.run();
+            maybeComplete();
         } finally {
             if (accumulator != null && accumulator.refCnt() > 0) {
                 accumulator.release();
@@ -200,7 +234,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             errorResponse.setThrowable(new RuntimeException(
                     "gRPC stream closed before response received"));
             responseFuture.onFailure(errorResponse);
-            onCompletion.run();
+            maybeComplete();
         }
     }
 
@@ -211,8 +245,19 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             DefaultResponse errorResponse = responseBuilder.apply(null);
             errorResponse.setThrowable(cause);
             responseFuture.onFailure(errorResponse);
-            onCompletion.run();
+            maybeComplete();
         }
         ctx.close();
+    }
+
+    /**
+     * On failure paths, only run {@code onCompletion} when auto-remove is
+     * enabled (non-retry mode). In retry mode the callback stays in the
+     * pending map so the retry loop can issue another attempt.
+     */
+    private void maybeComplete() {
+        if (autoRemoveCallback) {
+            onCompletion.run();
+        }
     }
 }

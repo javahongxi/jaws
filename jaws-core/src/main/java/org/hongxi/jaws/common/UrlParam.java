@@ -128,6 +128,71 @@ public final class UrlParam {
          */
         public static final Def<String> COMPRESSION = new Def<>("compression", "identity");
 
+        /**
+         * gRPC client-side keepalive: interval between PING probes (ms).
+         * 0 disables client keepalive (default). Mirrors grpc-java's
+         * {@code keepAliveTime}.
+         */
+        public static final Def<Long> KEEPALIVE_TIME_MS = new Def<>("keepaliveTimeMs", 0L);
+
+        /**
+         * gRPC client-side keepalive: timeout waiting for PING ACK (ms).
+         * If no ACK arrives within this window the connection is considered
+         * dead and closed. Mirrors grpc-java's {@code keepAliveTimeout}.
+         */
+        public static final Def<Long> KEEPALIVE_TIMEOUT_MS = new Def<>("keepaliveTimeoutMs", 20_000L);
+
+        /**
+         * Maximum size of inbound HTTP/2 headers (bytes). Headers exceeding
+         * this limit cause the stream to fail with REFUSED_STREAM.
+         * Default 8KB, same order of magnitude as grpc-java.
+         */
+        public static final Def<Integer> MAX_INBOUND_METADATA_SIZE =
+                new Def<>("maxInboundMetadataSize", 8 * 1024);
+
+        /**
+         * gRPC client retry: maximum number of attempts (1 = no retry, just
+         * the initial call). Mirrors grpc-java's {@code maxAttempts}.
+         */
+        public static final Def<Integer> RETRY_MAX_ATTEMPTS = new Def<>("retryMaxAttempts", 2);
+
+        /**
+         * gRPC client retry: initial backoff before the first retry (ms).
+         * Subsequent retries use exponential backoff multiplied by
+         * {@link #RETRY_BACKOFF_MULTIPLIER_PCT}.
+         */
+        public static final Def<Long> RETRY_INITIAL_BACKOFF_MS = new Def<>("retryInitialBackoffMs", 100L);
+
+        /**
+         * gRPC client retry: upper bound on backoff delay (ms).
+         */
+        public static final Def<Long> RETRY_MAX_BACKOFF_MS = new Def<>("retryMaxBackoffMs", 1000L);
+
+        /**
+         * gRPC client retry: multiplier for exponential backoff, expressed
+         * as a percentage (e.g. 160 = 1.6x). 100 = no growth.
+         */
+        public static final Def<Integer> RETRY_BACKOFF_MULTIPLIER_PCT = new Def<>("retryBackoffMultiplierPct", 200);
+
+        /**
+         * gRPC client retry: random jitter factor as a percentage of the
+         * computed delay (e.g. 20 = ±20%). 0 disables jitter.
+         */
+        public static final Def<Integer> RETRY_JITTER_PCT = new Def<>("retryJitterPct", 20);
+
+        /**
+         * Whether to enable DNS-based service discovery for the wire client.
+         * When enabled, the hostname is resolved to multiple A/AAAA records
+         * and connections are established to each resolved address.
+         */
+        public static final Def<Boolean> DNS_ENABLED = new Def<>("dnsEnabled", false);
+
+        /**
+         * DNS service discovery: how often to re-resolve the hostname (ms).
+         * 0 means resolve once at startup. Default 30s.
+         */
+        public static final Def<Long> DNS_REFRESH_INTERVAL_MS = new Def<>("dnsRefreshIntervalMs", 30_000L);
+
         private Transport() {
         }
     }
@@ -142,6 +207,24 @@ public final class UrlParam {
         public static final Def<Integer> WORKER_QUEUE_SIZE = new Def<>("workerQueueSize", 0);
         public static final Def<Boolean> ACCESS_LOG = new Def<>("accessLog", false);
         public static final Def<Integer> GRACEFUL_SHUTDOWN_TIMEOUT = new Def<>("gracefulShutdownTimeout", 10000);
+
+        /**
+         * gRPC server: max time a connection may stay idle (no streams) before
+         * the server sends GOAWAY and closes it (ms). 0 disables (default).
+         */
+        public static final Def<Long> MAX_CONNECTION_IDLE_MS = new Def<>("maxConnectionIdleMs", 0L);
+
+        /**
+         * gRPC server: max lifetime of a connection before graceful close (ms).
+         * 0 disables (default). See grpc-java's {@code maxConnectionAge}.
+         */
+        public static final Def<Long> MAX_CONNECTION_AGE_MS = new Def<>("maxConnectionAgeMs", 0L);
+
+        /**
+         * gRPC server: grace period after sending GOAWAY for max-connection-age
+         * before forcefully closing the connection (ms).
+         */
+        public static final Def<Long> MAX_CONNECTION_AGE_GRACE_MS = new Def<>("maxConnectionAgeGraceMs", 5000L);
 
         private Server() {
         }

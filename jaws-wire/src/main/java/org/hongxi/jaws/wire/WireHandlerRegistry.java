@@ -2,12 +2,15 @@ package org.hongxi.jaws.wire;
 
 import com.google.protobuf.Descriptors;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Registry of gRPC method handlers, mapping {@code /{serviceName}/{methodName}}
@@ -21,6 +24,9 @@ public class WireHandlerRegistry {
 
     private final ConcurrentMap<String, WireMethodHandler> handlers = new ConcurrentHashMap<>();
 
+    /** Ordered list of server interceptors applied to all calls in Direct API mode. */
+    private final List<WireServerInterceptor> interceptors = new CopyOnWriteArrayList<>();
+
     /**
      * Register a method handler for the given service and method.
      *
@@ -31,6 +37,23 @@ public class WireHandlerRegistry {
     public void register(String serviceName, String methodName, WireMethodHandler handler) {
         String path = "/" + serviceName + "/" + methodName;
         handlers.put(path, handler);
+    }
+
+    /**
+     * Add a server interceptor applied to all calls in Direct API mode.
+     * Interceptors execute in registration order (first added = outermost).
+     *
+     * @param interceptor the interceptor to add
+     */
+    public void addInterceptor(WireServerInterceptor interceptor) {
+        interceptors.add(interceptor);
+    }
+
+    /**
+     * @return the registered interceptors (unmodifiable view)
+     */
+    public List<WireServerInterceptor> getInterceptors() {
+        return List.copyOf(interceptors);
     }
 
     /**

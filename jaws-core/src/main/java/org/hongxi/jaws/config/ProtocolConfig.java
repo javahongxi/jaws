@@ -1,6 +1,7 @@
 package org.hongxi.jaws.config;
 
 import java.io.Serial;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -115,6 +116,13 @@ public class ProtocolConfig extends BaseConfig {
      */
     protected String compression;
 
+    /**
+     * Generic parameter map for transport-specific settings that do not
+     * warrant a dedicated field (e.g. wire keepalive, retry, DNS).
+     * Entries are merged into the URL parameter map as-is.
+     */
+    protected Map<String, String> parameters = new LinkedHashMap<>();
+
     @Override
     protected void collectParams(Map<String, String> params) {
         putIfPresent(params, "protocol", name);
@@ -131,6 +139,9 @@ public class ProtocolConfig extends BaseConfig {
         putIfPresent(params, "sslTrustCert", sslTrustCert);
         putIfPresent(params, "connections", connections);
         putIfPresent(params, "compression", compression);
+        if (parameters != null) {
+            params.putAll(parameters);
+        }
     }
 
     public String getName() {
@@ -269,5 +280,27 @@ public class ProtocolConfig extends BaseConfig {
 
     public void setCompression(String compression) {
         this.compression = compression;
+    }
+
+    /**
+     * @return the generic parameter map for transport-specific settings
+     */
+    public Map<String, String> getParameters() {
+        return parameters;
+    }
+
+    /**
+     * Set a transport-specific parameter. Use this for wire-specific
+     * settings such as {@code keepaliveTimeMs}, {@code retryMaxAttempts},
+     * {@code dnsEnabled}, etc.
+     *
+     * @param key   the parameter key (see {@code UrlParam.Transport})
+     * @param value the parameter value
+     */
+    public void setParameter(String key, String value) {
+        if (parameters == null) {
+            parameters = new LinkedHashMap<>();
+        }
+        parameters.put(key, value);
     }
 }

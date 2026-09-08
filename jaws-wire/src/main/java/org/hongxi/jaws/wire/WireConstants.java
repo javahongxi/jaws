@@ -32,9 +32,20 @@ public final class WireConstants {
     public static final int STATUS_OK = 0;
     public static final int STATUS_CANCELED = 1;
     public static final int STATUS_UNKNOWN = 2;
+    public static final int STATUS_INVALID_ARGUMENT = 3;
+    public static final int STATUS_DEADLINE_EXCEEDED = 4;
     public static final int STATUS_NOT_FOUND = 5;
+    public static final int STATUS_ALREADY_EXISTS = 6;
+    public static final int STATUS_PERMISSION_DENIED = 7;
+    public static final int STATUS_RESOURCE_EXHAUSTED = 8;
+    public static final int STATUS_FAILED_PRECONDITION = 9;
+    public static final int STATUS_ABORTED = 10;
+    public static final int STATUS_OUT_OF_RANGE = 11;
     public static final int STATUS_UNIMPLEMENTED = 12;
     public static final int STATUS_INTERNAL = 13;
+    public static final int STATUS_UNAVAILABLE = 14;
+    public static final int STATUS_DATA_LOSS = 15;
+    public static final int STATUS_UNAUTHENTICATED = 16;
 
     // Trailer header names
     public static final CharSequence GRPC_STATUS = "grpc-status";

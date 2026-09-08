@@ -68,6 +68,8 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     protected final ExecutorService serverExecutor;
     /** Max size of a single inbound gRPC message in bytes. */
     protected final int maxMessageSize;
+    /** Max size of inbound HTTP/2 headers (metadata) in bytes. */
+    private final int maxInboundMetadataSize;
     /**
      * Server-configured compression (identity or gzip); downgraded to
      * identity per call when the client's grpc-accept-encoding does not
@@ -88,6 +90,9 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     private boolean rejected;
     protected boolean dispatched;
 
+    /** The stream channel context, set on first channelRead. */
+    private ChannelHandlerContext streamCtx;
+
     /** Set when the caller canceled the stream (RST_STREAM) or it closed. */
     protected volatile boolean canceled;
 
@@ -104,16 +109,33 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     WireStreamServerHandler(WireCallDispatcher dispatcher,
                             WireReflectionService reflectionService,
                             ExecutorService serverExecutor,
-                            int maxMessageSize, String compression) {
+                            int maxMessageSize, int maxInboundMetadataSize, String compression) {
         this.dispatcher = dispatcher;
         this.reflectionService = reflectionService;
         this.serverExecutor = serverExecutor;
         this.maxMessageSize = maxMessageSize;
+        this.maxInboundMetadataSize = maxInboundMetadataSize;
         this.compression = compression;
     }
 
     @Override
+    public void handlerAdded(ChannelHandlerContext ctx) {
+        // Notify the connection lifecycle handler (if present) that a new
+        // stream has been opened on this connection
+        if (ctx.channel().parent() != null) {
+            WireConnectionLifecycleHandler lifecycle =
+                    ctx.channel().parent().pipeline().get(WireConnectionLifecycleHandler.class);
+            if (lifecycle != null) {
+                lifecycle.streamOpened();
+            }
+        }
+    }
+
+    @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        if (streamCtx == null) {
+            streamCtx = ctx;
+        }
         try {
             if (msg instanceof Http2HeadersFrame headersFrame) {
                 onHeaders(ctx, headersFrame);
@@ -136,6 +158,15 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     private void onHeaders(ChannelHandlerContext ctx, Http2HeadersFrame headersFrame) {
         Http2Headers headers = headersFrame.headers();
         boolean endStream = headersFrame.isEndStream();
+
+        // Defense-in-depth: reject oversized metadata even though the HTTP/2
+        // codec already enforces SETTINGS_MAX_HEADER_LIST_SIZE
+        if (maxInboundMetadataSize > 0 && WireMetadata.estimateHeaderSize(headers) > maxInboundMetadataSize) {
+            sendError(ctx, WireConstants.STATUS_RESOURCE_EXHAUSTED,
+                    "gRPC request metadata exceeds maxInboundMetadataSize: " + maxInboundMetadataSize);
+            return;
+        }
+
         path = Objects.toString(headers.path(), null);
 
         if (path == null) {
@@ -220,7 +251,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 rejected = true;
                 accumulator.release();
                 accumulator = null;
-                sendError(ctx, WireStatus.STATUS_RESOURCE_EXHAUSTED,
+                sendError(ctx, WireConstants.STATUS_RESOURCE_EXHAUSTED,
                         "gRPC message exceeds maxInboundMessageSize: " + maxMessageSize);
                 return;
             }
@@ -318,7 +349,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             accumulator.release();
             accumulator = null;
         }
-        sendError(ctx, WireStatus.STATUS_UNAVAILABLE,
+        sendError(ctx, WireConstants.STATUS_UNAVAILABLE,
                 "Request rejected: server thread pool is full");
     }
 
@@ -348,7 +379,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 // DEADLINE_EXCEEDED once the grpc-timeout window has passed
                 if (isDeadlineExceeded()) {
                     subscription.cancel();
-                    sendTrailers(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
+                    sendTrailers(ctx, WireConstants.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
                     return;
                 }
                 if (item instanceof Message msg) {
@@ -390,7 +421,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             return;
         }
         if (isDeadlineExceeded()) {
-            sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
+            sendError(ctx, WireConstants.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
             return;
         }
         sendResponseHeaders(ctx);
@@ -431,6 +462,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         if (message != null) {
             trailers.set(WireConstants.GRPC_MESSAGE, message);
         }
+        // Rich error model: include grpc-status-details-bin for non-OK statuses
+        if (status != WireConstants.STATUS_OK) {
+            WireErrorDetails.writeToTrailers(trailers, status, message);
+        }
         ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
     }
 
@@ -454,6 +489,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 .set(WireConstants.GRPC_STATUS, String.valueOf(status));
         if (message != null) {
             trailersOnly.set(WireConstants.GRPC_MESSAGE, message);
+        }
+        // Rich error model for trailers-only errors too
+        if (status != WireConstants.STATUS_OK) {
+            WireErrorDetails.writeToTrailers(trailersOnly, status, message);
         }
         ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailersOnly, true));
     }
@@ -479,10 +518,26 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
         canceled = true;
+        notifyStreamClosed(ctx);
         // Release accumulated buffer if the stream closed before dispatch
         if (accumulator != null && !dispatched) {
             accumulator.release();
             accumulator = null;
+        }
+    }
+
+    /**
+     * Notify the connection lifecycle handler that this stream has closed.
+     * Safe to call multiple times; the lifecycle handler tracks the count.
+     */
+    private void notifyStreamClosed(ChannelHandlerContext ctx) {
+        if (ctx.channel().parent() == null) {
+            return;
+        }
+        WireConnectionLifecycleHandler lifecycle =
+                ctx.channel().parent().pipeline().get(WireConnectionLifecycleHandler.class);
+        if (lifecycle != null) {
+            lifecycle.streamClosed();
         }
     }
 
@@ -493,5 +548,12 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             sendError(ctx, WireConstants.STATUS_INTERNAL, cause.getMessage());
         }
         ctx.close();
+    }
+
+    /**
+     * @return the stream channel context, available after the first channelRead
+     */
+    ChannelHandlerContext ctx() {
+        return streamCtx;
     }
 }

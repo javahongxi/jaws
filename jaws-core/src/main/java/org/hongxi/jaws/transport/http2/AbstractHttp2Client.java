@@ -103,7 +103,9 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                         }
                         // HTTP/2 framing & flow control; liveness relies on TCP keepalive
                         // and HTTP/2 PINGs instead of application-level heartbeats
-                        pipeline.addLast("http2_codec", Http2FrameCodecBuilder.forClient().build());
+                        pipeline.addLast("http2_codec", configureHttp2Codec(Http2FrameCodecBuilder.forClient()).build());
+                        // Optional connection-level handlers (e.g. gRPC keepalive)
+                        addOptionalChannelHandlers(pipeline);
                         pipeline.addLast("http2_multiplex", new Http2MultiplexHandler(
                                 new io.netty.channel.ChannelInboundHandlerAdapter()));
                     }
@@ -153,6 +155,29 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                     + ", cost: " + (System.currentTimeMillis() - start)
                     + "ms, completed: " + completed + ", success: " + success);
         }
+    }
+
+    /**
+     * Hook for optional connection-level handlers, invoked between
+     * {@code http2_codec} and {@code http2_multiplex}. Default no-op;
+     * subclasses may install e.g. a gRPC keepalive PING sender.
+     *
+     * @param pipeline the connection channel pipeline
+     */
+    protected void addOptionalChannelHandlers(ChannelPipeline pipeline) {
+        // no-op by default
+    }
+
+    /**
+     * Hook to customize the HTTP/2 frame codec builder before it is built.
+     * Subclasses may override to set parameters such as
+     * {@code maxHeaderListSize} (inbound metadata size limit).
+     *
+     * @param builder the codec builder with default settings
+     * @return the customized builder (may be the same instance)
+     */
+    protected Http2FrameCodecBuilder configureHttp2Codec(Http2FrameCodecBuilder builder) {
+        return builder;
     }
 
     /**

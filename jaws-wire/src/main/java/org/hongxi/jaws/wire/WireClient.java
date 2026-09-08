@@ -27,7 +27,13 @@ import org.hongxi.jaws.transport.http2.AbstractHttp2Client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.concurrent.Flow;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * gRPC client implementation based on Netty HTTP/2. The Netty bootstrap
@@ -63,12 +69,39 @@ public class WireClient extends AbstractHttp2Client {
 
     /** Max size of a single inbound gRPC message in bytes. */
     private final int maxMessageSize;
+    /** Max size of inbound HTTP/2 headers (metadata) in bytes. */
+    private final int maxInboundMetadataSize;
     /** Outbound message compression encoding: identity or gzip. */
     private final String compression;
+    /** Client keepalive interval; 0 means disabled. */
+    private final long keepaliveTimeMs;
+    /** Client keepalive ACK timeout. */
+    private final long keepaliveTimeoutMs;
+    /** Retry policy; null when retries are disabled (maxAttempts ≤ 1). */
+    private final WireRetryPolicy retryPolicy;
+    /** DNS service discovery resolver; null when DNS is disabled. */
+    private volatile WireDnsResolver dnsResolver;
+    /** gRPC connectivity state tracker. */
+    private final WireConnectivityTracker connectivityTracker = new WireConnectivityTracker();
+    /** Shared scheduler for keepalive PINGs and retry backoff across connections. */
+    private static final ScheduledExecutorService KEEPALIVE_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "wire-keepalive");
+                t.setDaemon(true);
+                return t;
+            });
+    /** Dedicated scheduler for retry backoff delays. */
+    private static final ScheduledExecutorService RETRY_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "wire-retry");
+                t.setDaemon(true);
+                return t;
+            });
 
     public WireClient(URL url) {
         super(url, "WireClient");
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
+        this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
         String compression = url.getParameter(UrlParam.Transport.COMPRESSION);
         if (compression != null && !WireConstants.ENCODING_IDENTITY.equals(compression)
                 && !WireCompression.isSupported(compression)) {
@@ -76,6 +109,62 @@ public class WireClient extends AbstractHttp2Client {
             compression = WireConstants.ENCODING_IDENTITY;
         }
         this.compression = compression;
+        this.keepaliveTimeMs = url.getLongParameter(UrlParam.Transport.KEEPALIVE_TIME_MS);
+        this.keepaliveTimeoutMs = url.getLongParameter(UrlParam.Transport.KEEPALIVE_TIMEOUT_MS);
+        this.retryPolicy = WireRetryPolicy.fromUrl(url);
+
+        // DNS service discovery: resolve hostname to multiple addresses
+        boolean dnsEnabled = url.getBoolParameter(UrlParam.Transport.DNS_ENABLED);
+        if (dnsEnabled) {
+            long refreshInterval = url.getLongParameter(UrlParam.Transport.DNS_REFRESH_INTERVAL_MS);
+            dnsResolver = new WireDnsResolver(url.getHost(), url.getPort(), refreshInterval);
+        }
+    }
+
+    @Override
+    protected void addOptionalChannelHandlers(io.netty.channel.ChannelPipeline pipeline) {
+        if (keepaliveTimeMs > 0) {
+            pipeline.addLast("wire_keepalive", new WireClientKeepaliveHandler(
+                    keepaliveTimeMs, keepaliveTimeoutMs, KEEPALIVE_SCHEDULER));
+        }
+    }
+
+    /**
+     * Start the DNS resolver (if enabled) after the base class opens
+     * the connection. The resolver periodically re-resolves the hostname
+     * and logs address changes.
+     */
+    @Override
+    public synchronized boolean open() {
+        connectivityTracker.transitionTo(WireConnectivityState.CONNECTING);
+        boolean opened;
+        try {
+            opened = super.open();
+        } catch (Exception e) {
+            connectivityTracker.transitionTo(WireConnectivityState.TRANSIENT_FAILURE);
+            throw e;
+        }
+        if (opened) {
+            connectivityTracker.transitionTo(WireConnectivityState.READY);
+            if (dnsResolver != null) {
+                dnsResolver.start(new WireDnsResolver.Listener() {
+                    @Override
+                    public void onAddresses(List<InetSocketAddress> addresses) {
+                        log.info("DNS update for WireClient({}): {} resolved addresses",
+                                url.getHost(), addresses.size());
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        log.warn("DNS resolution error for WireClient({}): {}",
+                                url.getHost(), error.getMessage());
+                    }
+                });
+            }
+        } else {
+            connectivityTracker.transitionTo(WireConnectivityState.TRANSIENT_FAILURE);
+        }
+        return opened;
     }
 
     @Override
@@ -117,6 +206,129 @@ public class WireClient extends AbstractHttp2Client {
 
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
 
+        if (retryPolicy != null) {
+            // Retry-enabled path: the callback stays in the map across attempts
+            // and is only removed on success or final failure
+            registerCallback(request.getRequestId(), responseFuture);
+            attemptRequest(request, responseParser, requestMessage, grpcPath, timeout,
+                    responseFuture, new AtomicInteger(0));
+        } else {
+            // Non-retry path: original behaviour
+            doSingleAttempt(request, responseParser, requestMessage, grpcPath, timeout,
+                    responseFuture, true);
+        }
+
+        return responseFuture;
+    }
+
+    /**
+     * Execute a single request attempt with optional retry on failure.
+     * On retryable failure the next attempt is scheduled with exponential
+     * backoff; on non-retryable failure or exhausted attempts the callback
+     * is removed and the future remains failed.
+     * <p>
+     * Retry coordination: each attempt registers a {@code whenComplete}
+     * callback on the shared future. An {@link AtomicInteger} counter
+     * ensures that at most one callback acts per completion event:
+     * the first callback to CAS from its attempt number to attempt+1
+     * wins the right to schedule the next retry; all others see a
+     * stale value and no-op.
+     */
+    private void attemptRequest(Request request, Parser<? extends Message> responseParser,
+                                Message requestMessage, String grpcPath, int timeout,
+                                DefaultResponseFuture responseFuture, AtomicInteger attemptCounter) {
+        int attempt = attemptCounter.get();
+        try {
+            io.netty.channel.Channel connChannel = activeChannel();
+
+            WireStreamResponseHandler handler = new WireStreamResponseHandler(
+                    responseParser, responseFuture, maxMessageSize, maxInboundMetadataSize,
+                    message -> {
+                        DefaultResponse response = new DefaultResponse(responseFuture.getRequestId());
+                        response.setValue(message);
+                        return response;
+                    },
+                    () -> removeCallback(responseFuture.getRequestId()),
+                    false /* retry loop manages the callback */);
+
+            io.netty.channel.Channel streamChannel = new Http2StreamChannelBootstrap(connChannel)
+                    .handler(handler)
+                    .open().syncUninterruptibly().getNow();
+
+            // Retry-coordinated callback: only one callback per completion
+            // wins the CAS race to schedule the next attempt
+            responseFuture.whenComplete((r, t) -> {
+                if (t == null || ExceptionUtils.isBizException(t)) {
+                    resetErrorCount();
+                    removeCallback(responseFuture.getRequestId());
+                    return;
+                }
+                incrErrorCount();
+                cancelStream(streamChannel);
+
+                // CAS: only the first callback per completion event acts
+                if (attemptCounter.compareAndSet(attempt, attempt + 1)
+                        && retryPolicy.hasAnotherAttempt(attempt)
+                        && WireRetryPolicy.isRetryableFailure(t)) {
+                    long delay = retryPolicy.backoffDelayMs(attempt);
+                    log.info("gRPC retry: attempt {}/{}, backing off {}ms for path={}",
+                            attempt + 1, retryPolicy.maxAttempts(), delay, grpcPath);
+                    RETRY_SCHEDULER.schedule(() ->
+                            attemptRequest(request, responseParser, requestMessage,
+                                    grpcPath, timeout, responseFuture, attemptCounter),
+                            delay, TimeUnit.MILLISECONDS);
+                } else if (!retryPolicy.hasAnotherAttempt(attempt)
+                        || !WireRetryPolicy.isRetryableFailure(t)) {
+                    // Non-retryable or exhausted: clean up
+                    removeCallback(responseFuture.getRequestId());
+                }
+                // else: another callback already claimed the retry
+            });
+
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
+            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
+                    .addListener(f -> {
+                        if (!f.isSuccess()) {
+                            DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+                            errorResponse.setThrowable(new JawsServiceException(
+                                    "Wire stream write failed", f.cause()));
+                            responseFuture.onFailure(errorResponse);
+                        }
+                    });
+        } catch (Exception e) {
+            if (attemptCounter.compareAndSet(attempt, attempt + 1)
+                    && retryPolicy.hasAnotherAttempt(attempt)
+                    && WireRetryPolicy.isRetryableFailure(e)) {
+                long delay = retryPolicy.backoffDelayMs(attempt);
+                log.info("gRPC retry: attempt {}/{}, backing off {}ms for path={}",
+                        attempt + 1, retryPolicy.maxAttempts(), delay, grpcPath);
+                RETRY_SCHEDULER.schedule(() ->
+                        attemptRequest(request, responseParser, requestMessage,
+                                grpcPath, timeout, responseFuture, attemptCounter),
+                        delay, TimeUnit.MILLISECONDS);
+            } else {
+                removeCallback(request.getRequestId());
+                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+                errorResponse.setThrowable(new JawsServiceException(
+                        "WireClient request failed: url=" + url.getUri() + " path=" + grpcPath, e));
+                responseFuture.onFailure(errorResponse);
+                if (e instanceof JawsAbstractException jae) {
+                    throw jae;
+                }
+                throw new JawsServiceException("WireClient request failed: url="
+                        + url.getUri() + " path=" + grpcPath, e);
+            }
+        }
+    }
+
+    /**
+     * Execute a single request attempt without retry logic (original path).
+     */
+    private void doSingleAttempt(Request request, Parser<? extends Message> responseParser,
+                                  Message requestMessage, String grpcPath, int timeout,
+                                  DefaultResponseFuture responseFuture, boolean autoRemove) {
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
@@ -172,10 +384,6 @@ public class WireClient extends AbstractHttp2Client {
             throw new JawsServiceException("WireClient request failed: url="
                     + url.getUri() + " path=" + grpcPath, e);
         }
-
-        // Return the pending future; AbstractReference.call() blocks on
-        // getValue() for the sync path, callAsync() chains on it directly
-        return responseFuture;
     }
 
     /**
@@ -186,12 +394,14 @@ public class WireClient extends AbstractHttp2Client {
     private WireStreamResponseHandler newResponseHandler(
             Parser<? extends Message> responseParser, DefaultResponseFuture responseFuture) {
         return new WireStreamResponseHandler(responseParser, responseFuture, maxMessageSize,
+                maxInboundMetadataSize,
                 message -> {
                     DefaultResponse response = new DefaultResponse(responseFuture.getRequestId());
                     response.setValue(message);
                     return response;
                 },
-                () -> removeCallback(responseFuture.getRequestId()));
+                () -> removeCallback(responseFuture.getRequestId()),
+                true);
     }
 
     /**
@@ -232,7 +442,7 @@ public class WireClient extends AbstractHttp2Client {
             io.netty.channel.Channel streamChannel =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new WireStreamStreamingHandler(
-                                    responseParser, publisher, maxMessageSize))
+                                    responseParser, publisher, maxMessageSize, maxInboundMetadataSize))
                             .open().syncUninterruptibly().getNow();
 
             // Subscriber cancel() → RST_STREAM(CANCEL): the server observes the
@@ -314,5 +524,29 @@ public class WireClient extends AbstractHttp2Client {
                 DynamicConfigurationKeys.requestTimeout(interfaceName, methodName),
                 DynamicConfigurationKeys.requestTimeout(interfaceName),
                 DynamicConfigurationKeys.GLOBAL_REQUEST_TIMEOUT);
+    }
+
+    /**
+     * @return the DNS resolver, or null if DNS service discovery is not enabled
+     */
+    public WireDnsResolver getDnsResolver() {
+        return dnsResolver;
+    }
+
+    @Override
+    protected void doClose() {
+        connectivityTracker.shutdown();
+        if (dnsResolver != null) {
+            dnsResolver.stop();
+            dnsResolver = null;
+        }
+        super.doClose();
+    }
+
+    /**
+     * @return the connectivity state tracker for this client
+     */
+    public WireConnectivityTracker getConnectivityTracker() {
+        return connectivityTracker;
     }
 }

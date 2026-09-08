@@ -167,7 +167,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
         ch.writeInbound(new DefaultHttp2DataFrame(
@@ -196,7 +196,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         ch.writeInbound(requestHeaders("/no.Such/Method"));
 
@@ -219,13 +219,13 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, DIRECT_EXECUTOR, 10, null));
+                        null, DIRECT_EXECUTOR, 10, 0, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
         ch.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(new byte[100]), true));
 
         Http2HeadersFrame trailersOnly = ch.readOutbound();
-        assertEquals(String.valueOf(WireStatus.STATUS_RESOURCE_EXHAUSTED),
+        assertEquals(String.valueOf(WireConstants.STATUS_RESOURCE_EXHAUSTED),
                 trailersOnly.headers().get(WireConstants.GRPC_STATUS).toString());
         assertTrue(trailersOnly.isEndStream());
         ch.finishAndReleaseAll();
@@ -250,7 +250,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         Http2Headers extra = new DefaultHttp2Headers()
                 .set(WireConstants.GRPC_ENCODING, WireConstants.ENCODING_GZIP);
@@ -275,7 +275,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         Http2Headers extra = new DefaultHttp2Headers().set(WireConstants.GRPC_ENCODING, "zstd");
         ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
@@ -311,7 +311,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         Http2Headers extra = new DefaultHttp2Headers()
                 .set("x-trace-id", "abc123")
@@ -349,7 +349,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         Http2Headers extra = new DefaultHttp2Headers().set(WireStatus.GRPC_TIMEOUT, "5m");
         ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
@@ -359,7 +359,7 @@ class WireServerStreamHandlerTest {
         // The handler ran past the deadline; the result is discarded and the
         // call reports DEADLINE_EXCEEDED without any response DATA
         Http2HeadersFrame trailersOnly = ch.readOutbound();
-        assertEquals(String.valueOf(WireStatus.STATUS_DEADLINE_EXCEEDED),
+        assertEquals(String.valueOf(WireConstants.STATUS_DEADLINE_EXCEEDED),
                 trailersOnly.headers().get(WireConstants.GRPC_STATUS).toString());
         assertNull(ch.readOutbound(), "no DATA frame once the deadline expired");
         ch.finishAndReleaseAll();
@@ -406,7 +406,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Watch"));
         ch.writeInbound(new DefaultHttp2DataFrame(
@@ -430,7 +430,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry),
-                        null, REJECTING_EXECUTOR, MAX_MESSAGE_SIZE, null));
+                        null, REJECTING_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
         ch.writeInbound(new DefaultHttp2DataFrame(
@@ -440,7 +440,7 @@ class WireServerStreamHandlerTest {
         // UNAVAILABLE so standard gRPC clients treat it as retryable
         Http2HeadersFrame trailersOnly = ch.readOutbound();
         assertTrue(trailersOnly.isEndStream());
-        assertEquals(String.valueOf(WireStatus.STATUS_UNAVAILABLE),
+        assertEquals(String.valueOf(WireConstants.STATUS_UNAVAILABLE),
                 trailersOnly.headers().get(WireConstants.GRPC_STATUS).toString());
         assertNull(ch.readOutbound(), "no further frames after rejection");
         ch.finishAndReleaseAll();

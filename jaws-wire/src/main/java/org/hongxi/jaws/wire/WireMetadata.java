@@ -21,6 +21,27 @@ import java.util.Map;
  */
 public final class WireMetadata {
 
+    /**
+     * Estimate the total size of HTTP/2 headers in bytes, computed as the
+     * sum of each header name and value byte lengths. This matches the
+     * HTTP/2 specification's header list size calculation (RFC 7540 §4.2),
+     * without the 32-byte per-entry overhead added by the HPACK encoder.
+     *
+     * @param headers the HTTP/2 headers to measure
+     * @return the estimated size in bytes
+     */
+    public static int estimateHeaderSize(Http2Headers headers) {
+        if (headers == null || headers.isEmpty()) {
+            return 0;
+        }
+        int size = 0;
+        for (Map.Entry<CharSequence, CharSequence> entry : headers) {
+            size += entry.getKey().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            size += entry.getValue().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        }
+        return size;
+    }
+
     private WireMetadata() {
     }
 

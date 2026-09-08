@@ -25,7 +25,7 @@ class WireStatusTest {
     void jawsTimeoutMapsToDeadlineExceeded() {
         JawsServiceException e = new JawsServiceException("timeout",
                 JawsErrorCode.SERVICE_TIMEOUT);
-        assertEquals(WireStatus.STATUS_DEADLINE_EXCEEDED, WireStatus.fromThrowable(e));
+        assertEquals(WireConstants.STATUS_DEADLINE_EXCEEDED, WireStatus.fromThrowable(e));
     }
 
     @Test
@@ -46,19 +46,19 @@ class WireStatusTest {
         // The shape thrown by CompletableFuture.orTimeout → join()
         CompletionException e = new CompletionException(
                 new java.util.concurrent.TimeoutException());
-        assertEquals(WireStatus.STATUS_DEADLINE_EXCEEDED, WireStatus.fromThrowable(e));
+        assertEquals(WireConstants.STATUS_DEADLINE_EXCEEDED, WireStatus.fromThrowable(e));
     }
 
     @Test
     void wrappedJawsExceptionIsUnwrapped() {
         RuntimeException wrapped = new RuntimeException("provider error",
                 new JawsServiceException("timeout", JawsErrorCode.SERVICE_TIMEOUT));
-        assertEquals(WireStatus.STATUS_DEADLINE_EXCEEDED, WireStatus.fromThrowable(wrapped));
+        assertEquals(WireConstants.STATUS_DEADLINE_EXCEEDED, WireStatus.fromThrowable(wrapped));
     }
 
     @Test
     void connectFailureMapsToUnavailable() {
-        assertEquals(WireStatus.STATUS_UNAVAILABLE,
+        assertEquals(WireConstants.STATUS_UNAVAILABLE,
                 WireStatus.fromThrowable(new java.net.ConnectException("refused")));
     }
 
@@ -90,7 +90,7 @@ class WireStatusTest {
     @Test
     void deadlineExceptionCarriesTimeoutErrorCode() {
         JawsServiceException e = (JawsServiceException) WireStatus.toException(
-                WireStatus.STATUS_DEADLINE_EXCEEDED, "too slow");
+                WireConstants.STATUS_DEADLINE_EXCEEDED, "too slow");
         assertEquals(JawsErrorCode.SERVICE_TIMEOUT, e.getErrorCode());
         assertTrue(e.getMessage().contains("DEADLINE_EXCEEDED"));
     }
@@ -98,9 +98,9 @@ class WireStatusTest {
     @Test
     void unavailableExceptionIsFlaggedRetryable() {
         JawsServiceException e = (JawsServiceException) WireStatus.toException(
-                WireStatus.STATUS_UNAVAILABLE, "down");
+                WireConstants.STATUS_UNAVAILABLE, "down");
         assertTrue(e.getMessage().contains("retryable"));
-        assertTrue(WireStatus.isRetryable(WireStatus.STATUS_UNAVAILABLE));
+        assertTrue(WireStatus.isRetryable(WireConstants.STATUS_UNAVAILABLE));
         assertFalse(WireStatus.isRetryable(WireConstants.STATUS_INTERNAL));
     }
 
@@ -111,7 +111,7 @@ class WireStatusTest {
         try {
             f.join();
         } catch (CompletionException e) {
-            assertEquals(WireStatus.STATUS_DEADLINE_EXCEEDED, WireStatus.fromThrowable(e));
+            assertEquals(WireConstants.STATUS_DEADLINE_EXCEEDED, WireStatus.fromThrowable(e));
             return;
         }
         throw new AssertionError("expected CompletionException");

@@ -11,6 +11,8 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Supplier;
 
 /**
@@ -48,8 +50,18 @@ public class WireServer extends AbstractHttp2Server {
 
     /** Max size of a single inbound gRPC message in bytes. */
     private final int maxMessageSize;
+    /** Max size of inbound HTTP/2 headers (metadata) in bytes. */
+    private final int maxInboundMetadataSize;
     /** Configured response compression encoding (identity or gzip). */
     private final String compression;
+
+    /** Scheduler for connection lifecycle checks (idle/age). */
+    private static final ScheduledExecutorService LIFECYCLE_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "wire-lifecycle");
+                t.setDaemon(true);
+                return t;
+            });
 
     /**
      * Direct API mode: use a {@link WireHandlerRegistry} for path-based routing
@@ -68,6 +80,7 @@ public class WireServer extends AbstractHttp2Server {
         this.healthService.registerTo(registry);
         this.reflectionService = createHandlerModeReflectionService(registry);
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
+        this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
         this.compression = normalizeCompression(url);
     }
 
@@ -86,6 +99,7 @@ public class WireServer extends AbstractHttp2Server {
         this.healthService = new WireHealthService();
         this.reflectionService = createProviderModeReflectionService(url);
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
+        this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
         this.compression = normalizeCompression(url);
     }
 
@@ -111,6 +125,15 @@ public class WireServer extends AbstractHttp2Server {
         // get GOAWAY too_many_pings. Set 0 to permit all.
         long permitMs = url.getLongParameter(UrlParam.Transport.PERMIT_PING_INTERVAL_MS);
         pipeline.addLast("wire_keepalive", new WireKeepaliveHandler(permitMs));
+
+        // Connection lifecycle: max idle / max age
+        long maxIdle = url.getLongParameter(UrlParam.Server.MAX_CONNECTION_IDLE_MS);
+        long maxAge = url.getLongParameter(UrlParam.Server.MAX_CONNECTION_AGE_MS);
+        long grace = url.getLongParameter(UrlParam.Server.MAX_CONNECTION_AGE_GRACE_MS);
+        if (maxIdle > 0 || maxAge > 0) {
+            pipeline.addLast("wire_lifecycle", new WireConnectionLifecycleHandler(
+                    maxIdle, maxAge, grace, LIFECYCLE_SCHEDULER));
+        }
     }
 
     @Override
@@ -123,7 +146,7 @@ public class WireServer extends AbstractHttp2Server {
         }
         streamChannel.pipeline().addLast(
                 new WireStreamServerHandler(dispatcher, reflectionService,
-                        serverExecutor, maxMessageSize, compression));
+                        serverExecutor, maxMessageSize, maxInboundMetadataSize, compression));
     }
 
     // ========================================================================

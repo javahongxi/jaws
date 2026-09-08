@@ -79,6 +79,18 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
         // no-op by default
     }
 
+    /**
+     * Hook to customize the HTTP/2 frame codec builder before it is built.
+     * Subclasses may override to set parameters such as
+     * {@code maxHeaderListSize} (inbound metadata size limit).
+     *
+     * @param builder the codec builder with default settings
+     * @return the customized builder (may be the same instance)
+     */
+    protected Http2FrameCodecBuilder configureHttp2Codec(Http2FrameCodecBuilder builder) {
+        return builder;
+    }
+
     @Override
     protected void onOpen() {
         // Initialize TLS if configured
@@ -97,7 +109,7 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
             pipeline.addLast("ssl", sslContext.newHandler(ch.alloc()));
         }
 
-        pipeline.addLast("http2_codec", Http2FrameCodecBuilder.forServer().build());
+        pipeline.addLast("http2_codec", configureHttp2Codec(Http2FrameCodecBuilder.forServer()).build());
 
         // Optional channel-level handlers installed by the subclass
         // (e.g. gRPC keepalive PING permitting on the wire server)

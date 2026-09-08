@@ -30,6 +30,12 @@ import java.util.concurrent.Flow;
  *       headers and reach the provider as request attachments</li>
  *   <li>Compression: requests are gzip-compressed on the wire
  *       ({@code compression=gzip})</li>
+ *   <li>Keepalive: PING every 30s to detect dead peers
+ *       ({@code keepaliveTimeMs=30000})</li>
+ *   <li>Retry: up to 3 attempts with exponential backoff on UNAVAILABLE
+ *       ({@code retryMaxAttempts=3})</li>
+ *   <li>Max inbound metadata: reject response metadata larger than 16KB
+ *       ({@code maxInboundMetadataSize=16384})</li>
  * </ul>
  * <p>
  * Run {@code WireProvider} first before starting this consumer.
@@ -45,6 +51,17 @@ public class WireConsumer {
         protocolConfig.setTransportFactory("wire");
         // Compress request messages with gzip (grpc-encoding: gzip)
         protocolConfig.setCompression("gzip");
+        // Keepalive: send PING every 30s, timeout after 20s
+        protocolConfig.setParameter("keepaliveTimeMs", "30000");
+        protocolConfig.setParameter("keepaliveTimeoutMs", "20000");
+        // Retry: up to 3 attempts with exponential backoff (100ms initial, 1s max)
+        protocolConfig.setParameter("retryMaxAttempts", "3");
+        protocolConfig.setParameter("retryInitialBackoffMs", "100");
+        protocolConfig.setParameter("retryMaxBackoffMs", "1000");
+        protocolConfig.setParameter("retryBackoffMultiplierPct", "200");
+        protocolConfig.setParameter("retryJitterPct", "20");
+        // Reject response metadata larger than 16KB
+        protocolConfig.setParameter("maxInboundMetadataSize", "16384");
 
         ReferenceConfig<GreeterService> ref = new ReferenceConfig<>();
         ref.setInterface(GreeterService.class);

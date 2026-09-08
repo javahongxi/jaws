@@ -14,6 +14,7 @@ import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -105,7 +106,7 @@ sealed interface WireCallDispatcher
             ByteBuf frame = null;
             try {
                 if (serverHandler.isDeadlineExceeded()) {
-                    serverHandler.sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
+                    serverHandler.sendError(ctx, WireConstants.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
                     return;
                 }
 
@@ -123,7 +124,15 @@ sealed interface WireCallDispatcher
                     return;
                 }
 
-                if (methodHandler.methodType() == WireMethodHandler.MethodType.SERVER_STREAMING) {
+                // Run the interceptor chain (if any) before invoking the handler
+                List<WireServerInterceptor> interceptors = registry.getInterceptors();
+                if (!interceptors.isEmpty()
+                        && methodHandler.methodType() == WireMethodHandler.MethodType.UNARY) {
+                    InterceptorCall chain = new InterceptorCall(
+                            interceptors, 0, serverHandler, methodHandler, callContext,
+                            serverHandler.path);
+                    chain.intercept(request);
+                } else if (methodHandler.methodType() == WireMethodHandler.MethodType.SERVER_STREAMING) {
                     Flow.Publisher<Message> publisher = methodHandler.handleStream(request, callContext);
                     serverHandler.dispatchStream(ctx, publisher);
                 } else {
@@ -196,7 +205,7 @@ sealed interface WireCallDispatcher
             ByteBuf frame = null;
             try {
                 if (serverHandler.isDeadlineExceeded()) {
-                    serverHandler.sendError(ctx, WireStatus.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
+                    serverHandler.sendError(ctx, WireConstants.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
                     return;
                 }
 
@@ -367,6 +376,76 @@ sealed interface WireCallDispatcher
                 serverHandler.sendError(ctx, WireConstants.STATUS_INTERNAL,
                         "Health check failed: " + e.getMessage());
             }
+        }
+    }
+
+    // ========================================================================
+    // Interceptor chain for Direct API mode
+    // ========================================================================
+
+    /**
+     * Walks the interceptor chain: each interceptor calls {@code next(request)}
+     * to hand off to the next interceptor; the last {@code next()} invokes the
+     * actual {@link WireMethodHandler}. Any interceptor can short-circuit via
+     * {@code respond()} or {@code close()}.
+     */
+    final class InterceptorCall implements WireServerInterceptor.Call {
+        private final List<WireServerInterceptor> interceptors;
+        private final int index;
+        private final WireStreamServerHandler serverHandler;
+        private final WireMethodHandler methodHandler;
+        private final WireCallContext callContext;
+        private final String path;
+
+        InterceptorCall(List<WireServerInterceptor> interceptors, int index,
+                        WireStreamServerHandler serverHandler, WireMethodHandler methodHandler,
+                        WireCallContext callContext, String path) {
+            this.interceptors = interceptors;
+            this.index = index;
+            this.serverHandler = serverHandler;
+            this.methodHandler = methodHandler;
+            this.callContext = callContext;
+            this.path = path;
+        }
+
+        void intercept(Message request) {
+            interceptors.get(index).intercept(request, this);
+        }
+
+        @Override
+        public WireCallContext context() {
+            return callContext;
+        }
+
+        @Override
+        public String path() {
+            return path;
+        }
+
+        @Override
+        public void next(Message request) {
+            if (index + 1 < interceptors.size()) {
+                // Delegate to the next interceptor
+                InterceptorCall next = new InterceptorCall(
+                        interceptors, index + 1, serverHandler, methodHandler,
+                        callContext, path);
+                next.intercept(request);
+            } else {
+                // Last interceptor called next() — invoke the actual handler
+                Message response = methodHandler.handle(request, callContext);
+                respond(response);
+            }
+        }
+
+        @Override
+        public void respond(Message response) {
+            serverHandler.sendUnaryResponse(
+                    serverHandler.ctx(), response);
+        }
+
+        @Override
+        public void close(int status, String message) {
+            serverHandler.sendError(serverHandler.ctx(), status, message);
         }
     }
 }
