@@ -200,7 +200,6 @@ public class WireBenchmark {
 
         Thread[] workers = new Thread[THREADS];
         for (int i = 0; i < THREADS; i++) {
-            final int threadIndex = i;
             final List<Long> latencies = perThreadLatencies.get(i);
             workers[i] = new Thread(() -> {
                 try {
