@@ -102,10 +102,10 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private void processFrame(ChannelHandlerContext ctx, DecodedFrame frame) {
         try {
             Object decoded = JawsCodec.decodeBody(frame.body(), frame.isRequest(), frame.requestId(), frame.flag());
-            if (decoded instanceof Request request) {
-                processRequest(ctx, request);
-            } else if (decoded instanceof Response response) {
-                messageHandler.handleAsync(response);
+            if (frame.isRequest()) {
+                processRequest(ctx, (Request) decoded);
+            } else {
+                messageHandler.handleAsync(decoded);
             }
         } catch (Exception e) {
             log.error("Failed to decode, requestId: {}, size: {}, remote: {}",
