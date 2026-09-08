@@ -198,6 +198,10 @@ public final class JawsCodec {
     private static void encodeRequest(Request request, ByteBuf out) throws IOException {
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtensionByNumber(request.getSerializationNumber());
+        if (serialization == null) {
+            throw new JawsFrameworkException("encode error: unknown serializationNumber " +
+                    request.getSerializationNumber());
+        }
 
         // Reserve header space
         int headerStart = out.writerIndex();
@@ -224,8 +228,6 @@ public final class JawsCodec {
                     output.writeUTF(entry.getValue());
                 }
             }
-
-            output.flush();
         }
 
         int bodyLength = out.writerIndex() - headerStart - HEADER_LENGTH;
@@ -246,7 +248,8 @@ public final class JawsCodec {
         Serialization serialization = ExtensionLoader.getExtensionLoader(Serialization.class)
                 .getExtensionByNumber(response.getSerializationNumber());
         if (serialization == null) {
-            throw new JawsFrameworkException("encode error: unknown serializationNumber " + response.getSerializationNumber());
+            throw new JawsFrameworkException("encode error: unknown serializationNumber " +
+                    response.getSerializationNumber());
         }
 
         // Reserve header space
@@ -269,8 +272,6 @@ public final class JawsCodec {
                 output.writeObject(response.getValue());
                 dataType = FLAG_RESPONSE;
             }
-
-            output.flush();
         }
 
         int bodyLength = out.writerIndex() - headerStart - HEADER_LENGTH;

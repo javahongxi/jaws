@@ -118,12 +118,11 @@ public class NettyDecoder extends ByteToMessageDecoder {
             return;
         }
 
-        // Reset reader index, skip header, and slice only the body (header already parsed)
-        in.resetReaderIndex();
-        if (in.readableBytes() < JawsCodec.HEADER_LENGTH + bodyLength) {
+        // Check if full body arrived; if not, reset to header start and wait for more data
+        if (in.readableBytes() < bodyLength) {
+            in.resetReaderIndex();
             return;
         }
-        in.skipBytes(JawsCodec.HEADER_LENGTH);
 
         // Pass body-only ByteBuf to JawsCodec.decodeBody (zero-copy, no header re-parsing)
         ByteBuf body = in.readRetainedSlice(bodyLength);
