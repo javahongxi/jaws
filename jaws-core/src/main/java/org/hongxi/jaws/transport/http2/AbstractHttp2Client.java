@@ -262,9 +262,10 @@ public abstract class AbstractHttp2Client extends AbstractClient {
 
     /**
      * Re-establish all connections. Called lazily from request paths when a
-     * multiplexed connection has gone away.
+     * multiplexed connection has gone away, or proactively when a GOAWAY
+     * frame is received from the server.
      */
-    private synchronized void reconnect() {
+    protected synchronized void reconnect() {
         if (state.isCloseState()) {
             return;
         }

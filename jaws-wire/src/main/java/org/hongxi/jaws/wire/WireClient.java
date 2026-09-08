@@ -123,6 +123,8 @@ public class WireClient extends AbstractHttp2Client {
 
     @Override
     protected void addOptionalChannelHandlers(io.netty.channel.ChannelPipeline pipeline) {
+        // GOAWAY: server-initiated connection closure → reconnect immediately
+        pipeline.addLast("wire_goaway", new WireGoAwayHandler(this));
         if (keepaliveTimeMs > 0) {
             pipeline.addLast("wire_keepalive", new WireClientKeepaliveHandler(
                     keepaliveTimeMs, keepaliveTimeoutMs, KEEPALIVE_SCHEDULER));
@@ -548,5 +550,14 @@ public class WireClient extends AbstractHttp2Client {
      */
     public WireConnectivityTracker getConnectivityTracker() {
         return connectivityTracker;
+    }
+
+    /**
+     * Delegate to the base class reconnect, called by {@link WireGoAwayHandler}
+     * when a GOAWAY frame is received. Package-private to restrict access
+     * to the wire module.
+     */
+    void reconnectOnGoAway() {
+        reconnect();
     }
 }
