@@ -1,6 +1,5 @@
 package org.hongxi.jaws.common.threadpool;
 
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -10,14 +9,18 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>Each factory instance draws from a shared pool counter, so multiple
  * factories with the same prefix still produce unique, diagnosable thread
- * names. Thread creation itself is delegated to the JDK default factory,
- * with naming and daemon settings adjusted afterwards.
+ * names.
+ *
+ * <p>Threads are created directly via {@code new Thread(r)} rather than
+ * delegating to {@link java.util.concurrent.Executors#defaultThreadFactory()},
+ * because the JDK default factory only sets name, daemon and priority —
+ * all of which this factory already controls itself, making the delegation
+ * a redundant indirection.
  */
 public class DefaultThreadFactory implements ThreadFactory {
 
-    private static final AtomicInteger POOL_NUMBER = new AtomicInteger(1);
+    private static final AtomicInteger poolNumber = new AtomicInteger(1);
 
-    private final ThreadFactory delegate = Executors.defaultThreadFactory();
     private final String namePrefix;
     private final boolean daemon;
     private final AtomicInteger threadNumber = new AtomicInteger(1);
@@ -27,13 +30,13 @@ public class DefaultThreadFactory implements ThreadFactory {
     }
 
     public DefaultThreadFactory(String prefix, boolean daemon) {
-        this.namePrefix = prefix + "-" + POOL_NUMBER.getAndIncrement() + "-thread-";
+        this.namePrefix = prefix + "-" + poolNumber.getAndIncrement() + "-thread-";
         this.daemon = daemon;
     }
 
     @Override
     public Thread newThread(Runnable r) {
-        Thread thread = delegate.newThread(r);
+        Thread thread = new Thread(r);
         thread.setName(namePrefix + threadNumber.getAndIncrement());
         thread.setDaemon(daemon);
         return thread;
