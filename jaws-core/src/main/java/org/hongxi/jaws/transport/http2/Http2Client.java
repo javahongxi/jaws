@@ -424,7 +424,7 @@ public class Http2Client extends AbstractHttp2Client {
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             log.error("HTTP/2 client stream HEADERS write failed", f.cause());
-                            failClientStream(responseFuture, request.getRequestId(),
+                            failClientStream(request.getRequestId(),
                                     new JawsServiceException("HTTP/2 client stream HEADERS write failed", f.cause()));
                             incrErrorCount();
                             streamChannel.close();
@@ -438,7 +438,7 @@ public class Http2Client extends AbstractHttp2Client {
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             log.error("HTTP/2 client stream metadata DATA write failed", f.cause());
-                            failClientStream(responseFuture, request.getRequestId(),
+                            failClientStream(request.getRequestId(),
                                     new JawsServiceException("HTTP/2 client stream metadata write failed", f.cause()));
                             incrErrorCount();
                             streamChannel.close();
@@ -523,7 +523,7 @@ public class Http2Client extends AbstractHttp2Client {
     /**
      * Fail the response future for a client-streaming call during the write phase.
      */
-    private void failClientStream(DefaultResponseFuture responseFuture, long requestId, Exception cause) {
+    private void failClientStream(long requestId, Exception cause) {
         ResponseFuture future = removeCallback(requestId);
         if (future != null) {
             DefaultResponse errorResponse = new DefaultResponse(requestId);

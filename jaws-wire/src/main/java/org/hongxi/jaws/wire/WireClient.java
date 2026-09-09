@@ -557,8 +557,13 @@ public class WireClient extends AbstractHttp2Client {
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             log.error("Wire client-stream HEADERS write failed", f.cause());
-                            failClientStream(responseFuture, request.getRequestId(),
-                                    new JawsServiceException("Wire client-stream HEADERS write failed", f.cause()));
+                            ResponseFuture future = removeCallback(request.getRequestId());
+                            if (future != null) {
+                                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+                                errorResponse.setThrowable(
+                                        new JawsServiceException("Wire client-stream HEADERS write failed", f.cause()));
+                                future.onFailure(errorResponse);
+                            }
                             incrErrorCount();
                             streamChannel.close();
                         }
@@ -633,18 +638,6 @@ public class WireClient extends AbstractHttp2Client {
             }
             throw new JawsServiceException("WireClient client-stream request failed: url="
                     + url.getUri() + " path=" + grpcPath, e);
-        }
-    }
-
-    /**
-     * Fail the response future for a client-streaming call during the write phase.
-     */
-    private void failClientStream(DefaultResponseFuture responseFuture, long requestId, Exception cause) {
-        ResponseFuture future = removeCallback(requestId);
-        if (future != null) {
-            DefaultResponse errorResponse = new DefaultResponse(requestId);
-            errorResponse.setThrowable(cause);
-            future.onFailure(errorResponse);
         }
     }
 

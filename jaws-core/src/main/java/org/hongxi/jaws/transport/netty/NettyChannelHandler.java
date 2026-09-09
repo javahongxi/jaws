@@ -54,7 +54,8 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     }
 
     public NettyChannelHandler(MessageHandler messageHandler,
-                               ExecutorService serverExecutor, AtomicInteger inflightRequests) {
+                               ExecutorService serverExecutor,
+                               AtomicInteger inflightRequests) {
         this(messageHandler, serverExecutor);
         this.inflightRequests = inflightRequests;
     }
