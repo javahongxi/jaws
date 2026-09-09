@@ -23,6 +23,8 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
 
     private final Request request;
     private final int timeout;
+    /** Why this future was cancelled; set by {@link #cancel(String)}. */
+    private volatile String cancellationReason;
 
     public DefaultResponseFuture(Request request, int timeout) {
         this.request = request;
@@ -45,7 +47,7 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
             Response r = get();
             return r.getValue();
         } catch (CancellationException e) {
-            throw new JawsServiceException(e.getMessage(), e);
+            throw cancellationFailure(e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new JawsServiceException(
@@ -77,6 +79,9 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
                 get();
             } catch (Throwable t) {
                 Throwable cause = (t instanceof CompletionException ce) ? ce.getCause() : t;
+                if (cause instanceof CancellationException) {
+                    return cancellationFailure(cause);
+                }
                 return cause instanceof RuntimeException re ? re
                         : new JawsServiceException(
                                 cause != null ? cause.getMessage() : "unknown error", cause);
@@ -88,6 +93,25 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
     @Override
     public void cancel() {
         cancel(true);
+    }
+
+    @Override
+    public void cancel(String reason) {
+        this.cancellationReason = reason;
+        cancel(true);
+    }
+
+    /**
+     * Describe a cancellation with the call it belongs to: the bare
+     * {@link CancellationException} carries neither the request nor the reason,
+     * so both {@link #getValue()} and {@link #getThrowable()} would otherwise
+     * report a null message.
+     */
+    private JawsServiceException cancellationFailure(Throwable cause) {
+        String reason = cancellationReason != null ? cancellationReason : "cancelled";
+        return new JawsServiceException(reason + ": " + request.getInterfaceName() + "."
+                + request.getMethodName() + ", requestId=" + request.getRequestId()
+                + ", timeout=" + timeout + "ms", cause);
     }
 
     @Override

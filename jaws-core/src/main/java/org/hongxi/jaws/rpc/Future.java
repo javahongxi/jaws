@@ -16,6 +16,17 @@ public interface Future {
     void cancel();
 
     /**
+     * Cancels the task and records why. A cancelled task otherwise reaches a
+     * blocking caller as a bare {@link java.util.concurrent.CancellationException}
+     * with no message at all, which reads as {@code error_message: null} in logs.
+     *
+     * @param reason human-readable cause, e.g. {@code request timed out after 300ms}
+     */
+    default void cancel(String reason) {
+        cancel();
+    }
+
+    /**
      * Returns whether the task has completed, either normally or with an exception.
      *
      * @return true if the task is done (success, failure, or canceled)

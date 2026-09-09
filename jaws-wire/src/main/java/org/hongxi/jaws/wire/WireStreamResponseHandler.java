@@ -11,6 +11,7 @@ import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
+import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.slf4j.Logger;
@@ -231,8 +232,12 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     public void channelInactive(ChannelHandlerContext ctx) {
         if (!responseFuture.isDone()) {
             DefaultResponse errorResponse = responseBuilder.apply(null);
-            errorResponse.setThrowable(new RuntimeException(
-                    "gRPC stream closed before response received"));
+            // A raw RuntimeException here escapes every caller's catch block: the
+            // blocking read rethrows RuntimeExceptions as they are, so only a
+            // JawsAbstractException lets a consumer handle a closed stream.
+            errorResponse.setThrowable(new JawsServiceException(
+                    "gRPC stream closed before the response arrived: requestId="
+                            + responseFuture.getRequestId()));
             responseFuture.onFailure(errorResponse);
             maybeComplete();
         }

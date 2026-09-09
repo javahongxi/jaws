@@ -148,7 +148,7 @@ public abstract class AbstractClient implements Client {
                 if (future != null) {
                     timeoutMap.remove(requestId);
                     try {
-                        future.cancel();
+                        future.cancel("request timed out after " + timeout + "ms");
                     } catch (Exception e) {
                         log.error("failed to cancel timeout task: uri={} requestId={}", url.getUri(), requestId, e);
                     }
@@ -217,7 +217,7 @@ public abstract class AbstractClient implements Client {
         // waiting for request timeout after the connection is torn down
         for (ResponseFuture future : callbackMap.values()) {
             try {
-                future.cancel();
+                future.cancel("client closed before the response arrived");
             } catch (Exception e) {
                 log.error("failed to cancel pending request: uri={} requestId={}",
                         url.getUri(), future.getRequestId(), e);

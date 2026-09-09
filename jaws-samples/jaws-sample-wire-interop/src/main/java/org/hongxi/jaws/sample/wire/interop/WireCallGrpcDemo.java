@@ -54,6 +54,14 @@ public class WireCallGrpcDemo {
 
     private static final int GRPC_PORT = 50060;
 
+    /** Failed checks; a non-zero count must fail the process so run-sample.sh counts it. */
+    private static int failures = 0;
+
+    private static void fail(String message) {
+        System.err.println("ERROR: " + message);
+        failures++;
+    }
+
     public static void main(String[] args) throws Exception {
         // ---- 1. Baseline + metadata ----
         System.out.println("=== 1. Baseline + Metadata ===");
@@ -103,12 +111,19 @@ public class WireCallGrpcDemo {
         slowRequest.setArguments(new Object[]{
                 HelloRequest.newBuilder().setName("slow:jaws-wire").build()
         });
+        boolean deadlineFired = false;
         try {
-            slowClient.request(slowRequest, HelloReply.parser());
-            System.out.println("ERROR: expected the call to time out");
+            // WireClient.request() does not block since the all-async refactor: the
+            // wait and the timeout surfacing both happen in getValue(), so the
+            // assertion has to consume the returned future.
+            slowClient.request(slowRequest, HelloReply.parser()).getValue();
         } catch (JawsAbstractException e) {
+            deadlineFired = true;
             System.out.println("WireClient failed as expected: " + e.getMessage());
             System.out.println("(deadline sent as grpc-timeout; stream reset with RST_STREAM CANCEL)");
+        }
+        if (!deadlineFired) {
+            fail("expected the call to time out");
         }
         slowClient.close();
 
@@ -152,9 +167,9 @@ public class WireCallGrpcDemo {
         });
 
         if (!serverStreamLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
-            System.err.println("ERROR: server-streaming call timed out");
+            fail("server-streaming call timed out");
         } else if (serverStreamCount[0] != 3) {
-            System.err.println("ERROR: expected 3 server-stream items, got: " + serverStreamCount[0]);
+            fail("expected 3 server-stream items, got: " + serverStreamCount[0]);
         }
         serverStreamClient.close();
 
@@ -205,7 +220,7 @@ public class WireCallGrpcDemo {
         clientStreamObserver.onCompleted();
 
         if (!clientStreamLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
-            System.err.println("ERROR: client-streaming call timed out");
+            fail("client-streaming call timed out");
         }
         clientStreamClient.close();
 
@@ -260,16 +275,21 @@ public class WireCallGrpcDemo {
         requestObserver.onCompleted();
 
         if (!bidiLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
-            System.err.println("ERROR: bidi streaming call timed out");
+            fail("bidi streaming call timed out");
         } else if (bidiCount[0] != 3) {
-            System.err.println("ERROR: expected 3 bidi response items, got: " + bidiCount[0]);
+            fail("expected 3 bidi response items, got: " + bidiCount[0]);
         }
         bidiClient.close();
 
-        System.out.println("\n=== WireClient -> grpc-java Passed ===");
+        if (failures == 0) {
+            System.out.println("\n=== WireClient -> grpc-java Passed ===");
+        } else {
+            System.err.println("\n=== WireClient -> grpc-java FAILED: " + failures + " check(s) ===");
+        }
 
-        // Force exit (Netty non-daemon threads prevent JVM exit)
-        System.exit(0);
+        // Force exit (Netty non-daemon threads prevent JVM exit), carrying the
+        // verdict in the exit code so the runner counts this demo honestly.
+        System.exit(failures == 0 ? 0 : 1);
     }
 
     private static URL buildUrl(Map<String, String> extraParams) {

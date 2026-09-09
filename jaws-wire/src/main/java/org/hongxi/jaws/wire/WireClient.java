@@ -300,7 +300,8 @@ public class WireClient extends AbstractHttp2Client {
                         if (!f.isSuccess()) {
                             DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
                             errorResponse.setThrowable(new JawsServiceException(
-                                    "Wire stream write failed", f.cause()));
+                                    "Wire stream write failed: requestId=" + request.getRequestId()
+                                    + ", cause=" + f.cause(), f.cause()));
                             responseFuture.onFailure(errorResponse);
                         }
                     });
@@ -373,7 +374,8 @@ public class WireClient extends AbstractHttp2Client {
                             if (future != null) {
                                 DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
                                 errorResponse.setThrowable(new JawsServiceException(
-                                        "Wire stream write failed", f.cause()));
+                                        "Wire stream write failed: requestId=" + request.getRequestId()
+                                    + ", cause=" + f.cause(), f.cause()));
                                 future.onFailure(errorResponse);
                             }
                             streamChannel0.close();
@@ -473,7 +475,8 @@ public class WireClient extends AbstractHttp2Client {
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             observer.onError(
-                                    new JawsServiceException("Wire stream write failed", f.cause()));
+                                    new JawsServiceException("Wire stream write failed: requestId=" + request.getRequestId()
+                                    + ", cause=" + f.cause(), f.cause()));
                             incrErrorCount();
                             streamChannel0.close();
                         }
