@@ -309,7 +309,9 @@ run_pair() {
         kill "$pid" 2>/dev/null
         wait "$pid" 2>/dev/null || true
     fi
-    rm -f "$pid_file" "$log_file"
+    rm -f "$pid_file"
+    # Keep log file for debugging; comment out next line to clean up:
+    # rm -f "$log_file"
 
     if [ $consumer_exit -ne 0 ]; then
         echo "Consumer exit code: $consumer_exit"

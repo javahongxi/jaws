@@ -21,4 +21,10 @@ public interface GreeterService {
      * greeting messages for the given request.
      */
     Flow.Publisher<HelloReply> sayHelloStream(HelloRequest request);
+
+    /**
+     * Bidirectional streaming: client streams {@link HelloRequest} names,
+     * server streams {@link HelloReply} greetings.
+     */
+    Flow.Publisher<HelloReply> bidiGreet(Flow.Publisher<HelloRequest> names);
 }

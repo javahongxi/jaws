@@ -184,6 +184,12 @@ public class WireBenchmark {
         public java.util.concurrent.Flow.Publisher<HelloReply> sayHelloStream(HelloRequest request) {
             throw new UnsupportedOperationException("Streaming not used in benchmark");
         }
+
+        @Override
+        public java.util.concurrent.Flow.Publisher<HelloReply> bidiGreet(
+                java.util.concurrent.Flow.Publisher<HelloRequest> names) {
+            throw new UnsupportedOperationException("Streaming not used in benchmark");
+        }
     }
 
     private static BenchmarkResult runPhase(GreeterService greeterService, int durationSeconds, boolean warmup)

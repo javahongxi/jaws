@@ -2,6 +2,7 @@ package org.hongxi.jaws.wire;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
+import com.google.protobuf.Parser;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -98,6 +99,15 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
 
     /** True when the path is the reflection bidi-stream; frames are processed individually. */
     private boolean reflectionPath;
+
+    /** True when the resolved path is a bidirectional streaming method. */
+    private boolean biStreaming;
+
+    /** Thread-safe publisher bridging event loop → handler thread for bidi request items. */
+    private BufferedRequestPublisher biStreamRequestPublisher;
+
+    /** Parser for decoding bidi request stream items; resolved after path resolution. */
+    private Parser<? extends Message> biStreamRequestParser;
 
     /**
      * Whether the initial response HEADERS frame has been written to the
@@ -227,15 +237,31 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             return;
         }
 
+        // Check if the resolved method is bidirectional streaming
+        if (!reflectionPath) {
+            biStreaming = dispatcher.isBiStreaming();
+            if (biStreaming) {
+                biStreamRequestParser = dispatcher.getBiStreamRequestParser();
+            }
+        }
+
         // Non-reflection paths require END_STREAM to carry the request payload
-        if (endStream && !reflectionPath) {
+        // (unless bidirectional streaming, where frames arrive incrementally)
+        if (endStream && !reflectionPath && !biStreaming) {
             sendError(ctx, WireConstants.STATUS_INTERNAL, "Missing request payload");
         }
     }
 
     private void onData(ChannelHandlerContext ctx, Http2DataFrame dataFrame) {
         try {
-            if (dispatched || rejected) {
+            // For bidirectional streaming, frames arrive incrementally and must
+            // not be blocked by the 'dispatched' flag (which is set after the
+            // first frame triggers async dispatch). Only unary/server-streaming
+            // use 'dispatched' as a one-shot guard.
+            if (!biStreaming && (dispatched || rejected)) {
+                return;
+            }
+            if (biStreaming && rejected) {
                 return;
             }
 
@@ -260,6 +286,15 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             // immediately and respond without waiting for END_STREAM.
             if (reflectionPath) {
                 processReflectionFrames(ctx);
+                return;
+            }
+
+            // Business bidirectional streaming: extract frames incrementally
+            if (biStreaming) {
+                processBiStreamFrames(ctx);
+                if (dataFrame.isEndStream()) {
+                    completeBiRequestStream();
+                }
                 return;
             }
 
@@ -412,6 +447,94 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
+     * Extract complete gRPC frames from the accumulator for bidirectional
+     * streaming. The first frame triggers dispatch after being added to the
+     * request publisher; subsequent frames are fed directly.
+     */
+    private void processBiStreamFrames(ChannelHandlerContext ctx) {
+        while (accumulator != null && accumulator.readableBytes() >= WireConstants.GRPC_HEADER_SIZE) {
+            ByteBuf frame = WireFrameCodec.tryExtractFrame(accumulator);
+            if (frame == null) {
+                break;
+            }
+            if (!dispatched) {
+                dispatched = true;
+                biStreamRequestPublisher = new BufferedRequestPublisher(serverExecutor);
+                // Decode the first frame and add it to the publisher BEFORE
+                // dispatch so the handler receives ALL items through the stream
+                try {
+                    Object firstItem;
+                    if (biStreamRequestParser != null) {
+                        firstItem = WireFrameCodec.decode(frame, biStreamRequestParser, requestEncoding);
+                    } else {
+                        firstItem = WireFrameCodec.extractPayload(frame, requestEncoding);
+                    }
+                    biStreamRequestPublisher.addItem(firstItem);
+                } catch (Exception e) {
+                    log.error("Failed to decode first bidi stream item", e);
+                    biStreamRequestPublisher.completeExceptionally(e);
+                    frame.release();
+                    return;
+                } finally {
+                    frame.release();
+                }
+                // Dispatch on the business executor (not the event loop) so that
+                // SubmissionPublisher.subscribe() drains correctly on a non-event-loop thread.
+                // This mirrors how unary/stream dispatch() uses serverExecutor.execute().
+                try {
+                    serverExecutor.execute(() -> {
+                        try {
+                            dispatcher.dispatchBiStream(ctx, null, this, biStreamRequestPublisher);
+                        } catch (Exception e) {
+                            log.error("unexpected bidi dispatch error: path={}", path, e);
+                            if (!canceled && ctx.channel().isActive()) {
+                                sendError(ctx, WireConstants.STATUS_INTERNAL, "Unexpected error: " + e.getMessage());
+                            }
+                        }
+                    });
+                } catch (RejectedExecutionException e) {
+                    rejectCall(ctx, e);
+                }
+            } else {
+                // Feed subsequent frames to the request publisher
+                try {
+                    Object item;
+                    if (biStreamRequestParser != null) {
+                        item = WireFrameCodec.decode(frame, biStreamRequestParser, requestEncoding);
+                    } else {
+                        byte[] payload = WireFrameCodec.extractPayload(frame, requestEncoding);
+                        item = payload;
+                    }
+                    biStreamRequestPublisher.addItem(item);
+                } catch (Exception e) {
+                    log.error("Failed to decode bidi stream item", e);
+                    biStreamRequestPublisher.completeExceptionally(e);
+                } finally {
+                    frame.release();
+                }
+            }
+        }
+    }
+
+    /**
+     * Signal that the client has finished sending request items (END_STREAM received).
+     */
+    private void completeBiRequestStream() {
+        if (biStreamRequestPublisher != null) {
+            biStreamRequestPublisher.complete();
+        }
+    }
+
+    /**
+     * Resolve the request parser for bidi stream item decoding. For the
+     * handler mode, the parser comes from the resolved handler. For the
+     * provider mode, returns null (the WireMessageHandler handles conversion).
+     */
+    private com.google.protobuf.Parser<? extends Message> getRequestParserForBiStream() {
+        return biStreamRequestParser;
+    }
+
+    /**
      * Send a unary response: check cancellation and deadline, then write
      * initial HEADERS, the encoded gRPC DATA frame, and trailers.
      * Called by the {@link WireCallDispatcher} after a successful invocation.
@@ -513,6 +636,86 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             return 0;
         }
         return Math.max(0, deadlineMs - System.currentTimeMillis());
+    }
+
+    /**
+     * Thread-safe {@link Flow.Publisher} that bridges the Netty event loop
+     * (which produces bidi request items) with the business handler thread
+     * (which subscribes and consumes them). Items submitted before subscription
+     * are buffered and drained on subscribe.
+     */
+    static final class BufferedRequestPublisher implements Flow.Publisher<Object> {
+        private final java.util.List<Object> buffer = new java.util.ArrayList<>();
+        private final java.util.concurrent.Executor drainExecutor;
+        private Flow.Subscriber<? super Object> subscriber;
+        private boolean completed;
+        private Throwable error;
+
+        BufferedRequestPublisher(java.util.concurrent.Executor drainExecutor) {
+            this.drainExecutor = drainExecutor;
+        }
+
+        synchronized void addItem(Object item) {
+            if (completed || error != null) return;
+            if (subscriber != null) {
+                subscriber.onNext(item);
+            } else {
+                buffer.add(item);
+            }
+        }
+
+        synchronized void complete() {
+            if (completed) return;
+            completed = true;
+            if (subscriber != null) {
+                subscriber.onComplete();
+            }
+        }
+
+        synchronized void completeExceptionally(Throwable t) {
+            if (completed || error != null) return;
+            error = t;
+            if (subscriber != null) {
+                subscriber.onError(t);
+            }
+        }
+
+        @Override
+        public void subscribe(Flow.Subscriber<? super Object> s) {
+            java.util.List<Object> toDrain;
+            Throwable err;
+            boolean done;
+            synchronized (this) {
+                this.subscriber = s;
+                toDrain = new java.util.ArrayList<>(buffer);
+                buffer.clear();
+                err = this.error;
+                done = this.completed;
+            }
+            s.onSubscribe(new Flow.Subscription() {
+                @Override
+                public void request(long n) { /* unbounded */ }
+                @Override
+                public void cancel() { /* best-effort */ }
+            });
+            // Drain buffered items asynchronously to avoid reentrancy issues.
+            // When the subscriber's onNext handler submits to a SubmissionPublisher,
+            // that publisher's subscribe/drain chain must not nest inside this
+            // subscribe call — doing so causes the first item to be silently
+            // dropped by SubmissionPublisher's drain-task scheduling.
+            if (!toDrain.isEmpty() || err != null || done) {
+                drainExecutor.execute(() -> {
+                    for (Object item : toDrain) {
+                        s.onNext(item);
+                    }
+                    if (err != null) {
+                        s.onError(err);
+                    } else if (done) {
+                        s.onComplete();
+                    }
+                });
+            }
+        }
     }
 
     @Override

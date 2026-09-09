@@ -8,6 +8,9 @@ import org.hongxi.jaws.wire.WireClient;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Flow;
+import java.util.concurrent.SubmissionPublisher;
 
 /**
  * Proves that {@link WireClient} (jaws-wire, zero grpc-java dependency) can
@@ -19,6 +22,9 @@ import java.util.Map;
  *       by the grpc-java server</li>
  *   <li><b>Deadline &amp; cancellation</b>: grpc-timeout propagation; the client
  *       resets the stream with RST_STREAM(CANCEL) on expiry</li>
+ *   <li><b>Bidirectional streaming</b>: WireClient opens a bidi stream to the
+ *       grpc-java server's BidiGreet method, sends multiple request items,
+ *       and receives responses concurrently</li>
  * </ol>
  * <p>
  * <b>Prerequisite:</b> start {@link GrpcServerMain} first.
@@ -95,6 +101,68 @@ public class WireCallGrpcDemo {
             System.out.println("(deadline sent as grpc-timeout; stream reset with RST_STREAM CANCEL)");
         }
         slowClient.close();
+
+        // ---- 4. Bidirectional streaming ----
+        System.out.println("\n=== 4. Bidirectional Streaming ===");
+        WireClient bidiClient = new WireClient(buildUrl(Map.of(
+                "connectTimeout", "5000", "requestTimeout", "10000")));
+        bidiClient.open();
+
+        DefaultRequest bidiRequest = new DefaultRequest();
+        bidiRequest.setInterfaceName("interop.Greeter");
+        bidiRequest.setMethodName("BidiGreet");
+        // requestBiStream does not need arguments in the request;
+        // all items flow through the requestStream publisher
+        bidiRequest.setArguments(new Object[0]);
+
+        SubmissionPublisher<Object> requestPublisher = new SubmissionPublisher<>();
+        CountDownLatch bidiLatch = new CountDownLatch(1);
+        int[] bidiCount = {0};
+
+        Flow.Publisher<Object> responsePublisher =
+                bidiClient.requestBiStream(bidiRequest, requestPublisher, HelloReply.parser());
+        responsePublisher.subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(Object item) {
+                bidiCount[0]++;
+                HelloReply reply = (HelloReply) item;
+                System.out.println("  bidi response: " + reply.getMessage());
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("  bidi stream error: " + throwable.getMessage());
+                bidiLatch.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                System.out.println("  bidi stream completed (" + bidiCount[0] + " items)");
+                bidiLatch.countDown();
+            }
+        });
+
+        // Send request items with small delays
+        Thread.sleep(200);
+        requestPublisher.submit(HelloRequest.newBuilder().setName("Alice").build());
+        Thread.sleep(100);
+        requestPublisher.submit(HelloRequest.newBuilder().setName("Bob").build());
+        Thread.sleep(100);
+        requestPublisher.submit(HelloRequest.newBuilder().setName("Charlie").build());
+        Thread.sleep(100);
+        requestPublisher.close();
+
+        if (!bidiLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+            System.err.println("ERROR: bidi streaming call timed out");
+        } else if (bidiCount[0] != 3) {
+            System.err.println("ERROR: expected 3 bidi response items, got: " + bidiCount[0]);
+        }
+        bidiClient.close();
 
         System.out.println("\n=== WireClient -> grpc-java Passed ===");
     }

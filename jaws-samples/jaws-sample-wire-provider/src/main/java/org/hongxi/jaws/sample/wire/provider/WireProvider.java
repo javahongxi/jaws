@@ -5,6 +5,8 @@ import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.wire.proto.GreeterService;
 import org.hongxi.jaws.sample.wire.provider.service.GreeterServiceImpl;
 
+import java.util.concurrent.CountDownLatch;
+
 /**
  * Wire (gRPC wire format) provider sample in direct mode.
  * <p>
@@ -41,7 +43,7 @@ public class WireProvider {
 
     private static final int PORT = Integer.parseInt(System.getProperty("port", "50051"));
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName("wire");
         protocolConfig.setId("wire");
@@ -76,5 +78,8 @@ public class WireProvider {
         System.out.println("Test with grpcurl (server reflection enabled, no proto file needed):");
         System.out.println("  grpcurl -plaintext -d '{\"name\":\"World\"}' \\");
         System.out.println("    localhost:" + PORT + " greeter.Greeter/SayHello");
+
+        // Block main thread to prevent JVM exit (Netty event loop threads may be daemon)
+        new CountDownLatch(1).await();
     }
 }

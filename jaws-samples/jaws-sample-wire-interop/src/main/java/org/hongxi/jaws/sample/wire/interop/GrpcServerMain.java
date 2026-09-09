@@ -65,6 +65,32 @@ public class GrpcServerMain {
                         responseObserver.onNext(reply);
                         responseObserver.onCompleted();
                     }
+
+                    @Override
+                    public io.grpc.stub.StreamObserver<HelloRequest> bidiGreet(
+                            io.grpc.stub.StreamObserver<HelloReply> responseObserver) {
+                        System.out.println("[grpc-java server] BidiGreet stream opened");
+                        return new io.grpc.stub.StreamObserver<>() {
+                            @Override
+                            public void onNext(HelloRequest request) {
+                                System.out.println("[grpc-java server] BidiGreet received: " + request.getName());
+                                responseObserver.onNext(HelloReply.newBuilder()
+                                        .setMessage("Hello, " + request.getName() + "! (from grpc-java bidi)")
+                                        .build());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("[grpc-java server] BidiGreet error: " + t.getMessage());
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                System.out.println("[grpc-java server] BidiGreet stream completed");
+                                responseObserver.onCompleted();
+                            }
+                        };
+                    }
                 })
                 .intercept(new ServerInterceptor() {
                     @Override

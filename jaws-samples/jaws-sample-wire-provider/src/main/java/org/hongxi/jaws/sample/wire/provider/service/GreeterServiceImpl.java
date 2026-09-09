@@ -53,4 +53,42 @@ public class GreeterServiceImpl implements GreeterService {
             thread.start();
         };
     }
+
+    @Override
+    public Flow.Publisher<HelloReply> bidiGreet(Flow.Publisher<HelloRequest> names) {
+        System.out.println("Bidi greet: subscribing to request stream");
+        SubmissionPublisher<HelloReply> responsePublisher = new SubmissionPublisher<>();
+
+        names.subscribe(new Flow.Subscriber<>() {
+            private Flow.Subscription subscription;
+
+            @Override
+            public void onSubscribe(Flow.Subscription s) {
+                this.subscription = s;
+                s.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(HelloRequest item) {
+                System.out.println("Bidi received: " + item.getName());
+                responsePublisher.submit(HelloReply.newBuilder()
+                        .setMessage("Hello, " + item.getName() + "! (from jaws-wire bidi)")
+                        .build());
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("Bidi stream error: " + throwable.getMessage());
+                responsePublisher.closeExceptionally(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                System.out.println("Bidi request stream completed");
+                responsePublisher.close();
+            }
+        });
+
+        return responsePublisher;
+    }
 }

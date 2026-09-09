@@ -30,18 +30,17 @@ public interface WireMethodHandler {
 
     /**
      * The invocation style of a gRPC method, mirroring the proto definition.
-     * Only {@code UNARY} and {@code SERVER_STREAMING} are supported; client
-     * and bidirectional streaming are intentionally excluded (see the
-     * framework design rationale).
      */
     enum MethodType {
         UNARY,
-        SERVER_STREAMING
+        SERVER_STREAMING,
+        BIDIRECTIONAL
     }
 
     /**
      * @return the invocation style of this method; defaults to {@link MethodType#UNARY}.
-     *         Streaming handlers must override and return {@link MethodType#SERVER_STREAMING}.
+     *         Streaming handlers must override and return the appropriate
+     *         {@link MethodType#SERVER_STREAMING} or {@link MethodType#BIDIRECTIONAL}.
      */
     default MethodType methodType() {
         return MethodType.UNARY;
@@ -90,6 +89,32 @@ public interface WireMethodHandler {
      */
     default Flow.Publisher<Message> handleStream(Message request, WireCallContext context) {
         return handleStream(request);
+    }
+
+    /**
+     * Handle a bidirectional streaming gRPC call: receives a publisher of
+     * request messages and returns a publisher of response messages.
+     * The default implementation throws {@link UnsupportedOperationException};
+     * override for bidirectional streaming methods.
+     *
+     * @param requestStream a publisher emitting client request messages
+     * @return a publisher emitting response messages
+     */
+    default Flow.Publisher<Message> handleBiStream(Flow.Publisher<Message> requestStream) {
+        throw new UnsupportedOperationException("Not a bidirectional streaming method");
+    }
+
+    /**
+     * Handle a bidirectional streaming gRPC call with the per-call context
+     * (inbound metadata). The default implementation delegates to
+     * {@link #handleBiStream(Flow.Publisher)}.
+     *
+     * @param requestStream a publisher emitting client request messages
+     * @param context       the call context carrying inbound gRPC metadata
+     * @return a publisher emitting response messages
+     */
+    default Flow.Publisher<Message> handleBiStream(Flow.Publisher<Message> requestStream, WireCallContext context) {
+        return handleBiStream(requestStream);
     }
 
     /**

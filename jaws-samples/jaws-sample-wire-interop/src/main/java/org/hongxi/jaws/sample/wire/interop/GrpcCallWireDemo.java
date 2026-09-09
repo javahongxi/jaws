@@ -17,6 +17,7 @@ import org.hongxi.jaws.wire.WireHandlerRegistry;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Flow;
+import java.util.concurrent.SubmissionPublisher;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -32,6 +33,9 @@ import java.util.concurrent.TimeUnit;
  *   <li>The streaming handler overrides {@code methodType()} to return
  *       {@link MethodType#SERVER_STREAMING} and {@code handleStream()} to emit
  *       multiple replies via a cold {@link Flow.Publisher}</li>
+ *   <li>The bidi handler overrides {@code methodType()} to return
+ *       {@link MethodType#BIDIRECTIONAL} and {@code handleBiStream()} to echo
+ *       each request item as a response via a {@link SubmissionPublisher}</li>
  *   <li>A grpc-java client sends unary calls with {@code x-trace-id} attached
  *       via {@link MetadataUtils} and a server-streaming call with an async
  *       stub</li>
@@ -119,6 +123,58 @@ public class GrpcCallWireDemo {
                         }
                     });
                 };
+            }
+
+            @Override
+            public Parser<? extends Message> getRequestParser() {
+                return HelloRequest.parser();
+            }
+        });
+
+        // ---- bidi-streaming handler ----
+        registry.register("interop.Greeter", "BidiGreet", new WireMethodHandler() {
+            @Override
+            public MethodType methodType() {
+                return MethodType.BIDIRECTIONAL;
+            }
+
+            @Override
+            public Message handle(Message request) {
+                throw new UnsupportedOperationException("bidi streaming method");
+            }
+
+            @Override
+            public Flow.Publisher<Message> handleBiStream(Flow.Publisher<Message> requestStream) {
+                System.out.println("[jaws-wire server] BidiGreet stream opened");
+                SubmissionPublisher<Message> responsePublisher = new SubmissionPublisher<>();
+                requestStream.subscribe(new Flow.Subscriber<>() {
+                    @Override
+                    public void onSubscribe(Flow.Subscription s) {
+                        s.request(Long.MAX_VALUE);
+                    }
+
+                    @Override
+                    public void onNext(Message item) {
+                        HelloRequest req = (HelloRequest) item;
+                        System.out.println("[jaws-wire server] BidiGreet received: " + req.getName());
+                        responsePublisher.submit(HelloReply.newBuilder()
+                                .setMessage("Hello, " + req.getName() + "! (from jaws-wire bidi)")
+                                .build());
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        System.err.println("[jaws-wire server] BidiGreet error: " + throwable.getMessage());
+                        responsePublisher.closeExceptionally(throwable);
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        System.out.println("[jaws-wire server] BidiGreet request stream completed");
+                        responsePublisher.close();
+                    }
+                });
+                return responsePublisher;
             }
 
             @Override
@@ -222,6 +278,43 @@ public class GrpcCallWireDemo {
                 if (itemCount[0] != 3) {
                     throw new AssertionError(
                             "expected 3 stream items, got: " + itemCount[0]);
+                }
+
+                // ---- 5. Bidirectional streaming call ----
+                System.out.println("\n=== 5. Bidirectional Streaming Call ===");
+                CountDownLatch bidiLatch = new CountDownLatch(1);
+                int[] bidiCount = {0};
+                GreeterGrpc.GreeterStub bidiStub = GreeterGrpc.newStub(channel);
+                io.grpc.stub.StreamObserver<HelloRequest> bidiRequest = bidiStub.bidiGreet(
+                        new StreamObserver<>() {
+                            @Override
+                            public void onNext(HelloReply value) {
+                                bidiCount[0]++;
+                                System.out.println("  bidi response: " + value.getMessage());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("  bidi stream error: " + t.getMessage());
+                                bidiLatch.countDown();
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                System.out.println("  bidi stream completed (" + bidiCount[0] + " items)");
+                                bidiLatch.countDown();
+                            }
+                        });
+                bidiRequest.onNext(HelloRequest.newBuilder().setName("Alice").build());
+                bidiRequest.onNext(HelloRequest.newBuilder().setName("Bob").build());
+                bidiRequest.onNext(HelloRequest.newBuilder().setName("Charlie").build());
+                bidiRequest.onCompleted();
+                if (!bidiLatch.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("bidi streaming call timed out");
+                }
+                if (bidiCount[0] != 3) {
+                    throw new AssertionError(
+                            "expected 3 bidi response items, got: " + bidiCount[0]);
                 }
             } finally {
                 channel.shutdown();

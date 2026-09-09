@@ -11,6 +11,7 @@ package interop;
 service Greeter {
   rpc SayHello (HelloRequest) returns (HelloReply) {}
   rpc SayHelloStream (HelloRequest) returns (stream HelloReply) {}
+  rpc BidiGreet (stream HelloRequest) returns (stream HelloReply) {}
 }
 
 message HelloRequest {

@@ -477,6 +477,135 @@ public class WireClient extends AbstractHttp2Client {
     }
 
     /**
+     * Open a bidirectional streaming call: send a stream of request items and
+     * receive a stream of response items concurrently using the gRPC wire format.
+     * <p>
+     * HEADERS are sent immediately (without END_STREAM). Each item from the
+     * {@code requestStream} is encoded as a gRPC DATA frame. When the request
+     * stream completes, END_STREAM is sent. Response items are decoded using
+     * the provided {@code responseParser}.
+     *
+     * @param request        the RPC request (carries metadata/attachments)
+     * @param requestStream  a publisher emitting client request {@link Message} items
+     * @param responseParser the parser for the expected response message type
+     * @return a publisher emitting streamed response messages
+     */
+    public Flow.Publisher<Object> requestBiStream(Request request, Flow.Publisher<Object> requestStream,
+                                                   Parser<? extends Message> responseParser) {
+        if (!isAvailable()) {
+            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
+        }
+
+        String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
+
+        int urlTimeout = url.getMethodParameter(
+                request.getMethodName(), request.getParamDesc(),
+                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
+                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+        int timeout = resolveTimeout(request, urlTimeout);
+
+        StreamPublisher publisher = new StreamPublisher();
+
+        try {
+            io.netty.channel.Channel connChannel = activeChannel();
+
+            io.netty.channel.Channel streamChannel =
+                    new Http2StreamChannelBootstrap(connChannel)
+                            .handler(new WireStreamStreamingHandler(
+                                    responseParser, publisher, maxMessageSize, maxInboundMetadataSize))
+                            .open().syncUninterruptibly().getNow();
+
+            // Subscriber cancel() → RST_STREAM(CANCEL)
+            publisher.setOnCancel(() -> cancelStream(streamChannel));
+
+            // Send HEADERS without END_STREAM (bidi: request stream follows)
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
+            streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
+                    .addListener(f -> {
+                        if (!f.isSuccess()) {
+                            log.error("Wire bidi HEADERS write failed", f.cause());
+                            publisher.completeExceptionally(
+                                    new JawsServiceException("Wire bidi HEADERS write failed", f.cause()));
+                            incrErrorCount();
+                            cancelStream(streamChannel);
+                        }
+                    });
+
+            // Subscribe to the user's request stream in a separate thread to
+            // avoid blocking the caller and potential deadlocks
+            Thread subscribeThread = new Thread(() -> requestStream.subscribe(new Flow.Subscriber<>() {
+                private Flow.Subscription subscription;
+
+                @Override
+                public void onSubscribe(Flow.Subscription s) {
+                    this.subscription = s;
+                    s.request(Long.MAX_VALUE);
+                }
+
+                @Override
+                public void onNext(Object item) {
+                    if (!streamChannel.isActive()) {
+                        subscription.cancel();
+                        return;
+                    }
+                    if (item instanceof Message msg) {
+                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel.alloc(), compression);
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("Wire bidi stream item write failed", f.cause());
+                                        subscription.cancel();
+                                        cancelStream(streamChannel);
+                                        incrErrorCount();
+                                    }
+                                });
+                    } else {
+                        log.error("Wire bidi stream item must be a protobuf Message but got: {}",
+                                item != null ? item.getClass().getName() : "null");
+                        subscription.cancel();
+                        cancelStream(streamChannel);
+                        incrErrorCount();
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Client bidi request stream error", throwable);
+                    cancelStream(streamChannel);
+                    incrErrorCount();
+                }
+
+                @Override
+                public void onComplete() {
+                    // Send END_STREAM to signal request stream complete
+                    if (streamChannel.isActive()) {
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("Wire bidi END_STREAM write failed", f.cause());
+                                        incrErrorCount();
+                                    }
+                                });
+                    }
+                }
+            }), "wire-bidi-stream-writer");
+            subscribeThread.setDaemon(true);
+            subscribeThread.start();
+
+            return publisher;
+        } catch (Exception e) {
+            log.error("Wire bidi streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
+            publisher.completeExceptionally(e);
+            incrErrorCount();
+            if (e instanceof JawsAbstractException jae) {
+                throw jae;
+            }
+            throw new JawsServiceException("WireClient requestBiStream failed: url="
+                    + url.getUri() + " path=" + grpcPath, e);
+        }
+    }
+
+    /**
      * Build the gRPC request HEADERS: pseudo-headers, content-type, the
      * mandatory {@code te: trailers}, user-agent, encoding advertisement, the
      * caller's deadline, and the request attachments as custom metadata.

@@ -2,6 +2,7 @@ package org.hongxi.jaws.wire;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
+import com.google.protobuf.Parser;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.transport.MessageHandler;
@@ -9,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 
 /**
  * Server-side {@link MessageHandler} that bridges between the raw protobuf
@@ -79,6 +81,73 @@ class WireMessageHandler implements MessageHandler {
             log.error("Wire message decode failed: interface={} method={}",
                     request.getInterfaceName(), request.getMethodName(), e);
             return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    /**
+     * Handle a bidirectional streaming request: wrap the incoming
+     * {@code requestStream} to convert {@code byte[]} items to typed protobuf
+     * {@link Message} instances, then delegate to the filter chain.
+     */
+    @Override
+    public Flow.Publisher<Object> handleBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        WireProtoTypes.MethodInfo methodInfo;
+        try {
+            methodInfo = protoTypes.getMethodInfo(request.getMethodName());
+        } catch (IllegalArgumentException e) {
+            throw new UnsupportedOperationException("Unknown method: " + request.getMethodName(), e);
+        }
+
+        // Wrap the request stream to convert byte[] items → typed Messages
+        Parser<? extends Message> requestParser = methodInfo.requestParser();
+        Flow.Publisher<Object> typedStream = subscriber -> requestStream.subscribe(new Flow.Subscriber<>() {
+            private Flow.Subscription subscription;
+
+            @Override
+            public void onSubscribe(Flow.Subscription s) {
+                this.subscription = s;
+                subscriber.onSubscribe(s);
+            }
+
+            @Override
+            public void onNext(Object item) {
+                if (item instanceof byte[] bytes) {
+                    try {
+                        Message msg = requestParser.parseFrom(bytes);
+                        subscriber.onNext(msg);
+                    } catch (InvalidProtocolBufferException e) {
+                        log.error("Wire bidi stream item decode failed", e);
+                        subscription.cancel();
+                        subscriber.onError(e);
+                    }
+                } else {
+                    // Already a typed Message (should not happen in provider mode)
+                    subscriber.onNext(item);
+                }
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                subscriber.onError(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                subscriber.onComplete();
+            }
+        });
+
+        return delegate.handleBiStream(request, typedStream);
+    }
+
+    /**
+     * Check if the given method is a bidirectional streaming method.
+     */
+    boolean isBiStreaming(String methodName) {
+        try {
+            return protoTypes.getMethodInfo(methodName).biStreaming();
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 

@@ -9,6 +9,7 @@ import org.hongxi.jaws.sample.wire.proto.HelloRequest;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Flow;
+import java.util.concurrent.SubmissionPublisher;
 
 /**
  * Wire (gRPC wire format) consumer sample in direct mode.
@@ -117,6 +118,51 @@ public class WireConsumer {
             }
         });
         latch.await();
+
+        // Bidirectional streaming call
+        System.out.println("\n--- Bidirectional Streaming ---");
+        CountDownLatch bidiLatch = new CountDownLatch(1);
+        SubmissionPublisher<HelloRequest> requestPublisher = new SubmissionPublisher<>();
+
+        Flow.Publisher<HelloReply> bidiResponse = greeterService.bidiGreet(requestPublisher);
+        bidiResponse.subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(HelloReply item) {
+                System.out.println("Bidi response: " + item.getMessage());
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("Bidi stream error: " + throwable.getMessage());
+                throwable.printStackTrace();
+                bidiLatch.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                System.out.println("Bidi stream completed.");
+                bidiLatch.countDown();
+            }
+        });
+
+        // Wait a bit for subscription to be established, then send request items
+        Thread.sleep(200);
+        requestPublisher.submit(HelloRequest.newBuilder().setName("Alice").build());
+        Thread.sleep(100);
+        requestPublisher.submit(HelloRequest.newBuilder().setName("Bob").build());
+        Thread.sleep(100);
+        requestPublisher.submit(HelloRequest.newBuilder().setName("Charlie").build());
+        Thread.sleep(100);
+        requestPublisher.close();
+
+        if (!bidiLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+            System.err.println("Bidi streaming timed out after 10 seconds!");
+        }
 
         System.out.println("Done.");
 

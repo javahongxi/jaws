@@ -13,6 +13,9 @@ service Greeter {
 
   // Sends a stream of greetings (server streaming)
   rpc SayHelloStream (HelloRequest) returns (stream HelloReply) {}
+
+  // Bidirectional streaming: client streams names, server streams greetings
+  rpc BidiGreet (stream HelloRequest) returns (stream HelloReply) {}
 }
 
 // The request message containing the user's name.

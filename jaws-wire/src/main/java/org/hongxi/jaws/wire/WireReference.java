@@ -93,6 +93,33 @@ public class WireReference<T> extends AbstractReference<T> {
     }
 
     @Override
+    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        if (!isAvailable()) {
+            throw new JawsServiceException(
+                    "WireReference callBiStream failed: endpoint is not available, url=" + url.getUri());
+        }
+        request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
+
+        WireProtoTypes.MethodInfo methodInfo = protoTypes.getMethodInfo(request.getMethodName());
+
+        // Build a request for WireClient.requestBiStream
+        DefaultRequest biStreamRequest = new DefaultRequest();
+        biStreamRequest.setInterfaceName(request.getInterfaceName());
+        biStreamRequest.setMethodName(request.getMethodName());
+        biStreamRequest.setParamDesc(request.getParamDesc());
+        biStreamRequest.setRequestId(request.getRequestId());
+        // Carry the first argument (if present) for metadata; the actual
+        // request items flow through the requestStream publisher
+        biStreamRequest.setArguments(request.getArguments());
+        for (var entry : request.getAttachments().entrySet()) {
+            biStreamRequest.setAttachment(entry.getKey(), entry.getValue());
+        }
+
+        WireClient wireClient = (WireClient) client;
+        return wireClient.requestBiStream(biStreamRequest, requestStream, methodInfo.responseParser());
+    }
+
+    @Override
     public boolean isAvailable() {
         return client.isAvailable();
     }
