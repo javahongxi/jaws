@@ -385,13 +385,14 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
     private void dispatchStream(ChannelHandlerContext ctx, Request request) {
         StreamSource<Object> source = messageHandler.handleStream(request, null);
 
-        // Send response headers first (without END_STREAM)
+        // Send response headers via event loop (this method runs on the
+        // business executor, but ctx writes must happen on the event loop)
         if (ctx.channel().isActive()) {
             Http2Headers respHeaders = new DefaultHttp2Headers()
                     .status(Http2Constants.STATUS_OK)
                     .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
                     .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getValue());
-            ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
+            ctx.executor().execute(() -> ctx.write(new DefaultHttp2HeadersFrame(respHeaders)));
         }
 
         // Subscribe to the source and stream responses
@@ -403,8 +404,8 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 }
                 try {
                     byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                    ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                            Unpooled.wrappedBuffer(itemBytes), false));
+                    ctx.executor().execute(() -> ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                            Unpooled.wrappedBuffer(itemBytes), false)));
                 } catch (Exception e) {
                     log.error("Failed to encode stream item", e);
                     sendStreamError(ctx, e);
@@ -422,7 +423,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
             public void onCompleted() {
                 // Send final empty DATA frame with END_STREAM
                 if (ctx.channel().isActive()) {
-                    ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
+                    ctx.executor().execute(() -> ctx.writeAndFlush(new DefaultHttp2DataFrame(true)));
                 }
                 finishStream();
             }
@@ -440,83 +441,94 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
      */
     private void dispatchBiStream(ChannelHandlerContext ctx) {
         try {
-            RpcContext.init(bidiRequest);
-            StreamSource<Object> responseSource =
-                    messageHandler.handleStream(bidiRequest, requestObserver);
+            serverExecutor.execute(() -> {
+                try {
+                    RpcContext.init(bidiRequest);
+                    StreamSource<Object> responseSource =
+                            messageHandler.handleStream(bidiRequest, requestObserver);
 
-            // Send response headers first (without END_STREAM)
-            if (ctx.channel().isActive()) {
-                Http2Headers respHeaders = new DefaultHttp2Headers()
-                        .status(Http2Constants.STATUS_OK)
-                        .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
-                        .set(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
-                ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
-            }
-
-            // Bridge the source into a StreamSubject immediately
-            // to guard against hot sources that drop items emitted before
-            // the network subscriber is attached.
-            StreamSubject<Object> responseBuffer = new StreamSubject<>();
-            responseSource.subscribe(new StreamObserver<>() {
-                @Override
-                public void onNext(Object item) {
-                    responseBuffer.onNext(item);
-                }
-
-                @Override
-                public void onError(Throwable throwable) {
-                    responseBuffer.onError(throwable);
-                }
-
-                @Override
-                public void onCompleted() {
-                    responseBuffer.onCompleted();
-                }
-            });
-
-            // Subscribe the network-forwarding observer to the buffer.
-            responseBuffer.subscribe(new StreamObserver<>() {
-                @Override
-                public void onNext(Object item) {
-                    if (!ctx.channel().isActive()) {
-                        return;
-                    }
-                    try {
-                        byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                        ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                                Unpooled.wrappedBuffer(itemBytes), false));
-                    } catch (Exception e) {
-                        log.error("Failed to encode bidi stream item", e);
-                        sendStreamError(ctx, e);
-                    }
-                }
-
-                @Override
-                public void onError(Throwable throwable) {
-                    log.error("Bidi streaming error: requestId={}", bidiRequest.getRequestId(), throwable);
-                    sendStreamError(ctx, throwable);
-                    finishStream();
-                }
-
-                @Override
-                public void onCompleted() {
+                    // Send response headers via event loop to avoid concurrent
+                    // writes with the event loop's inbound frame processing
                     if (ctx.channel().isActive()) {
-                        ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
+                        Http2Headers respHeaders = new DefaultHttp2Headers()
+                                .status(Http2Constants.STATUS_OK)
+                                .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
+                                .set(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
+                        ctx.executor().execute(() -> ctx.write(new DefaultHttp2HeadersFrame(respHeaders)));
                     }
-                    finishStream();
-                }
 
-                private void finishStream() {
+                    // Bridge the source into a StreamSubject immediately
+                    // to guard against hot sources that drop items emitted before
+                    // the network subscriber is attached.
+                    StreamSubject<Object> responseBuffer = new StreamSubject<>();
+                    responseSource.subscribe(new StreamObserver<>() {
+                        @Override
+                        public void onNext(Object item) {
+                            responseBuffer.onNext(item);
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            responseBuffer.onError(throwable);
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            responseBuffer.onCompleted();
+                        }
+                    });
+
+                    // Subscribe the network-forwarding observer to the buffer.
+                    // All ctx writes are dispatched to the event loop because
+                    // this observer is driven by the business executor thread.
+                    responseBuffer.subscribe(new StreamObserver<>() {
+                        @Override
+                        public void onNext(Object item) {
+                            if (!ctx.channel().isActive()) {
+                                return;
+                            }
+                            try {
+                                byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
+                                ctx.executor().execute(() -> ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                        Unpooled.wrappedBuffer(itemBytes), false)));
+                            } catch (Exception e) {
+                                log.error("Failed to encode bidi stream item", e);
+                                sendStreamError(ctx, e);
+                            }
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            log.error("Bidi streaming error: requestId={}", bidiRequest.getRequestId(), throwable);
+                            sendStreamError(ctx, throwable);
+                            finishStream();
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            if (ctx.channel().isActive()) {
+                                ctx.executor().execute(() -> ctx.writeAndFlush(new DefaultHttp2DataFrame(true)));
+                            }
+                            finishStream();
+                        }
+
+                        private void finishStream() {
+                            RpcContext.destroy();
+                            inflightRequests.decrementAndGet();
+                        }
+                    });
+                } catch (Exception e) {
+                    log.error("HTTP/2 bidi dispatch failed: {}", bidiRequest, e);
+                    sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
+                            "Bidi dispatch failed: " + e.getMessage());
                     RpcContext.destroy();
                     inflightRequests.decrementAndGet();
                 }
             });
-        } catch (Exception e) {
-            log.error("HTTP/2 bidi dispatch failed: {}", bidiRequest, e);
-            sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
-                    "Bidi dispatch failed: " + e.getMessage());
-            RpcContext.destroy();
+        } catch (RejectedExecutionException e) {
             inflightRequests.decrementAndGet();
+            sendError(ctx, Http2Constants.STATUS_SERVICE_UNAVAILABLE,
+                    "Request rejected: server thread pool is full");
         }
     }
 
@@ -531,7 +543,8 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                     StreamSource<Object> responseSource =
                             messageHandler.handleStream(bidiRequest, requestObserver);
 
-                    // Subscribe to get the single response value, then send as unary response
+                    // Subscribe to get the single response value, then send as unary response.
+                    // All ctx writes go through the event loop for thread safety.
                     responseSource.subscribe(new StreamObserver<>() {
                         private Object responseValue;
 
@@ -562,9 +575,11 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                                     Http2Headers respHeaders = new DefaultHttp2Headers()
                                             .status(Http2Constants.STATUS_OK)
                                             .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE);
-                                    ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
-                                    ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                                            Unpooled.wrappedBuffer(responseBytes), true));
+                                    ctx.executor().execute(() -> {
+                                        ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
+                                        ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                                Unpooled.wrappedBuffer(responseBytes), true));
+                                    });
                                 } catch (Exception e) {
                                     log.error("Failed to encode client stream response", e);
                                     sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
@@ -607,18 +622,23 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 });
     }
 
+    /**
+     * Send a terminal error DATA frame on a streaming response.
+     * Always dispatches to the event loop because callers may invoke
+     * from the business executor thread.
+     */
     private void sendStreamError(ChannelHandlerContext ctx, Throwable error) {
         if (ctx.channel().isActive()) {
             try {
                 String errorMsg = Objects.toString(error.getMessage(), error.getClass().getName());
                 byte[] errorBytes = errorMsg.getBytes(StandardCharsets.UTF_8);
-                ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                        Unpooled.wrappedBuffer(errorBytes), true))
+                ctx.executor().execute(() -> ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                Unpooled.wrappedBuffer(errorBytes), true))
                         .addListener(f -> {
                             if (!f.isSuccess()) {
                                 log.error("Failed to send stream error", f.cause());
                             }
-                        });
+                        }));
             } catch (Exception e) {
                 log.error("Failed to send stream error", e);
             }

@@ -82,14 +82,16 @@ public class Http2Client extends AbstractHttp2Client {
 
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
 
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
-            io.netty.channel.Channel streamChannel =
+            final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new Http2StreamResponseHandler(
                                     serialization, this::removeCallback, request.getRequestId()))
                             .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
             // Register before writing so a fast failure (channelInactive) can
             // always find and fail the future
@@ -97,8 +99,8 @@ public class Http2Client extends AbstractHttp2Client {
 
             byte[] payload = Http2PayloadCodec.encodeRequest(request, serialization);
             Http2Headers headers = buildRequestHeaders(request);
-            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(payload), true))
+            streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(payload), true))
                     .addListener(writeFuture -> {
                         if (writeFuture.isSuccess()) {
                             // Register error fusing only after the write succeeds,
@@ -121,6 +123,7 @@ public class Http2Client extends AbstractHttp2Client {
                                 future.onFailure(errorResponse);
                             }
                             incrErrorCount();
+                            streamChannel0.close();
                         }
                     });
         } catch (Exception e) {
@@ -130,6 +133,9 @@ public class Http2Client extends AbstractHttp2Client {
                 DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
                 errorResponse.setThrowable(new JawsServiceException("HTTP/2 request error", e));
                 future.onFailure(errorResponse);
+            }
+            if (streamChannel != null) {
+                streamChannel.close();
             }
             incrErrorCount();
             log.error("HTTP/2 request failed: url={} {}, {}", url.getUri(),
@@ -177,27 +183,29 @@ public class Http2Client extends AbstractHttp2Client {
         }
 
         StreamSubject<Object> observer = new StreamSubject<>();
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
             Http2StreamStreamingHandler streamHandler =
                     new Http2StreamStreamingHandler(serialization, observer);
 
-            io.netty.channel.Channel streamChannel =
+            final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(streamHandler)
                             .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
             // Subscriber cancel() → RST_STREAM: the server observes the
             // reset and stops producing
-            observer.setOnCancel(() -> cancelStream(streamChannel));
+            observer.setOnCancel(() -> cancelStream(streamChannel0));
 
             // Send request headers with streaming mode
             byte[] payload = Http2PayloadCodec.encodeRequest(request, serialization);
             Http2Headers headers = buildRequestHeaders(request)
                     .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getValue());
-            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+            streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(
                     Unpooled.wrappedBuffer(payload), true))
                     .addListener(f -> {
                 if (!f.isSuccess()) {
@@ -205,7 +213,7 @@ public class Http2Client extends AbstractHttp2Client {
                     observer.onError(
                             new JawsServiceException("HTTP/2 stream write failed", f.cause()));
                     incrErrorCount();
-                    streamChannel.close();
+                    streamChannel0.close();
                 }
             });
 
@@ -214,6 +222,9 @@ public class Http2Client extends AbstractHttp2Client {
             log.error("HTTP/2 streaming request failed: url={} {}, {}", url.getUri(),
                     RpcUtils.toString(request), e.getMessage());
             observer.onError(e);
+            if (streamChannel != null) {
+                streamChannel.close();
+            }
             incrErrorCount();
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
@@ -251,36 +262,38 @@ public class Http2Client extends AbstractHttp2Client {
         }
 
         StreamSubject<Object> observer = new StreamSubject<>();
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
             Http2StreamStreamingHandler streamHandler =
                     new Http2StreamStreamingHandler(serialization, observer);
 
-            io.netty.channel.Channel streamChannel =
+            final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(streamHandler)
                             .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
-            observer.setOnCancel(() -> cancelStream(streamChannel));
+            observer.setOnCancel(() -> cancelStream(streamChannel0));
 
             // Send HEADERS with bidi streaming mode
             Http2Headers headers = buildRequestHeaders(request)
                     .set(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
-            streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
+            streamChannel0.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             log.error("HTTP/2 bidi HEADERS write failed", f.cause());
                             observer.onError(
                                     new JawsServiceException("HTTP/2 bidi HEADERS write failed", f.cause()));
                             incrErrorCount();
-                            streamChannel.close();
+                            streamChannel0.close();
                         }
                     });
 
             // Send first DATA frame with Request metadata (no END_STREAM)
             byte[] metadataPayload = Http2PayloadCodec.encodeRequest(request, serialization);
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+            streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(
                     Unpooled.wrappedBuffer(metadataPayload), false))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
@@ -288,7 +301,7 @@ public class Http2Client extends AbstractHttp2Client {
                             observer.onError(
                                     new JawsServiceException("HTTP/2 bidi metadata write failed", f.cause()));
                             incrErrorCount();
-                            streamChannel.close();
+                            streamChannel0.close();
                         }
                     });
 
@@ -300,23 +313,23 @@ public class Http2Client extends AbstractHttp2Client {
             requestSource.subscribe(new StreamObserver<>() {
                 @Override
                 public void onNext(Object item) {
-                    if (!streamChannel.isActive()) {
+                    if (!streamChannel0.isActive()) {
                         return;
                     }
                     try {
                         byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                        streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(
                                         Unpooled.wrappedBuffer(itemBytes), false))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
                                         log.error("HTTP/2 bidi stream item write failed", f.cause());
-                                        cancelStream(streamChannel);
+                                        cancelStream(streamChannel0);
                                         incrErrorCount();
                                     }
                                 });
                     } catch (Exception e) {
                         log.error("Failed to encode bidi stream item", e);
-                        cancelStream(streamChannel);
+                        cancelStream(streamChannel0);
                         incrErrorCount();
                     }
                 }
@@ -324,14 +337,14 @@ public class Http2Client extends AbstractHttp2Client {
                 @Override
                 public void onError(Throwable throwable) {
                     log.error("Client bidi request stream error", throwable);
-                    cancelStream(streamChannel);
+                    cancelStream(streamChannel0);
                     incrErrorCount();
                 }
 
                 @Override
                 public void onCompleted() {
-                    if (streamChannel.isActive()) {
-                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                    if (streamChannel0.isActive()) {
+                        streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(true))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
                                         log.error("HTTP/2 bidi END_STREAM write failed", f.cause());
@@ -347,6 +360,9 @@ public class Http2Client extends AbstractHttp2Client {
             log.error("HTTP/2 bidi streaming request failed: url={} {}, {}", url.getUri(),
                     RpcUtils.toString(request), e.getMessage());
             observer.onError(e);
+            if (streamChannel != null) {
+                streamChannel.close();
+            }
             incrErrorCount();
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
@@ -374,14 +390,16 @@ public class Http2Client extends AbstractHttp2Client {
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
         StreamSubject<Object> observer = new StreamSubject<>();
 
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
-            io.netty.channel.Channel streamChannel =
+            final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new Http2StreamResponseHandler(
                                     serialization, this::removeCallback, request.getRequestId()))
                             .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
             registerCallback(request.getRequestId(), responseFuture);
 
@@ -407,20 +425,20 @@ public class Http2Client extends AbstractHttp2Client {
             // Send HEADERS with client streaming mode
             Http2Headers headers = buildRequestHeaders(request)
                     .set(Http2Constants.HEADER_STREAMING, StreamType.CLIENT.getValue());
-            streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
+            streamChannel0.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             log.error("HTTP/2 client stream HEADERS write failed", f.cause());
                             failClientStream(request.getRequestId(),
                                     new JawsServiceException("HTTP/2 client stream HEADERS write failed", f.cause()));
                             incrErrorCount();
-                            streamChannel.close();
+                            streamChannel0.close();
                         }
                     });
 
             // Send first DATA frame with Request metadata (no END_STREAM)
             byte[] metadataPayload = Http2PayloadCodec.encodeRequest(request, serialization);
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+            streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(
                     Unpooled.wrappedBuffer(metadataPayload), false))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
@@ -428,7 +446,7 @@ public class Http2Client extends AbstractHttp2Client {
                             failClientStream(request.getRequestId(),
                                     new JawsServiceException("HTTP/2 client stream metadata write failed", f.cause()));
                             incrErrorCount();
-                            streamChannel.close();
+                            streamChannel0.close();
                         }
                     });
 
@@ -440,23 +458,23 @@ public class Http2Client extends AbstractHttp2Client {
             requestSource.subscribe(new StreamObserver<>() {
                 @Override
                 public void onNext(Object item) {
-                    if (!streamChannel.isActive()) {
+                    if (!streamChannel0.isActive()) {
                         return;
                     }
                     try {
                         byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                        streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(
                                         Unpooled.wrappedBuffer(itemBytes), false))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
                                         log.error("HTTP/2 client stream item write failed", f.cause());
-                                        cancelStream(streamChannel);
+                                        cancelStream(streamChannel0);
                                         incrErrorCount();
                                     }
                                 });
                     } catch (Exception e) {
                         log.error("Failed to encode client stream item", e);
-                        cancelStream(streamChannel);
+                        cancelStream(streamChannel0);
                         incrErrorCount();
                     }
                 }
@@ -464,14 +482,14 @@ public class Http2Client extends AbstractHttp2Client {
                 @Override
                 public void onError(Throwable throwable) {
                     log.error("Client stream request error", throwable);
-                    cancelStream(streamChannel);
+                    cancelStream(streamChannel0);
                     incrErrorCount();
                 }
 
                 @Override
                 public void onCompleted() {
-                    if (streamChannel.isActive()) {
-                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                    if (streamChannel0.isActive()) {
+                        streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(true))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
                                         log.error("HTTP/2 client stream END_STREAM write failed", f.cause());
@@ -491,6 +509,9 @@ public class Http2Client extends AbstractHttp2Client {
                 DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
                 errorResponse.setThrowable(new JawsServiceException("HTTP/2 client stream request error", e));
                 future.onFailure(errorResponse);
+            }
+            if (streamChannel != null) {
+                streamChannel.close();
             }
             incrErrorCount();
             observer.onError(e);

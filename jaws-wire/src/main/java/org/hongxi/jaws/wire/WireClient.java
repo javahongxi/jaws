@@ -243,6 +243,7 @@ public class WireClient extends AbstractHttp2Client {
                                 Message requestMessage, String grpcPath, int timeout,
                                 DefaultResponseFuture responseFuture, AtomicInteger attemptCounter) {
         int attempt = attemptCounter.get();
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
@@ -256,9 +257,10 @@ public class WireClient extends AbstractHttp2Client {
                     () -> removeCallback(responseFuture.getRequestId()),
                     false /* retry loop manages the callback */);
 
-            io.netty.channel.Channel streamChannel = new Http2StreamChannelBootstrap(connChannel)
+            final io.netty.channel.Channel streamChannel0 = new Http2StreamChannelBootstrap(connChannel)
                     .handler(handler)
                     .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
             // Retry-coordinated callback: only one callback per completion
             // wins the CAS race to schedule the next attempt
@@ -269,7 +271,7 @@ public class WireClient extends AbstractHttp2Client {
                     return;
                 }
                 incrErrorCount();
-                cancelStream(streamChannel);
+                cancelStream(streamChannel0);
 
                 // CAS: only the first callback per completion event acts
                 if (attemptCounter.compareAndSet(attempt, attempt + 1)
@@ -291,9 +293,9 @@ public class WireClient extends AbstractHttp2Client {
             });
 
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
-            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compression);
+            streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
@@ -303,6 +305,9 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
         } catch (Exception e) {
+            if (streamChannel != null) {
+                streamChannel.close();
+            }
             if (attemptCounter.compareAndSet(attempt, attempt + 1)
                     && retryPolicy.hasAnotherAttempt(attempt)
                     && WireRetryPolicy.isRetryableFailure(e)) {
@@ -334,14 +339,16 @@ public class WireClient extends AbstractHttp2Client {
     private void doSingleAttempt(Request request, Parser<? extends Message> responseParser,
                                   Message requestMessage, String grpcPath, int timeout,
                                   DefaultResponseFuture responseFuture) {
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
             // Open a new HTTP/2 stream; the handler completes the future
             // when the gRPC response END_STREAM arrives
-            io.netty.channel.Channel streamChannel = new Http2StreamChannelBootstrap(connChannel)
+            final io.netty.channel.Channel streamChannel0 = new Http2StreamChannelBootstrap(connChannel)
                     .handler(newResponseHandler(responseParser, responseFuture))
                     .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
             // Register callback for timeout + OOM protection; timeout → cancel
             // triggers whenComplete below → RST_STREAM(CANCEL) so the server
@@ -352,14 +359,14 @@ public class WireClient extends AbstractHttp2Client {
                     resetErrorCount();
                 } else {
                     incrErrorCount();
-                    cancelStream(streamChannel);
+                    cancelStream(streamChannel0);
                 }
             });
 
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
-            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compression);
+            streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             ResponseFuture future = removeCallback(request.getRequestId());
@@ -369,6 +376,7 @@ public class WireClient extends AbstractHttp2Client {
                                         "Wire stream write failed", f.cause()));
                                 future.onFailure(errorResponse);
                             }
+                            streamChannel0.close();
                             // incrErrorCount is handled by whenComplete callback above
                         }
                     });
@@ -382,6 +390,9 @@ public class WireClient extends AbstractHttp2Client {
                 // incrErrorCount is handled by whenComplete callback above
             } else {
                 incrErrorCount();
+            }
+            if (streamChannel != null) {
+                streamChannel.close();
             }
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
@@ -440,29 +451,31 @@ public class WireClient extends AbstractHttp2Client {
         int timeout = resolveTimeout(request, urlTimeout);
 
         StreamSubject<Object> observer = new StreamSubject<>();
-
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
-            io.netty.channel.Channel streamChannel =
+            final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new WireStreamStreamingHandler(
                                     responseParser, observer, maxMessageSize, maxInboundMetadataSize))
                             .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
             // Subscriber cancel() → RST_STREAM(CANCEL): the server observes the
             // reset and stops producing (gRPC cancellation semantics)
-            observer.setOnCancel(() -> cancelStream(streamChannel));
+            observer.setOnCancel(() -> cancelStream(streamChannel0));
 
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel.alloc(), compression);
-            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compression);
+            streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
+            streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             observer.onError(
                                     new JawsServiceException("Wire stream write failed", f.cause()));
                             incrErrorCount();
+                            streamChannel0.close();
                         }
                     });
 
@@ -470,6 +483,9 @@ public class WireClient extends AbstractHttp2Client {
         } catch (Exception e) {
             log.error("Wire streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
             observer.onError(e);
+            if (streamChannel != null) {
+                streamChannel.close();
+            }
             incrErrorCount();
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
@@ -521,14 +537,15 @@ public class WireClient extends AbstractHttp2Client {
         // Use StreamSubject (synchronous delivery) to guarantee onNext fires
         // before onComplete on late subscribers.
         StreamSubject<Object> observer = new StreamSubject<>();
-
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
-            io.netty.channel.Channel streamChannel =
+            final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(newResponseHandler(responseParser, responseFuture))
                             .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
             // Register before writing so a fast failure can find and fail the future
             registerCallback(request.getRequestId(), responseFuture);
@@ -554,7 +571,7 @@ public class WireClient extends AbstractHttp2Client {
 
             // Send HEADERS without END_STREAM (client-streaming: request items follow)
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
+            streamChannel0.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             log.error("Wire client-stream HEADERS write failed", f.cause());
@@ -566,7 +583,7 @@ public class WireClient extends AbstractHttp2Client {
                                 future.onFailure(errorResponse);
                             }
                             incrErrorCount();
-                            streamChannel.close();
+                            streamChannel0.close();
                         }
                     });
 
@@ -578,23 +595,23 @@ public class WireClient extends AbstractHttp2Client {
             requestSource.subscribe(new StreamObserver<>() {
                 @Override
                 public void onNext(Object item) {
-                    if (!streamChannel.isActive()) {
+                    if (!streamChannel0.isActive()) {
                         return;
                     }
                     if (item instanceof Message msg) {
-                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel.alloc(), compression);
-                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
+                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel0.alloc(), compression);
+                        streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
                                         log.error("Wire client-stream item write failed", f.cause());
-                                        cancelStream(streamChannel);
+                                        cancelStream(streamChannel0);
                                         incrErrorCount();
                                     }
                                 });
                     } else {
                         log.error("Wire client-stream item must be a protobuf Message but got: {}",
                                 item != null ? item.getClass().getName() : "null");
-                        cancelStream(streamChannel);
+                        cancelStream(streamChannel0);
                         incrErrorCount();
                     }
                 }
@@ -602,14 +619,14 @@ public class WireClient extends AbstractHttp2Client {
                 @Override
                 public void onError(Throwable throwable) {
                     log.error("Client stream request error", throwable);
-                    cancelStream(streamChannel);
+                    cancelStream(streamChannel0);
                     incrErrorCount();
                 }
 
                 @Override
                 public void onCompleted() {
-                    if (streamChannel.isActive()) {
-                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                    if (streamChannel0.isActive()) {
+                        streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(true))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
                                         log.error("Wire client-stream END_STREAM write failed", f.cause());
@@ -624,6 +641,9 @@ public class WireClient extends AbstractHttp2Client {
         } catch (Exception e) {
             log.error("Wire client-stream request failed: url={} path={}", url.getUri(), grpcPath, e);
             observer.onError(e);
+            if (streamChannel != null) {
+                streamChannel.close();
+            }
             incrErrorCount();
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
@@ -662,29 +682,30 @@ public class WireClient extends AbstractHttp2Client {
         int timeout = resolveTimeout(request, urlTimeout);
 
         StreamSubject<Object> observer = new StreamSubject<>();
-
+        io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
-            io.netty.channel.Channel streamChannel =
+            final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new WireStreamStreamingHandler(
                                     responseParser, observer, maxMessageSize, maxInboundMetadataSize))
                             .open().syncUninterruptibly().getNow();
+            streamChannel = streamChannel0;
 
             // Subscriber cancel() → RST_STREAM(CANCEL)
-            observer.setOnCancel(() -> cancelStream(streamChannel));
+            observer.setOnCancel(() -> cancelStream(streamChannel0));
 
             // Send HEADERS without END_STREAM (bidi: request stream follows)
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
+            streamChannel0.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
                             log.error("Wire bidi HEADERS write failed", f.cause());
                             observer.onError(
                                     new JawsServiceException("Wire bidi HEADERS write failed", f.cause()));
                             incrErrorCount();
-                            cancelStream(streamChannel);
+                            cancelStream(streamChannel0);
                         }
                     });
 
@@ -696,23 +717,23 @@ public class WireClient extends AbstractHttp2Client {
             requestSource.subscribe(new StreamObserver<>() {
                 @Override
                 public void onNext(Object item) {
-                    if (!streamChannel.isActive()) {
+                    if (!streamChannel0.isActive()) {
                         return;
                     }
                     if (item instanceof Message msg) {
-                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel.alloc(), compression);
-                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
+                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel0.alloc(), compression);
+                        streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
                                         log.error("Wire bidi stream item write failed", f.cause());
-                                        cancelStream(streamChannel);
+                                        cancelStream(streamChannel0);
                                         incrErrorCount();
                                     }
                                 });
                     } else {
                         log.error("Wire bidi stream item must be a protobuf Message but got: {}",
                                 item != null ? item.getClass().getName() : "null");
-                        cancelStream(streamChannel);
+                        cancelStream(streamChannel0);
                         incrErrorCount();
                     }
                 }
@@ -720,14 +741,14 @@ public class WireClient extends AbstractHttp2Client {
                 @Override
                 public void onError(Throwable throwable) {
                     log.error("Client bidi request stream error", throwable);
-                    cancelStream(streamChannel);
+                    cancelStream(streamChannel0);
                     incrErrorCount();
                 }
 
                 @Override
                 public void onCompleted() {
-                    if (streamChannel.isActive()) {
-                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                    if (streamChannel0.isActive()) {
+                        streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(true))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
                                         log.error("Wire bidi END_STREAM write failed", f.cause());
@@ -742,6 +763,9 @@ public class WireClient extends AbstractHttp2Client {
         } catch (Exception e) {
             log.error("Wire bidi streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
             observer.onError(e);
+            if (streamChannel != null) {
+                streamChannel.close();
+            }
             incrErrorCount();
             if (e instanceof JawsAbstractException jae) {
                 throw jae;
