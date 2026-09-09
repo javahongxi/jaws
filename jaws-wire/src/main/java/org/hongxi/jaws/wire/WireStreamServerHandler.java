@@ -155,11 +155,6 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 onHeaders(ctx, headersFrame);
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
-            } else if (msg instanceof Http2ResetFrame) {
-                // Caller canceled the call (grpc-java Context cancellation):
-                // stop producing; the stream channel closes automatically.
-                canceled = true;
-                ReferenceCountUtil.release(msg);
             } else {
                 ReferenceCountUtil.release(msg);
             }
@@ -660,6 +655,27 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             return 0;
         }
         return Math.max(0, deadlineMs - System.currentTimeMillis());
+    }
+
+    /**
+     * Netty surfaces an inbound RST_STREAM to a stream channel as a user event —
+     * never as an inbound message — so this is the only place where the reset's
+     * error code can be read. {@link #channelInactive} follows within the same
+     * millisecond because the codec closes the stream channel, and that close is
+     * what has been keeping caller cancellation working all along; handling the
+     * event here records <em>why</em> the call ended instead of leaving it to the
+     * side effect. A stream reset never reaches this handler as a message, on this
+     * or the client side, so no {@code channelRead} branch should try to match it.
+     */
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof Http2ResetFrame reset) {
+            canceled = true;
+            log.info("gRPC stream cancelled by the caller: path={}, errorCode={}",
+                    path, reset.errorCode());
+            return;
+        }
+        super.userEventTriggered(ctx, evt);
     }
 
     @Override
