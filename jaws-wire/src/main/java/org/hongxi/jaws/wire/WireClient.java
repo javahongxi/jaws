@@ -24,6 +24,8 @@ import org.hongxi.jaws.rpc.ResponseFuture;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.StreamPublisher;
 import org.hongxi.jaws.transport.http2.AbstractHttp2Client;
+import org.hongxi.jaws.transport.http2.Http2Constants;
+import org.hongxi.jaws.transport.http2.StreamType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -473,6 +475,177 @@ public class WireClient extends AbstractHttp2Client {
             }
             throw new JawsServiceException("WireClient requestStream failed: url="
                     + url.getUri() + " path=" + grpcPath, e);
+        }
+    }
+
+    /**
+     * Unified client/bidi streaming entry point. Routes based on the
+     * {@code x-jaws-streaming} header in the request attachments:
+     * {@link StreamType#CLIENT} → client-streaming (single response);
+     * otherwise → bidirectional streaming (streamed response).
+     *
+     * @param request        the RPC request (carries metadata/attachments)
+     * @param requestStream  a publisher emitting client request {@link Message} items
+     * @param responseParser the parser for the expected response message type
+     * @return a publisher emitting response items (single item for client-streaming)
+     */
+    public Flow.Publisher<Object> requestStream(Request request, Flow.Publisher<Object> requestStream,
+                                                Parser<? extends Message> responseParser) {
+        String streamingHeader = request.getAttachments().get(Http2Constants.HEADER_STREAMING);
+        StreamType streamType = StreamType.fromValue(streamingHeader);
+        if (streamType == StreamType.CLIENT) {
+            return doClientStreamRequest(request, requestStream, responseParser);
+        }
+        return requestBiStream(request, requestStream, responseParser);
+    }
+
+    /**
+     * Client-streaming: send a stream of request items, receive a single response.
+     */
+    private Flow.Publisher<Object> doClientStreamRequest(Request request, Flow.Publisher<Object> requestStream,
+                                                         Parser<? extends Message> responseParser) {
+        if (!isAvailable()) {
+            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
+        }
+
+        String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
+
+        int urlTimeout = url.getMethodParameter(
+                request.getMethodName(), request.getParamDesc(),
+                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
+                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+        int timeout = resolveTimeout(request, urlTimeout);
+
+        DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
+        // Use StreamPublisher (synchronous delivery) to guarantee onNext fires
+        // before onComplete on late subscribers.
+        StreamPublisher publisher = new StreamPublisher();
+
+        try {
+            io.netty.channel.Channel connChannel = activeChannel();
+
+            io.netty.channel.Channel streamChannel =
+                    new Http2StreamChannelBootstrap(connChannel)
+                            .handler(newResponseHandler(responseParser, responseFuture))
+                            .open().syncUninterruptibly().getNow();
+
+            // Register before writing so a fast failure can find and fail the future
+            registerCallback(request.getRequestId(), responseFuture);
+
+            // Bridge responseFuture → StreamPublisher
+            responseFuture.whenComplete((response, throwable) -> {
+                if (throwable != null) {
+                    publisher.completeExceptionally(throwable);
+                } else if (response.getThrowable() != null) {
+                    publisher.completeExceptionally(response.getThrowable());
+                } else {
+                    if (response.getValue() != null) {
+                        publisher.addItem(response.getValue());
+                    }
+                    publisher.complete();
+                }
+                if (throwable == null || ExceptionUtils.isBizException(throwable)) {
+                    resetErrorCount();
+                } else {
+                    incrErrorCount();
+                }
+            });
+
+            // Send HEADERS without END_STREAM (client-streaming: request items follow)
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
+            streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
+                    .addListener(f -> {
+                        if (!f.isSuccess()) {
+                            log.error("Wire client-stream HEADERS write failed", f.cause());
+                            failClientStream(responseFuture, request.getRequestId(),
+                                    new JawsServiceException("Wire client-stream HEADERS write failed", f.cause()));
+                            incrErrorCount();
+                            streamChannel.close();
+                        }
+                    });
+
+            // Subscribe to the user's request stream in a separate thread
+            Thread subscribeThread = new Thread(() -> requestStream.subscribe(new Flow.Subscriber<>() {
+                private Flow.Subscription subscription;
+
+                @Override
+                public void onSubscribe(Flow.Subscription s) {
+                    this.subscription = s;
+                    s.request(Long.MAX_VALUE);
+                }
+
+                @Override
+                public void onNext(Object item) {
+                    if (!streamChannel.isActive()) {
+                        subscription.cancel();
+                        return;
+                    }
+                    if (item instanceof Message msg) {
+                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel.alloc(), compression);
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("Wire client-stream item write failed", f.cause());
+                                        subscription.cancel();
+                                        cancelStream(streamChannel);
+                                        incrErrorCount();
+                                    }
+                                });
+                    } else {
+                        log.error("Wire client-stream item must be a protobuf Message but got: {}",
+                                item != null ? item.getClass().getName() : "null");
+                        subscription.cancel();
+                        cancelStream(streamChannel);
+                        incrErrorCount();
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Client stream request error", throwable);
+                    cancelStream(streamChannel);
+                    incrErrorCount();
+                }
+
+                @Override
+                public void onComplete() {
+                    // Send END_STREAM to signal request stream complete
+                    if (streamChannel.isActive()) {
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("Wire client-stream END_STREAM write failed", f.cause());
+                                        incrErrorCount();
+                                    }
+                                });
+                    }
+                }
+            }), "wire-client-stream-writer");
+            subscribeThread.setDaemon(true);
+            subscribeThread.start();
+
+            return publisher;
+        } catch (Exception e) {
+            log.error("Wire client-stream request failed: url={} path={}", url.getUri(), grpcPath, e);
+            publisher.completeExceptionally(e);
+            incrErrorCount();
+            if (e instanceof JawsAbstractException jae) {
+                throw jae;
+            }
+            throw new JawsServiceException("WireClient client-stream request failed: url="
+                    + url.getUri() + " path=" + grpcPath, e);
+        }
+    }
+
+    /**
+     * Fail the response future for a client-streaming call during the write phase.
+     */
+    private void failClientStream(DefaultResponseFuture responseFuture, long requestId, Exception cause) {
+        ResponseFuture future = removeCallback(requestId);
+        if (future != null) {
+            DefaultResponse errorResponse = new DefaultResponse(requestId);
+            errorResponse.setThrowable(cause);
+            future.onFailure(errorResponse);
         }
     }
 

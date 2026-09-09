@@ -48,23 +48,13 @@ public class JawsReference<T> extends AbstractReference<T> {
     }
 
     @Override
-    public Flow.Publisher<Object> callStream(Request request) {
+    public Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
         if (!isAvailable()) {
             throw new JawsServiceException(this.getClass().getSimpleName() +
                     " callStream failed: endpoint is not available, url=" + url.getUri());
         }
         request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
-        return client.requestStream(request);
-    }
-
-    @Override
-    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        if (!isAvailable()) {
-            throw new JawsServiceException(this.getClass().getSimpleName() +
-                    " callBiStream failed: endpoint is not available, url=" + url.getUri());
-        }
-        request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
-        return client.requestBiStream(request, requestStream);
+        return client.requestStream(request, requestStream);
     }
 
     @Override

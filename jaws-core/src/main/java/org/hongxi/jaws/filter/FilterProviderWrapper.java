@@ -52,13 +52,8 @@ class FilterProviderWrapper<T> implements Provider<T> {
     }
 
     @Override
-    public Flow.Publisher<Object> callStream(Request request) {
-        return original.callStream(request);
-    }
-
-    @Override
-    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        return original.callBiStream(request, requestStream);
+    public Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
+        return original.callStream(request, requestStream);
     }
 
     @Override

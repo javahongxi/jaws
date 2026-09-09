@@ -4,6 +4,8 @@ import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.transport.http2.Http2Constants;
+import org.hongxi.jaws.transport.http2.StreamType;
 import org.hongxi.jaws.wire.WireClient;
 
 import java.util.HashMap;
@@ -22,6 +24,12 @@ import java.util.concurrent.SubmissionPublisher;
  *       by the grpc-java server</li>
  *   <li><b>Deadline &amp; cancellation</b>: grpc-timeout propagation; the client
  *       resets the stream with RST_STREAM(CANCEL) on expiry</li>
+ *   <li><b>Server-streaming</b>: WireClient opens a server-stream to the
+ *       grpc-java server's SayHelloStream method and receives multiple
+ *       greeting replies</li>
+ *   <li><b>Client-streaming</b>: WireClient opens a client-stream to the
+ *       grpc-java server's ClientStreamGreet method, sends multiple names,
+ *       and receives a single aggregated reply</li>
  *   <li><b>Bidirectional streaming</b>: WireClient opens a bidi stream to the
  *       grpc-java server's BidiGreet method, sends multiple request items,
  *       and receives responses concurrently</li>
@@ -102,8 +110,115 @@ public class WireCallGrpcDemo {
         }
         slowClient.close();
 
-        // ---- 4. Bidirectional streaming ----
-        System.out.println("\n=== 4. Bidirectional Streaming ===");
+        // ---- 4. Server-streaming ----
+        System.out.println("\n=== 4. Server Streaming ===");
+        WireClient serverStreamClient = new WireClient(buildUrl(Map.of(
+                "connectTimeout", "5000", "requestTimeout", "10000")));
+        serverStreamClient.open();
+
+        DefaultRequest serverStreamRequest = new DefaultRequest();
+        serverStreamRequest.setInterfaceName("interop.Greeter");
+        serverStreamRequest.setMethodName("SayHelloStream");
+        serverStreamRequest.setArguments(new Object[]{
+                HelloRequest.newBuilder().setName("jaws-wire-stream").build()
+        });
+
+        CountDownLatch serverStreamLatch = new CountDownLatch(1);
+        int[] serverStreamCount = {0};
+
+        Flow.Publisher<Object> serverStreamResponse =
+                serverStreamClient.requestStream(serverStreamRequest, HelloReply.parser());
+        serverStreamResponse.subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(Object item) {
+                serverStreamCount[0]++;
+                HelloReply reply = (HelloReply) item;
+                System.out.println("  server-stream item: " + reply.getMessage());
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("  server-stream error: " + throwable.getMessage());
+                serverStreamLatch.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                System.out.println("  server-stream completed (" + serverStreamCount[0] + " items)");
+                serverStreamLatch.countDown();
+            }
+        });
+
+        if (!serverStreamLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+            System.err.println("ERROR: server-streaming call timed out");
+        } else if (serverStreamCount[0] != 3) {
+            System.err.println("ERROR: expected 3 server-stream items, got: " + serverStreamCount[0]);
+        }
+        serverStreamClient.close();
+
+        // ---- 5. Client-streaming ----
+        System.out.println("\n=== 5. Client Streaming ===");
+        WireClient clientStreamClient = new WireClient(buildUrl(Map.of(
+                "connectTimeout", "5000", "requestTimeout", "10000")));
+        clientStreamClient.open();
+
+        DefaultRequest clientStreamRequest = new DefaultRequest();
+        clientStreamRequest.setInterfaceName("interop.Greeter");
+        clientStreamRequest.setMethodName("ClientStreamGreet");
+        clientStreamRequest.setArguments(new Object[0]);
+        clientStreamRequest.setAttachment(Http2Constants.HEADER_STREAMING, StreamType.CLIENT.getValue());
+
+        SubmissionPublisher<Object> clientStreamPublisher = new SubmissionPublisher<>();
+        CountDownLatch clientStreamLatch = new CountDownLatch(1);
+
+        Flow.Publisher<Object> clientStreamResponse =
+                clientStreamClient.requestStream(clientStreamRequest, clientStreamPublisher, HelloReply.parser());
+        clientStreamResponse.subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(Object item) {
+                HelloReply reply = (HelloReply) item;
+                System.out.println("  client-stream response: " + reply.getMessage());
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("  client-stream error: " + throwable.getMessage());
+                clientStreamLatch.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                System.out.println("  client-stream completed");
+                clientStreamLatch.countDown();
+            }
+        });
+
+        Thread.sleep(200);
+        clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Alice").build());
+        Thread.sleep(100);
+        clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Bob").build());
+        Thread.sleep(100);
+        clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Charlie").build());
+        Thread.sleep(100);
+        clientStreamPublisher.close();
+
+        if (!clientStreamLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+            System.err.println("ERROR: client-streaming call timed out");
+        }
+        clientStreamClient.close();
+
+        // ---- 6. Bidirectional streaming ----
+        System.out.println("\n=== 6. Bidirectional Streaming ===");
         WireClient bidiClient = new WireClient(buildUrl(Map.of(
                 "connectTimeout", "5000", "requestTimeout", "10000")));
         bidiClient.open();
@@ -165,6 +280,9 @@ public class WireCallGrpcDemo {
         bidiClient.close();
 
         System.out.println("\n=== WireClient -> grpc-java Passed ===");
+
+        // Force exit (Netty non-daemon threads prevent JVM exit)
+        System.exit(0);
     }
 
     private static URL buildUrl(Map<String, String> extraParams) {

@@ -145,15 +145,32 @@ public class Http2Client extends AbstractHttp2Client {
     }
 
     /**
-     * Open a server-streaming request: send one request and receive a
-     * {@link Flow.Publisher} that emits each response item as it arrives.
-     * <p>
-     * The caller subscribes to the returned publisher to consume the stream.
+     * Unified streaming request.  Handles all streaming modes:
+     * <ul>
+     *   <li>{@code requestStream == null} → server-streaming</li>
+     *   <li>{@code requestStream != null} → client/bidi-streaming
+     *       (StreamType in HEADERS distinguishes them)</li>
+     * </ul>
      *
-     * @param request the RPC request
+     * @param request       the RPC request
+     * @param requestStream a publisher emitting client request items, or
+     *                      {@code null} for server-streaming
      * @return a publisher emitting streamed response items
      */
-    public Flow.Publisher<Object> requestStream(Request request) {
+    @Override
+    public Flow.Publisher<Object> requestStream(Request request, Flow.Publisher<Object> requestStream) {
+        if (requestStream == null) {
+            return doServerStreamRequest(request);
+        }
+        // Determine stream type from the request's streaming header
+        // (set by the caller before invoking this method)
+        return doClientOrBidiStreamRequest(request, requestStream);
+    }
+
+    /**
+     * Server-streaming: send one request, receive a Publisher of response items.
+     */
+    private Flow.Publisher<Object> doServerStreamRequest(Request request) {
         if (!isAvailable()) {
             throw new JawsServiceException("HTTP/2 channel is not available: url="
                     + url.getUri() + RpcUtils.toString(request));
@@ -207,18 +224,28 @@ public class Http2Client extends AbstractHttp2Client {
     }
 
     /**
-     * Open a bidirectional streaming call: send a stream of request items and
-     * receive a stream of response items concurrently.
-     * <p>
-     * The first DATA frame carries the serialized Request metadata; subsequent
-     * DATA frames each carry one request stream item.  When the
-     * {@code requestStream} completes, an END_STREAM DATA frame is sent.
-     *
-     * @param request       the initial RPC request (carries metadata/attachments)
-     * @param requestStream a publisher emitting client request items
-     * @return a publisher emitting streamed response items
+     * Client/bidi-streaming: send a stream of request items and receive a
+     * Publisher of response items.  The wire format (HEADERS streaming mode)
+     * is determined by the caller via the request attachments.
      */
-    public Flow.Publisher<Object> requestBiStream(Request request, Flow.Publisher<Object> requestStream) {
+    private Flow.Publisher<Object> doClientOrBidiStreamRequest(Request request, Flow.Publisher<Object> requestStream) {
+        // Detect stream type from the request's streaming header if present,
+        // otherwise default to BIDIRECTIONAL (the common case for non-null requestStream)
+        StreamType streamType = StreamType.BIDIRECTIONAL;
+        String streamingHeader = request.getAttachments().get(Http2Constants.HEADER_STREAMING);
+        if (streamingHeader != null) {
+            streamType = StreamType.fromValue(streamingHeader);
+        }
+        if (streamType == StreamType.CLIENT) {
+            return doClientStreamRequest(request, requestStream);
+        }
+        return doBidiStreamRequest(request, requestStream);
+    }
+
+    /**
+     * Bidirectional streaming: send request items, receive response items concurrently.
+     */
+    private Flow.Publisher<Object> doBidiStreamRequest(Request request, Flow.Publisher<Object> requestStream) {
         if (!isAvailable()) {
             throw new JawsServiceException("HTTP/2 channel is not available: url="
                     + url.getUri() + RpcUtils.toString(request));
@@ -342,6 +369,173 @@ public class Http2Client extends AbstractHttp2Client {
     }
 
     /**
+     * Client-streaming: send request items, receive a single response.
+     */
+    private Flow.Publisher<Object> doClientStreamRequest(Request request, Flow.Publisher<Object> requestStream) {
+        if (!isAvailable()) {
+            throw new JawsServiceException("HTTP/2 channel is not available: url="
+                    + url.getUri() + RpcUtils.toString(request));
+        }
+
+        int urlTimeout = url.getMethodParameter(
+                request.getMethodName(), request.getParamDesc(),
+                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
+                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+        int timeout = resolveTimeout(request, urlTimeout);
+
+        DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
+        // Use StreamPublisher (synchronous delivery) instead of SubmissionPublisher
+        // to guarantee onNext fires before onComplete on late subscribers.
+        StreamPublisher publisher = new StreamPublisher();
+
+        try {
+            io.netty.channel.Channel connChannel = activeChannel();
+
+            io.netty.channel.Channel streamChannel =
+                    new Http2StreamChannelBootstrap(connChannel)
+                            .handler(new Http2StreamResponseHandler(
+                                    serialization, this::removeCallback, request.getRequestId()))
+                            .open().syncUninterruptibly().getNow();
+
+            // Register before writing so a fast failure can find and fail the future
+            registerCallback(request.getRequestId(), responseFuture);
+
+            // Bridge responseFuture → StreamPublisher
+            responseFuture.whenComplete((response, throwable) -> {
+                if (throwable != null) {
+                    publisher.completeExceptionally(throwable);
+                } else if (response.getThrowable() != null) {
+                    publisher.completeExceptionally(response.getThrowable());
+                } else {
+                    if (response.getValue() != null) {
+                        publisher.addItem(response.getValue());
+                    }
+                    publisher.complete();
+                }
+                if (throwable == null || ExceptionUtils.isBizException(throwable)) {
+                    resetErrorCount();
+                } else {
+                    incrErrorCount();
+                }
+            });
+
+            // Send HEADERS with client streaming mode
+            Http2Headers headers = buildRequestHeaders(request)
+                    .set(Http2Constants.HEADER_STREAMING, StreamType.CLIENT.getValue());
+            streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
+                    .addListener(f -> {
+                        if (!f.isSuccess()) {
+                            log.error("HTTP/2 client stream HEADERS write failed", f.cause());
+                            failClientStream(responseFuture, request.getRequestId(),
+                                    new JawsServiceException("HTTP/2 client stream HEADERS write failed", f.cause()));
+                            incrErrorCount();
+                            streamChannel.close();
+                        }
+                    });
+
+            // Send first DATA frame with Request metadata (no END_STREAM)
+            byte[] metadataPayload = Http2PayloadCodec.encodeRequest(request, serialization);
+            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                    Unpooled.wrappedBuffer(metadataPayload), false))
+                    .addListener(f -> {
+                        if (!f.isSuccess()) {
+                            log.error("HTTP/2 client stream metadata DATA write failed", f.cause());
+                            failClientStream(responseFuture, request.getRequestId(),
+                                    new JawsServiceException("HTTP/2 client stream metadata write failed", f.cause()));
+                            incrErrorCount();
+                            streamChannel.close();
+                        }
+                    });
+
+            // Subscribe to the user's request stream in a separate thread
+            Thread subscribeThread = new Thread(() -> requestStream.subscribe(new Flow.Subscriber<>() {
+                private Flow.Subscription subscription;
+
+                @Override
+                public void onSubscribe(Flow.Subscription s) {
+                    this.subscription = s;
+                    s.request(Long.MAX_VALUE);
+                }
+
+                @Override
+                public void onNext(Object item) {
+                    if (!streamChannel.isActive()) {
+                        subscription.cancel();
+                        return;
+                    }
+                    try {
+                        byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                                Unpooled.wrappedBuffer(itemBytes), false))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("HTTP/2 client stream item write failed", f.cause());
+                                        subscription.cancel();
+                                        cancelStream(streamChannel);
+                                        incrErrorCount();
+                                    }
+                                });
+                    } catch (Exception e) {
+                        log.error("Failed to encode client stream item", e);
+                        subscription.cancel();
+                        cancelStream(streamChannel);
+                        incrErrorCount();
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Client stream request error", throwable);
+                    cancelStream(streamChannel);
+                    incrErrorCount();
+                }
+
+                @Override
+                public void onComplete() {
+                    // Send END_STREAM to signal request stream complete
+                    if (streamChannel.isActive()) {
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("HTTP/2 client stream END_STREAM write failed", f.cause());
+                                        incrErrorCount();
+                                    }
+                                });
+                    }
+                }
+            }), "jaws-client-stream-writer");
+            subscribeThread.setDaemon(true);
+            subscribeThread.start();
+
+            return publisher;
+        } catch (Exception e) {
+            log.error("HTTP/2 client streaming request failed: url={} {}, {}", url.getUri(),
+                    RpcUtils.toString(request), e.getMessage());
+            ResponseFuture future = removeCallback(request.getRequestId());
+            if (future != null) {
+                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+                errorResponse.setThrowable(new JawsServiceException("HTTP/2 client stream request error", e));
+                future.onFailure(errorResponse);
+            }
+            incrErrorCount();
+            publisher.completeExceptionally(e);
+            return publisher;
+        }
+    }
+
+    /**
+     * Fail the response future for a client-streaming call during the write phase.
+     */
+    private void failClientStream(DefaultResponseFuture responseFuture, long requestId, Exception cause) {
+        ResponseFuture future = removeCallback(requestId);
+        if (future != null) {
+            DefaultResponse errorResponse = new DefaultResponse(requestId);
+            errorResponse.setThrowable(cause);
+            future.onFailure(errorResponse);
+        }
+    }
+
+    /**
      * Build HTTP/2 HEADERS for a request, including mirrored metadata for
      * gateway visibility.
      */
@@ -374,6 +568,13 @@ public class Http2Client extends AbstractHttp2Client {
         String version = url.getParameter(UrlParam.Identity.VERSION);
         if (version != null && !version.isEmpty()) {
             headers.set(Http2Constants.HEADER_VERSION, version);
+        }
+
+        // Propagate streaming mode so the server can route DATA frames
+        // to the correct handler (client-streaming / bidi / server-streaming)
+        String streaming = request.getAttachments().get(Http2Constants.HEADER_STREAMING);
+        if (streaming != null) {
+            headers.set(Http2Constants.HEADER_STREAMING, streaming);
         }
 
         return headers;

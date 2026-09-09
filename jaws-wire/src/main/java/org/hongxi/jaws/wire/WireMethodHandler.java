@@ -34,13 +34,15 @@ public interface WireMethodHandler {
     enum MethodType {
         UNARY,
         SERVER_STREAMING,
+        CLIENT_STREAMING,
         BIDIRECTIONAL
     }
 
     /**
      * @return the invocation style of this method; defaults to {@link MethodType#UNARY}.
      *         Streaming handlers must override and return the appropriate
-     *         {@link MethodType#SERVER_STREAMING} or {@link MethodType#BIDIRECTIONAL}.
+     *         {@link MethodType#SERVER_STREAMING}, {@link MethodType#CLIENT_STREAMING},
+     *         or {@link MethodType#BIDIRECTIONAL}.
      */
     default MethodType methodType() {
         return MethodType.UNARY;
@@ -89,6 +91,32 @@ public interface WireMethodHandler {
      */
     default Flow.Publisher<Message> handleStream(Message request, WireCallContext context) {
         return handleStream(request);
+    }
+
+    /**
+     * Handle a client-streaming gRPC call: receives a publisher of request
+     * messages and returns a single response message. The default
+     * implementation throws {@link UnsupportedOperationException}; override
+     * for client-streaming methods.
+     *
+     * @param requestStream a publisher emitting client request messages
+     * @return the protobuf response message
+     */
+    default Message handleClientStream(Flow.Publisher<Message> requestStream) {
+        throw new UnsupportedOperationException("Not a client-streaming method");
+    }
+
+    /**
+     * Handle a client-streaming gRPC call with the per-call context (inbound
+     * metadata). The default implementation delegates to
+     * {@link #handleClientStream(Flow.Publisher)}.
+     *
+     * @param requestStream a publisher emitting client request messages
+     * @param context       the call context carrying inbound gRPC metadata
+     * @return the protobuf response message
+     */
+    default Message handleClientStream(Flow.Publisher<Message> requestStream, WireCallContext context) {
+        return handleClientStream(requestStream);
     }
 
     /**

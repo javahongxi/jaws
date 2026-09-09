@@ -169,6 +169,12 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 return;
             }
 
+            // Client streaming: accumulate request items, dispatch on END_STREAM
+            if (streamType == StreamType.CLIENT) {
+                handleClientData(ctx, bytes, dataFrame.isEndStream());
+                return;
+            }
+
             // Unary / Server streaming: accumulate until END_STREAM
             if (buffer == null) {
                 buffer = new ByteArrayOutputStream(Math.min(bytes.length, maxContentLength));
@@ -229,6 +235,63 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
 
         if (endStream && requestPublisher != null) {
             requestPublisher.complete();
+        }
+    }
+
+    /**
+     * Handle a DATA frame in client streaming mode.
+     * <p>
+     * Like bidi, the first DATA frame carries the serialized Request metadata.
+     * Subsequent DATA frames each carry one request stream item.
+     * Unlike bidi, dispatch happens only on END_STREAM (all items received),
+     * and the response is a single value (unary), not a stream.
+     * <p>
+     * Dispatch is scheduled on the business executor (not the event loop)
+     * because the service method may block (e.g. {@code CompletableFuture.get})
+     * waiting for the request stream to be fully consumed.
+     */
+    private void handleClientData(ChannelHandlerContext ctx, byte[] bytes, boolean endStream) {
+        if (!dispatched) {
+            // First DATA frame: decode as Request metadata
+            dispatched = true;
+            inflightRequests.incrementAndGet();
+            try {
+                bidiRequest = Http2PayloadCodec.decodeRequest(bytes, serialization);
+                requestPublisher = new StreamPublisher();
+            } catch (Exception e) {
+                log.error("Failed to decode client stream request metadata", e);
+                sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
+                        "Failed to decode request metadata: " + e.getMessage());
+                inflightRequests.decrementAndGet();
+                dispatched = false;
+            }
+            // Don't dispatch yet — wait for all items (END_STREAM)
+            if (!endStream) {
+                return;
+            }
+            // endStream on the second frame means no items were sent; complete immediately
+            if (requestPublisher != null) {
+                requestPublisher.complete();
+            }
+            dispatchClientStream(ctx);
+            return;
+        }
+
+        // Subsequent DATA frames: decode as request stream items
+        if (bytes.length > 0 && requestPublisher != null) {
+            try {
+                Object item = Http2StreamCodec.decodeItem(bytes, serialization);
+                requestPublisher.addItem(item);
+            } catch (Exception e) {
+                log.error("Failed to decode client stream item", e);
+                requestPublisher.completeExceptionally(e);
+                return;
+            }
+        }
+
+        if (endStream && requestPublisher != null) {
+            requestPublisher.complete();
+            dispatchClientStream(ctx);
         }
     }
 
@@ -345,7 +408,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
      * multiple response items via {@link Flow.Publisher}.
      */
     private void dispatchStream(ChannelHandlerContext ctx, Request request) {
-        Flow.Publisher<Object> publisher = messageHandler.handleStream(request);
+        Flow.Publisher<Object> publisher = messageHandler.handleStream(request, null);
 
         // Send response headers first (without END_STREAM)
         if (ctx.channel().isActive()) {
@@ -419,7 +482,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
         try {
             RpcContext.init(bidiRequest);
             Flow.Publisher<Object> responsePublisher =
-                    messageHandler.handleBiStream(bidiRequest, requestPublisher);
+                    messageHandler.handleStream(bidiRequest, requestPublisher);
 
             // Send response headers first (without END_STREAM)
             if (ctx.channel().isActive()) {
@@ -483,6 +546,89 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                     "Bidi dispatch failed: " + e.getMessage());
             RpcContext.destroy();
             inflightRequests.decrementAndGet();
+        }
+    }
+
+    /**
+     * Dispatch a client-streaming invocation: client streams request items
+     * via {@code requestPublisher}, server returns a single response.
+     * <p>
+     * Called from {@link #handleClientData} after END_STREAM is received.
+     * <p>
+     * Runs on the business executor (not the event loop) because the service
+     * method may block waiting for the request stream to complete.
+     */
+    private void dispatchClientStream(ChannelHandlerContext ctx) {
+        try {
+            serverExecutor.execute(() -> {
+                try {
+                    RpcContext.init(bidiRequest);
+                    Flow.Publisher<Object> responsePublisher =
+                            messageHandler.handleStream(bidiRequest, requestPublisher);
+
+                    // Subscribe to get the single response value, then send as unary response
+                    responsePublisher.subscribe(new Flow.Subscriber<>() {
+                        private Flow.Subscription subscription;
+                        private Object responseValue;
+
+                        @Override
+                        public void onSubscribe(Flow.Subscription s) {
+                            this.subscription = s;
+                            s.request(1);
+                        }
+
+                        @Override
+                        public void onNext(Object item) {
+                            responseValue = item;
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            log.error("Client streaming error: requestId={}", bidiRequest.getRequestId(), throwable);
+                            if (ctx.channel().isActive()) {
+                                sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
+                                        "Client streaming failed: " + throwable.getMessage());
+                            }
+                            RpcContext.destroy();
+                            inflightRequests.decrementAndGet();
+                        }
+
+                        @Override
+                        public void onComplete() {
+                            if (ctx.channel().isActive()) {
+                                try {
+                                    DefaultResponse response = new DefaultResponse();
+                                    response.setRequestId(bidiRequest.getRequestId());
+                                    response.setValue(responseValue);
+                                    byte[] responseBytes = Http2PayloadCodec.encodeResponse(response, serialization);
+                                    Http2Headers respHeaders = new DefaultHttp2Headers()
+                                            .status(Http2Constants.STATUS_OK)
+                                            .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE);
+                                    ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
+                                    ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                            Unpooled.wrappedBuffer(responseBytes), true));
+                                } catch (Exception e) {
+                                    log.error("Failed to encode client stream response", e);
+                                    sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
+                                            "Failed to encode response: " + e.getMessage());
+                                }
+                            }
+                            RpcContext.destroy();
+                            inflightRequests.decrementAndGet();
+                        }
+                    });
+                } catch (Exception e) {
+                    log.error("HTTP/2 client stream dispatch failed: {}", bidiRequest, e);
+                    sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
+                            "Client stream dispatch failed: " + e.getMessage());
+                    RpcContext.destroy();
+                    inflightRequests.decrementAndGet();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            inflightRequests.decrementAndGet();
+            sendError(ctx, Http2Constants.STATUS_SERVICE_UNAVAILABLE,
+                    "Request rejected: server thread pool is full");
         }
     }
 

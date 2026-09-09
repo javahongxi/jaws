@@ -34,25 +34,19 @@ public interface Caller<T> extends Endpoint {
     }
 
     /**
-     * Open a server-streaming call and return a {@link Flow.Publisher} that emits
-     * response items. Only supported by callers that back streaming transports.
+     * Unified streaming call.  Handles all streaming modes:
+     * <ul>
+     *   <li>{@code requestStream == null} → server-streaming</li>
+     *   <li>{@code requestStream != null} → client-streaming or
+     *       bidirectional-streaming</li>
+     * </ul>
      *
-     * @param request the RPC request
+     * @param request       the RPC request
+     * @param requestStream a publisher emitting client request items, or
+     *                      {@code null} for server-streaming
      * @return a publisher emitting streamed response items
      */
-    default Flow.Publisher<Object> callStream(Request request) {
+    default Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
         throw new UnsupportedOperationException("Streaming not supported by this caller");
-    }
-
-    /**
-     * Open a bidirectional streaming call: send a stream of request items and
-     * receive a stream of response items concurrently.
-     *
-     * @param request       the initial RPC request (carries metadata/attachments)
-     * @param requestStream a publisher emitting client request items
-     * @return a publisher emitting streamed response items
-     */
-    default Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        throw new UnsupportedOperationException("Bi-directional streaming not supported by this caller");
     }
 }

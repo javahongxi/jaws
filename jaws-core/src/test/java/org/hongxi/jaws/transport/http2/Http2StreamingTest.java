@@ -67,7 +67,7 @@ class Http2StreamingTest {
     @Test
     void serverStreamingReceivesAllItems() throws Exception {
         DefaultRequest request = newRequest("serverStream", "hello");
-        Flow.Publisher<Object> publisher = client.requestStream(request);
+        Flow.Publisher<Object> publisher = client.requestStream(request, null);
 
         List<Object> items = collectItems(publisher, 5, TimeUnit.SECONDS);
         assertEquals(5, items.size());
@@ -79,7 +79,7 @@ class Http2StreamingTest {
     @Test
     void serverStreamingEmptyPublisher() throws Exception {
         DefaultRequest request = newRequest("emptyStream", "ignored");
-        Flow.Publisher<Object> publisher = client.requestStream(request);
+        Flow.Publisher<Object> publisher = client.requestStream(request, null);
 
         List<Object> items = collectItems(publisher, 5, TimeUnit.SECONDS);
         assertTrue(items.isEmpty(), "empty stream should produce no items");
@@ -88,7 +88,7 @@ class Http2StreamingTest {
     @Test
     void serverStreamingSingleItem() throws Exception {
         DefaultRequest request = newRequest("singleItemStream", "only");
-        Flow.Publisher<Object> publisher = client.requestStream(request);
+        Flow.Publisher<Object> publisher = client.requestStream(request, null);
 
         List<Object> items = collectItems(publisher, 5, TimeUnit.SECONDS);
         assertEquals(1, items.size());

@@ -186,6 +186,11 @@ public class WireBenchmark {
         }
 
         @Override
+        public HelloReply clientStreamGreet(java.util.concurrent.Flow.Publisher<HelloRequest> names) {
+            throw new UnsupportedOperationException("Streaming not used in benchmark");
+        }
+
+        @Override
         public java.util.concurrent.Flow.Publisher<HelloReply> bidiGreet(
                 java.util.concurrent.Flow.Publisher<HelloRequest> names) {
             throw new UnsupportedOperationException("Streaming not used in benchmark");

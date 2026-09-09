@@ -23,6 +23,12 @@ public interface GreeterService {
     Flow.Publisher<HelloReply> sayHelloStream(HelloRequest request);
 
     /**
+     * Client-streaming: client streams {@link HelloRequest} names,
+     * server replies with a single aggregated {@link HelloReply}.
+     */
+    HelloReply clientStreamGreet(Flow.Publisher<HelloRequest> names);
+
+    /**
      * Bidirectional streaming: client streams {@link HelloRequest} names,
      * server streams {@link HelloReply} greetings.
      */

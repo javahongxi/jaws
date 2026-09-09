@@ -25,29 +25,23 @@ public interface Client extends Channel {
     Response request(Request request);
 
     /**
-     * Open a server-streaming request and return a {@link Flow.Publisher} that emits
-     * each response item as it arrives.  Only supported by transports that
-     * implement streaming (e.g. HTTP/2).
+     * Open a streaming request.  Handles all streaming modes:
+     * <ul>
+     *   <li>{@code requestStream == null} → server-streaming (single request,
+     *       streamed response)</li>
+     *   <li>{@code requestStream != null} → client-streaming or
+     *       bidirectional-streaming (the wire format distinguishes them via
+     *       the {@code x-jaws-streaming} header)</li>
+     * </ul>
+     * Only supported by transports that implement streaming (e.g. HTTP/2).
      *
-     * @param request the RPC request to send
+     * @param request       the RPC request (carries metadata/attachments)
+     * @param requestStream a publisher emitting client request items, or
+     *                      {@code null} for server-streaming
      * @return a publisher emitting streamed response items
      * @throws UnsupportedOperationException if the transport does not support streaming
      */
-    default Flow.Publisher<Object> requestStream(Request request) {
+    default Flow.Publisher<Object> requestStream(Request request, Flow.Publisher<Object> requestStream) {
         throw new UnsupportedOperationException("Streaming not supported by this transport");
-    }
-
-    /**
-     * Open a bidirectional streaming call: send a stream of request items and
-     * receive a stream of response items concurrently.  Only supported by
-     * transports that implement streaming (e.g. HTTP/2).
-     *
-     * @param request       the initial RPC request (carries metadata/attachments)
-     * @param requestStream a publisher emitting client request items
-     * @return a publisher emitting streamed response items
-     * @throws UnsupportedOperationException if the transport does not support streaming
-     */
-    default Flow.Publisher<Object> requestBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        throw new UnsupportedOperationException("Bi-directional streaming not supported by this transport");
     }
 }

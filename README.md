@@ -6,12 +6,12 @@
 
 > 取名自《大白鲨》(*Jaws*)——**J**ava **A**sync **W**ire **S**ervice：Java 生态、异步调用、线级协议、服务治理，四个词正是一个 RPC 框架的四层解剖。
 
-Jaws 是一个**核心 2.6 万多行、可以从头读到尾**的轻量级 RPC 框架。它用约 Dubbo 1/10 的代码量，完整实现了一个工业级 RPC 的核心机制，支持多种传输协议（Netty 二进制、HTTP/2、gRPC 线格式）、Server Streaming、自适应负载均衡与高可用容错，实测约 14 万 QPS。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快十倍。
+Jaws 是一个**核心 2.8 万多行、可以从头读到尾**的轻量级 RPC 框架。它用约 Dubbo 1/10 的代码量，完整实现了一个工业级 RPC 的核心机制，支持多种传输协议（Netty 二进制、HTTP/2、gRPC 线格式）、HTTP/2 三种流式、自适应负载均衡与高可用容错，实测约 14 万 QPS。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快十倍。
 
 ## 特性
 
 - **自定义协议** — 基于 Netty TCP 自研 jaws 二进制协议，编解码全链路零拷贝
-- **HTTP/2 传输** — 可切换至 HTTP/2 传输层，支持 Server Streaming 与 Bidirectional Streaming
+- **HTTP/2 传输** — 可切换至 HTTP/2 传输层，支持 HTTP/2 三种流式，网关与 Service Mesh 友好
 - **HTTP/1.1 REST** — 注解驱动 REST 路由映射，兼容 Spring Web 与 JAX-RS 注解体系，泛化调用兜底
 - **自适应协议** — 支持单端口同时启用 jaws 二进制、HTTP/2、HTTP/1.1 三种协议，自动路由到对应解码器
 - **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持 gzip 压缩、健康检查、deadline 与 keepalive 语义
@@ -52,9 +52,10 @@ Jaws 是一个**核心 2.6 万多行、可以从头读到尾**的轻量级 RPC �
 ./run-sample.sh netty              # Netty 直连（无需注册中心）
 ./run-sample.sh http2              # HTTP/2 直连（含 Server Streaming，无需注册中心）
 ./run-sample.sh wire               # Wire gRPC 线格式直连（无需注册中心，兼容 grpcurl）
-./run-sample.sh adaptive           # Adaptive 自适应协议直连（单端口多协议，无需注册中心）
+./run-sample.sh interop            # Wire gRPC 互操作验证（grpc-java ↔ jaws-wire 双向兼容）
 ./run-sample.sh run                # ZooKeeper 注册中心（需要 ZK 在 127.0.0.1:2181）
 ./run-sample.sh nacos              # Nacos 注册中心（需要 Nacos 在 127.0.0.1:8848）
+./run-sample.sh adaptive           # Adaptive 自适应协议直连（单端口多协议，无需注册中心）
 
 # injvm 协议示例（进程内直调，不走网络）
 ./run-sample.sh injvm

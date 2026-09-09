@@ -85,12 +85,12 @@ class WireMessageHandler implements MessageHandler {
     }
 
     /**
-     * Handle a bidirectional streaming request: wrap the incoming
-     * {@code requestStream} to convert {@code byte[]} items to typed protobuf
-     * {@link Message} instances, then delegate to the filter chain.
+     * Handle a streaming request: wrap the incoming {@code requestStream}
+     * to convert {@code byte[]} items to typed protobuf {@link Message}
+     * instances, then delegate to the filter chain.
      */
     @Override
-    public Flow.Publisher<Object> handleBiStream(Request request, Flow.Publisher<Object> requestStream) {
+    public Flow.Publisher<Object> handleStream(Request request, Flow.Publisher<Object> requestStream) {
         WireProtoTypes.MethodInfo methodInfo;
         try {
             methodInfo = protoTypes.getMethodInfo(request.getMethodName());
@@ -137,7 +137,7 @@ class WireMessageHandler implements MessageHandler {
             }
         });
 
-        return delegate.handleBiStream(request, typedStream);
+        return delegate.handleStream(request, typedStream);
     }
 
     /**
@@ -146,6 +146,19 @@ class WireMessageHandler implements MessageHandler {
     boolean isBiStreaming(String methodName) {
         try {
             return protoTypes.getMethodInfo(methodName).biStreaming();
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check whether the given method is client-streaming:
+     * has a {@code Flow.Publisher} parameter but a non-Publisher return type.
+     */
+    boolean isClientStreaming(String methodName) {
+        try {
+            WireProtoTypes.MethodInfo info = protoTypes.getMethodInfo(methodName);
+            return info.biStreaming() && !info.streaming();
         } catch (IllegalArgumentException e) {
             return false;
         }

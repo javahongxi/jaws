@@ -185,6 +185,31 @@ public class Http2Consumer {
         }
         System.out.println("stream completed.");
 
+        /* Client-streaming invocation */
+        System.out.println("\n--- StreamService client streaming ---");
+        SubmissionPublisher<String> collectRequestPublisher = new SubmissionPublisher<>();
+
+        // Send request items in a separate thread to avoid blocking
+        Thread sendThread = new Thread(() -> {
+            try {
+                Thread.sleep(200);
+                collectRequestPublisher.submit("alice");
+                Thread.sleep(50);
+                collectRequestPublisher.submit("bob");
+                Thread.sleep(50);
+                collectRequestPublisher.submit("charlie");
+                Thread.sleep(50);
+                collectRequestPublisher.close();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        sendThread.setDaemon(true);
+        sendThread.start();
+
+        String collectResult = streamService.collectGreet(collectRequestPublisher);
+        System.out.println("collectGreet => " + collectResult);
+
         /* Bidirectional-streaming invocation */
         System.out.println("\n--- StreamService bidirectional streaming ---");
         SubmissionPublisher<String> requestPublisher = new SubmissionPublisher<>();

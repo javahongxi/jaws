@@ -6,6 +6,7 @@ import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
+import org.hongxi.jaws.transport.StreamPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,8 +25,8 @@ import java.util.concurrent.TimeoutException;
  * stripping stack traces before transferring), and turns {@link Error} throwables into
  * exceptions so a provider crash never takes down the caller.
  * <p>
- * Also supports server-streaming methods that return {@link Flow.Publisher}
- * via {@link #callStream(Request)}.
+ * Also supports streaming methods that return {@link Flow.Publisher}
+ * via {@code callStream()}.
  *
  * <p>Created by shenhongxi on 2021/3/7.
  */
@@ -137,7 +138,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
     }
 
     @Override
-    public Flow.Publisher<Object> callStream(Request request) {
+    public Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
         Method method = lookupMethod(request.getMethodName(), request.getParamDesc());
 
         if (method == null) {
@@ -147,52 +148,61 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
         }
 
         try {
-            Object result = method.invoke(ref, request.getArguments());
+            // Server-streaming: requestStream is null, method returns Flow.Publisher
+            if (requestStream == null) {
+                Object result = method.invoke(ref, request.getArguments());
+                if (result instanceof Flow.Publisher<?> publisher) {
+                    //noinspection unchecked
+                    return (Flow.Publisher<Object>) publisher;
+                }
+                throw new JawsBizException("server-streaming method must return Flow.Publisher: "
+                        + request.getInterfaceName() + "." + request.getMethodName());
+            }
+
+            // Client/bidi-streaming: requestStream is the first argument
+            Object[] args = request.getArguments();
+            Object[] streamArgs;
+            if (args != null && args.length > 0) {
+                streamArgs = new Object[args.length + 1];
+                streamArgs[0] = requestStream;
+                System.arraycopy(args, 0, streamArgs, 1, args.length);
+            } else {
+                streamArgs = new Object[]{requestStream};
+            }
+            Object result = method.invoke(ref, streamArgs);
+
+            // Bidi-streaming: method returns Flow.Publisher
             if (result instanceof Flow.Publisher<?> publisher) {
                 //noinspection unchecked
                 return (Flow.Publisher<Object>) publisher;
             }
-            throw new JawsBizException("server-streaming method must return Flow.Publisher: "
-                    + request.getInterfaceName() + "." + request.getMethodName());
+
+            // Client-streaming: method returns a single value (or CompletableFuture);
+            // wrap it in a Publisher for the transport layer.
+            // Use StreamPublisher (synchronous delivery) instead of SubmissionPublisher
+            // to guarantee onNext fires before onComplete on the subscriber.
+            StreamPublisher publisher = new StreamPublisher();
+            if (result instanceof CompletableFuture<?> future) {
+                future.whenComplete((value, throwable) -> {
+                    if (throwable != null) {
+                        publisher.completeExceptionally(throwable);
+                    } else {
+                        if (value != null) {
+                            publisher.addItem(value);
+                        }
+                        publisher.complete();
+                    }
+                });
+            } else {
+                if (result != null) {
+                    publisher.addItem(result);
+                }
+                publisher.complete();
+            }
+            return publisher;
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new JawsBizException("provider stream call failed",
-                    ExceptionUtils.toSerializableException(cause, method, interfaceClass));
-        }
-    }
-
-    @Override
-    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        Method method = lookupMethod(request.getMethodName(), request.getParamDesc());
-
-        if (method == null) {
-            throw new JawsServiceException("Service method not found: " + request.getInterfaceName() + "."
-                    + request.getMethodName() + "(" + request.getParamDesc() + ")",
-                    JawsErrorCode.SERVICE_METHOD_NOT_FOUND);
-        }
-
-        try {
-            // The first argument is the incoming request stream; remaining
-            // arguments (if any) come from the original request.
-            Object[] args = request.getArguments();
-            Object[] bidiArgs;
-            if (args != null && args.length > 0) {
-                bidiArgs = new Object[args.length + 1];
-                bidiArgs[0] = requestStream;
-                System.arraycopy(args, 0, bidiArgs, 1, args.length);
-            } else {
-                bidiArgs = new Object[]{requestStream};
-            }
-            Object result = method.invoke(ref, bidiArgs);
-            if (result instanceof Flow.Publisher<?> publisher) {
-                //noinspection unchecked
-                return (Flow.Publisher<Object>) publisher;
-            }
-            throw new JawsBizException("bidi-streaming method must return Flow.Publisher: "
-                    + request.getInterfaceName() + "." + request.getMethodName());
-        } catch (Exception e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            throw new JawsBizException("provider bidi-stream call failed",
                     ExceptionUtils.toSerializableException(cause, method, interfaceClass));
         }
     }

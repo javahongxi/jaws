@@ -7,6 +7,7 @@ import org.hongxi.jaws.sample.wire.proto.HelloRequest;
 
 import java.util.concurrent.Flow;
 import java.util.concurrent.SubmissionPublisher;
+import java.util.stream.Collectors;
 
 /**
  * Greeter service implementation for the wire sample.
@@ -52,6 +53,57 @@ public class GreeterServiceImpl implements GreeterService {
             thread.setDaemon(true);
             thread.start();
         };
+    }
+
+    @Override
+    public HelloReply clientStreamGreet(Flow.Publisher<HelloRequest> names) {
+        System.out.println("Client stream greet: subscribing to request stream");
+        // Block and collect all names from the request stream, then return a
+        // single aggregated reply. The framework calls this method and blocks
+        // for the return value (client-streaming semantics).
+        java.util.List<String> collectedNames = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> error = new java.util.concurrent.atomic.AtomicReference<>();
+
+        names.subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription s) {
+                s.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(HelloRequest item) {
+                System.out.println("Client stream received: " + item.getName());
+                collectedNames.add(item.getName());
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                error.set(throwable);
+                latch.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                latch.countDown();
+            }
+        });
+
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while collecting client stream", e);
+        }
+        if (error.get() != null) {
+            throw new RuntimeException("Client stream failed", error.get());
+        }
+
+        String namesList = collectedNames.stream().collect(Collectors.joining(", "));
+        System.out.println("Client stream completed, names: " + namesList);
+        return HelloReply.newBuilder()
+                .setMessage("Hello, " + namesList + "! (from jaws-wire client-stream)")
+                .build();
     }
 
     @Override

@@ -4,16 +4,16 @@
 
 ## 一、核心 RPC 能力
 
-| 能力维度       | Jaws                                                   | Dubbo                                                      | 差距评估   |
-|----------------|--------------------------------------------------------|------------------------------------------------------------|------------|
-| **自定义协议** | 16 字节头，零拷贝编解码，flag 嵌入 serializationId     | 16 字节头，零拷贝编解码，flag 嵌入 serializationId         | **持平**   |
-| **序列化**     | fastjson2 / hessian2 / protostuff（3 种）              | hessian2 / protobuf / fastjson2 / kryo / fst 等（10+ 种）  | 中等差距   |
-| **同步调用**   | 支持                                                   | 支持                                                       | **持平**   |
-| **异步调用**   | `CompletableFuture` 返回值，Provider 端原生异步        | `CompletableFuture` + `Async` 后缀接口 + `RpcContext` 异步 | **持平**   |
-| **泛化调用**   | `GenericService.$invoke()`                             | `GenericService.$invoke()`                                 | **持平**   |
-| **Injvm 协议** | 支持 JVM 内直调                                        | 支持                                                       | **持平**   |
-| **单向调用**   | 不支持                                                 | flag 中有 TWOWAY 位，支持 oneway                           | **有差距** |
-| **流式调用**   | 支持 Server Streaming（HTTP/2 传输，`Flow.Publisher`） | 支持 client/server/bidirectional 三种流式模式              | 中等差距   |
+| 能力维度       | Jaws                                               | Dubbo                                                      | 差距评估   |
+|----------------|----------------------------------------------------|------------------------------------------------------------|------------|
+| **自定义协议** | 16 字节头，零拷贝编解码，flag 嵌入 serializationId | 16 字节头，零拷贝编解码，flag 嵌入 serializationId         | **持平**   |
+| **序列化**     | fastjson2 / hessian2 / protostuff（3 种）          | hessian2 / protobuf / fastjson2 / kryo / fst 等（10+ 种）  | 中等差距   |
+| **同步调用**   | 支持                                               | 支持                                                       | **持平**   |
+| **异步调用**   | `CompletableFuture` 返回值，Provider 端原生异步    | `CompletableFuture` + `Async` 后缀接口 + `RpcContext` 异步 | **持平**   |
+| **泛化调用**   | `GenericService.$invoke()`                         | `GenericService.$invoke()`                                 | **持平**   |
+| **Injvm 协议** | 支持 JVM 内直调                                    | 支持                                                       | **持平**   |
+| **单向调用**   | 不支持                                             | flag 中有 TWOWAY 位，支持 oneway                           | **有差距** |
+| **流式调用**   | HTTP/2 三种流式；wire 三种流式（gRPC 线格式互通）  | 支持 client/server/bidirectional 三种流式模式              | **持平**   |
 
 ## 二、服务注册与发现
 
@@ -72,15 +72,15 @@ Jaws 已实现标签路由能力：
 
 ## 五、协议与多协议支持
 
-| 能力维度           | Jaws                                                                   | Dubbo                                                 | 差距评估        |
-|--------------------|------------------------------------------------------------------------|-------------------------------------------------------|-----------------|
-| **自有协议**       | jaws（二进制）                                                         | dubbo（二进制）                                       | **持平**        |
-| **传输层**         | Netty（默认）/ HTTP/2（可选，基于 Netty 自研）                         | Netty                                                 | **Jaws 更灵活** |
-| **应用层协议**     | jaws（二进制）/ wire（gRPC 线格式，protobuf 序列化）                   | dubbo（二进制）/ Triple（兼容 gRPC，IDL + 流式）      | **持平**        |
-| **REST/HTTP**      | 注解驱动 REST 路由（Spring Web + JAX-RS 双注解兼容）               | 原生 rest 协议（JAX-RS）/ Triple REST（Spring MVC + JAX-RS） | **基本持平**    |
-| **Injvm**          | 支持                                                                   | 支持                                                  | **持平**        |
-| **多协议同时暴露** | 支持同一端口自适应 jaws / HTTP/2 / HTTP/1.1 三种协议（AdaptiveServer） | 支持同一端口多协议自动路由（Port Unification Server） | **持平**        |
-| **MCP 桥接**       | 不支持                                                                 | 支持（Dubbo MCP Server）                              | **Dubbo 领先**  |
+| 能力维度           | Jaws                                                                   | Dubbo                                                        | 差距评估        |
+|--------------------|------------------------------------------------------------------------|--------------------------------------------------------------|-----------------|
+| **自有协议**       | jaws（二进制）                                                         | dubbo（二进制）                                              | **持平**        |
+| **传输层**         | Netty（默认）/ HTTP/2（可选，基于 Netty 自研，支持三种流式）           | Netty                                                        | **Jaws 更灵活** |
+| **应用层协议**     | jaws（二进制）/ wire（gRPC 线格式，protobuf 序列化，三种流式互通）     | dubbo（二进制）/ Triple（兼容 gRPC，IDL + 流式）             | **持平**        |
+| **REST/HTTP**      | 注解驱动 REST 路由（Spring Web + JAX-RS 双注解兼容）                   | 原生 rest 协议（JAX-RS）/ Triple REST（Spring MVC + JAX-RS） | **基本持平**    |
+| **Injvm**          | 支持                                                                   | 支持                                                         | **持平**        |
+| **多协议同时暴露** | 支持同一端口自适应 jaws / HTTP/2 / HTTP/1.1 三种协议（AdaptiveServer） | 支持同一端口多协议自动路由（Port Unification Server）        | **持平**        |
+| **MCP 桥接**       | 不支持                                                                 | 支持（Dubbo MCP Server）                                     | **Dubbo 领先**  |
 
 ### REST 协议架构差异
 
@@ -88,14 +88,14 @@ Jaws 在 HTTP/1.1 传输层之上构建了注解驱动的 REST 路由映射层�
 
 Dubbo 3.3 将 REST 重新定位为 Triple 协议之上的访问层（Triple REST），不再是独立协议，同时兼容 Spring MVC 和 JAX-RS 注解。Dubbo 早期的 REST 是独立 `rest://` 协议，底层嵌入 Servlet 容器。
 
-| 维度     | Dubbo Triple REST                            | Jaws REST 路由映射                                       |
-|----------|----------------------------------------------|----------------------------------------------------------|
-| 定位     | Triple 协议上的 REST 访问层                  | HTTP/1.1 传输层上的注解驱动路由映射层                    |
-| 注解     | Spring MVC + JAX-RS                          | Spring Web + JAX-RS（双体系，零编译期依赖）              |
+| 维度     | Dubbo Triple REST                              | Jaws REST 路由映射                                                          |
+|----------|------------------------------------------------|-----------------------------------------------------------------------------|
+| 定位     | Triple 协议上的 REST 访问层                    | HTTP/1.1 传输层上的注解驱动路由映射层                                       |
+| 注解     | Spring MVC + JAX-RS                            | Spring Web + JAX-RS（双体系，零编译期依赖）                                 |
 | 参数绑定 | `@PathVariable`/`@RequestParam`/`@RequestBody` | `@PathVariable`/`@RequestParam`/`@RequestBody` + `@PathParam`/`@QueryParam` |
-| 泛化调用 | 支持                                         | `POST /invoke` 泛化调用兜底                              |
-| 部署模型 | 复用 Triple 端口                             | 复用 Netty HTTP/1.1 端口（AdaptiveServer 多协议自适应）  |
-| 灵活性   | 完全自定义 URL/Method/参数位置               | 完全自定义 URL/Method/参数位置                           |
+| 泛化调用 | 支持                                           | `POST /invoke` 泛化调用兜底                                                 |
+| 部署模型 | 复用 Triple 端口                               | 复用 Netty HTTP/1.1 端口（AdaptiveServer 多协议自适应）                     |
+| 灵活性   | 完全自定义 URL/Method/参数位置                 | 完全自定义 URL/Method/参数位置                                              |
 
 ## 六、工程化与生态
 
@@ -132,18 +132,18 @@ Dubbo 3.3 将 REST 重新定位为 Triple 协议之上的访问层（Triple REST
 
 1. **序列化协议丰富度** — Jaws 3 种（fastjson2/hessian2/protostuff），Dubbo 10+ 种（含 protobuf、kryo 等更多高性能选项）
 2. **流量治理深度** — 缺少限流、熔断、降级能力（Dubbo 集成 Sentinel/Resilience4j）
-3. **流式调用完备性** — 仅支持 Server Streaming，缺少 Client Streaming 与 Bidirectional Streaming（Dubbo Triple 三种流式模式均已实现）
-4. **应用级服务发现** — 仅支持接口级发现，Dubbo 已支持应用级 + 接口级双模型，大规模场景下内存和推送效率差距明显
-5. **生态与运维工具** — 缺少 Admin 控制台、缺少 IDL 代码生成、SPI 扩展点数量有限
+3. **应用级服务发现** — 仅支持接口级发现，Dubbo 已支持应用级 + 接口级双模型，大规模场景下内存和推送效率差距明显
+4. **生态与运维工具** — 缺少 Admin 控制台、缺少 IDL 代码生成、SPI 扩展点数量有限
+5. **单向调用** — 协议 header 中无 ONEWAY 标志位，不支持纯单向调用（Dubbo 支持）
 
 ## 十、Jaws 的差异化点
 
 - **gRPC 线格式兼容（新能力）** — `jaws-wire` 模块实现标准 gRPC 线格式（5 字节长度前缀帧 + trailers 状态码），通过 WireProtocol 完整支持注册中心/负载均衡/Filter 链，兼容 grpcurl 等标准 gRPC 工具，无 grpc-java 依赖
-- **HTTP/2 传输轻量可插拔（设计取舍）** — 通过 `TransportFactory` SPI 零侵入接入基于 Netty `Http2FrameCodec` + `Http2MultiplexHandler` 自研的 HTTP/2 传输，无 grpc-java/protobuf 依赖，复用 Jaws 序列化体系，可获得多路复用、流控、网关穿透与 Server Streaming 能力
+- **HTTP/2 传输轻量可插拔（设计取舍）** — 通过 `TransportFactory` SPI 零侵入接入基于 Netty `Http2FrameCodec` + `Http2MultiplexHandler` 自研的 HTTP/2 传输，无 grpc-java/protobuf 依赖，复用 Jaws 序列化体系，支持 Server/Client/Bidirectional 三种流式，可获得多路复用、流控、网关穿透与 Service Mesh 友好能力
 - **Adaptive 单端口多协议（设计亮点）** — AdaptiveServer 通过首字节检测自动路由到 Jaws 二进制 / HTTP/2 / HTTP/1.1 三种协议 pipeline，HTTP/1.1 上叠加注解驱动 REST 路由（Spring Web + JAX-RS），单端口即可服务所有客户端，与 Dubbo Port Unification Server 能力对等
 - **编解码设计简洁性** — JawsCodec 分层清晰，Dubbo 的继承体系更复杂
 - **独立 version 字段** — header 层即可做版本校验，Dubbo 需解析 body
 
 ## 总结
 
-Jaws 在**核心 RPC 链路**（协议、编解码、零拷贝、心跳、优雅停机、异步调用）上已与 Dubbo **基本持平**，在**标签路由/灰度发布**、**多注册中心**、**HTTP/2 传输（含 Server Streaming）**、**Adaptive 单端口多协议**、**gRPC 线格式兼容**、**注解驱动 REST 路由（Spring Web + JAX-RS 双体系）**能力上已补齐。通过 `jaws-wire` 模块支持标准 gRPC 线格式与 protobuf 序列化，兼容 grpcurl 等标准工具，且无 grpc-java 依赖。但在**生态广度**（序列化种类、注册中心种类、运维工具）和**流量治理深度**（限流熔断）上差距较大。这些差距本质上是 Dubbo 多年社区积累的结果。
+Jaws 在**核心 RPC 链路**（协议、编解码、零拷贝、心跳、优雅停机、异步调用）上已与 Dubbo **基本持平**，在**标签路由/灰度发布**、**多注册中心**、**HTTP/2 传输（含三种流式）**、**Adaptive 单端口多协议**、**gRPC 线格式兼容（含三种流式互通）**、**注解驱动 REST 路由（Spring Web + JAX-RS 双体系）**能力上已补齐。通过 `jaws-wire` 模块支持标准 gRPC 线格式与 protobuf 序列化，兼容 grpcurl 等标准工具，且无 grpc-java 依赖。但在**生态广度**（序列化种类、注册中心种类、运维工具）和**流量治理深度**（限流熔断）上差距较大。这些差距本质上是 Dubbo 多年社区积累的结果。

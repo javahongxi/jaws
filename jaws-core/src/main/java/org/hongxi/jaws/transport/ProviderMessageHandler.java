@@ -40,25 +40,16 @@ public class ProviderMessageHandler implements MessageHandler {
     }
 
     /**
-     * Handle a server-streaming request by delegating to the normal handler.
-     *
-     * @param message the incoming RPC request
-     * @return a {@link Flow.Publisher} emitting the stream items
-     */
-    public Flow.Publisher<Object> handleStream(Object message) {
-        return normalHandler.handleStream(message);
-    }
-
-    /**
-     * Handle a bidirectional streaming request by delegating to the normal handler.
+     * Handle a streaming request by delegating to the normal handler.
      *
      * @param request       the incoming RPC request
-     * @param requestStream a publisher emitting client request items
+     * @param requestStream a publisher emitting client request items, or
+     *                      {@code null} for server-streaming
      * @return a {@link Flow.Publisher} emitting the response items
      */
-    public Flow.Publisher<Object> handleBiStream(org.hongxi.jaws.rpc.Request request,
-                                                  Flow.Publisher<Object> requestStream) {
-        return normalHandler.handleBiStream(request, requestStream);
+    @Override
+    public Flow.Publisher<Object> handleStream(Request request,
+                                                Flow.Publisher<Object> requestStream) {
+        return normalHandler.handleStream(request, requestStream);
     }
-
 }

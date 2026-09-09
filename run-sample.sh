@@ -23,6 +23,7 @@ HTTP2_PROVIDER_MODULE="jaws-samples/jaws-sample-http2-provider"
 HTTP2_CONSUMER_MODULE="jaws-samples/jaws-sample-http2-consumer"
 WIRE_PROVIDER_MODULE="jaws-samples/jaws-sample-wire-provider"
 WIRE_CONSUMER_MODULE="jaws-samples/jaws-sample-wire-consumer"
+WIRE_INTEROP_MODULE="jaws-samples/jaws-sample-wire-interop"
 ADAPTIVE_PROVIDER_MODULE="jaws-samples/jaws-sample-adaptive-provider"
 ADAPTIVE_CONSUMER_MODULE="jaws-samples/jaws-sample-adaptive-consumer"
 
@@ -39,6 +40,12 @@ HTTP2_CONSUMER_MAIN="org.hongxi.jaws.sample.http2.consumer.Http2Consumer"
 WIRE_PROVIDER_MAIN="org.hongxi.jaws.sample.wire.provider.WireProvider"
 WIRE_CONSUMER_MAIN="org.hongxi.jaws.sample.wire.consumer.WireConsumer"
 WIRE_BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.WireBenchmark"
+WIRE_INTEROP_GRPC_CALL_WIRE="org.hongxi.jaws.sample.wire.interop.GrpcCallWireDemo"
+WIRE_INTEROP_WIRE_CALL_GRPC="org.hongxi.jaws.sample.wire.interop.WireCallGrpcDemo"
+WIRE_INTEROP_GRPC_SERVER="org.hongxi.jaws.sample.wire.interop.GrpcServerMain"
+WIRE_INTEROP_HEALTH="org.hongxi.jaws.sample.wire.interop.WireHealthDemo"
+WIRE_INTEROP_MANAGED="org.hongxi.jaws.sample.wire.interop.ManagedChannelDemo"
+WIRE_INTEROP_KEEPALIVE="org.hongxi.jaws.sample.wire.interop.WireKeepaliveDemo"
 ADAPTIVE_PROVIDER_MAIN="org.hongxi.jaws.sample.adaptive.provider.AdaptiveProvider"
 ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsumer"
 
@@ -62,6 +69,8 @@ usage() {
     netty [port]       One-shot Netty direct-connect sample (no registry required)
     http2 [port]       One-shot HTTP/2 direct-connect sample (incl. Server Streaming, no registry required)
     wire [port]        One-shot Wire (gRPC wire format) direct-connect sample (no registry required, default port 50051)
+    interop [--keepalive]  Run all wire-interop demos (GrpcCallWireDemo, WireHealthDemo, ManagedChannelDemo, WireCallGrpcDemo)
+                       Add --keepalive to also run WireKeepaliveDemo (~55s)
     adaptive [port]    One-shot Adaptive direct-connect sample (single port, multi-protocol, no registry required)
     consumer           Run ZkConsumer (provider must be started first)
     bench-injvm        Benchmark - injvm protocol
@@ -94,6 +103,8 @@ usage() {
     ./run-sample.sh netty              # One-shot Netty direct-connect provider + consumer
     ./run-sample.sh http2              # One-shot HTTP/2 direct-connect (with streaming) provider + consumer
     ./run-sample.sh wire               # One-shot Wire direct-connect provider + consumer
+    ./run-sample.sh interop            # All wire-interop demos (quick, ~10s)
+    ./run-sample.sh interop --keepalive  # All demos including keepalive (~65s)
     ./run-sample.sh adaptive           # One-shot Adaptive direct-connect (multi-protocol) provider + consumer
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
@@ -348,6 +359,113 @@ cmd_run_adaptive() {
         10000 "" "${1:-}"
 }
 
+cmd_wire_interop() {
+    ensure_built
+    local run_keepalive=0
+    for arg in "$@"; do
+        case "$arg" in
+            --keepalive) run_keepalive=1 ;;
+        esac
+    done
+
+    local interop_cp
+    interop_cp=$(build_classpath "$WIRE_INTEROP_MODULE")
+    interop_cp="$interop_cp:$WIRE_INTEROP_MODULE/target/classes"
+
+    local passed=0
+    local failed=0
+    local total=0
+
+    run_interop_demo() {
+        local name="$1" main_class="$2"
+        total=$((total + 1))
+        echo ""
+        echo "================================================================"
+        echo "  [$total] $name"
+        echo "================================================================"
+        if java -cp "$interop_cp" "$main_class"; then
+            echo ">>> $name PASSED"
+            passed=$((passed + 1))
+        else
+            echo ">>> $name FAILED"
+            failed=$((failed + 1))
+        fi
+    }
+
+    echo "============================================"
+    echo "  Wire Interop — Full Verification Suite"
+    echo "============================================"
+
+    # 1. GrpcCallWireDemo: grpc-java client -> jaws-wire server (self-contained)
+    run_interop_demo "GrpcCallWireDemo (grpc-java -> jaws-wire)" "$WIRE_INTEROP_GRPC_CALL_WIRE"
+
+    # 2. WireHealthDemo: gRPC health check (self-contained)
+    run_interop_demo "WireHealthDemo (gRPC health check)" "$WIRE_INTEROP_HEALTH"
+
+    # 3. ManagedChannelDemo: load balancing (self-contained)
+    run_interop_demo "ManagedChannelDemo (load balancing)" "$WIRE_INTEROP_MANAGED"
+
+    # 4. WireCallGrpcDemo: WireClient -> grpc-java server (needs GrpcServerMain)
+    total=$((total + 1))
+    echo ""
+    echo "================================================================"
+    echo "  [$total] WireCallGrpcDemo (WireClient -> grpc-java)"
+    echo "================================================================"
+    echo "[setup] Starting GrpcServerMain on port 50060 ..."
+    java -cp "$interop_cp" "$WIRE_INTEROP_GRPC_SERVER" > /tmp/grpc-server-main.log 2>&1 &
+    local grpc_pid=$!
+
+    # Wait for grpc-java server ready
+    local max_wait=10
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if (echo >/dev/tcp/127.0.0.1/50060) 2>/dev/null; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if [ $waited -ge $max_wait ]; then
+        echo ">>> WireCallGrpcDemo SKIPPED (GrpcServerMain failed to start)"
+        failed=$((failed + 1))
+    else
+        echo "[setup] GrpcServerMain ready (PID=$grpc_pid, waited ${waited}s)"
+        if java -cp "$interop_cp" "$WIRE_INTEROP_WIRE_CALL_GRPC"; then
+            echo ">>> WireCallGrpcDemo PASSED"
+            passed=$((passed + 1))
+        else
+            echo ">>> WireCallGrpcDemo FAILED"
+            failed=$((failed + 1))
+        fi
+    fi
+    kill "$grpc_pid" 2>/dev/null
+    wait "$grpc_pid" 2>/dev/null || true
+    rm -f /tmp/grpc-server-main.log
+
+    # 5. (Optional) WireKeepaliveDemo: keepalive policy verification (~55s)
+    if [ $run_keepalive -eq 1 ]; then
+        run_interop_demo "WireKeepaliveDemo (keepalive policy, ~55s)" "$WIRE_INTEROP_KEEPALIVE"
+    fi
+
+    # Summary
+    echo ""
+    echo "============================================"
+    echo "  Summary"
+    echo "============================================"
+    echo "  Passed : $passed"
+    echo "  Failed : $failed"
+    echo "  Total  : $total"
+    if [ $run_keepalive -eq 0 ]; then
+        echo "  (add --keepalive to also run WireKeepaliveDemo)"
+    fi
+    echo "============================================"
+
+    if [ $failed -gt 0 ]; then
+        exit 1
+    fi
+    echo "All wire-interop demos passed."
+}
+
 cmd_consumer() {
     ensure_built
     echo "Running ZkConsumer..."
@@ -440,6 +558,7 @@ case "${1:-}" in
     netty)         cmd_run_netty "${2:-}" ;;
     http2)         cmd_run_http2 "${2:-}" ;;
     wire)          cmd_run_wire "${2:-}" ;;
+    interop)       shift; cmd_wire_interop "$@" ;;
     adaptive)      cmd_run_adaptive "${2:-}" ;;
     consumer)    cmd_consumer ;;
     bench-injvm) cmd_bench_injvm ;;

@@ -11,6 +11,8 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Client;
 import org.hongxi.jaws.transport.TransportFactory;
 import org.hongxi.jaws.transport.TransportResolver;
+import org.hongxi.jaws.transport.http2.Http2Constants;
+import org.hongxi.jaws.transport.http2.StreamType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,62 +63,51 @@ public class WireReference<T> extends AbstractReference<T> {
     }
 
     @Override
-    public Flow.Publisher<Object> callStream(Request request) {
+    public Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
         if (!isAvailable()) {
             throw new JawsServiceException(
                     "WireReference callStream failed: endpoint is not available, url=" + url.getUri());
         }
         request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
 
-        Object[] args = request.getArguments();
-        if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
-            throw new JawsServiceException(
-                    "WireReference callStream failed: argument must be a protobuf Message, url="
-                            + url.getUri());
-        }
-
         WireProtoTypes.MethodInfo methodInfo = protoTypes.getMethodInfo(request.getMethodName());
-
-        // Build a request with the typed Message as argument for WireClient.requestStream
-        DefaultRequest streamRequest = new DefaultRequest();
-        streamRequest.setInterfaceName(request.getInterfaceName());
-        streamRequest.setMethodName(request.getMethodName());
-        streamRequest.setParamDesc(request.getParamDesc());
-        streamRequest.setArguments(new Object[]{requestMessage});
-        streamRequest.setRequestId(request.getRequestId());
-        for (var entry : request.getAttachments().entrySet()) {
-            streamRequest.setAttachment(entry.getKey(), entry.getValue());
-        }
-
         WireClient wireClient = (WireClient) client;
-        return wireClient.requestStream(streamRequest, methodInfo.responseParser());
+
+        if (requestStream == null) {
+            // Server-streaming
+            Object[] args = request.getArguments();
+            if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
+                throw new JawsServiceException(
+                        "WireReference callStream failed: argument must be a protobuf Message, url="
+                                + url.getUri());
+            }
+            DefaultRequest streamRequest = buildWireRequest(request, new Object[]{requestMessage});
+            return wireClient.requestStream(streamRequest, methodInfo.responseParser());
+        } else {
+            // Client-streaming or bidi-streaming: route via the unified requestStream
+            String streamingHeader = request.getAttachments().get(Http2Constants.HEADER_STREAMING);
+            StreamType streamType = StreamType.fromValue(streamingHeader);
+            if (streamType == StreamType.CLIENT) {
+                DefaultRequest clientStreamRequest = buildWireRequest(request, request.getArguments());
+                return wireClient.requestStream(clientStreamRequest, requestStream, methodInfo.responseParser());
+            }
+            // Bidi-streaming
+            DefaultRequest biStreamRequest = buildWireRequest(request, request.getArguments());
+            return wireClient.requestBiStream(biStreamRequest, requestStream, methodInfo.responseParser());
+        }
     }
 
-    @Override
-    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        if (!isAvailable()) {
-            throw new JawsServiceException(
-                    "WireReference callBiStream failed: endpoint is not available, url=" + url.getUri());
-        }
-        request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
-
-        WireProtoTypes.MethodInfo methodInfo = protoTypes.getMethodInfo(request.getMethodName());
-
-        // Build a request for WireClient.requestBiStream
-        DefaultRequest biStreamRequest = new DefaultRequest();
-        biStreamRequest.setInterfaceName(request.getInterfaceName());
-        biStreamRequest.setMethodName(request.getMethodName());
-        biStreamRequest.setParamDesc(request.getParamDesc());
-        biStreamRequest.setRequestId(request.getRequestId());
-        // Carry the first argument (if present) for metadata; the actual
-        // request items flow through the requestStream publisher
-        biStreamRequest.setArguments(request.getArguments());
+    private DefaultRequest buildWireRequest(Request request, Object[] arguments) {
+        DefaultRequest wireRequest = new DefaultRequest();
+        wireRequest.setInterfaceName(request.getInterfaceName());
+        wireRequest.setMethodName(request.getMethodName());
+        wireRequest.setParamDesc(request.getParamDesc());
+        wireRequest.setArguments(arguments);
+        wireRequest.setRequestId(request.getRequestId());
         for (var entry : request.getAttachments().entrySet()) {
-            biStreamRequest.setAttachment(entry.getKey(), entry.getValue());
+            wireRequest.setAttachment(entry.getKey(), entry.getValue());
         }
-
-        WireClient wireClient = (WireClient) client;
-        return wireClient.requestBiStream(biStreamRequest, requestStream, methodInfo.responseParser());
+        return wireRequest;
     }
 
     @Override

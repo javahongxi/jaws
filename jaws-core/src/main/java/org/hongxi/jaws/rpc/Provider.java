@@ -20,33 +20,28 @@ public interface Provider<T> extends Caller<T> {
     T getImpl();
 
     /**
-     * Streaming invocation that returns a Publisher of response items.
+     * Unified streaming invocation that returns a Publisher of response items.
      * <p>
-     * Used for server streaming and bidirectional streaming calls where the
-     * service method returns a {@link Flow.Publisher}. The default implementation
-     * throws {@link UnsupportedOperationException} - implementations must override
-     * this method to support streaming.
+     * Handles all streaming modes:
+     * <ul>
+     *   <li>{@code requestStream == null} → server-streaming (the service method
+     *       returns a {@link Flow.Publisher})</li>
+     *   <li>{@code requestStream != null} → client-streaming or
+     *       bidirectional-streaming (the stream is passed as the first argument
+     *       to the service method)</li>
+     * </ul>
+     * The default implementation throws {@link UnsupportedOperationException} —
+     * implementations must override this method to support streaming.
      *
-     * @param request the RPC request
+     * @param request       the RPC request
+     * @param requestStream a publisher emitting client request items, or
+     *                      {@code null} for server-streaming
      * @return a Publisher emitting response items
      * @throws UnsupportedOperationException if streaming is not supported
      */
-    default Flow.Publisher<Object> callStream(Request request) {
+    @Override
+    default Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
         throw new UnsupportedOperationException(
                 "Streaming not supported by this provider. Override callStream() to enable.");
-    }
-
-    /**
-     * Bidirectional streaming invocation: receives a {@link Flow.Publisher} of
-     * request items from the client and returns a {@link Flow.Publisher} of
-     * response items.
-     *
-     * @param request       the initial RPC request (carries metadata/attachments)
-     * @param requestStream a publisher emitting client request items
-     * @return a Publisher emitting response items
-     */
-    default Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        throw new UnsupportedOperationException(
-                "Bi-directional streaming not supported by this provider. Override callBiStream() to enable.");
     }
 }

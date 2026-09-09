@@ -13,12 +13,13 @@ import org.hongxi.jaws.wire.WireMethodHandler;
 import org.hongxi.jaws.wire.WireMethodHandler.MethodType;
 import org.hongxi.jaws.wire.WireServer;
 import org.hongxi.jaws.wire.WireHandlerRegistry;
+import org.hongxi.jaws.transport.StreamPublisher;
 
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Flow;
-import java.util.concurrent.SubmissionPublisher;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Proves that a standard grpc-java client can call a jaws-wire business handler
@@ -35,7 +36,11 @@ import java.util.concurrent.TimeUnit;
  *       multiple replies via a cold {@link Flow.Publisher}</li>
  *   <li>The bidi handler overrides {@code methodType()} to return
  *       {@link MethodType#BIDIRECTIONAL} and {@code handleBiStream()} to echo
- *       each request item as a response via a {@link SubmissionPublisher}</li>
+ *       each request item as a response via a {@link StreamPublisher}
+ *       (synchronous delivery, unlike {@code SubmissionPublisher})</li>
+ *   <li>The client-streaming handler overrides {@code methodType()} to return
+ *       {@link MethodType#CLIENT_STREAMING} and {@code handleClientStream()} to
+ *       collect all names and return a single aggregated reply</li>
  *   <li>A grpc-java client sends unary calls with {@code x-trace-id} attached
  *       via {@link MetadataUtils} and a server-streaming call with an async
  *       stub</li>
@@ -131,6 +136,69 @@ public class GrpcCallWireDemo {
             }
         });
 
+        // ---- client-streaming handler ----
+        registry.register("interop.Greeter", "ClientStreamGreet", new WireMethodHandler() {
+            @Override
+            public MethodType methodType() {
+                return MethodType.CLIENT_STREAMING;
+            }
+
+            @Override
+            public Message handle(Message request) {
+                throw new UnsupportedOperationException("client-streaming method");
+            }
+
+            @Override
+            public Message handleClientStream(Flow.Publisher<Message> requestStream) {
+                System.out.println("[jaws-wire server] ClientStreamGreet stream opened");
+                java.util.List<String> names = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+                CountDownLatch latch = new CountDownLatch(1);
+                AtomicReference<Throwable> error = new AtomicReference<>();
+
+                requestStream.subscribe(new Flow.Subscriber<>() {
+                    @Override
+                    public void onSubscribe(Flow.Subscription s) {
+                        s.request(Long.MAX_VALUE);
+                    }
+
+                    @Override
+                    public void onNext(Message item) {
+                        HelloRequest req = (HelloRequest) item;
+                        System.out.println("[jaws-wire server] ClientStreamGreet received: " + req.getName());
+                        names.add(req.getName());
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        error.set(throwable);
+                        latch.countDown();
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        latch.countDown();
+                    }
+                });
+
+                try {
+                    latch.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return HelloReply.newBuilder().setMessage("Error: interrupted").build();
+                }
+                String namesList = String.join(", ", names);
+                System.out.println("[jaws-wire server] ClientStreamGreet completed, names: " + namesList);
+                return HelloReply.newBuilder()
+                        .setMessage("Hello, " + namesList + "! (from jaws-wire client-stream)")
+                        .build();
+            }
+
+            @Override
+            public Parser<? extends Message> getRequestParser() {
+                return HelloRequest.parser();
+            }
+        });
+
         // ---- bidi-streaming handler ----
         registry.register("interop.Greeter", "BidiGreet", new WireMethodHandler() {
             @Override
@@ -146,7 +214,12 @@ public class GrpcCallWireDemo {
             @Override
             public Flow.Publisher<Message> handleBiStream(Flow.Publisher<Message> requestStream) {
                 System.out.println("[jaws-wire server] BidiGreet stream opened");
-                SubmissionPublisher<Message> responsePublisher = new SubmissionPublisher<>();
+                // StreamPublisher delivers items synchronously on the caller
+                // thread, ensuring all DATA frames are written before trailers.
+                // SubmissionPublisher must NOT be used here — its async drain
+                // task races with close() → onComplete → sendTrailers, causing
+                // items to be lost.
+                StreamPublisher responsePublisher = new StreamPublisher();
                 requestStream.subscribe(new Flow.Subscriber<>() {
                     @Override
                     public void onSubscribe(Flow.Subscription s) {
@@ -157,7 +230,7 @@ public class GrpcCallWireDemo {
                     public void onNext(Message item) {
                         HelloRequest req = (HelloRequest) item;
                         System.out.println("[jaws-wire server] BidiGreet received: " + req.getName());
-                        responsePublisher.submit(HelloReply.newBuilder()
+                        responsePublisher.addItem(HelloReply.newBuilder()
                                 .setMessage("Hello, " + req.getName() + "! (from jaws-wire bidi)")
                                 .build());
                     }
@@ -165,16 +238,17 @@ public class GrpcCallWireDemo {
                     @Override
                     public void onError(Throwable throwable) {
                         System.err.println("[jaws-wire server] BidiGreet error: " + throwable.getMessage());
-                        responsePublisher.closeExceptionally(throwable);
+                        responsePublisher.completeExceptionally(throwable);
                     }
 
                     @Override
                     public void onComplete() {
                         System.out.println("[jaws-wire server] BidiGreet request stream completed");
-                        responsePublisher.close();
+                        responsePublisher.complete();
                     }
                 });
-                return responsePublisher;
+                // noinspection unchecked
+                return (Flow.Publisher<Message>) (Flow.Publisher<?>) responsePublisher;
             }
 
             @Override
@@ -280,8 +354,48 @@ public class GrpcCallWireDemo {
                             "expected 3 stream items, got: " + itemCount[0]);
                 }
 
-                // ---- 5. Bidirectional streaming call ----
-                System.out.println("\n=== 5. Bidirectional Streaming Call ===");
+                // ---- 5. Client-streaming call ----
+                System.out.println("\n=== 5. Client Streaming Call ===");
+                CountDownLatch clientStreamLatch = new CountDownLatch(1);
+                AtomicReference<HelloReply> clientStreamReply = new AtomicReference<>();
+                GreeterGrpc.GreeterStub clientStreamStub = GreeterGrpc.newStub(channel);
+                io.grpc.stub.StreamObserver<HelloRequest> clientStreamRequest = clientStreamStub.clientStreamGreet(
+                        new StreamObserver<>() {
+                            @Override
+                            public void onNext(HelloReply value) {
+                                clientStreamReply.set(value);
+                                System.out.println("  client-stream response: " + value.getMessage());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("  client-stream error: " + t.getMessage());
+                                clientStreamLatch.countDown();
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                System.out.println("  client-stream completed");
+                                clientStreamLatch.countDown();
+                            }
+                        });
+                clientStreamRequest.onNext(HelloRequest.newBuilder().setName("Alice").build());
+                clientStreamRequest.onNext(HelloRequest.newBuilder().setName("Bob").build());
+                clientStreamRequest.onNext(HelloRequest.newBuilder().setName("Charlie").build());
+                clientStreamRequest.onCompleted();
+                if (!clientStreamLatch.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("client-streaming call timed out");
+                }
+                if (clientStreamReply.get() == null) {
+                    throw new AssertionError("expected a client-stream response");
+                }
+                if (!clientStreamReply.get().getMessage().contains("Alice, Bob, Charlie")) {
+                    throw new AssertionError(
+                            "expected names in response, got: " + clientStreamReply.get().getMessage());
+                }
+
+                // ---- 6. Bidirectional streaming call ----
+                System.out.println("\n=== 6. Bidirectional Streaming Call ===");
                 CountDownLatch bidiLatch = new CountDownLatch(1);
                 int[] bidiCount = {0};
                 GreeterGrpc.GreeterStub bidiStub = GreeterGrpc.newStub(channel);

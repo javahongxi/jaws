@@ -78,6 +78,13 @@ sealed interface WireCallDispatcher
     }
 
     /**
+     * @return {@code true} when the resolved path is a client-streaming method
+     */
+    default boolean isClientStreaming() {
+        return false;
+    }
+
+    /**
      * @return the protobuf parser for request stream items in bidi mode, or null
      *         when bidi streaming is not active or the parser is not available
      */
@@ -98,6 +105,20 @@ sealed interface WireCallDispatcher
     void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                           WireStreamServerHandler serverHandler,
                           Flow.Publisher<Object> requestStream);
+
+    /**
+     * Dispatch a client-streaming call. The first gRPC frame has already been
+     * extracted and added to the {@code requestStream}; subsequent frames are
+     * fed to the publisher. The handler returns a single response message.
+     *
+     * @param ctx              the stream channel context
+     * @param firstFrame       the first gRPC frame data (caller releases)
+     * @param serverHandler    the owning stream serverHandler
+     * @param requestStream    publisher that receives request items
+     */
+    void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
+                              WireStreamServerHandler serverHandler,
+                              Flow.Publisher<Object> requestStream);
 
     // ========================================================================
     // Direct API mode — registry-based routing to typed WireMethodHandler
@@ -130,6 +151,11 @@ sealed interface WireCallDispatcher
         }
 
         @Override
+        public boolean isClientStreaming() {
+            return handler != null && handler.methodType() == WireMethodHandler.MethodType.CLIENT_STREAMING;
+        }
+
+        @Override
         public Parser<? extends Message> getBiStreamRequestParser() {
             return handler != null ? handler.getRequestParser() : null;
         }
@@ -151,7 +177,26 @@ sealed interface WireCallDispatcher
                     serverHandler.sendError(ctx, WireStatus.fromThrowable(e), "Invoke failed: " + e.getMessage());
                 }
             }
-            // Note: firstFrame is null — already decoded and released by processBiStreamFrames
+            // Note: firstFrame is null — already decoded and released by processStreamFrames
+        }
+
+        @Override
+        public void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
+                                         WireStreamServerHandler serverHandler,
+                                         Flow.Publisher<Object> requestStream) {
+            final WireMethodHandler methodHandler = this.handler;
+            final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
+            try {
+                // noinspection unchecked
+                Flow.Publisher<Message> typedStream = (Flow.Publisher<Message>) (Flow.Publisher<?>) requestStream;
+                Message response = methodHandler.handleClientStream(typedStream, callContext);
+                serverHandler.sendUnaryResponse(ctx, response);
+            } catch (Exception e) {
+                log.error("Wire client-stream invoke failed: path={}", serverHandler.path, e);
+                if (!serverHandler.canceled && ctx.channel().isActive()) {
+                    serverHandler.sendError(ctx, WireStatus.fromThrowable(e), "Invoke failed: " + e.getMessage());
+                }
+            }
         }
 
         @Override
@@ -236,6 +281,7 @@ sealed interface WireCallDispatcher
         private String serviceName;
         private String methodName;
         private boolean biStreaming;
+        private boolean clientStreaming;
 
         ProviderCallDispatcher(MessageHandler messageHandler, WireHealthService healthService) {
             this.messageHandler = messageHandler;
@@ -253,9 +299,10 @@ sealed interface WireCallDispatcher
                     methodName = trimmed.substring(slashIdx + 1);
                 }
             }
-            // Resolve bidi flag from the WireMessageHandler's proto types
+            // Resolve streaming flags from the WireMessageHandler's proto types
             if (messageHandler instanceof WireMessageHandler wmh && methodName != null) {
                 this.biStreaming = wmh.isBiStreaming(methodName);
+                this.clientStreaming = wmh.isClientStreaming(methodName);
             }
             // Provider pipeline mode defers path validation to dispatch time
             return true;
@@ -275,6 +322,21 @@ sealed interface WireCallDispatcher
         }
 
         @Override
+        public boolean isClientStreaming() {
+            return clientStreaming;
+        }
+
+        @Override
+        public Parser<? extends Message> getBiStreamRequestParser() {
+            // Both bidi and client-streaming need request item parsing
+            if (biStreaming || clientStreaming) {
+                // The request parser is resolved from the proto types via the method info
+                return null; // Provider mode uses byte[] items, not typed Messages
+            }
+            return null;
+        }
+
+        @Override
         public void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                      WireStreamServerHandler serverHandler,
                                      Flow.Publisher<Object> requestStream) {
@@ -285,7 +347,7 @@ sealed interface WireCallDispatcher
                 // Build Jaws request without arguments — all request items
                 // flow through the requestStream publisher (firstFrame is null
                 // because it was already decoded and added to the publisher
-                // by processBiStreamFrames).
+                // by processStreamFrames).
                 DefaultRequest jawsRequest = new DefaultRequest();
                 jawsRequest.setInterfaceName(svcName);
                 jawsRequest.setMethodName(toJavaMethodName(mName));
@@ -297,7 +359,7 @@ sealed interface WireCallDispatcher
                 RpcContext.init(jawsRequest);
                 try {
                     Flow.Publisher<Object> responsePublisher =
-                            messageHandler.handleBiStream(jawsRequest, requestStream);
+                            messageHandler.handleStream(jawsRequest, requestStream);
                     serverHandler.dispatchStream(ctx, responsePublisher);
                 } finally {
                     // Note: RpcContext.destroy() deferred to response completion
@@ -308,7 +370,18 @@ sealed interface WireCallDispatcher
                     serverHandler.sendError(ctx, WireStatus.fromThrowable(e), "Invoke failed: " + e.getMessage());
                 }
             }
-            // Note: firstFrame is null — already decoded and released by processBiStreamFrames
+            // Note: firstFrame is null — already decoded and released by processStreamFrames
+        }
+
+        @Override
+        public void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
+                                         WireStreamServerHandler serverHandler,
+                                         Flow.Publisher<Object> requestStream) {
+            // Client-streaming dispatch is identical to bidi in Provider mode:
+            // both call handleStream(request, requestStream) which returns a
+            // Flow.Publisher wrapping the single result. dispatchStream handles
+            // the single-item Publisher correctly.
+            dispatchBiStream(ctx, firstFrame, serverHandler, requestStream);
         }
 
         private static String toJavaMethodName(String grpcMethodName) {

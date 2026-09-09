@@ -44,28 +44,14 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
      * Streaming calls do not support retry — select a single reference and delegate directly.
      */
     @Override
-    public Flow.Publisher<Object> callStream(Request request) {
+    public Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
         if (!available.get()) {
             throw new JawsServiceException("Cluster not available, interface=" + getInterface(),
                     JawsErrorCode.SERVICE_NOT_FOUND, false);
         }
         Reference<T> refer = loadBalance.select(request);
         RpcContext.getContext().setServerUrl(refer.getUrl());
-        return refer.callStream(request);
-    }
-
-    /**
-     * Bidirectional streaming calls do not support retry — select a single reference.
-     */
-    @Override
-    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        if (!available.get()) {
-            throw new JawsServiceException("Cluster not available, interface=" + getInterface(),
-                    JawsErrorCode.SERVICE_NOT_FOUND, false);
-        }
-        Reference<T> refer = loadBalance.select(request);
-        RpcContext.getContext().setServerUrl(refer.getUrl());
-        return refer.callBiStream(request, requestStream);
+        return refer.callStream(request, requestStream);
     }
 
     @Override

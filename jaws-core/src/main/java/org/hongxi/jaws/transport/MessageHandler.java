@@ -26,35 +26,23 @@ public interface MessageHandler {
     CompletableFuture<Object> handleAsync(Object message);
 
     /**
-     * Handle a server-streaming request, returning a {@link Flow.Publisher}
-     * that emits stream items.
+     * Handle a streaming request.  Covers all streaming modes:
+     * <ul>
+     *   <li>{@code requestStream == null} → server-streaming</li>
+     *   <li>{@code requestStream != null} → client-streaming or
+     *       bidirectional-streaming</li>
+     * </ul>
      * <p>
      * Only provider-side handlers need to override this; client-side handlers
      * never receive streaming requests and can rely on the default
      * {@link UnsupportedOperationException}.
      *
-     * @param message the incoming RPC request
-     * @return a {@link Flow.Publisher} emitting the stream items
-     */
-    default Flow.Publisher<Object> handleStream(Object message) {
-        throw new UnsupportedOperationException("Streaming not supported by this handler");
-    }
-
-    /**
-     * Handle a bidirectional streaming request: the incoming {@code requestStream}
-     * emits client request items, and the returned {@link Flow.Publisher} produces
-     * server response items.
-     * <p>
-     * Only provider-side handlers need to override this; client-side handlers
-     * never receive streaming requests and can rely on the default
-     * {@link UnsupportedOperationException}.
-     *
-     * @param request       the initial RPC request (carries metadata/attachments)
-     * @param requestStream a publisher emitting client request items
+     * @param request       the incoming RPC request
+     * @param requestStream a publisher emitting client request items, or
+     *                      {@code null} for server-streaming
      * @return a {@link Flow.Publisher} emitting the response items
      */
-    default Flow.Publisher<Object> handleBiStream(Request request, Flow.Publisher<Object> requestStream) {
-        throw new UnsupportedOperationException("Bi-directional streaming not supported by this handler");
+    default Flow.Publisher<Object> handleStream(Request request, Flow.Publisher<Object> requestStream) {
+        throw new UnsupportedOperationException("Streaming not supported by this handler");
     }
-
 }

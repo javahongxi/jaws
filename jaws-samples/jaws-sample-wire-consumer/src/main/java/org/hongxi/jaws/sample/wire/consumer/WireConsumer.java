@@ -119,6 +119,35 @@ public class WireConsumer {
         });
         latch.await();
 
+        // Client streaming call: stream names, get a single aggregated reply
+        System.out.println("\n--- Client Streaming ---");
+        SubmissionPublisher<HelloRequest> clientStreamPublisher = new SubmissionPublisher<>();
+
+        // Start sending items in a background thread while the main thread
+        // blocks on the client-streaming call (which returns a single HelloReply)
+        Thread senderThread = new Thread(() -> {
+            try {
+                // Wait for subscription to propagate
+                Thread.sleep(200);
+                clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Alice").build());
+                Thread.sleep(100);
+                clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Bob").build());
+                Thread.sleep(100);
+                clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Charlie").build());
+                Thread.sleep(100);
+                clientStreamPublisher.close();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        senderThread.setDaemon(true);
+        senderThread.start();
+
+        // This call blocks until all request items are sent and the server replies
+        HelloReply clientStreamReply = greeterService.clientStreamGreet(clientStreamPublisher);
+        System.out.println("Client stream response: " + clientStreamReply.getMessage());
+        senderThread.join(5000);
+
         // Bidirectional streaming call
         System.out.println("\n--- Bidirectional Streaming ---");
         CountDownLatch bidiLatch = new CountDownLatch(1);

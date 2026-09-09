@@ -10,6 +10,8 @@ import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 import io.grpc.stub.StreamObserver;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -64,6 +66,48 @@ public class GrpcServerMain {
                                 .build();
                         responseObserver.onNext(reply);
                         responseObserver.onCompleted();
+                    }
+
+                    @Override
+                    public void sayHelloStream(HelloRequest request,
+                                               StreamObserver<HelloReply> responseObserver) {
+                        System.out.println("[grpc-java server] SayHelloStream request: " + request.getName());
+                        for (int i = 1; i <= 3; i++) {
+                            responseObserver.onNext(HelloReply.newBuilder()
+                                    .setMessage("Hello #" + i + ", " + request.getName() + "! (from grpc-java stream)")
+                                    .build());
+                        }
+                        responseObserver.onCompleted();
+                    }
+
+                    @Override
+                    public io.grpc.stub.StreamObserver<HelloRequest> clientStreamGreet(
+                            io.grpc.stub.StreamObserver<HelloReply> responseObserver) {
+                        System.out.println("[grpc-java server] ClientStreamGreet stream opened");
+                        return new io.grpc.stub.StreamObserver<>() {
+                            private final List<String> names = new CopyOnWriteArrayList<>();
+
+                            @Override
+                            public void onNext(HelloRequest request) {
+                                System.out.println("[grpc-java server] ClientStreamGreet received: " + request.getName());
+                                names.add(request.getName());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("[grpc-java server] ClientStreamGreet error: " + t.getMessage());
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                String namesList = String.join(", ", names);
+                                System.out.println("[grpc-java server] ClientStreamGreet completed, names: " + namesList);
+                                responseObserver.onNext(HelloReply.newBuilder()
+                                        .setMessage("Hello, " + namesList + "! (from grpc-java client-stream)")
+                                        .build());
+                                responseObserver.onCompleted();
+                            }
+                        };
                     }
 
                     @Override

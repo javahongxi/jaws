@@ -71,7 +71,7 @@ class Http2BiStreamingTest {
         // Create a request stream publisher that buffers items until subscription
         BufferedPublisher<Object> requestPublisher = new BufferedPublisher<>();
 
-        Flow.Publisher<Object> responsePublisher = client.requestBiStream(request, requestPublisher);
+        Flow.Publisher<Object> responsePublisher = client.requestStream(request, requestPublisher);
 
         // Wait a bit for the subscription to be registered
         Thread.sleep(200);
@@ -99,7 +99,7 @@ class Http2BiStreamingTest {
         request.setMethodName("echo");
 
         BufferedPublisher<Object> requestPublisher = new BufferedPublisher<>();
-        Flow.Publisher<Object> responsePublisher = client.requestBiStream(request, requestPublisher);
+        Flow.Publisher<Object> responsePublisher = client.requestStream(request, requestPublisher);
 
         // Wait for subscription, then complete immediately
         Thread.sleep(100);
