@@ -292,70 +292,53 @@ public class Http2Client extends AbstractHttp2Client {
                         }
                     });
 
-            // Forward request stream items to the network on the shared executor
-            // to avoid blocking the caller and potential deadlocks.
-            // The requestStream is a StreamObserver from the caller; we wrap it
-            // so that items we push to it get written to the network channel.
-            streamSubscribeExecutor.execute(() -> {
-                // The requestStream is the user's observer; we need to subscribe
-                // to the source that produces items. Since the caller passes a
-                // StreamObserver (not a source), the items come from the business
-                // layer pushing to the observer. We bridge by creating a source
-                // that the business pushes to, and forward to the network.
-                // Actually, the requestStream IS the observer that receives items
-                // from the business code. We need to forward those items to network.
-                // The way this works: the business code calls requestStream.onNext(item),
-                // and we intercept that to write to the network.
-                // But requestStream is passed TO us — we need to subscribe to
-                // the source of request items. Since the new API uses StreamObserver
-                // for receiving, the caller's items come through a different path.
-                // For the HTTP/2 client, the requestStream is a StreamSubject
-                // acting as a source — we subscribe to it.
-                if (requestStream instanceof StreamSubject<Object> source) {
-                    source.subscribe(new StreamObserver<>() {
-                        @Override
-                        public void onNext(Object item) {
-                            if (!streamChannel.isActive()) {
-                                return;
-                            }
-                            try {
-                                byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
-                                                Unpooled.wrappedBuffer(itemBytes), false))
-                                        .addListener(f -> {
-                                            if (!f.isSuccess()) {
-                                                log.error("HTTP/2 bidi stream item write failed", f.cause());
-                                                cancelStream(streamChannel);
-                                                incrErrorCount();
-                                            }
-                                        });
-                            } catch (Exception e) {
-                                log.error("Failed to encode bidi stream item", e);
-                                cancelStream(streamChannel);
-                                incrErrorCount();
-                            }
-                        }
+            // Forward request stream items to the network.
+            // The caller must pass an object implementing both StreamObserver
+            // and StreamSource (e.g. StreamSubject), so the cast is safe.
+            //noinspection unchecked
+            StreamSource<Object> requestSource = (StreamSource<Object>) requestStream;
+            requestSource.subscribe(new StreamObserver<>() {
+                @Override
+                public void onNext(Object item) {
+                    if (!streamChannel.isActive()) {
+                        return;
+                    }
+                    try {
+                        byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                                        Unpooled.wrappedBuffer(itemBytes), false))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("HTTP/2 bidi stream item write failed", f.cause());
+                                        cancelStream(streamChannel);
+                                        incrErrorCount();
+                                    }
+                                });
+                    } catch (Exception e) {
+                        log.error("Failed to encode bidi stream item", e);
+                        cancelStream(streamChannel);
+                        incrErrorCount();
+                    }
+                }
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            log.error("Client bidi request stream error", throwable);
-                            cancelStream(streamChannel);
-                            incrErrorCount();
-                        }
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Client bidi request stream error", throwable);
+                    cancelStream(streamChannel);
+                    incrErrorCount();
+                }
 
-                        @Override
-                        public void onCompleted() {
-                            if (streamChannel.isActive()) {
-                                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
-                                        .addListener(f -> {
-                                            if (!f.isSuccess()) {
-                                                log.error("HTTP/2 bidi END_STREAM write failed", f.cause());
-                                                incrErrorCount();
-                                            }
-                                        });
-                            }
-                        }
-                    });
+                @Override
+                public void onCompleted() {
+                    if (streamChannel.isActive()) {
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("HTTP/2 bidi END_STREAM write failed", f.cause());
+                                        incrErrorCount();
+                                    }
+                                });
+                    }
                 }
             });
 
@@ -449,53 +432,53 @@ public class Http2Client extends AbstractHttp2Client {
                         }
                     });
 
-            // Forward request stream items to the network
-            streamSubscribeExecutor.execute(() -> {
-                if (requestStream instanceof StreamSubject<Object> source) {
-                    source.subscribe(new StreamObserver<>() {
-                        @Override
-                        public void onNext(Object item) {
-                            if (!streamChannel.isActive()) {
-                                return;
-                            }
-                            try {
-                                byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
-                                                Unpooled.wrappedBuffer(itemBytes), false))
-                                        .addListener(f -> {
-                                            if (!f.isSuccess()) {
-                                                log.error("HTTP/2 client stream item write failed", f.cause());
-                                                cancelStream(streamChannel);
-                                                incrErrorCount();
-                                            }
-                                        });
-                            } catch (Exception e) {
-                                log.error("Failed to encode client stream item", e);
-                                cancelStream(streamChannel);
-                                incrErrorCount();
-                            }
-                        }
+            // Forward request stream items to the network.
+            // The caller must pass an object implementing both StreamObserver
+            // and StreamSource (e.g. StreamSubject), so the cast is safe.
+            //noinspection unchecked
+            StreamSource<Object> requestSource = (StreamSource<Object>) requestStream;
+            requestSource.subscribe(new StreamObserver<>() {
+                @Override
+                public void onNext(Object item) {
+                    if (!streamChannel.isActive()) {
+                        return;
+                    }
+                    try {
+                        byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                                        Unpooled.wrappedBuffer(itemBytes), false))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("HTTP/2 client stream item write failed", f.cause());
+                                        cancelStream(streamChannel);
+                                        incrErrorCount();
+                                    }
+                                });
+                    } catch (Exception e) {
+                        log.error("Failed to encode client stream item", e);
+                        cancelStream(streamChannel);
+                        incrErrorCount();
+                    }
+                }
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            log.error("Client stream request error", throwable);
-                            cancelStream(streamChannel);
-                            incrErrorCount();
-                        }
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Client stream request error", throwable);
+                    cancelStream(streamChannel);
+                    incrErrorCount();
+                }
 
-                        @Override
-                        public void onCompleted() {
-                            if (streamChannel.isActive()) {
-                                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
-                                        .addListener(f -> {
-                                            if (!f.isSuccess()) {
-                                                log.error("HTTP/2 client stream END_STREAM write failed", f.cause());
-                                                incrErrorCount();
-                                            }
-                                        });
-                            }
-                        }
-                    });
+                @Override
+                public void onCompleted() {
+                    if (streamChannel.isActive()) {
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("HTTP/2 client stream END_STREAM write failed", f.cause());
+                                        incrErrorCount();
+                                    }
+                                });
+                    }
                 }
             });
 

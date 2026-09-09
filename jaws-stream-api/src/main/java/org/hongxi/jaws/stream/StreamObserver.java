@@ -23,6 +23,25 @@ package org.hongxi.jaws.stream;
  *       multiple threads (the buffering implementation provided by
  *       {@code jaws-core} is thread-safe).</li>
  * </ul>
+ * <p>
+ * <b>Threading contract</b> — callbacks on a business-code observer
+ * (e.g. the {@code StreamObserver} passed as a method parameter to receive
+ * request items on the provider side) are invoked from <b>multiple
+ * threads</b>:
+ * <ul>
+ *   <li>The <b>first</b> request DATA frame is dispatched to the server's
+ *       business executor ({@code serverExecutor}); the business method
+ *       itself runs there and may block safely.</li>
+ *   <li><b>Subsequent</b> request DATA frames (bidi and client-streaming)
+ *       deliver {@code onNext} / {@code onCompleted} on the <b>Netty I/O
+ *       thread</b>. Implementations <b>must not block</b>.</li>
+ * </ul>
+ * Likewise, response-side observers (client receiving server-streamed
+ * items) receive {@code onNext} on the <b>Netty I/O thread</b>.
+ * <p>
+ * In summary: only the initial business-method invocation on the provider
+ * side runs on the server executor. All streaming callbacks run on I/O
+ * threads and must be non-blocking.
  *
  * @param <T> the type of items observed
  * @author shenhongxi

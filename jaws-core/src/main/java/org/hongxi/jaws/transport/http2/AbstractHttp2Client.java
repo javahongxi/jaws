@@ -13,7 +13,6 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
 import org.hongxi.jaws.common.UrlParam;
-import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.URL;
@@ -23,9 +22,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -60,14 +56,6 @@ public abstract class AbstractHttp2Client extends AbstractClient {
     /** Shared event loop group for all HTTP/2 client connections. */
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
 
-    /**
-     * Executor for subscribing to client-side request streams.
-     * Replaces per-request {@code new Thread()} to keep thread count bounded
-     * under concurrent streaming load. All threads are daemons so they do
-     * not prevent JVM shutdown.
-     */
-    protected final ExecutorService streamSubscribeExecutor;
-
     /** Human-readable client name used in log messages and thread names. */
     private final String clientName;
 
@@ -87,11 +75,6 @@ public abstract class AbstractHttp2Client extends AbstractClient {
         super(url);
         this.clientName = clientName;
         this.sslContext = buildSslContext();
-        int threads = url.getIntParameter(UrlParam.Client.STREAM_SUBSCRIBE_THREADS);
-        this.streamSubscribeExecutor = new ThreadPoolExecutor(
-                threads, threads, 0L, TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(),
-                new DefaultThreadFactory(clientName + "-stream-subscribe", true));
     }
 
     @Override
@@ -328,7 +311,6 @@ public abstract class AbstractHttp2Client extends AbstractClient {
             }
             channels = null;
         }
-        streamSubscribeExecutor.shutdown();
     }
 
     @Override

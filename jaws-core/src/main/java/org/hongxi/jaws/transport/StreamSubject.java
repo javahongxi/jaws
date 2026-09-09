@@ -39,6 +39,7 @@ public class StreamSubject<T> implements StreamObserver<T>, StreamSource<T> {
 
     private final List<T> items = new ArrayList<>();
     private StreamObserver<? super T> observer;
+    private boolean replaying;
     private boolean completed;
     private Throwable error;
 
@@ -51,7 +52,7 @@ public class StreamSubject<T> implements StreamObserver<T>, StreamSource<T> {
     @Override
     public synchronized void onNext(T item) {
         if (completed || error != null) return;
-        if (observer != null) {
+        if (observer != null && !replaying) {
             observer.onNext(item);
         } else {
             items.add(item);
@@ -85,6 +86,7 @@ public class StreamSubject<T> implements StreamObserver<T>, StreamSource<T> {
         Throwable terminalError;
         boolean isCompleted;
         synchronized (this) {
+            replaying = true;
             this.observer = observer;
             buffered = new ArrayList<>(items);
             items.clear();
@@ -92,15 +94,25 @@ public class StreamSubject<T> implements StreamObserver<T>, StreamSource<T> {
             isCompleted = completed;
         }
         // Deliver all buffered items first (outside the lock to avoid
-        // blocking producers during potentially slow consumer callbacks)
+        // blocking producers during potentially slow consumer callbacks).
+        // During this window, onNext() sees replaying=true and enqueues
+        // new items instead of delivering them out of order.
         for (T item : buffered) {
             observer.onNext(item);
         }
-        // Then deliver the terminal signal if the stream has ended
-        if (terminalError != null) {
-            observer.onError(terminalError);
-        } else if (isCompleted) {
-            observer.onCompleted();
+        // Close the replay window: deliver any items that arrived during
+        // replay, then the terminal signal if the stream has ended.
+        synchronized (this) {
+            replaying = false;
+            for (T item : items) {
+                observer.onNext(item);
+            }
+            items.clear();
+            if (terminalError != null) {
+                observer.onError(terminalError);
+            } else if (isCompleted) {
+                observer.onCompleted();
+            }
         }
     }
 

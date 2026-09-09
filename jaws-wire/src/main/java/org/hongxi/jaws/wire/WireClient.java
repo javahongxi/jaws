@@ -570,53 +570,53 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
 
-            // Forward request stream items to the network
-            streamSubscribeExecutor.execute(() -> {
-                if (requestStream instanceof StreamSubject<Object> source) {
-                    source.subscribe(new StreamObserver<>() {
-                        @Override
-                        public void onNext(Object item) {
-                            if (!streamChannel.isActive()) {
-                                return;
-                            }
-                            if (item instanceof Message msg) {
-                                ByteBuf frame = WireFrameCodec.encode(msg, streamChannel.alloc(), compression);
-                                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
-                                        .addListener(f -> {
-                                            if (!f.isSuccess()) {
-                                                log.error("Wire client-stream item write failed", f.cause());
-                                                cancelStream(streamChannel);
-                                                incrErrorCount();
-                                            }
-                                        });
-                            } else {
-                                log.error("Wire client-stream item must be a protobuf Message but got: {}",
-                                        item != null ? item.getClass().getName() : "null");
-                                cancelStream(streamChannel);
-                                incrErrorCount();
-                            }
-                        }
+            // Forward request stream items to the network.
+            // The caller must pass an object implementing both StreamObserver
+            // and StreamSource (e.g. StreamSubject), so the cast is safe.
+            //noinspection unchecked
+            StreamSource<Object> requestSource = (StreamSource<Object>) requestStream;
+            requestSource.subscribe(new StreamObserver<>() {
+                @Override
+                public void onNext(Object item) {
+                    if (!streamChannel.isActive()) {
+                        return;
+                    }
+                    if (item instanceof Message msg) {
+                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel.alloc(), compression);
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("Wire client-stream item write failed", f.cause());
+                                        cancelStream(streamChannel);
+                                        incrErrorCount();
+                                    }
+                                });
+                    } else {
+                        log.error("Wire client-stream item must be a protobuf Message but got: {}",
+                                item != null ? item.getClass().getName() : "null");
+                        cancelStream(streamChannel);
+                        incrErrorCount();
+                    }
+                }
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            log.error("Client stream request error", throwable);
-                            cancelStream(streamChannel);
-                            incrErrorCount();
-                        }
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Client stream request error", throwable);
+                    cancelStream(streamChannel);
+                    incrErrorCount();
+                }
 
-                        @Override
-                        public void onCompleted() {
-                            if (streamChannel.isActive()) {
-                                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
-                                        .addListener(f -> {
-                                            if (!f.isSuccess()) {
-                                                log.error("Wire client-stream END_STREAM write failed", f.cause());
-                                                incrErrorCount();
-                                            }
-                                        });
-                            }
-                        }
-                    });
+                @Override
+                public void onCompleted() {
+                    if (streamChannel.isActive()) {
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("Wire client-stream END_STREAM write failed", f.cause());
+                                        incrErrorCount();
+                                    }
+                                });
+                    }
                 }
             });
 
@@ -688,53 +688,53 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
 
-            // Forward request stream items to the network
-            streamSubscribeExecutor.execute(() -> {
-                if (requestStream instanceof StreamSubject<Object> source) {
-                    source.subscribe(new StreamObserver<>() {
-                        @Override
-                        public void onNext(Object item) {
-                            if (!streamChannel.isActive()) {
-                                return;
-                            }
-                            if (item instanceof Message msg) {
-                                ByteBuf frame = WireFrameCodec.encode(msg, streamChannel.alloc(), compression);
-                                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
-                                        .addListener(f -> {
-                                            if (!f.isSuccess()) {
-                                                log.error("Wire bidi stream item write failed", f.cause());
-                                                cancelStream(streamChannel);
-                                                incrErrorCount();
-                                            }
-                                        });
-                            } else {
-                                log.error("Wire bidi stream item must be a protobuf Message but got: {}",
-                                        item != null ? item.getClass().getName() : "null");
-                                cancelStream(streamChannel);
-                                incrErrorCount();
-                            }
-                        }
+            // Forward request stream items to the network.
+            // The caller must pass an object implementing both StreamObserver
+            // and StreamSource (e.g. StreamSubject), so the cast is safe.
+            //noinspection unchecked
+            StreamSource<Object> requestSource = (StreamSource<Object>) requestStream;
+            requestSource.subscribe(new StreamObserver<>() {
+                @Override
+                public void onNext(Object item) {
+                    if (!streamChannel.isActive()) {
+                        return;
+                    }
+                    if (item instanceof Message msg) {
+                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel.alloc(), compression);
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("Wire bidi stream item write failed", f.cause());
+                                        cancelStream(streamChannel);
+                                        incrErrorCount();
+                                    }
+                                });
+                    } else {
+                        log.error("Wire bidi stream item must be a protobuf Message but got: {}",
+                                item != null ? item.getClass().getName() : "null");
+                        cancelStream(streamChannel);
+                        incrErrorCount();
+                    }
+                }
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            log.error("Client bidi request stream error", throwable);
-                            cancelStream(streamChannel);
-                            incrErrorCount();
-                        }
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Client bidi request stream error", throwable);
+                    cancelStream(streamChannel);
+                    incrErrorCount();
+                }
 
-                        @Override
-                        public void onCompleted() {
-                            if (streamChannel.isActive()) {
-                                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
-                                        .addListener(f -> {
-                                            if (!f.isSuccess()) {
-                                                log.error("Wire bidi END_STREAM write failed", f.cause());
-                                                incrErrorCount();
-                                            }
-                                        });
-                            }
-                        }
-                    });
+                @Override
+                public void onCompleted() {
+                    if (streamChannel.isActive()) {
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("Wire bidi END_STREAM write failed", f.cause());
+                                        incrErrorCount();
+                                    }
+                                });
+                    }
                 }
             });
 
