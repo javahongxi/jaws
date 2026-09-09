@@ -446,18 +446,9 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                     StreamSource<Object> responseSource =
                             messageHandler.handleStream(bidiRequest, requestObserver);
 
-                    // Send response headers first (without END_STREAM)
-                    if (ctx.channel().isActive()) {
-                        Http2Headers respHeaders = new DefaultHttp2Headers()
-                                .status(Http2Constants.STATUS_OK)
-                                .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
-                                .set(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
-                        ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
-                    }
-
-                    // Bridge the source into a StreamSubject immediately
-                    // to guard against hot sources that drop items emitted before
-                    // the network subscriber is attached.
+                    // Bridge the source into a StreamSubject immediately to
+                    // guard against hot sources. Items are buffered here
+                    // until the event loop attaches the network subscriber.
                     StreamSubject<Object> responseBuffer = new StreamSubject<>();
                     responseSource.subscribe(new StreamObserver<>() {
                         @Override
@@ -476,42 +467,61 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                         }
                     });
 
-                    // Subscribe the network-forwarding observer to the buffer.
-                    responseBuffer.subscribe(new StreamObserver<>() {
-                        @Override
-                        public void onNext(Object item) {
-                            if (!ctx.channel().isActive()) {
-                                return;
-                            }
-                            try {
-                                byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                                ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                                        Unpooled.wrappedBuffer(itemBytes), false));
-                            } catch (Exception e) {
-                                log.error("Failed to encode bidi stream item", e);
-                                sendStreamError(ctx, e);
-                            }
+                    // All ctx writes (HEADERS + DATA) must happen on the
+                    // event loop to guarantee frame ordering. If we wrote
+                    // HEADERS here (executor thread), Netty would schedule
+                    // it as a task; but subscribe() below would trigger
+                    // writeAndFlush(DATA) directly on the event loop,
+                    // flushing DATA before the HEADERS task runs.
+                    ctx.executor().execute(() -> {
+                        // Send response HEADERS (without END_STREAM)
+                        if (ctx.channel().isActive()) {
+                            Http2Headers respHeaders = new DefaultHttp2Headers()
+                                    .status(Http2Constants.STATUS_OK)
+                                    .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
+                                    .set(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
+                            ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
                         }
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            log.error("Bidi streaming error: requestId={}", bidiRequest.getRequestId(), throwable);
-                            sendStreamError(ctx, throwable);
-                            finishStream();
-                        }
-
-                        @Override
-                        public void onCompleted() {
-                            if (ctx.channel().isActive()) {
-                                ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
+                        // Subscribe the network-forwarding observer on the
+                        // event loop so all writes are sequential with the
+                        // HEADERS above.
+                        responseBuffer.subscribe(new StreamObserver<>() {
+                            @Override
+                            public void onNext(Object item) {
+                                if (!ctx.channel().isActive()) {
+                                    return;
+                                }
+                                try {
+                                    byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
+                                    ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                            Unpooled.wrappedBuffer(itemBytes), false));
+                                } catch (Exception e) {
+                                    log.error("Failed to encode bidi stream item", e);
+                                    sendStreamError(ctx, e);
+                                }
                             }
-                            finishStream();
-                        }
 
-                        private void finishStream() {
-                            RpcContext.destroy();
-                            inflightRequests.decrementAndGet();
-                        }
+                            @Override
+                            public void onError(Throwable throwable) {
+                                log.error("Bidi streaming error: requestId={}", bidiRequest.getRequestId(), throwable);
+                                sendStreamError(ctx, throwable);
+                                finishStream();
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                if (ctx.channel().isActive()) {
+                                    ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
+                                }
+                                finishStream();
+                            }
+
+                            private void finishStream() {
+                                RpcContext.destroy();
+                                inflightRequests.decrementAndGet();
+                            }
+                        });
                     });
                 } catch (Exception e) {
                     log.error("HTTP/2 bidi dispatch failed: {}", bidiRequest, e);
