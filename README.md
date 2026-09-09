@@ -13,8 +13,8 @@ Jaws 是一个**核心 2.8 万多行、可以从头读到尾**的轻量级 RPC �
 - **自定义协议** — 基于 Netty TCP 自研 jaws 二进制协议，编解码全链路零拷贝
 - **HTTP/2 传输** — 可切换至 HTTP/2 传输层，支持 HTTP/2 三种流式，网关与 Service Mesh 友好
 - **HTTP/1.1 REST** — 注解驱动 REST 路由映射，兼容 Spring Web 与 JAX-RS 注解体系，泛化调用兜底
+- **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持三种流式及 gRPC 常用能力
 - **自适应协议** — 支持单端口同时启用 jaws 二进制、HTTP/2、HTTP/1.1 三种协议，自动路由到对应解码器
-- **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持 gzip 压缩、健康检查、deadline 与 keepalive 语义
 - **多种序列化** — 内置 fastjson2、hessian2、protostuff、fury，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连

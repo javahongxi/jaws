@@ -293,9 +293,9 @@ public class Http2Client extends AbstractHttp2Client {
                         }
                     });
 
-            // Subscribe to the user's request stream in a separate thread to
+            // Subscribe to the user's request stream on the shared executor to
             // avoid blocking the caller and potential deadlocks
-            Thread subscribeThread = new Thread(() -> requestStream.subscribe(new Flow.Subscriber<>() {
+            streamSubscribeExecutor.execute(() -> requestStream.subscribe(new Flow.Subscriber<>() {
                 private Flow.Subscription subscription;
 
                 @Override
@@ -350,9 +350,7 @@ public class Http2Client extends AbstractHttp2Client {
                                 });
                     }
                 }
-            }), "jaws-bidi-stream-writer");
-            subscribeThread.setDaemon(true);
-            subscribeThread.start();
+            }));
 
             return publisher;
         } catch (Exception e) {
@@ -447,8 +445,9 @@ public class Http2Client extends AbstractHttp2Client {
                         }
                     });
 
-            // Subscribe to the user's request stream in a separate thread
-            Thread subscribeThread = new Thread(() -> requestStream.subscribe(new Flow.Subscriber<>() {
+            // Subscribe to the user's request stream on the shared executor to
+            // avoid blocking the caller and potential deadlocks
+            streamSubscribeExecutor.execute(() -> requestStream.subscribe(new Flow.Subscriber<>() {
                 private Flow.Subscription subscription;
 
                 @Override
@@ -503,9 +502,7 @@ public class Http2Client extends AbstractHttp2Client {
                                 });
                     }
                 }
-            }), "jaws-client-stream-writer");
-            subscribeThread.setDaemon(true);
-            subscribeThread.start();
+            }));
 
             return publisher;
         } catch (Exception e) {

@@ -219,7 +219,7 @@ public class WireClient extends AbstractHttp2Client {
         } else {
             // Non-retry path: original behaviour
             doSingleAttempt(request, responseParser, requestMessage, grpcPath, timeout,
-                    responseFuture, true);
+                    responseFuture);
         }
 
         return responseFuture;
@@ -332,7 +332,7 @@ public class WireClient extends AbstractHttp2Client {
      */
     private void doSingleAttempt(Request request, Parser<? extends Message> responseParser,
                                   Message requestMessage, String grpcPath, int timeout,
-                                  DefaultResponseFuture responseFuture, boolean autoRemove) {
+                                  DefaultResponseFuture responseFuture) {
         try {
             io.netty.channel.Channel connChannel = activeChannel();
 
@@ -564,8 +564,9 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
 
-            // Subscribe to the user's request stream in a separate thread
-            Thread subscribeThread = new Thread(() -> requestStream.subscribe(new Flow.Subscriber<>() {
+            // Subscribe to the user's request stream on the shared executor to
+            // avoid blocking the caller and potential deadlocks
+            streamSubscribeExecutor.execute(() -> requestStream.subscribe(new Flow.Subscriber<>() {
                 private Flow.Subscription subscription;
 
                 @Override
@@ -620,9 +621,7 @@ public class WireClient extends AbstractHttp2Client {
                                 });
                     }
                 }
-            }), "wire-client-stream-writer");
-            subscribeThread.setDaemon(true);
-            subscribeThread.start();
+            }));
 
             return publisher;
         } catch (Exception e) {
@@ -704,9 +703,9 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
 
-            // Subscribe to the user's request stream in a separate thread to
+            // Subscribe to the user's request stream on the shared executor to
             // avoid blocking the caller and potential deadlocks
-            Thread subscribeThread = new Thread(() -> requestStream.subscribe(new Flow.Subscriber<>() {
+            streamSubscribeExecutor.execute(() -> requestStream.subscribe(new Flow.Subscriber<>() {
                 private Flow.Subscription subscription;
 
                 @Override
@@ -761,9 +760,7 @@ public class WireClient extends AbstractHttp2Client {
                                 });
                     }
                 }
-            }), "wire-bidi-stream-writer");
-            subscribeThread.setDaemon(true);
-            subscribeThread.start();
+            }));
 
             return publisher;
         } catch (Exception e) {
