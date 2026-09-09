@@ -36,4 +36,18 @@ public interface Client extends Channel {
     default Flow.Publisher<Object> requestStream(Request request) {
         throw new UnsupportedOperationException("Streaming not supported by this transport");
     }
+
+    /**
+     * Open a bidirectional streaming call: send a stream of request items and
+     * receive a stream of response items concurrently.  Only supported by
+     * transports that implement streaming (e.g. HTTP/2).
+     *
+     * @param request       the initial RPC request (carries metadata/attachments)
+     * @param requestStream a publisher emitting client request items
+     * @return a publisher emitting streamed response items
+     * @throws UnsupportedOperationException if the transport does not support streaming
+     */
+    default Flow.Publisher<Object> requestBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        throw new UnsupportedOperationException("Bi-directional streaming not supported by this transport");
+    }
 }

@@ -35,4 +35,18 @@ public interface Provider<T> extends Caller<T> {
         throw new UnsupportedOperationException(
                 "Streaming not supported by this provider. Override callStream() to enable.");
     }
+
+    /**
+     * Bidirectional streaming invocation: receives a {@link Flow.Publisher} of
+     * request items from the client and returns a {@link Flow.Publisher} of
+     * response items.
+     *
+     * @param request       the initial RPC request (carries metadata/attachments)
+     * @param requestStream a publisher emitting client request items
+     * @return a Publisher emitting response items
+     */
+    default Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        throw new UnsupportedOperationException(
+                "Bi-directional streaming not supported by this provider. Override callBiStream() to enable.");
+    }
 }

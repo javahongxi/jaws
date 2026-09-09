@@ -186,6 +186,42 @@ public class ReferenceInvoker<T> {
                 interfaceName + " " + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
     }
 
+    /**
+     * Invoke a bidirectional streaming call: select a cluster, delegate to its
+     * {@code callBiStream} method, and return the resulting {@link Flow.Publisher}.
+     */
+    Flow.Publisher<Object> invokeBiStream(Request request, Flow.Publisher<Object> requestStream) throws Throwable {
+        Map<String, String> attachments = RpcContext.getContext().getRpcAttachments();
+        if (!attachments.isEmpty()) {
+            for (Map.Entry<String, String> entry : attachments.entrySet()) {
+                request.setAttachment(entry.getKey(), entry.getValue());
+            }
+        }
+
+        for (Cluster<T> cluster : clusters) {
+            request.setAttachment(UrlParam.Identity.VERSION.getName(), cluster.getUrl().getVersion());
+            request.setAttachment(UrlParam.Identity.APPLICATION.getName(), cluster.getUrl().getApplication());
+            request.setAttachment(UrlParam.Identity.MODULE.getName(), cluster.getUrl().getModule());
+
+            try {
+                return cluster.callBiStream(request, requestStream);
+            } catch (RuntimeException e) {
+                if (ExceptionUtils.isBizException(e)) {
+                    Throwable t = e.getCause();
+                    if (t instanceof Exception) {
+                        throw t;
+                    }
+                    throw new JawsServiceException("biz exception in bidi streaming call: " + e.getMessage());
+                }
+                log.error("Bidi streaming invocation failed: uri={} {}",
+                        cluster.getUrl().getUri(), RpcUtils.toString(request), e);
+                throw e;
+            }
+        }
+        throw new JawsServiceException("Reference callBiStream failed: no cluster found for interface=" +
+                interfaceName + " " + RpcUtils.toString(request), JawsErrorCode.SERVICE_NOT_FOUND, false);
+    }
+
     private static class PrimitiveDefault {
         private static final Map<Class<?>, Object> primitiveValues = new HashMap<>();
 

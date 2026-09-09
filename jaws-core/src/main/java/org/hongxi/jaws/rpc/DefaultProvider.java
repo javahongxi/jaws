@@ -160,4 +160,40 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
                     ExceptionUtils.toSerializableException(cause, method, interfaceClass));
         }
     }
+
+    @Override
+    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        Method method = lookupMethod(request.getMethodName(), request.getParamDesc());
+
+        if (method == null) {
+            throw new JawsServiceException("Service method not found: " + request.getInterfaceName() + "."
+                    + request.getMethodName() + "(" + request.getParamDesc() + ")",
+                    JawsErrorCode.SERVICE_METHOD_NOT_FOUND);
+        }
+
+        try {
+            // The first argument is the incoming request stream; remaining
+            // arguments (if any) come from the original request.
+            Object[] args = request.getArguments();
+            Object[] bidiArgs;
+            if (args != null && args.length > 0) {
+                bidiArgs = new Object[args.length + 1];
+                bidiArgs[0] = requestStream;
+                System.arraycopy(args, 0, bidiArgs, 1, args.length);
+            } else {
+                bidiArgs = new Object[]{requestStream};
+            }
+            Object result = method.invoke(ref, bidiArgs);
+            if (result instanceof Flow.Publisher<?> publisher) {
+                //noinspection unchecked
+                return (Flow.Publisher<Object>) publisher;
+            }
+            throw new JawsBizException("bidi-streaming method must return Flow.Publisher: "
+                    + request.getInterfaceName() + "." + request.getMethodName());
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new JawsBizException("provider bidi-stream call failed",
+                    ExceptionUtils.toSerializableException(cause, method, interfaceClass));
+        }
+    }
 }

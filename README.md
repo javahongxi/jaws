@@ -11,7 +11,7 @@ Jaws 是一个**核心 2.6 万多行、可以从头读到尾**的轻量级 RPC �
 ## 特性
 
 - **自定义协议** — 基于 Netty TCP 自研 jaws 二进制协议，编解码全链路零拷贝
-- **HTTP/2 传输** — 可切换至 HTTP/2 传输层，支持 Server Streaming，网关与 Service Mesh 友好
+- **HTTP/2 传输** — 可切换至 HTTP/2 传输层，支持 Server Streaming 与 Bidirectional Streaming
 - **HTTP/1.1 REST** — 注解驱动 REST 路由映射，兼容 Spring Web 与 JAX-RS 注解体系，泛化调用兜底
 - **自适应协议** — 支持单端口同时启用 jaws 二进制、HTTP/2、HTTP/1.1 三种协议，自动路由到对应解码器
 - **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持 gzip 压缩、健康检查、deadline 与 keepalive 语义

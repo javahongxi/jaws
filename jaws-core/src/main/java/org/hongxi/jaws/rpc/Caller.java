@@ -43,4 +43,16 @@ public interface Caller<T> extends Endpoint {
     default Flow.Publisher<Object> callStream(Request request) {
         throw new UnsupportedOperationException("Streaming not supported by this caller");
     }
+
+    /**
+     * Open a bidirectional streaming call: send a stream of request items and
+     * receive a stream of response items concurrently.
+     *
+     * @param request       the initial RPC request (carries metadata/attachments)
+     * @param requestStream a publisher emitting client request items
+     * @return a publisher emitting streamed response items
+     */
+    default Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        throw new UnsupportedOperationException("Bi-directional streaming not supported by this caller");
+    }
 }

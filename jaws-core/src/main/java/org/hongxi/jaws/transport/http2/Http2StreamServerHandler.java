@@ -18,6 +18,7 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.serialization.Serialization;
 import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.transport.StreamPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,6 +73,10 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
     private ByteArrayOutputStream buffer;
     private boolean overLimit;
     private boolean dispatched;
+
+    // Bidirectional streaming state
+    private StreamPublisher requestPublisher;
+    private Request bidiRequest;
 
     public Http2StreamServerHandler(MessageHandler messageHandler,
                              ExecutorService serverExecutor,
@@ -155,17 +160,25 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
             }
 
             ByteBuf content = dataFrame.content();
-            if (buffer == null) {
-                buffer = new ByteArrayOutputStream(Math.min(content.readableBytes(), maxContentLength));
+            byte[] bytes = new byte[content.readableBytes()];
+            content.readBytes(bytes);
+
+            // Bidirectional streaming: incremental dispatch per DATA frame
+            if (streamType == StreamType.BIDIRECTIONAL) {
+                handleBidiData(ctx, bytes, dataFrame.isEndStream());
+                return;
             }
-            if (buffer.size() + content.readableBytes() > maxContentLength) {
+
+            // Unary / Server streaming: accumulate until END_STREAM
+            if (buffer == null) {
+                buffer = new ByteArrayOutputStream(Math.min(bytes.length, maxContentLength));
+            }
+            if (buffer.size() + bytes.length > maxContentLength) {
                 overLimit = true;
                 sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
                         "Request payload exceeds maxContentLength: " + maxContentLength);
                 return;
             }
-            byte[] bytes = new byte[content.readableBytes()];
-            content.readBytes(bytes);
             buffer.write(bytes, 0, bytes.length);
 
             if (dataFrame.isEndStream()) {
@@ -173,6 +186,49 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
             }
         } finally {
             dataFrame.release();
+        }
+    }
+
+    /**
+     * Handle a DATA frame in bidirectional streaming mode.
+     * <p>
+     * The first DATA frame carries the serialized Request (metadata).
+     * Subsequent DATA frames each carry one request stream item.
+     * END_STREAM signals the client has finished sending.
+     */
+    private void handleBidiData(ChannelHandlerContext ctx, byte[] bytes, boolean endStream) {
+        if (!dispatched) {
+            // First DATA frame: decode as Request metadata
+            dispatched = true;
+            inflightRequests.incrementAndGet();
+            try {
+                bidiRequest = Http2PayloadCodec.decodeRequest(bytes, serialization);
+                requestPublisher = new StreamPublisher();
+                dispatchBiStream(ctx);
+            } catch (Exception e) {
+                log.error("Failed to decode bidi request metadata", e);
+                sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
+                        "Failed to decode request metadata: " + e.getMessage());
+                inflightRequests.decrementAndGet();
+                dispatched = false;
+            }
+            return;
+        }
+
+        // Subsequent DATA frames: decode as request stream items
+        if (bytes.length > 0 && requestPublisher != null) {
+            try {
+                Object item = Http2StreamCodec.decodeItem(bytes, serialization);
+                requestPublisher.addItem(item);
+            } catch (Exception e) {
+                log.error("Failed to decode bidi stream item", e);
+                requestPublisher.completeExceptionally(e);
+                return;
+            }
+        }
+
+        if (endStream && requestPublisher != null) {
+            requestPublisher.complete();
         }
     }
 
@@ -350,6 +406,84 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 inflightRequests.decrementAndGet();
             }
         });
+    }
+
+    /**
+     * Dispatch a bidirectional streaming invocation: client streams request
+     * items via {@code requestPublisher}, server streams response items.
+     * <p>
+     * Called from {@link #handleBidiData} after the first DATA frame (which
+     * carries the Request metadata) has been decoded.
+     */
+    private void dispatchBiStream(ChannelHandlerContext ctx) {
+        try {
+            RpcContext.init(bidiRequest);
+            Flow.Publisher<Object> responsePublisher =
+                    messageHandler.handleBiStream(bidiRequest, requestPublisher);
+
+            // Send response headers first (without END_STREAM)
+            if (ctx.channel().isActive()) {
+                Http2Headers respHeaders = new DefaultHttp2Headers()
+                        .status(Http2Constants.STATUS_OK)
+                        .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
+                        .set(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
+                ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
+            }
+
+            // Subscribe to the response publisher and stream responses
+            responsePublisher.subscribe(new Flow.Subscriber<>() {
+                private Flow.Subscription subscription;
+
+                @Override
+                public void onSubscribe(Flow.Subscription s) {
+                    this.subscription = s;
+                    s.request(Long.MAX_VALUE);
+                }
+
+                @Override
+                public void onNext(Object item) {
+                    if (!ctx.channel().isActive()) {
+                        subscription.cancel();
+                        return;
+                    }
+                    try {
+                        byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
+                        ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                Unpooled.wrappedBuffer(itemBytes), false));
+                    } catch (Exception e) {
+                        log.error("Failed to encode bidi stream item", e);
+                        subscription.cancel();
+                        sendStreamError(ctx, e);
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Bidi streaming error: requestId={}", bidiRequest.getRequestId(), throwable);
+                    sendStreamError(ctx, throwable);
+                    finishStream();
+                }
+
+                @Override
+                public void onComplete() {
+                    if (ctx.channel().isActive()) {
+                        ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
+                    }
+                    finishStream();
+                }
+
+                private void finishStream() {
+                    RpcContext.destroy();
+                    inflightRequests.decrementAndGet();
+                }
+            });
+        } catch (Exception e) {
+            log.error("HTTP/2 bidi dispatch failed: {}", bidiRequest, e);
+            sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
+                    "Bidi dispatch failed: " + e.getMessage());
+            RpcContext.destroy();
+            inflightRequests.decrementAndGet();
+        }
     }
 
     private void sendError(ChannelHandlerContext ctx, String status, String message) {

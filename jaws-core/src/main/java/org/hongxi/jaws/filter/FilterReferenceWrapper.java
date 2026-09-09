@@ -56,6 +56,11 @@ class FilterReferenceWrapper<T> implements Reference<T> {
     }
 
     @Override
+    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        return original.callBiStream(request, requestStream);
+    }
+
+    @Override
     public int activeCallCount() {
         return original.activeCallCount();
     }

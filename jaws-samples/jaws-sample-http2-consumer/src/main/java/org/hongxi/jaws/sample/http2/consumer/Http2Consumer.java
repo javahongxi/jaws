@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Flow;
+import java.util.concurrent.SubmissionPublisher;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -183,6 +184,56 @@ public class Http2Consumer {
             Thread.currentThread().interrupt();
         }
         System.out.println("stream completed.");
+
+        /* Bidirectional-streaming invocation */
+        System.out.println("\n--- StreamService bidirectional streaming ---");
+        SubmissionPublisher<String> requestPublisher = new SubmissionPublisher<>();
+        Flow.Publisher<String> bidiResponse = streamService.bidiGreet(requestPublisher);
+
+        CountDownLatch bidiLatch = new CountDownLatch(1);
+        bidiResponse.subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription s) {
+                s.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(String item) {
+                System.out.println("bidi response => " + item);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("bidi stream error => " + throwable.getMessage());
+                bidiLatch.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                bidiLatch.countDown();
+            }
+        });
+
+        // Send request items with delays to allow subscription to register
+        try {
+            Thread.sleep(200);
+            requestPublisher.submit("alice");
+            Thread.sleep(50);
+            requestPublisher.submit("bob");
+            Thread.sleep(50);
+            requestPublisher.submit("charlie");
+            Thread.sleep(50);
+            requestPublisher.close();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        try {
+            bidiLatch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        System.out.println("bidi stream completed.");
 
         /* Exit forcibly (Netty non-daemon threads would prevent JVM from exiting) */
         System.exit(0);

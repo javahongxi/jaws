@@ -26,7 +26,7 @@ public final class Http2Constants {
     public static final String HEADER_SERIALIZATION = "x-jaws-serialization";
 
     /**
-     * Carries the streaming mode: "unary" or "server".
+     * Carries the streaming mode: "unary", "server", or "bidi".
      * Absent or "unary" means traditional request-response.
      *
      * @see StreamType

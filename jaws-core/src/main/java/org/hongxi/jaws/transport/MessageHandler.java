@@ -1,5 +1,7 @@
 package org.hongxi.jaws.transport;
 
+import org.hongxi.jaws.rpc.Request;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 
@@ -36,6 +38,23 @@ public interface MessageHandler {
      */
     default Flow.Publisher<Object> handleStream(Object message) {
         throw new UnsupportedOperationException("Streaming not supported by this handler");
+    }
+
+    /**
+     * Handle a bidirectional streaming request: the incoming {@code requestStream}
+     * emits client request items, and the returned {@link Flow.Publisher} produces
+     * server response items.
+     * <p>
+     * Only provider-side handlers need to override this; client-side handlers
+     * never receive streaming requests and can rely on the default
+     * {@link UnsupportedOperationException}.
+     *
+     * @param request       the initial RPC request (carries metadata/attachments)
+     * @param requestStream a publisher emitting client request items
+     * @return a {@link Flow.Publisher} emitting the response items
+     */
+    default Flow.Publisher<Object> handleBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        throw new UnsupportedOperationException("Bi-directional streaming not supported by this handler");
     }
 
 }

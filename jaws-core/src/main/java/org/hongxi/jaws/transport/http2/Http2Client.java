@@ -207,6 +207,141 @@ public class Http2Client extends AbstractHttp2Client {
     }
 
     /**
+     * Open a bidirectional streaming call: send a stream of request items and
+     * receive a stream of response items concurrently.
+     * <p>
+     * The first DATA frame carries the serialized Request metadata; subsequent
+     * DATA frames each carry one request stream item.  When the
+     * {@code requestStream} completes, an END_STREAM DATA frame is sent.
+     *
+     * @param request       the initial RPC request (carries metadata/attachments)
+     * @param requestStream a publisher emitting client request items
+     * @return a publisher emitting streamed response items
+     */
+    public Flow.Publisher<Object> requestBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        if (!isAvailable()) {
+            throw new JawsServiceException("HTTP/2 channel is not available: url="
+                    + url.getUri() + RpcUtils.toString(request));
+        }
+
+        StreamPublisher publisher = new StreamPublisher();
+        try {
+            io.netty.channel.Channel connChannel = activeChannel();
+
+            Http2StreamStreamingHandler streamHandler =
+                    new Http2StreamStreamingHandler(serialization, publisher);
+
+            io.netty.channel.Channel streamChannel =
+                    new Http2StreamChannelBootstrap(connChannel)
+                            .handler(streamHandler)
+                            .open().syncUninterruptibly().getNow();
+
+            publisher.setOnCancel(() -> cancelStream(streamChannel));
+
+            // Send HEADERS with bidi streaming mode
+            Http2Headers headers = buildRequestHeaders(request)
+                    .set(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
+            streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
+                    .addListener(f -> {
+                        if (!f.isSuccess()) {
+                            log.error("HTTP/2 bidi HEADERS write failed", f.cause());
+                            publisher.completeExceptionally(
+                                    new JawsServiceException("HTTP/2 bidi HEADERS write failed", f.cause()));
+                            incrErrorCount();
+                            streamChannel.close();
+                        }
+                    });
+
+            // Send first DATA frame with Request metadata (no END_STREAM)
+            byte[] metadataPayload = Http2PayloadCodec.encodeRequest(request, serialization);
+            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                    Unpooled.wrappedBuffer(metadataPayload), false))
+                    .addListener(f -> {
+                        if (!f.isSuccess()) {
+                            log.error("HTTP/2 bidi metadata DATA write failed", f.cause());
+                            publisher.completeExceptionally(
+                                    new JawsServiceException("HTTP/2 bidi metadata write failed", f.cause()));
+                            incrErrorCount();
+                            streamChannel.close();
+                        }
+                    });
+
+            // Subscribe to the user's request stream in a separate thread to
+            // avoid blocking the caller and potential deadlocks
+            Thread subscribeThread = new Thread(() -> requestStream.subscribe(new Flow.Subscriber<>() {
+                private Flow.Subscription subscription;
+
+                @Override
+                public void onSubscribe(Flow.Subscription s) {
+                    this.subscription = s;
+                    s.request(Long.MAX_VALUE);
+                }
+
+                @Override
+                public void onNext(Object item) {
+                    if (!streamChannel.isActive()) {
+                        subscription.cancel();
+                        return;
+                    }
+                    try {
+                        byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                                Unpooled.wrappedBuffer(itemBytes), false))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("HTTP/2 bidi stream item write failed", f.cause());
+                                        subscription.cancel();
+                                        cancelStream(streamChannel);
+                                        incrErrorCount();
+                                    }
+                                });
+                    } catch (Exception e) {
+                        log.error("Failed to encode bidi stream item", e);
+                        subscription.cancel();
+                        cancelStream(streamChannel);
+                        incrErrorCount();
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Client bidi request stream error", throwable);
+                    cancelStream(streamChannel);
+                    incrErrorCount();
+                }
+
+                @Override
+                public void onComplete() {
+                    // Send END_STREAM to signal request stream complete
+                    if (streamChannel.isActive()) {
+                        streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                                .addListener(f -> {
+                                    if (!f.isSuccess()) {
+                                        log.error("HTTP/2 bidi END_STREAM write failed", f.cause());
+                                        incrErrorCount();
+                                    }
+                                });
+                    }
+                }
+            }), "jaws-bidi-stream-writer");
+            subscribeThread.setDaemon(true);
+            subscribeThread.start();
+
+            return publisher;
+        } catch (Exception e) {
+            log.error("HTTP/2 bidi streaming request failed: url={} {}, {}", url.getUri(),
+                    RpcUtils.toString(request), e.getMessage());
+            publisher.completeExceptionally(e);
+            incrErrorCount();
+            if (e instanceof JawsAbstractException jae) {
+                throw jae;
+            }
+            throw new JawsServiceException("Http2Client bidi streaming request failed: url="
+                    + url.getUri() + " " + RpcUtils.toString(request), e);
+        }
+    }
+
+    /**
      * Build HTTP/2 HEADERS for a request, including mirrored metadata for
      * gateway visibility.
      */

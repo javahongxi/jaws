@@ -7,6 +7,7 @@ package org.hongxi.jaws.transport.http2;
  * <ul>
  *   <li>{@link #UNARY} - Traditional request-response (no streaming)</li>
  *   <li>{@link #SERVER} - Client sends one request, server returns a {@link java.util.concurrent.Flow.Publisher}</li>
+ *   <li>{@link #BIDIRECTIONAL} - Client streams requests and server streams responses concurrently</li>
  * </ul>
  * <p>
  * The mode is communicated on the wire via the {@code x-jaws-streaming} HTTP/2 header.
@@ -24,6 +25,11 @@ public enum StreamType {
      * Server streaming: client sends one request, server streams multiple responses.
      */
     SERVER("server"),
+
+    /**
+     * Bidirectional streaming: both client and server stream messages concurrently.
+     */
+    BIDIRECTIONAL("bidi"),
 
     ;
 

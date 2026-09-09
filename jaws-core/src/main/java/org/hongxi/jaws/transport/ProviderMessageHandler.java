@@ -49,4 +49,16 @@ public class ProviderMessageHandler implements MessageHandler {
         return normalHandler.handleStream(message);
     }
 
+    /**
+     * Handle a bidirectional streaming request by delegating to the normal handler.
+     *
+     * @param request       the incoming RPC request
+     * @param requestStream a publisher emitting client request items
+     * @return a {@link Flow.Publisher} emitting the response items
+     */
+    public Flow.Publisher<Object> handleBiStream(org.hongxi.jaws.rpc.Request request,
+                                                  Flow.Publisher<Object> requestStream) {
+        return normalHandler.handleBiStream(request, requestStream);
+    }
+
 }

@@ -164,4 +164,37 @@ public abstract class AbstractRequestHandler implements MessageHandler {
         fillParamDesc(request, method);
         return provider.callStream(request);
     }
+
+    /**
+     * Handle a bidirectional streaming request: look up the provider, resolve the
+     * method, and delegate to {@link Provider#callBiStream(Request, Flow.Publisher)}.
+     *
+     * @param request       the incoming RPC request
+     * @param requestStream a publisher emitting client request items
+     * @return a {@link Flow.Publisher} emitting the response items
+     */
+    public Flow.Publisher<Object> handleBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        if (request == null) {
+            throw new JawsFrameworkException("handleBiStream: request must not be null");
+        }
+
+        String serviceKey = RpcUtils.getServiceKey(request);
+        Provider<?> provider = providers.get(serviceKey);
+
+        if (provider == null) {
+            provider = findProviderByMethodName(request.getMethodName());
+        }
+
+        if (provider == null) {
+            log.error("{} no provider found for serviceKey={} {}",
+                    this.getClass().getSimpleName(), serviceKey, RpcUtils.toString(request));
+            throw new JawsServiceException(
+                    this.getClass().getSimpleName() + " no provider found for serviceKey="
+                            + serviceKey + " " + RpcUtils.toString(request));
+        }
+
+        Method method = provider.lookupMethod(request.getMethodName(), request.getParamDesc());
+        fillParamDesc(request, method);
+        return provider.callBiStream(request, requestStream);
+    }
 }

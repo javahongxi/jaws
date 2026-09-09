@@ -54,6 +54,28 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
         if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
             return invokeAsync(request);
         }
+
+        // Check for bidirectional streaming: a parameter of type Flow.Publisher
+        Class<?>[] paramTypes = method.getParameterTypes();
+        if (args != null) {
+            for (int i = 0; i < paramTypes.length; i++) {
+                if (Flow.Publisher.class.isAssignableFrom(paramTypes[i]) && args[i] instanceof Flow.Publisher<?> publisher) {
+                    // Strip the Publisher from arguments — it is sent as a
+                    // separate stream, not serialized in the request metadata.
+                    Object[] remainingArgs = new Object[args.length - 1];
+                    int idx = 0;
+                    for (int j = 0; j < args.length; j++) {
+                        if (j != i) {
+                            remainingArgs[idx++] = args[j];
+                        }
+                    }
+                    request.setArguments(remainingArgs);
+                    //noinspection unchecked
+                    return invokeBiStream(request, (Flow.Publisher<Object>) publisher);
+                }
+            }
+        }
+
         if (Flow.Publisher.class.isAssignableFrom(method.getReturnType())) {
             return invokeStream(request);
         }

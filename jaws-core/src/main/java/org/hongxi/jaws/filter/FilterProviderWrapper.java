@@ -57,6 +57,11 @@ class FilterProviderWrapper<T> implements Provider<T> {
     }
 
     @Override
+    public Flow.Publisher<Object> callBiStream(Request request, Flow.Publisher<Object> requestStream) {
+        return original.callBiStream(request, requestStream);
+    }
+
+    @Override
     public Method lookupMethod(String methodName, String paramDesc) {
         return original.lookupMethod(methodName, paramDesc);
     }
