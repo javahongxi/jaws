@@ -13,11 +13,10 @@ import org.hongxi.jaws.wire.WireMethodHandler;
 import org.hongxi.jaws.wire.WireMethodHandler.MethodType;
 import org.hongxi.jaws.wire.WireServer;
 import org.hongxi.jaws.wire.WireHandlerRegistry;
-import org.hongxi.jaws.transport.StreamPublisher;
+import org.hongxi.jaws.transport.StreamSubject;
 
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -33,10 +32,10 @@ import java.util.concurrent.atomic.AtomicReference;
  *       response</li>
  *   <li>The streaming handler overrides {@code methodType()} to return
  *       {@link MethodType#SERVER_STREAMING} and {@code handleStream()} to emit
- *       multiple replies via a cold {@link Flow.Publisher}</li>
+ *       multiple replies via a cold {@link org.hongxi.jaws.stream.StreamSource}</li>
  *   <li>The bidi handler overrides {@code methodType()} to return
  *       {@link MethodType#BIDIRECTIONAL} and {@code handleBiStream()} to echo
- *       each request item as a response via a {@link StreamPublisher}
+ *       each request item as a response via a {@link StreamSubject}
  *       (synchronous delivery, unlike {@code SubmissionPublisher})</li>
  *   <li>The client-streaming handler overrides {@code methodType()} to return
  *       {@link MethodType#CLIENT_STREAMING} and {@code handleClientStream()} to
@@ -103,31 +102,19 @@ public class GrpcCallWireDemo {
             }
 
             @Override
-            public Flow.Publisher<Message> handleStream(Message request, WireCallContext context) {
+            public org.hongxi.jaws.stream.StreamSource<Message> handleStream(Message request, WireCallContext context) {
                 HelloRequest req = (HelloRequest) request;
                 String traceId = context.getAttachment("x-trace-id");
                 String suffix = traceId != null ? " [x-trace-id=" + traceId + "]" : "";
                 System.out.println("[jaws-wire server] Streaming request: " + req.getName()
                         + (traceId != null ? ", x-trace-id=" + traceId : ""));
-                // cold publisher: emit items only after subscription
-                return subscriber -> {
-                    subscriber.onSubscribe(new Flow.Subscription() {
-                        @Override
-                        public void request(long n) {
-                            // emit 3 greeting replies
-                            for (int i = 1; i <= 3; i++) {
-                                String msg = "Hello #" + i + ", " + req.getName() + "!" + suffix;
-                                subscriber.onNext(
-                                        HelloReply.newBuilder().setMessage(msg).build());
-                            }
-                            subscriber.onComplete();
-                        }
-
-                        @Override
-                        public void cancel() {
-                        }
-                    });
-                };
+                StreamSubject<Message> observer = new StreamSubject<>();
+                for (int i = 1; i <= 3; i++) {
+                    String msg = "Hello #" + i + ", " + req.getName() + "!" + suffix;
+                    observer.onNext(HelloReply.newBuilder().setMessage(msg).build());
+                }
+                observer.onCompleted();
+                return observer;
             }
 
             @Override
@@ -149,36 +136,36 @@ public class GrpcCallWireDemo {
             }
 
             @Override
-            public Message handleClientStream(Flow.Publisher<Message> requestStream) {
+            public Message handleClientStream(org.hongxi.jaws.stream.StreamObserver<Message> requestStream) {
                 System.out.println("[jaws-wire server] ClientStreamGreet stream opened");
                 java.util.List<String> names = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
                 CountDownLatch latch = new CountDownLatch(1);
                 AtomicReference<Throwable> error = new AtomicReference<>();
 
-                requestStream.subscribe(new Flow.Subscriber<>() {
-                    @Override
-                    public void onSubscribe(Flow.Subscription s) {
-                        s.request(Long.MAX_VALUE);
-                    }
+                if (requestStream instanceof org.hongxi.jaws.stream.StreamSource<?> source) {
+                    @SuppressWarnings("unchecked")
+                    org.hongxi.jaws.stream.StreamSource<Message> typedSource =
+                            (org.hongxi.jaws.stream.StreamSource<Message>) source;
+                    typedSource.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
+                        @Override
+                        public void onNext(Message item) {
+                            HelloRequest req = (HelloRequest) item;
+                            System.out.println("[jaws-wire server] ClientStreamGreet received: " + req.getName());
+                            names.add(req.getName());
+                        }
 
-                    @Override
-                    public void onNext(Message item) {
-                        HelloRequest req = (HelloRequest) item;
-                        System.out.println("[jaws-wire server] ClientStreamGreet received: " + req.getName());
-                        names.add(req.getName());
-                    }
+                        @Override
+                        public void onError(Throwable throwable) {
+                            error.set(throwable);
+                            latch.countDown();
+                        }
 
-                    @Override
-                    public void onError(Throwable throwable) {
-                        error.set(throwable);
-                        latch.countDown();
-                    }
-
-                    @Override
-                    public void onComplete() {
-                        latch.countDown();
-                    }
-                });
+                        @Override
+                        public void onCompleted() {
+                            latch.countDown();
+                        }
+                    });
+                }
 
                 try {
                     latch.await();
@@ -212,43 +199,39 @@ public class GrpcCallWireDemo {
             }
 
             @Override
-            public Flow.Publisher<Message> handleBiStream(Flow.Publisher<Message> requestStream) {
+            public org.hongxi.jaws.stream.StreamSource<Message> handleBiStream(
+                    org.hongxi.jaws.stream.StreamObserver<Message> requestStream) {
                 System.out.println("[jaws-wire server] BidiGreet stream opened");
-                // StreamPublisher delivers items synchronously on the caller
-                // thread, ensuring all DATA frames are written before trailers.
-                // SubmissionPublisher must NOT be used here — its async drain
-                // task races with close() → onComplete → sendTrailers, causing
-                // items to be lost.
-                StreamPublisher responsePublisher = new StreamPublisher();
-                requestStream.subscribe(new Flow.Subscriber<>() {
-                    @Override
-                    public void onSubscribe(Flow.Subscription s) {
-                        s.request(Long.MAX_VALUE);
-                    }
+                StreamSubject<Message> responseObserver = new StreamSubject<>();
 
-                    @Override
-                    public void onNext(Message item) {
-                        HelloRequest req = (HelloRequest) item;
-                        System.out.println("[jaws-wire server] BidiGreet received: " + req.getName());
-                        responsePublisher.addItem(HelloReply.newBuilder()
-                                .setMessage("Hello, " + req.getName() + "! (from jaws-wire bidi)")
-                                .build());
-                    }
+                if (requestStream instanceof org.hongxi.jaws.stream.StreamSource<?> source) {
+                    @SuppressWarnings("unchecked")
+                    org.hongxi.jaws.stream.StreamSource<Message> typedSource =
+                            (org.hongxi.jaws.stream.StreamSource<Message>) source;
+                    typedSource.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
+                        @Override
+                        public void onNext(Message item) {
+                            HelloRequest req = (HelloRequest) item;
+                            System.out.println("[jaws-wire server] BidiGreet received: " + req.getName());
+                            responseObserver.onNext(HelloReply.newBuilder()
+                                    .setMessage("Hello, " + req.getName() + "! (from jaws-wire bidi)")
+                                    .build());
+                        }
 
-                    @Override
-                    public void onError(Throwable throwable) {
-                        System.err.println("[jaws-wire server] BidiGreet error: " + throwable.getMessage());
-                        responsePublisher.completeExceptionally(throwable);
-                    }
+                        @Override
+                        public void onError(Throwable throwable) {
+                            System.err.println("[jaws-wire server] BidiGreet error: " + throwable.getMessage());
+                            responseObserver.onError(throwable);
+                        }
 
-                    @Override
-                    public void onComplete() {
-                        System.out.println("[jaws-wire server] BidiGreet request stream completed");
-                        responsePublisher.complete();
-                    }
-                });
-                // noinspection unchecked
-                return (Flow.Publisher<Message>) (Flow.Publisher<?>) responsePublisher;
+                        @Override
+                        public void onCompleted() {
+                            System.out.println("[jaws-wire server] BidiGreet request stream completed");
+                            responseObserver.onCompleted();
+                        }
+                    });
+                }
+                return responseObserver;
             }
 
             @Override

@@ -8,14 +8,13 @@ import org.hongxi.jaws.wire.health.HealthCheckRequest;
 import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.hongxi.jaws.wire.health.HealthCheckResponse.ServingStatus;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Flow;
 
 /**
  * Standard gRPC health checking service ({@code grpc.health.v1.Health},
@@ -157,7 +156,7 @@ public class WireHealthService {
         }
 
         @Override
-        public Flow.Publisher<Message> handleStream(Message request) {
+        public StreamSource<Message> handleStream(Message request) {
             String service = ((HealthCheckRequest) request).getService();
             WatchPublisher publisher = new WatchPublisher(normalize(service));
             watchers.add(publisher);
@@ -171,118 +170,56 @@ public class WireHealthService {
     }
 
     /**
-     * Per-Watch-call publisher buffering status messages until the single
-     * subscriber consumes them; deregisters itself on cancel so closed
+     * Per-Watch-call source buffering status messages until the single
+     * observer subscribes; deregisters itself on terminal signal so closed
      * streams do not accumulate.
      */
-    private class WatchPublisher implements Flow.Publisher<Message> {
+    private class WatchPublisher implements StreamSource<Message> {
         private final String service;
-        /** Guarded by {@code this}: one entry per subscription (only one here). */
-        private final List<WatchSubscription> subscriptions = new ArrayList<>();
+        private StreamObserver<? super Message> observer;
+        private final List<Message> buffer = new java.util.ArrayList<>();
+        private boolean terminated;
 
         WatchPublisher(String service) {
             this.service = service;
         }
 
         void offer(Message statusMessage) {
-            List<WatchSubscription> snapshot;
             synchronized (this) {
-                snapshot = new ArrayList<>(subscriptions);
-            }
-            for (WatchSubscription sub : snapshot) {
-                sub.offer(statusMessage);
+                if (terminated) return;
+                if (observer != null) {
+                    observer.onNext(statusMessage);
+                } else {
+                    buffer.add(statusMessage);
+                }
             }
         }
 
         @Override
-        public synchronized void subscribe(Flow.Subscriber<? super Message> subscriber) {
-            WatchSubscription sub = new WatchSubscription(this, subscriber);
-            subscriptions.add(sub);
+        public void subscribe(StreamObserver<? super Message> observer) {
+            List<Message> buffered;
+            synchronized (this) {
+                this.observer = observer;
+                buffered = new java.util.ArrayList<>(buffer);
+                buffer.clear();
+            }
             // Emit the current status immediately (SERVICE_UNKNOWN if the
             // service does not exist yet, per the protocol spec)
             ServingStatus current = statuses.get(service);
-            sub.offer(HealthCheckResponse.newBuilder()
+            observer.onNext(HealthCheckResponse.newBuilder()
                     .setStatus(current != null ? current : ServingStatus.SERVICE_UNKNOWN)
                     .build());
-            subscriber.onSubscribe(sub);
-        }
-
-        synchronized void remove(WatchSubscription sub) {
-            subscriptions.remove(sub);
-            if (subscriptions.isEmpty()) {
-                watchers.remove(this);
+            // Deliver any buffered status changes
+            for (Message msg : buffered) {
+                observer.onNext(msg);
             }
         }
-    }
 
-    /**
-     * Single-subscriber delivery queue with re-entrancy-safe draining,
-     * mirroring the buffering contract expected by the server streaming
-     * dispatcher (items emitted before subscription must not be dropped).
-     */
-    private class WatchSubscription implements Flow.Subscription {
-        private final WatchPublisher publisher;
-        private final Flow.Subscriber<? super Message> subscriber;
-        private final Deque<Message> pending = new ArrayDeque<>();
-        private boolean canceled;
-        private boolean draining;
-
-        WatchSubscription(WatchPublisher publisher, Flow.Subscriber<? super Message> subscriber) {
-            this.publisher = publisher;
-            this.subscriber = subscriber;
-        }
-
-        @Override
-        public void request(long n) {
-            drain();
-        }
-
-        @Override
-        public void cancel() {
+        void terminate() {
             synchronized (this) {
-                canceled = true;
+                terminated = true;
             }
-            // Deregister so an abandoned Watch stream does not accumulate
-            // in the health service's watcher list
-            publisher.remove(this);
-        }
-
-        void offer(Message message) {
-            synchronized (this) {
-                if (canceled) {
-                    return;
-                }
-                pending.add(message);
-            }
-            drain();
-        }
-
-        private void drain() {
-            synchronized (this) {
-                if (draining || canceled) {
-                    return;
-                }
-                draining = true;
-            }
-            try {
-                while (true) {
-                    Message next;
-                    synchronized (this) {
-                        next = pending.poll();
-                    }
-                    if (next == null) {
-                        return;
-                    }
-                    subscriber.onNext(next);
-                }
-            } finally {
-                synchronized (this) {
-                    draining = false;
-                    if (!canceled && !pending.isEmpty()) {
-                        drain();
-                    }
-                }
-            }
+            watchers.remove(this);
         }
     }
 }

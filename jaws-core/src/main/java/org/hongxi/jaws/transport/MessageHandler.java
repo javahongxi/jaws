@@ -1,9 +1,11 @@
 package org.hongxi.jaws.transport;
 
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import org.hongxi.jaws.rpc.Request;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Flow;
 
 /**
  * Callback interface for handling messages received by the server.
@@ -38,11 +40,11 @@ public interface MessageHandler {
      * {@link UnsupportedOperationException}.
      *
      * @param request       the incoming RPC request
-     * @param requestStream a publisher emitting client request items, or
+     * @param requestStream an observer receiving client request items, or
      *                      {@code null} for server-streaming
-     * @return a {@link Flow.Publisher} emitting the response items
+     * @return a {@link StreamSource} emitting the response items
      */
-    default Flow.Publisher<Object> handleStream(Request request, Flow.Publisher<Object> requestStream) {
+    default StreamSource<Object> handleStream(Request request, StreamObserver<Object> requestStream) {
         throw new UnsupportedOperationException("Streaming not supported by this handler");
     }
 }

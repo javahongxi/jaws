@@ -8,6 +8,7 @@ import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.stream.StreamSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,7 +16,6 @@ import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -126,7 +126,7 @@ public class ManagedChannel implements Closeable {
     // ========================================================================
 
     /**
-     * Send a server-streaming gRPC call and return a {@link Flow.Publisher}
+     * Send a server-streaming gRPC call and return a {@link StreamSource}
      * that emits each response message.
      *
      * @param serviceName    the fully-qualified gRPC service name
@@ -137,7 +137,7 @@ public class ManagedChannel implements Closeable {
      * @param <Resp>         response message type
      * @return a publisher emitting streamed response messages
      */
-    public <Req extends Message, Resp extends Message> Flow.Publisher<Resp> streamingCall(
+    public <Req extends Message, Resp extends Message> StreamSource<Resp> streamingCall(
             String serviceName, String methodName,
             Req request, Parser<Resp> responseParser) {
         return streamingCall(serviceName, methodName, request, responseParser, null);
@@ -146,12 +146,12 @@ public class ManagedChannel implements Closeable {
     /**
      * Send a server-streaming gRPC call with per-call metadata.
      */
-    public <Req extends Message, Resp extends Message> Flow.Publisher<Resp> streamingCall(
+    public <Req extends Message, Resp extends Message> StreamSource<Resp> streamingCall(
             String serviceName, String methodName,
             Req request, Parser<Resp> responseParser,
             Map<String, String> metadata) {
         //noinspection unchecked
-        return (Flow.Publisher<Resp>) (Flow.Publisher<?>) doStreamingCall(
+        return (StreamSource<Resp>) (StreamSource<?>) doStreamingCall(
                 serviceName, methodName, request, responseParser, metadata);
     }
 
@@ -251,7 +251,7 @@ public class ManagedChannel implements Closeable {
                         + jawsRequest.getInterfaceName() + "/" + jawsRequest.getMethodName());
     }
 
-    private Flow.Publisher<Object> doStreamingCall(String serviceName, String methodName,
+    private StreamSource<Object> doStreamingCall(String serviceName, String methodName,
                                                     Message request, Parser<? extends Message> responseParser,
                                                     Map<String, String> metadata) {
         Request jawsRequest = buildRequest(serviceName, methodName, request, metadata);

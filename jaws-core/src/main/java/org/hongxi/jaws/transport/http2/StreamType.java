@@ -1,13 +1,16 @@
 package org.hongxi.jaws.transport.http2;
 
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 /**
  * Enumerates the invocation modes supported by the Jaws HTTP/2 transport.
  * <p>
  * Modes are determined by inspecting the service method signature:
  * <ul>
  *   <li>{@link #UNARY} - Traditional request-response (no streaming)</li>
- *   <li>{@link #SERVER} - Client sends one request, server returns a {@link java.util.concurrent.Flow.Publisher}</li>
- *   <li>{@link #CLIENT} - Client streams requests via a {@link java.util.concurrent.Flow.Publisher}, server returns a single response</li>
+ *   <li>{@link #SERVER} - Client sends one request, server returns a {@link StreamSource}</li>
+ *   <li>{@link #CLIENT} - Client streams requests via a {@link StreamObserver}, server returns a single response</li>
  *   <li>{@link #BIDIRECTIONAL} - Client streams requests and server streams responses concurrently</li>
  * </ul>
  * <p>

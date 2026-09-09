@@ -9,10 +9,11 @@ import org.hongxi.jaws.rpc.ReferenceDestroyer;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -44,7 +45,7 @@ public abstract class AbstractCluster<T> implements Cluster<T> {
      * Streaming calls do not support retry — select a single reference and delegate directly.
      */
     @Override
-    public Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
+    public StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
         if (!available.get()) {
             throw new JawsServiceException("Cluster not available, interface=" + getInterface(),
                     JawsErrorCode.SERVICE_NOT_FOUND, false);

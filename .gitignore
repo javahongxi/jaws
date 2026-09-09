@@ -40,3 +40,4 @@ logs/
 
 # qoder ignore
 .qoder
+.build-timestamp

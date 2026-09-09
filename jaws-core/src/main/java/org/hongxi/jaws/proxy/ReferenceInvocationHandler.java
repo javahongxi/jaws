@@ -5,6 +5,8 @@ import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 import org.hongxi.jaws.transport.http2.Http2Constants;
 import org.hongxi.jaws.transport.http2.StreamType;
 
@@ -13,7 +15,6 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Flow;
 import java.util.stream.Collectors;
 
 /**
@@ -59,38 +60,38 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
         }
 
         // Streaming detection
-        int publisherIndex = findPublisherArgIndex(method, args);
-        boolean returnsPublisher = Flow.Publisher.class.isAssignableFrom(method.getReturnType());
+        int observerIndex = findObserverArgIndex(method, args);
+        boolean returnsSource = StreamSource.class.isAssignableFrom(method.getReturnType());
 
-        if (publisherIndex >= 0 && returnsPublisher) {
-            // Bidi streaming: Publisher param + Publisher return
+        if (observerIndex >= 0 && returnsSource) {
+            // Bidi streaming: StreamObserver param + StreamSource return
             //noinspection unchecked
-            return invokeBidiStream(request, (Flow.Publisher<Object>) args[publisherIndex], args, publisherIndex);
+            return invokeBidiStream(request, (StreamObserver<Object>) args[observerIndex], args, observerIndex);
         }
-        if (returnsPublisher) {
-            // Server streaming: Publisher return, no Publisher param
+        if (returnsSource) {
+            // Server streaming: StreamSource return, no StreamObserver param
             return invokeStream(request);
         }
-        if (publisherIndex >= 0) {
-            // Client streaming: Publisher param, non-Publisher return
+        if (observerIndex >= 0) {
+            // Client streaming: StreamObserver param, non-StreamSource return
             //noinspection unchecked
-            return invokeClientStream(request, (Flow.Publisher<Object>) args[publisherIndex], args, publisherIndex);
+            return invokeClientStream(request, (StreamObserver<Object>) args[observerIndex], args, observerIndex);
         }
 
         return invoke(request, method.getReturnType());
     }
 
     /**
-     * Find the index of the first {@link Flow.Publisher} argument in the method
-     * parameters. Returns {@code -1} if no Publisher parameter is found.
+     * Find the index of the first {@link StreamObserver} argument in the method
+     * parameters. Returns {@code -1} if no StreamObserver parameter is found.
      */
-    private static int findPublisherArgIndex(Method method, Object[] args) {
+    private static int findObserverArgIndex(Method method, Object[] args) {
         if (args == null) {
             return -1;
         }
         Class<?>[] paramTypes = method.getParameterTypes();
         for (int i = 0; i < paramTypes.length; i++) {
-            if (Flow.Publisher.class.isAssignableFrom(paramTypes[i]) && args[i] instanceof Flow.Publisher) {
+            if (StreamObserver.class.isAssignableFrom(paramTypes[i]) && args[i] instanceof StreamObserver) {
                 return i;
             }
         }
@@ -98,25 +99,25 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
     }
 
     /**
-     * Bidirectional streaming: strip the Publisher arg and invoke with the
-     * request stream, returning a Publisher to the caller.
+     * Bidirectional streaming: strip the StreamObserver arg and invoke with the
+     * request stream, returning a StreamSource to the caller.
      */
-    private Object invokeBidiStream(DefaultRequest request, Flow.Publisher<Object> publisher,
-                                    Object[] args, int publisherIndex) throws Throwable {
-        request.setArguments(stripArg(args, publisherIndex));
+    private Object invokeBidiStream(DefaultRequest request, StreamObserver<Object> observer,
+                                    Object[] args, int observerIndex) throws Throwable {
+        request.setArguments(stripArg(args, observerIndex));
         request.setAttachment(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
-        return invokeStream(request, publisher);
+        return invokeStream(request, observer);
     }
 
     /**
-     * Client streaming: strip the Publisher arg, send the request stream, and
+     * Client streaming: strip the StreamObserver arg, send the request stream, and
      * block for the single response value.
      */
-    private Object invokeClientStream(DefaultRequest request, Flow.Publisher<Object> publisher,
-                                      Object[] args, int publisherIndex) throws Throwable {
-        request.setArguments(stripArg(args, publisherIndex));
+    private Object invokeClientStream(DefaultRequest request, StreamObserver<Object> observer,
+                                      Object[] args, int observerIndex) throws Throwable {
+        request.setArguments(stripArg(args, observerIndex));
         request.setAttachment(Http2Constants.HEADER_STREAMING, StreamType.CLIENT.getValue());
-        return blockForClientStream(request, publisher);
+        return blockForClientStream(request, observer);
     }
 
     private static Object[] stripArg(Object[] args, int index) {
@@ -131,19 +132,13 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
     }
 
     /**
-     * Client streaming: send the request publisher and block for the single
-     * response value from the returned publisher.
+     * Client streaming: send the request observer and block for the single
+     * response value from the returned StreamSource.
      */
-    private Object blockForClientStream(DefaultRequest request, Flow.Publisher<Object> requestPublisher) throws Throwable {
-        Flow.Publisher<Object> responsePublisher = invokeStream(request, requestPublisher);
+    private Object blockForClientStream(DefaultRequest request, StreamObserver<Object> requestObserver) throws Throwable {
+        StreamSource<Object> responseSource = invokeStream(request, requestObserver);
         CompletableFuture<Object> resultFuture = new CompletableFuture<>();
-        responsePublisher.subscribe(new Flow.Subscriber<>() {
-            private Flow.Subscription subscription;
-            @Override
-            public void onSubscribe(Flow.Subscription s) {
-                this.subscription = s;
-                s.request(1);
-            }
+        responseSource.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
                 resultFuture.complete(item);
@@ -153,7 +148,7 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
                 resultFuture.completeExceptionally(throwable);
             }
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 resultFuture.complete(null);
             }
         });

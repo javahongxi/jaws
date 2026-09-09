@@ -9,6 +9,8 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +20,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Flow;
 
 /**
  * Base invocation handler for consumer proxies, holding the per-protocol
@@ -153,18 +154,18 @@ public class ReferenceInvoker<T> {
 
     /**
      * Invoke a server-streaming call: select a cluster, delegate to its
-     * {@code callStream} method, and return the resulting {@link Flow.Publisher}.
+     * {@code callStream} method, and return the resulting {@link StreamSource}.
      */
-    Flow.Publisher<Object> invokeStream(Request request) throws Throwable {
+    StreamSource<Object> invokeStream(Request request) throws Throwable {
         return invokeStream(request, null);
     }
 
     /**
      * Invoke a client/bidi-streaming call: select a cluster, delegate to its
      * {@code callStream} method with the request stream, and return the
-     * resulting {@link Flow.Publisher}.
+     * resulting {@link StreamSource}.
      */
-    Flow.Publisher<Object> invokeStream(Request request, Flow.Publisher<Object> requestStream) throws Throwable {
+    StreamSource<Object> invokeStream(Request request, StreamObserver<Object> requestStream) throws Throwable {
         Map<String, String> attachments = RpcContext.getContext().getRpcAttachments();
         if (!attachments.isEmpty()) {
             for (Map.Entry<String, String> entry : attachments.entrySet()) {

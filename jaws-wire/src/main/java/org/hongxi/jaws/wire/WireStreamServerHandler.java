@@ -14,7 +14,9 @@ import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
-import org.hongxi.jaws.transport.StreamPublisher;
+import org.hongxi.jaws.transport.StreamSubject;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 import org.hongxi.jaws.wire.reflection.ServerReflectionRequest;
 import org.hongxi.jaws.wire.reflection.ServerReflectionResponse;
 import org.slf4j.Logger;
@@ -37,7 +39,7 @@ import java.util.concurrent.*;
  *   <li>Response writing: initial HEADERS ({@code :status 200} + content-type),
  *       DATA frames, and trailers carrying grpc-status / grpc-message; errors
  *       raised before any response body use the trailers-only form</li>
- *   <li>Streaming dispatch: subscribe to a {@link Flow.Publisher} and emit each
+ *   <li>Streaming dispatch: subscribe to a {@link StreamSource} and emit each
  *       protobuf {@link Message} as a gRPC DATA frame, honoring the deadline
  *       and caller cancellation (RST_STREAM)</li>
  *   <li>Lifecycle: buffer release on early close, error trailers, channel close</li>
@@ -105,8 +107,8 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     /** True when the resolved path is a client-streaming method. */
     private boolean clientStreaming;
 
-    /** Thread-safe publisher bridging event loop → handler thread for streaming request items. */
-    private StreamPublisher streamRequestPublisher;
+    /** Thread-safe observer bridging event loop → handler thread for streaming request items. */
+    private StreamSubject<Object> streamRequestObserver;
 
     /** Parser for decoding streaming request items; resolved after path resolution. */
     private Parser<? extends Message> streamRequestParser;
@@ -392,31 +394,55 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Subscribe to the streaming publisher and write each emitted protobuf
+     * Subscribe to the streaming source and write each emitted protobuf
      * {@link Message} as a gRPC DATA frame. On completion, send trailers.
      * Non-Message items are logged and skipped. Emission stops early when
      * the caller cancels the stream or the deadline expires.
+     * <p>
+     * The source is first bridged through a {@link StreamSubject}
+     * buffer that subscribes immediately. This guards against hot sources
+     * that emit items before the network subscriber is attached — a common
+     * race in bidirectional streaming where the business method starts
+     * producing responses as soon as request items arrive, before the
+     * framework has returned the source and subscribed to it for network
+     * forwarding.
      */
-    protected void dispatchStream(ChannelHandlerContext ctx, Flow.Publisher<?> publisher) {
-        publisher.subscribe(new Flow.Subscriber<Object>() {
-            private Flow.Subscription subscription;
-
+    protected void dispatchStream(ChannelHandlerContext ctx, StreamSource<?> source) {
+        // Bridge the source into a buffered StreamSubject immediately.
+        // This ensures items emitted before the network subscriber attaches
+        // are captured rather than dropped (hot source protection).
+        StreamSubject<Object> buffer = new StreamSubject<>();
+        //noinspection unchecked
+        StreamSource<Object> typedSource = (StreamSource<Object>) source;
+        typedSource.subscribe(new StreamObserver<>() {
             @Override
-            public void onSubscribe(Flow.Subscription subscription) {
-                this.subscription = subscription;
-                subscription.request(Long.MAX_VALUE);
+            public void onNext(Object item) {
+                buffer.onNext(item);
             }
 
             @Override
+            public void onError(Throwable throwable) {
+                buffer.onError(throwable);
+            }
+
+            @Override
+            public void onCompleted() {
+                buffer.onCompleted();
+            }
+        });
+
+        // Now subscribe the network-forwarding observer to the buffer.
+        // The buffer replays all items from the beginning, including any
+        // that were already produced by the source before this point.
+        buffer.subscribe(new StreamObserver<>() {
+            @Override
             public void onNext(Object item) {
                 if (canceled || !ctx.channel().isActive()) {
-                    subscription.cancel();
                     return;
                 }
                 // Honor the caller's deadline: stop emitting and report
                 // DEADLINE_EXCEEDED once the grpc-timeout window has passed
                 if (isDeadlineExceeded()) {
-                    subscription.cancel();
                     sendTrailers(ctx, WireConstants.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
                     return;
                 }
@@ -441,7 +467,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 if (!canceled && ctx.channel().isActive()) {
                     sendTrailers(ctx, WireConstants.STATUS_OK, null);
                 }
@@ -452,7 +478,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     /**
      * Extract complete gRPC frames from the accumulator for bidirectional
      * or client streaming. The first frame triggers dispatch after being
-     * added to the request publisher; subsequent frames are fed directly.
+     * added to the request observer; subsequent frames are fed directly.
      */
     private void processStreamFrames(ChannelHandlerContext ctx) {
         while (accumulator != null && accumulator.readableBytes() >= WireConstants.GRPC_HEADER_SIZE) {
@@ -462,8 +488,8 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             }
             if (!dispatched) {
                 dispatched = true;
-                streamRequestPublisher = new StreamPublisher();
-                // Decode the first frame and add it to the publisher BEFORE
+                streamRequestObserver = new StreamSubject<>();
+                // Decode the first frame and add it to the observer BEFORE
                 // dispatch so the handler receives ALL items through the stream
                 try {
                     Object firstItem;
@@ -472,10 +498,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                     } else {
                         firstItem = WireFrameCodec.extractPayload(frame, requestEncoding);
                     }
-                    streamRequestPublisher.addItem(firstItem);
+                    streamRequestObserver.onNext(firstItem);
                 } catch (Exception e) {
                     log.error("Failed to decode first bidi stream item", e);
-                    streamRequestPublisher.completeExceptionally(e);
+                    streamRequestObserver.onError(e);
                     frame.release();
                     return;
                 } finally {
@@ -488,9 +514,9 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                     serverExecutor.execute(() -> {
                         try {
                             if (clientStreaming) {
-                                dispatcher.dispatchClientStream(ctx, null, this, streamRequestPublisher);
+                                dispatcher.dispatchClientStream(ctx, null, this, streamRequestObserver);
                             } else {
-                                dispatcher.dispatchBiStream(ctx, null, this, streamRequestPublisher);
+                                dispatcher.dispatchBiStream(ctx, null, this, streamRequestObserver);
                             }
                         } catch (Exception e) {
                             log.error("unexpected stream dispatch error: path={}", path, e);
@@ -503,7 +529,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                     rejectCall(ctx, e);
                 }
             } else {
-                // Feed subsequent frames to the request publisher
+                // Feed subsequent frames to the request observer
                 try {
                     Object item;
                     if (streamRequestParser != null) {
@@ -511,10 +537,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                     } else {
                         item = WireFrameCodec.extractPayload(frame, requestEncoding);
                     }
-                    streamRequestPublisher.addItem(item);
+                    streamRequestObserver.onNext(item);
                 } catch (Exception e) {
                     log.error("Failed to decode bidi stream item", e);
-                    streamRequestPublisher.completeExceptionally(e);
+                    streamRequestObserver.onError(e);
                 } finally {
                     frame.release();
                 }
@@ -526,8 +552,8 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
      * Signal that the client has finished sending request items (END_STREAM received).
      */
     private void completeRequestStream() {
-        if (streamRequestPublisher != null) {
-            streamRequestPublisher.complete();
+        if (streamRequestObserver != null) {
+            streamRequestObserver.onCompleted();
         }
     }
 

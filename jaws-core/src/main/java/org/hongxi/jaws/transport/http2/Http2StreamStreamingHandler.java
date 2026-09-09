@@ -9,7 +9,7 @@ import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.serialization.Serialization;
-import org.hongxi.jaws.transport.StreamPublisher;
+import org.hongxi.jaws.transport.StreamSubject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,18 +19,18 @@ import java.util.Objects;
 /**
  * Per-stream inbound handler for the HTTP/2 client that decodes each DATA
  * frame as an independent stream item and feeds it to an
- * {@link StreamPublisher}.
+ * {@link StreamSubject}.
  * <p>
  * Unlike the previous design where this handler doubled as a
- * {@link java.util.concurrent.Flow.Publisher}, the publisher logic is now
- * delegated to {@link StreamPublisher} for clean separation of concerns:
+ * publisher logic is now
+ * delegated to {@link StreamSubject} for clean separation of concerns:
  * the handler only deals with Netty inbound events and protocol decoding,
- * while the publisher manages subscriber lifecycle, buffering, and drain.
+ * while the observer manages subscriber lifecycle and buffering.
  * <p>
  * One instance is created per streaming request opened by
  * {@link Http2Client#requestStream}. END_STREAM on the response triggers
- * {@link StreamPublisher#complete()}; stream reset or channel close
- * triggers {@link StreamPublisher#completeExceptionally(Throwable)}.
+ * {@link StreamSubject#onCompleted()}; stream reset or channel close
+ * triggers {@link StreamSubject#onError(Throwable)}.
  *
  * @author shenhongxi
  */
@@ -38,14 +38,14 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(Http2StreamStreamingHandler.class);
 
     private final Serialization serialization;
-    private final StreamPublisher publisher;
+    private final StreamSubject<Object> observer;
 
     private String status;
     private boolean endStreamReceived;
 
-    Http2StreamStreamingHandler(Serialization serialization, StreamPublisher publisher) {
+    Http2StreamStreamingHandler(Serialization serialization, StreamSubject<Object> observer) {
         this.serialization = serialization;
-        this.publisher = publisher;
+        this.observer = observer;
     }
 
     @Override
@@ -57,22 +57,22 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
                     endStreamReceived = true;
                     // Server ended immediately after headers (possibly an error)
                     if (!Http2Constants.STATUS_OK.equals(status)) {
-                        publisher.completeExceptionally(new JawsServiceException(
+                        observer.onError(new JawsServiceException(
                                 "HTTP/2 streaming error: status=" + status));
                         return;
                     }
-                    publisher.complete();
+                    observer.onCompleted();
                 }
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(dataFrame);
             } else if (msg instanceof Http2ResetFrame resetFrame) {
-                publisher.completeExceptionally(new JawsServiceException(
+                observer.onError(new JawsServiceException(
                         "HTTP/2 stream reset: errorCode=" + resetFrame.errorCode()));
             } else {
                 ReferenceCountUtil.release(msg);
             }
         } catch (Exception e) {
-            publisher.completeExceptionally(e);
+            observer.onError(e);
         }
     }
 
@@ -86,24 +86,24 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
                 if (!Http2Constants.STATUS_OK.equals(status)) {
                     // Error payload — interpret as error message
                     String errorMsg = new String(bytes, StandardCharsets.UTF_8);
-                    publisher.completeExceptionally(new JawsServiceException(
+                    observer.onError(new JawsServiceException(
                             "HTTP/2 streaming error: status=" + status + ", message=" + errorMsg));
                     return;
                 }
 
                 try {
                     Object item = Http2StreamCodec.decodeItem(bytes, serialization);
-                    publisher.addItem(item);
+                    observer.onNext(item);
                 } catch (Exception e) {
                     log.error("Failed to decode stream item", e);
-                    publisher.completeExceptionally(
+                    observer.onError(
                             new JawsServiceException("Failed to decode stream item", e));
                 }
             }
 
             if (dataFrame.isEndStream()) {
                 endStreamReceived = true;
-                publisher.complete();
+                observer.onCompleted();
             }
         } finally {
             dataFrame.release();
@@ -118,7 +118,7 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
         // cause completeExceptionally to fire before complete, surfacing a
         // spurious error to the subscriber.
         if (!endStreamReceived) {
-            publisher.completeExceptionally(
+            observer.onError(
                     new JawsServiceException("HTTP/2 stream closed before streaming completed"));
         }
     }
@@ -126,7 +126,7 @@ class Http2StreamStreamingHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("HTTP/2 streaming client error", cause);
-        publisher.completeExceptionally(cause);
+        observer.onError(cause);
         ctx.close();
     }
 }

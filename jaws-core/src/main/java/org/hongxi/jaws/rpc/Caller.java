@@ -1,7 +1,9 @@
 package org.hongxi.jaws.rpc;
 
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Flow;
 
 /**
  * Common invocation abstraction shared by both sides of an RPC call: a
@@ -42,11 +44,11 @@ public interface Caller<T> extends Endpoint {
      * </ul>
      *
      * @param request       the RPC request
-     * @param requestStream a publisher emitting client request items, or
+     * @param requestStream an observer receiving client request items, or
      *                      {@code null} for server-streaming
-     * @return a publisher emitting streamed response items
+     * @return a source emitting streamed response items
      */
-    default Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
+    default StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
         throw new UnsupportedOperationException("Streaming not supported by this caller");
     }
 }

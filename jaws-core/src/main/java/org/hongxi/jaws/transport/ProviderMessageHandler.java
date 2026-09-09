@@ -1,10 +1,12 @@
 package org.hongxi.jaws.transport;
 
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Flow;
 
 /**
  * Composite message handler that dispatches requests to the appropriate
@@ -43,13 +45,13 @@ public class ProviderMessageHandler implements MessageHandler {
      * Handle a streaming request by delegating to the normal handler.
      *
      * @param request       the incoming RPC request
-     * @param requestStream a publisher emitting client request items, or
+     * @param requestStream an observer receiving client request items, or
      *                      {@code null} for server-streaming
-     * @return a {@link Flow.Publisher} emitting the response items
+     * @return a {@link StreamSource} emitting the response items
      */
     @Override
-    public Flow.Publisher<Object> handleStream(Request request,
-                                                Flow.Publisher<Object> requestStream) {
+    public StreamSource<Object> handleStream(Request request,
+                                                StreamObserver<Object> requestStream) {
         return normalHandler.handleStream(request, requestStream);
     }
 }

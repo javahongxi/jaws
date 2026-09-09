@@ -1,7 +1,9 @@
 package org.hongxi.jaws.rpc;
 
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import java.lang.reflect.Method;
-import java.util.concurrent.Flow;
 
 /**
  * Server-side invocation abstraction wrapping a service implementation (roughly the
@@ -20,12 +22,12 @@ public interface Provider<T> extends Caller<T> {
     T getImpl();
 
     /**
-     * Unified streaming invocation that returns a Publisher of response items.
+     * Unified streaming invocation that returns a StreamSource of response items.
      * <p>
      * Handles all streaming modes:
      * <ul>
      *   <li>{@code requestStream == null} → server-streaming (the service method
-     *       returns a {@link Flow.Publisher})</li>
+     *       returns a {@link StreamSource})</li>
      *   <li>{@code requestStream != null} → client-streaming or
      *       bidirectional-streaming (the stream is passed as the first argument
      *       to the service method)</li>
@@ -34,13 +36,13 @@ public interface Provider<T> extends Caller<T> {
      * implementations must override this method to support streaming.
      *
      * @param request       the RPC request
-     * @param requestStream a publisher emitting client request items, or
+     * @param requestStream an observer receiving client request items, or
      *                      {@code null} for server-streaming
-     * @return a Publisher emitting response items
+     * @return a StreamSource emitting response items
      * @throws UnsupportedOperationException if streaming is not supported
      */
     @Override
-    default Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
+    default StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
         throw new UnsupportedOperationException(
                 "Streaming not supported by this provider. Override callStream() to enable.");
     }

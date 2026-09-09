@@ -61,15 +61,12 @@ public abstract class AbstractHttp2Client extends AbstractClient {
     private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
 
     /**
-     * Shared executor for subscribing to client-side request streams.
+     * Executor for subscribing to client-side request streams.
      * Replaces per-request {@code new Thread()} to keep thread count bounded
      * under concurrent streaming load. All threads are daemons so they do
      * not prevent JVM shutdown.
      */
-    protected static final ExecutorService streamSubscribeExecutor = new ThreadPoolExecutor(
-            4, 4, 0L, TimeUnit.MILLISECONDS,
-            new LinkedBlockingQueue<>(),
-            new DefaultThreadFactory("jaws-stream-subscribe", true));
+    protected final ExecutorService streamSubscribeExecutor;
 
     /** Human-readable client name used in log messages and thread names. */
     private final String clientName;
@@ -90,6 +87,11 @@ public abstract class AbstractHttp2Client extends AbstractClient {
         super(url);
         this.clientName = clientName;
         this.sslContext = buildSslContext();
+        int threads = url.getIntParameter(UrlParam.Client.STREAM_SUBSCRIBE_THREADS);
+        this.streamSubscribeExecutor = new ThreadPoolExecutor(
+                threads, threads, 0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(),
+                new DefaultThreadFactory(clientName + "-stream-subscribe", true));
     }
 
     @Override
@@ -326,6 +328,7 @@ public abstract class AbstractHttp2Client extends AbstractClient {
             }
             channels = null;
         }
+        streamSubscribeExecutor.shutdown();
     }
 
     @Override

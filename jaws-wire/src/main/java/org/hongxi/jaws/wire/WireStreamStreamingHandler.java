@@ -11,7 +11,7 @@ import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
-import org.hongxi.jaws.transport.StreamPublisher;
+import org.hongxi.jaws.transport.StreamSubject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
  * Unlike {@link WireStreamResponseHandler} which collects a single response
  * message into a {@link java.util.concurrent.CompletableFuture}, this handler
  * decodes each incoming gRPC frame and feeds it to a
- * {@link StreamPublisher} that implements {@link java.util.concurrent.Flow.Publisher}.
+ * {@link StreamSubject}.
  * <p>
  * The handler accumulates DATA frame bytes (guarded by the max-inbound
  * message size), extracts complete gRPC frames via
@@ -35,7 +35,7 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(WireStreamStreamingHandler.class);
 
     private final Parser<? extends Message> responseParser;
-    private final StreamPublisher publisher;
+    private final StreamSubject<Object> observer;
     private final int maxMessageSize;
     /** Max size of inbound HTTP/2 headers (metadata) in bytes; 0 = unlimited. */
     private final int maxInboundMetadataSize;
@@ -46,11 +46,11 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private String responseEncoding = WireConstants.ENCODING_IDENTITY;
 
     WireStreamStreamingHandler(Parser<? extends Message> responseParser,
-                               StreamPublisher publisher,
+                               StreamSubject<Object> observer,
                                int maxMessageSize,
                                int maxInboundMetadataSize) {
         this.responseParser = responseParser;
-        this.publisher = publisher;
+        this.observer = observer;
         this.maxMessageSize = maxMessageSize;
         this.maxInboundMetadataSize = maxInboundMetadataSize;
     }
@@ -63,20 +63,20 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
             } else if (msg instanceof Http2ResetFrame resetFrame) {
-                publisher.completeExceptionally(new RuntimeException(
+                observer.onError(new RuntimeException(
                         "gRPC stream reset: errorCode=" + resetFrame.errorCode()));
             } else {
                 ReferenceCountUtil.release(msg);
             }
         } catch (Exception e) {
-            publisher.completeExceptionally(e);
+            observer.onError(e);
         }
     }
 
     private void onHeaders(Http2HeadersFrame headersFrame) {
         // Defense-in-depth: reject oversized inbound metadata
         if (maxInboundMetadataSize > 0 && WireMetadata.estimateHeaderSize(headersFrame.headers()) > maxInboundMetadataSize) {
-            publisher.completeExceptionally(new RuntimeException(
+            observer.onError(new RuntimeException(
                     "gRPC response metadata exceeds maxInboundMetadataSize: " + maxInboundMetadataSize));
             return;
         }
@@ -111,7 +111,7 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
             // Guard against oversized responses: fail the stream and reset
             // instead of buffering unbounded data
             if (accumulator.readableBytes() > maxMessageSize + WireConstants.GRPC_HEADER_SIZE) {
-                publisher.completeExceptionally(new RuntimeException(
+                observer.onError(new RuntimeException(
                         "gRPC response exceeds maxInboundMessageSize: " + maxMessageSize));
                 ctx.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
                 ctx.close();
@@ -126,10 +126,10 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
                 }
                 try {
                     Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
-                    publisher.addItem(response);
+                    observer.onNext(response);
                 } catch (Exception e) {
                     log.error("Wire streaming decode failed", e);
-                    publisher.completeExceptionally(e);
+                    observer.onError(e);
                 } finally {
                     frame.release();
                 }
@@ -147,23 +147,23 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
         if (grpcStatus != WireConstants.STATUS_OK && grpcStatus >= 0) {
             // Surface a semantically typed exception: DEADLINE_EXCEEDED carries the
             // jaws timeout error code, UNAVAILABLE is flagged retryable
-            publisher.completeExceptionally(
+            observer.onError(
                     WireStatus.toException(grpcStatus, grpcMessage));
             return;
         }
-        publisher.complete();
+        observer.onCompleted();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
-        publisher.completeExceptionally(
+        observer.onError(
                 new RuntimeException("gRPC stream closed before completion"));
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Wire client streaming error", cause);
-        publisher.completeExceptionally(cause);
+        observer.onError(cause);
         ctx.close();
     }
 }

@@ -9,6 +9,8 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Client;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 import org.hongxi.jaws.transport.TransportFactory;
 import org.hongxi.jaws.transport.TransportResolver;
 import org.hongxi.jaws.transport.http2.Http2Constants;
@@ -16,7 +18,6 @@ import org.hongxi.jaws.transport.http2.StreamType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -63,7 +64,7 @@ public class WireReference<T> extends AbstractReference<T> {
     }
 
     @Override
-    public Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
+    public StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
         if (!isAvailable()) {
             throw new JawsServiceException(
                     "WireReference callStream failed: endpoint is not available, url=" + url.getUri());

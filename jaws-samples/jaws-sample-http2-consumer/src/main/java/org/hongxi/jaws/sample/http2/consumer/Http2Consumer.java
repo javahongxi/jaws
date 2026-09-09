@@ -14,12 +14,14 @@ import org.hongxi.jaws.sample.api.model.Order;
 import org.hongxi.jaws.sample.api.model.Phone;
 import org.hongxi.jaws.sample.api.model.User;
 
+import org.hongxi.jaws.transport.StreamSubject;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Flow;
-import java.util.concurrent.SubmissionPublisher;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -31,7 +33,7 @@ import java.util.concurrent.TimeUnit;
  * 2. Multi-Service reference - DemoService + OrderService + StreamService
  * 3. Various parameter types - String, POJO, List, Map, nested objects
  * 4. group/version configuration
- * 5. Server streaming over HTTP/2 (subscribe to Flow.Publisher)
+ * 5. Server streaming over HTTP/2 (subscribe to StreamSource)
  * </pre>
  *
  * <p>Run {@code Http2Provider} first before starting this consumer.
@@ -152,15 +154,10 @@ public class Http2Consumer {
         StreamService streamService = streamRef.getRef();
 
         /* Server-streaming invocation */
-        Flow.Publisher<String> publisher = streamService.greetStream("hello", 5);
+        StreamSource<String> source = streamService.greetStream("hello", 5);
         CountDownLatch streamLatch = new CountDownLatch(1);
 
-        publisher.subscribe(new Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(Flow.Subscription s) {
-                s.request(Long.MAX_VALUE);
-            }
-
+        source.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(String item) {
                 System.out.println("stream item => " + item);
@@ -173,7 +170,7 @@ public class Http2Consumer {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 streamLatch.countDown();
             }
         });
@@ -187,19 +184,19 @@ public class Http2Consumer {
 
         /* Client-streaming invocation */
         System.out.println("\n--- StreamService client streaming ---");
-        SubmissionPublisher<String> collectRequestPublisher = new SubmissionPublisher<>();
+        StreamSubject<String> collectRequestObserver = new StreamSubject<>();
 
-        // Send request items in a separate thread to avoid blocking
+        // Send request items in a separate thread
         Thread sendThread = new Thread(() -> {
             try {
                 Thread.sleep(200);
-                collectRequestPublisher.submit("alice");
+                collectRequestObserver.onNext("alice");
                 Thread.sleep(50);
-                collectRequestPublisher.submit("bob");
+                collectRequestObserver.onNext("bob");
                 Thread.sleep(50);
-                collectRequestPublisher.submit("charlie");
+                collectRequestObserver.onNext("charlie");
                 Thread.sleep(50);
-                collectRequestPublisher.close();
+                collectRequestObserver.onCompleted();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -207,21 +204,16 @@ public class Http2Consumer {
         sendThread.setDaemon(true);
         sendThread.start();
 
-        String collectResult = streamService.collectGreet(collectRequestPublisher);
+        String collectResult = streamService.collectGreet(collectRequestObserver);
         System.out.println("collectGreet => " + collectResult);
 
         /* Bidirectional-streaming invocation */
         System.out.println("\n--- StreamService bidirectional streaming ---");
-        SubmissionPublisher<String> requestPublisher = new SubmissionPublisher<>();
-        Flow.Publisher<String> bidiResponse = streamService.bidiGreet(requestPublisher);
+        StreamSubject<String> requestObserver = new StreamSubject<>();
+        StreamSource<String> bidiResponse = streamService.bidiGreet(requestObserver);
 
         CountDownLatch bidiLatch = new CountDownLatch(1);
-        bidiResponse.subscribe(new Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(Flow.Subscription s) {
-                s.request(Long.MAX_VALUE);
-            }
-
+        bidiResponse.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(String item) {
                 System.out.println("bidi response => " + item);
@@ -234,21 +226,21 @@ public class Http2Consumer {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 bidiLatch.countDown();
             }
         });
 
-        // Send request items with delays to allow subscription to register
+        // Send request items with delays
         try {
             Thread.sleep(200);
-            requestPublisher.submit("alice");
+            requestObserver.onNext("alice");
             Thread.sleep(50);
-            requestPublisher.submit("bob");
+            requestObserver.onNext("bob");
             Thread.sleep(50);
-            requestPublisher.submit("charlie");
+            requestObserver.onNext("charlie");
             Thread.sleep(50);
-            requestPublisher.close();
+            requestObserver.onCompleted();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

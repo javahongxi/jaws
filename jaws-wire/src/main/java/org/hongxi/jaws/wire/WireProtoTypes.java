@@ -12,23 +12,24 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Flow;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 
 /**
  * Utility to extract protobuf {@link Message} types from a service interface.
  * <p>
  * Scans all declared methods of the interface to build per-method metadata:
  * the request message type (first parameter extending {@code Message}, or the
- * type argument of a {@code Flow.Publisher<Message>} parameter for bidirectional
+ * type argument of a {@code StreamObserver<Message>} parameter for bidirectional
  * streaming) and the response message type (return type extending {@code Message},
- * or the generic type argument of {@code Flow.Publisher<Message>} for server-
+ * or the generic type argument of {@code StreamSource<Message>} for server-
  * streaming methods). Each type's static {@code parser()} method is invoked
  * reflectively to obtain the protobuf {@link Parser}.
  * <p>
  * Convention: every service interface method has either a protobuf {@code Message}
- * parameter (unary / server streaming) or a {@code Flow.Publisher<Message>}
+ * parameter (unary / server streaming) or a {@code StreamObserver<Message>}
  * parameter (bidirectional streaming), and returns either a protobuf {@code Message}
- * (unary) or a {@code Flow.Publisher<Message>} (streaming).
+ * (unary) or a {@code StreamSource<Message>} (streaming).
  *
  * @author shenhongxi
  */
@@ -43,9 +44,9 @@ public final class WireProtoTypes {
     /**
      * Per-method protobuf type metadata.
      *
-     * @param biStreaming true when the method has a {@code Flow.Publisher} parameter
+     * @param biStreaming true when the method has a {@code StreamObserver} parameter
      *                    (bidirectional streaming), meaning the request type is
-     *                    extracted from the publisher's type argument
+     *                    extracted from the observer's type argument
      */
     public record MethodInfo(Class<? extends Message> requestClass,
                              Class<? extends Message> responseClass,
@@ -100,7 +101,7 @@ public final class WireProtoTypes {
             }
 
             // Request type: first parameter that extends Message, or the type
-            // argument of a Flow.Publisher parameter (bidirectional streaming)
+            // argument of a StreamObserver parameter (bidirectional streaming)
             Class<?> requestType = null;
             boolean biStreaming = false;
             for (Parameter param : method.getParameters()) {
@@ -108,29 +109,29 @@ public final class WireProtoTypes {
                     requestType = param.getType();
                     break;
                 }
-                if (Flow.Publisher.class.isAssignableFrom(param.getType())) {
-                    requestType = resolvePublisherParamType(method, param);
+                if (StreamObserver.class.isAssignableFrom(param.getType())) {
+                    requestType = resolveStreamObserverParamType(method, param);
                     biStreaming = true;
                     break;
                 }
             }
             if (requestType == null) {
                 throw new IllegalArgumentException(
-                        "Wire service interface method has no protobuf Message or Flow.Publisher<Message> parameter: "
+                        "Wire service interface method has no protobuf Message or StreamObserver<Message> parameter: "
                                 + serviceInterface.getName() + "." + method.getName());
             }
 
-            // Response type: return type extending Message, or Flow.Publisher<Message>
+            // Response type: return type extending Message, or StreamSource<Message>
             boolean streaming = false;
             Class<?> responseType;
-            if (Flow.Publisher.class.isAssignableFrom(method.getReturnType())) {
+            if (StreamSource.class.isAssignableFrom(method.getReturnType())) {
                 streaming = true;
-                responseType = resolvePublisherTypeArgument(method);
+                responseType = resolveStreamSourceTypeArgument(method);
             } else if (Message.class.isAssignableFrom(method.getReturnType())) {
                 responseType = method.getReturnType();
             } else {
                 throw new IllegalArgumentException(
-                        "Wire service interface method return type must be Message or Flow.Publisher<Message>: "
+                        "Wire service interface method return type must be Message or StreamSource<Message>: "
                                 + serviceInterface.getName() + "." + method.getName()
                                 + " returns " + method.getReturnType().getName());
             }
@@ -160,10 +161,10 @@ public final class WireProtoTypes {
     }
 
     /**
-     * Resolve the type argument of {@code Flow.Publisher<T>} from the method's
+     * Resolve the type argument of {@code StreamSource<T>} from the method's
      * generic return type.
      */
-    private static Class<?> resolvePublisherTypeArgument(Method method) {
+    private static Class<?> resolveStreamSourceTypeArgument(Method method) {
         Type genericReturn = method.getGenericReturnType();
         if (genericReturn instanceof ParameterizedType pt) {
             Type[] typeArgs = pt.getActualTypeArguments();
@@ -173,17 +174,17 @@ public final class WireProtoTypes {
             }
         }
         throw new IllegalArgumentException(
-                "Cannot resolve Flow.Publisher type argument for streaming method: "
+                "Cannot resolve StreamSource type argument for streaming method: "
                         + method.getDeclaringClass().getName() + "." + method.getName()
                         + ". The type argument must be a concrete protobuf Message class.");
     }
     
     /**
-     * Resolve the type argument of a {@code Flow.Publisher<T>} parameter.
+     * Resolve the type argument of a {@code StreamObserver<T>} parameter.
      * Used for bidirectional streaming methods where the request stream
      * carries protobuf messages.
      */
-    private static Class<?> resolvePublisherParamType(Method method, Parameter param) {
+    private static Class<?> resolveStreamObserverParamType(Method method, Parameter param) {
         Type genericType = param.getParameterizedType();
         if (genericType instanceof ParameterizedType pt) {
             Type[] typeArgs = pt.getActualTypeArguments();
@@ -193,7 +194,7 @@ public final class WireProtoTypes {
             }
         }
         throw new IllegalArgumentException(
-                "Cannot resolve Flow.Publisher type argument for bidirectional streaming parameter: "
+                "Cannot resolve StreamObserver type argument for bidirectional streaming parameter: "
                         + method.getDeclaringClass().getName() + "." + method.getName()
                         + ". The type argument must be a concrete protobuf Message class.");
     }
@@ -234,8 +235,8 @@ public final class WireProtoTypes {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static Class<? extends Message> asMessageClass(Class<?> clazz) {
+        //noinspection unchecked
         return (Class<? extends Message>) clazz;
     }
 
@@ -243,10 +244,10 @@ public final class WireProtoTypes {
      * Reflectively invoke the static {@code parser()} method on a protobuf
      * generated class to obtain its {@link Parser}.
      */
-    @SuppressWarnings("unchecked")
     private static Parser<? extends Message> resolveParser(Class<?> messageClass) {
         try {
             Method parserMethod = messageClass.getMethod("parser");
+            //noinspection unchecked
             return (Parser<? extends Message>) parserMethod.invoke(null);
         } catch (Exception e) {
             throw new IllegalArgumentException(

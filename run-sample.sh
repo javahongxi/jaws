@@ -122,15 +122,15 @@ EOF
 }
 
 ensure_built() {
-    # mvn exec:java / java -cp rely on installed JARs and module target/classes,
-    # so re-install whenever any module's sources are newer than the installed jaws-core JAR.
-    local jar="$HOME/.m2/repository/org/hongxi/jaws-core/1.0.0-SNAPSHOT/jaws-core-1.0.0-SNAPSHOT.jar"
+    # mvn exec:java / java -cp rely on compiled target/classes,
+    # so re-install whenever any module's sources changed since last build.
+    local marker=".build-timestamp"
     local need_build=0
-    if [ ! -f "$jar" ]; then
+    if [ ! -f "$marker" ]; then
         need_build=1
     else
-        for src in jaws-core/src/main/java jaws-wire/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
-            if [ "$(find $src -newer "$jar" -print -quit 2>/dev/null)" ]; then
+        for src in jaws-stream-api/src/main/java jaws-core/src/main/java jaws-wire/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
+            if [ -d "$src" ] && [ "$(find "$src" -name '*.java' -newer "$marker" -print -quit 2>/dev/null)" ]; then
                 need_build=1
                 break
             fi
@@ -139,6 +139,7 @@ ensure_built() {
     if [ $need_build -eq 1 ]; then
         echo "Project not built or sources updated, building and installing..."
         $MVN install -DskipTests -q
+        touch "$marker"
     fi
 }
 
@@ -152,7 +153,7 @@ build_classpath() {
     deps=$($MVN -pl "$module" dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=/dev/stdout -DexcludeGroupIds=org.hongxi -q 2>/dev/null)
     # Only include registry modules whose client jars are present in deps,
     # otherwise their SPI classes fail to load with NoClassDefFoundError.
-    local project_cp="jaws-core/target/classes:jaws-samples/jaws-sample-api/target/classes"
+    local project_cp="jaws-stream-api/target/classes:jaws-core/target/classes:jaws-samples/jaws-sample-api/target/classes"
     case "$deps" in *curator*) project_cp="$project_cp:jaws-registry-zookeeper/target/classes" ;; esac
     case "$deps" in *nacos-client*) project_cp="$project_cp:jaws-registry-nacos/target/classes" ;; esac
     case "$deps" in *protobuf-java*) project_cp="$project_cp:jaws-wire-proto/target/classes:jaws-wire/target/classes:jaws-samples/jaws-sample-wire-api/target/classes" ;; esac
@@ -162,6 +163,7 @@ build_classpath() {
 cmd_build() {
     echo "Building project..."
     $MVN clean install -DskipTests -q
+    touch .build-timestamp
     echo "Build complete."
 }
 

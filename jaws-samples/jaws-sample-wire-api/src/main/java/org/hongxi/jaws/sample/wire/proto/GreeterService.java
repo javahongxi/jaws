@@ -1,6 +1,7 @@
 package org.hongxi.jaws.sample.wire.proto;
 
-import java.util.concurrent.Flow;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 
 /**
  * Service interface for the Greeter service.
@@ -9,7 +10,7 @@ import java.util.concurrent.Flow;
  * subclasses generated from {@code greeter.proto}. The {@code WireProtoTypes}
  * utility scans this interface to extract the request/response parsers.
  * <p>
- * Server-streaming methods return {@link Flow.Publisher Publisher&lt;HelloReply&gt;};
+ * Server-streaming methods return {@link StreamSource Source&lt;HelloReply&gt;};
  * unary methods return {@link HelloReply} directly.
  */
 public interface GreeterService {
@@ -17,20 +18,20 @@ public interface GreeterService {
     HelloReply sayHello(HelloRequest request);
 
     /**
-     * Server-streaming: returns a {@link Flow.Publisher} that emits multiple
+     * Server-streaming: returns a {@link StreamSource} that emits multiple
      * greeting messages for the given request.
      */
-    Flow.Publisher<HelloReply> sayHelloStream(HelloRequest request);
+    StreamSource<HelloReply> sayHelloStream(HelloRequest request);
 
     /**
      * Client-streaming: client streams {@link HelloRequest} names,
      * server replies with a single aggregated {@link HelloReply}.
      */
-    HelloReply clientStreamGreet(Flow.Publisher<HelloRequest> names);
+    HelloReply clientStreamGreet(StreamObserver<HelloRequest> names);
 
     /**
      * Bidirectional streaming: client streams {@link HelloRequest} names,
      * server streams {@link HelloReply} greetings.
      */
-    Flow.Publisher<HelloReply> bidiGreet(Flow.Publisher<HelloRequest> names);
+    StreamSource<HelloReply> bidiGreet(StreamObserver<HelloRequest> names);
 }

@@ -17,8 +17,10 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.serialization.Serialization;
+import org.hongxi.jaws.transport.StreamSubject;
 import org.hongxi.jaws.transport.MessageHandler;
-import org.hongxi.jaws.transport.StreamPublisher;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,7 +29,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Flow;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -43,7 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * Supports both unary and server-streaming invocations. For server streaming,
  * the {@code x-jaws-streaming} header value is {@code "server"} and the
- * provider method returns a {@link Flow.Publisher} whose items are each
+ * provider method returns a {@link StreamSource} whose items are each
  * written as a separate DATA frame.
  * <p>
  * All processing beyond frame accumulation happens off the event loop, so
@@ -75,7 +76,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
     private boolean dispatched;
 
     // Bidirectional streaming state
-    private StreamPublisher requestPublisher;
+    private StreamSubject<Object> requestObserver;
     private Request bidiRequest;
 
     public Http2StreamServerHandler(MessageHandler messageHandler,
@@ -195,13 +196,6 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    /**
-     * Handle a DATA frame in bidirectional streaming mode.
-     * <p>
-     * The first DATA frame carries the serialized Request (metadata).
-     * Subsequent DATA frames each carry one request stream item.
-     * END_STREAM signals the client has finished sending.
-     */
     private void handleBidiData(ChannelHandlerContext ctx, byte[] bytes, boolean endStream) {
         if (!dispatched) {
             // First DATA frame: decode as Request metadata
@@ -209,7 +203,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
             inflightRequests.incrementAndGet();
             try {
                 bidiRequest = Http2PayloadCodec.decodeRequest(bytes, serialization);
-                requestPublisher = new StreamPublisher();
+                requestObserver = new StreamSubject<>();
                 dispatchBiStream(ctx);
             } catch (Exception e) {
                 log.error("Failed to decode bidi request metadata", e);
@@ -222,34 +216,22 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
         }
 
         // Subsequent DATA frames: decode as request stream items
-        if (bytes.length > 0 && requestPublisher != null) {
+        if (bytes.length > 0 && requestObserver != null) {
             try {
                 Object item = Http2StreamCodec.decodeItem(bytes, serialization);
-                requestPublisher.addItem(item);
+                requestObserver.onNext(item);
             } catch (Exception e) {
                 log.error("Failed to decode bidi stream item", e);
-                requestPublisher.completeExceptionally(e);
+                requestObserver.onError(e);
                 return;
             }
         }
 
-        if (endStream && requestPublisher != null) {
-            requestPublisher.complete();
+        if (endStream && requestObserver != null) {
+            requestObserver.onCompleted();
         }
     }
 
-    /**
-     * Handle a DATA frame in client streaming mode.
-     * <p>
-     * Like bidi, the first DATA frame carries the serialized Request metadata.
-     * Subsequent DATA frames each carry one request stream item.
-     * Unlike bidi, dispatch happens only on END_STREAM (all items received),
-     * and the response is a single value (unary), not a stream.
-     * <p>
-     * Dispatch is scheduled on the business executor (not the event loop)
-     * because the service method may block (e.g. {@code CompletableFuture.get})
-     * waiting for the request stream to be fully consumed.
-     */
     private void handleClientData(ChannelHandlerContext ctx, byte[] bytes, boolean endStream) {
         if (!dispatched) {
             // First DATA frame: decode as Request metadata
@@ -257,7 +239,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
             inflightRequests.incrementAndGet();
             try {
                 bidiRequest = Http2PayloadCodec.decodeRequest(bytes, serialization);
-                requestPublisher = new StreamPublisher();
+                requestObserver = new StreamSubject<>();
             } catch (Exception e) {
                 log.error("Failed to decode client stream request metadata", e);
                 sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
@@ -270,35 +252,31 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 return;
             }
             // endStream on the second frame means no items were sent; complete immediately
-            if (requestPublisher != null) {
-                requestPublisher.complete();
+            if (requestObserver != null) {
+                requestObserver.onCompleted();
             }
             dispatchClientStream(ctx);
             return;
         }
 
         // Subsequent DATA frames: decode as request stream items
-        if (bytes.length > 0 && requestPublisher != null) {
+        if (bytes.length > 0 && requestObserver != null) {
             try {
                 Object item = Http2StreamCodec.decodeItem(bytes, serialization);
-                requestPublisher.addItem(item);
+                requestObserver.onNext(item);
             } catch (Exception e) {
                 log.error("Failed to decode client stream item", e);
-                requestPublisher.completeExceptionally(e);
+                requestObserver.onError(e);
                 return;
             }
         }
 
-        if (endStream && requestPublisher != null) {
-            requestPublisher.complete();
+        if (endStream && requestObserver != null) {
+            requestObserver.onCompleted();
             dispatchClientStream(ctx);
         }
     }
 
-    /**
-     * Hand the complete payload to the business executor; the event loop
-     * returns immediately to serve other streams.
-     */
     private void dispatch(ChannelHandlerContext ctx, byte[] payload) {
         if (dispatched) {
             return;
@@ -346,9 +324,6 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    /**
-     * Dispatch a unary (request-response) invocation.
-     */
     private void dispatchUnary(ChannelHandlerContext ctx, Request request, long startTime) {
         messageHandler.handleAsync(request)
                 .handle((result, throwable) -> {
@@ -405,10 +380,10 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
 
     /**
      * Dispatch a streaming invocation: single request, server streams
-     * multiple response items via {@link Flow.Publisher}.
+     * multiple response items via {@link StreamSource}.
      */
     private void dispatchStream(ChannelHandlerContext ctx, Request request) {
-        Flow.Publisher<Object> publisher = messageHandler.handleStream(request, null);
+        StreamSource<Object> source = messageHandler.handleStream(request, null);
 
         // Send response headers first (without END_STREAM)
         if (ctx.channel().isActive()) {
@@ -419,22 +394,11 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
             ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
         }
 
-        // Subscribe to the publisher and stream responses.
-        // Request all items at once to avoid synchronous recursion that would
-        // occur if we called subscription.request(1) from within onNext().
-        publisher.subscribe(new Flow.Subscriber<>() {
-            private Flow.Subscription subscription;
-
-            @Override
-            public void onSubscribe(Flow.Subscription s) {
-                this.subscription = s;
-                s.request(Long.MAX_VALUE);
-            }
-
+        // Subscribe to the source and stream responses
+        source.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
                 if (!ctx.channel().isActive()) {
-                    subscription.cancel();
                     return;
                 }
                 try {
@@ -443,7 +407,6 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                             Unpooled.wrappedBuffer(itemBytes), false));
                 } catch (Exception e) {
                     log.error("Failed to encode stream item", e);
-                    subscription.cancel();
                     sendStreamError(ctx, e);
                 }
             }
@@ -456,7 +419,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 // Send final empty DATA frame with END_STREAM
                 if (ctx.channel().isActive()) {
                     ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
@@ -473,16 +436,13 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
 
     /**
      * Dispatch a bidirectional streaming invocation: client streams request
-     * items via {@code requestPublisher}, server streams response items.
-     * <p>
-     * Called from {@link #handleBidiData} after the first DATA frame (which
-     * carries the Request metadata) has been decoded.
+     * items via {@code requestObserver}, server streams response items.
      */
     private void dispatchBiStream(ChannelHandlerContext ctx) {
         try {
             RpcContext.init(bidiRequest);
-            Flow.Publisher<Object> responsePublisher =
-                    messageHandler.handleStream(bidiRequest, requestPublisher);
+            StreamSource<Object> responseSource =
+                    messageHandler.handleStream(bidiRequest, requestObserver);
 
             // Send response headers first (without END_STREAM)
             if (ctx.channel().isActive()) {
@@ -493,20 +453,32 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
             }
 
-            // Subscribe to the response publisher and stream responses
-            responsePublisher.subscribe(new Flow.Subscriber<>() {
-                private Flow.Subscription subscription;
-
+            // Bridge the source into a StreamSubject immediately
+            // to guard against hot sources that drop items emitted before
+            // the network subscriber is attached.
+            StreamSubject<Object> responseBuffer = new StreamSubject<>();
+            responseSource.subscribe(new StreamObserver<>() {
                 @Override
-                public void onSubscribe(Flow.Subscription s) {
-                    this.subscription = s;
-                    s.request(Long.MAX_VALUE);
+                public void onNext(Object item) {
+                    responseBuffer.onNext(item);
                 }
 
                 @Override
+                public void onError(Throwable throwable) {
+                    responseBuffer.onError(throwable);
+                }
+
+                @Override
+                public void onCompleted() {
+                    responseBuffer.onCompleted();
+                }
+            });
+
+            // Subscribe the network-forwarding observer to the buffer.
+            responseBuffer.subscribe(new StreamObserver<>() {
+                @Override
                 public void onNext(Object item) {
                     if (!ctx.channel().isActive()) {
-                        subscription.cancel();
                         return;
                     }
                     try {
@@ -515,7 +487,6 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                                 Unpooled.wrappedBuffer(itemBytes), false));
                     } catch (Exception e) {
                         log.error("Failed to encode bidi stream item", e);
-                        subscription.cancel();
                         sendStreamError(ctx, e);
                     }
                 }
@@ -528,7 +499,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 }
 
                 @Override
-                public void onComplete() {
+                public void onCompleted() {
                     if (ctx.channel().isActive()) {
                         ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
                     }
@@ -550,32 +521,19 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Dispatch a client-streaming invocation: client streams request items
-     * via {@code requestPublisher}, server returns a single response.
-     * <p>
-     * Called from {@link #handleClientData} after END_STREAM is received.
-     * <p>
-     * Runs on the business executor (not the event loop) because the service
-     * method may block waiting for the request stream to complete.
+     * Dispatch a client-streaming invocation.
      */
     private void dispatchClientStream(ChannelHandlerContext ctx) {
         try {
             serverExecutor.execute(() -> {
                 try {
                     RpcContext.init(bidiRequest);
-                    Flow.Publisher<Object> responsePublisher =
-                            messageHandler.handleStream(bidiRequest, requestPublisher);
+                    StreamSource<Object> responseSource =
+                            messageHandler.handleStream(bidiRequest, requestObserver);
 
                     // Subscribe to get the single response value, then send as unary response
-                    responsePublisher.subscribe(new Flow.Subscriber<>() {
-                        private Flow.Subscription subscription;
+                    responseSource.subscribe(new StreamObserver<>() {
                         private Object responseValue;
-
-                        @Override
-                        public void onSubscribe(Flow.Subscription s) {
-                            this.subscription = s;
-                            s.request(1);
-                        }
 
                         @Override
                         public void onNext(Object item) {
@@ -594,7 +552,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                         }
 
                         @Override
-                        public void onComplete() {
+                        public void onCompleted() {
                             if (ctx.channel().isActive()) {
                                 try {
                                     DefaultResponse response = new DefaultResponse();

@@ -5,12 +5,14 @@ import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Request;
+import org.hongxi.jaws.transport.StreamSubject;
 import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Flow;
 
 /**
  * Server-side {@link MessageHandler} that bridges between the raw protobuf
@@ -74,7 +76,7 @@ class WireMessageHandler implements MessageHandler {
 
             // Delegate to the filter chain / provider.
             // For unary: the response Message passes through directly.
-            // For streaming: the response is a Flow.Publisher, passed through as-is.
+            // For streaming: the response is a StreamSource, passed through as-is.
             // WireCallDispatcher.ProviderCallDispatcher handles gRPC frame encoding for both cases.
             return delegate.handleAsync(typedRequest);
         } catch (InvalidProtocolBufferException e) {
@@ -90,7 +92,7 @@ class WireMessageHandler implements MessageHandler {
      * instances, then delegate to the filter chain.
      */
     @Override
-    public Flow.Publisher<Object> handleStream(Request request, Flow.Publisher<Object> requestStream) {
+    public StreamSource<Object> handleStream(Request request, StreamObserver<Object> requestStream) {
         WireProtoTypes.MethodInfo methodInfo;
         try {
             methodInfo = protoTypes.getMethodInfo(request.getMethodName());
@@ -98,46 +100,44 @@ class WireMessageHandler implements MessageHandler {
             throw new UnsupportedOperationException("Unknown method: " + request.getMethodName(), e);
         }
 
-        // Wrap the request stream to convert byte[] items → typed Messages
+        // Wrap the request stream to convert byte[] items → typed Messages.
+        // In practice requestStream is always a StreamSubject (which
+        // implements both StreamObserver and StreamSource), so we can subscribe
+        // to it when it's also a StreamSource.
         Parser<? extends Message> requestParser = methodInfo.requestParser();
-        Flow.Publisher<Object> typedStream = subscriber -> requestStream.subscribe(new Flow.Subscriber<>() {
-            private Flow.Subscription subscription;
-
-            @Override
-            public void onSubscribe(Flow.Subscription s) {
-                this.subscription = s;
-                subscriber.onSubscribe(s);
-            }
-
-            @Override
-            public void onNext(Object item) {
-                if (item instanceof byte[] bytes) {
-                    try {
-                        Message msg = requestParser.parseFrom(bytes);
-                        subscriber.onNext(msg);
-                    } catch (InvalidProtocolBufferException e) {
-                        log.error("Wire bidi stream item decode failed", e);
-                        subscription.cancel();
-                        subscriber.onError(e);
+        StreamSubject<Object> typedObserver = new StreamSubject<>();
+        if (requestStream instanceof StreamSource<?>) {
+            //noinspection unchecked
+            StreamSource<Object> source = (StreamSource<Object>) requestStream;
+            source.subscribe(new StreamObserver<>() {
+                @Override
+                public void onNext(Object item) {
+                    if (item instanceof byte[] bytes) {
+                        try {
+                            Message msg = requestParser.parseFrom(bytes);
+                            typedObserver.onNext(msg);
+                        } catch (InvalidProtocolBufferException e) {
+                            log.error("Wire bidi stream item decode failed", e);
+                            typedObserver.onError(e);
+                        }
+                    } else {
+                        typedObserver.onNext(item);
                     }
-                } else {
-                    // Already a typed Message (should not happen in provider mode)
-                    subscriber.onNext(item);
                 }
-            }
 
-            @Override
-            public void onError(Throwable throwable) {
-                subscriber.onError(throwable);
-            }
+                @Override
+                public void onError(Throwable throwable) {
+                    typedObserver.onError(throwable);
+                }
 
-            @Override
-            public void onComplete() {
-                subscriber.onComplete();
-            }
-        });
+                @Override
+                public void onCompleted() {
+                    typedObserver.onCompleted();
+                }
+            });
+        }
 
-        return delegate.handleStream(request, typedStream);
+        return delegate.handleStream(request, typedObserver);
     }
 
     /**
@@ -153,7 +153,7 @@ class WireMessageHandler implements MessageHandler {
 
     /**
      * Check whether the given method is client-streaming:
-     * has a {@code Flow.Publisher} parameter but a non-Publisher return type.
+     * has a {@code StreamObserver} parameter but a non-Source return type.
      */
     boolean isClientStreaming(String methodName) {
         try {

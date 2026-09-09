@@ -9,6 +9,7 @@
     <url>https://github.com/javahongxi/jaws</url>
 
     <modules>
+        <module>jaws-stream-api</module>
         <module>jaws-core</module>
         <module>jaws-wire</module>
         <module>jaws-registry-zookeeper</module>

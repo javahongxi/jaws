@@ -18,7 +18,7 @@ import org.hongxi.jaws.sample.http2.provider.service.StreamServiceImpl;
  * 1. jaws protocol, no registry (export only, skip registration)
  * 2. Multi-Service publishing - DemoService + OrderService + StreamService
  * 3. group/version configuration
- * 4. Server streaming over HTTP/2 (StreamService with Flow.Publisher)
+ * 4. Server streaming over HTTP/2 (StreamService with StreamSource)
  * </pre>
  *
  * <p>The consumer connects directly via {@code directUrl} without registry discovery.

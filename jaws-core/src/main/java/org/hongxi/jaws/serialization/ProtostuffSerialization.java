@@ -225,7 +225,7 @@ public class ProtostuffSerialization implements Serialization {
     // ---- protostuff helpers ----
 
     private static <T> byte[] toProtostuffBytes(T obj) {
-        @SuppressWarnings("unchecked")
+        //noinspection unchecked
         Schema<T> schema = RuntimeSchema.getSchema((Class<T>) obj.getClass());
         LinkedBuffer buffer = BUFFER.get();
         try {

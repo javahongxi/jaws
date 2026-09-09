@@ -139,7 +139,6 @@ public class FurySerialization implements Serialization {
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public <T> T readObject(Class<T> clazz) throws IOException {
             int len = dis.readInt();
             if (len < 0) {
@@ -147,6 +146,7 @@ public class FurySerialization implements Serialization {
             }
             byte[] bytes = new byte[len];
             dis.readFully(bytes);
+            //noinspection unchecked
             return (T) FURY.deserialize(bytes);
         }
 

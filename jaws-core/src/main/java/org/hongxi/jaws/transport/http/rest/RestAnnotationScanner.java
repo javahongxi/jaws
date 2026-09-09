@@ -406,11 +406,11 @@ public class RestAnnotationScanner {
         return path;
     }
 
-    @SuppressWarnings("unchecked")
     private static Class<? extends Annotation> loadAnnotation(String className) {
         try {
             Class<?> clazz = Class.forName(className);
             if (clazz.isAnnotation()) {
+                //noinspection unchecked
                 return (Class<? extends Annotation>) clazz;
             }
         } catch (ClassNotFoundException e) {

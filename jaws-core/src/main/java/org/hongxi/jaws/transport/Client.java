@@ -1,9 +1,10 @@
 package org.hongxi.jaws.transport;
 
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
-
-import java.util.concurrent.Flow;
 
 /**
  * A client-side channel that connects to a remote {@link Server}.
@@ -36,12 +37,12 @@ public interface Client extends Channel {
      * Only supported by transports that implement streaming (e.g. HTTP/2).
      *
      * @param request       the RPC request (carries metadata/attachments)
-     * @param requestStream a publisher emitting client request items, or
+     * @param requestStream an observer receiving client request items, or
      *                      {@code null} for server-streaming
-     * @return a publisher emitting streamed response items
+     * @return a source emitting streamed response items
      * @throws UnsupportedOperationException if the transport does not support streaming
      */
-    default Flow.Publisher<Object> requestStream(Request request, Flow.Publisher<Object> requestStream) {
+    default StreamSource<Object> requestStream(Request request, StreamObserver<Object> requestStream) {
         throw new UnsupportedOperationException("Streaming not supported by this transport");
     }
 }

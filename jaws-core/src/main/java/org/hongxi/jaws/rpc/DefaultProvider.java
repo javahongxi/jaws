@@ -6,14 +6,15 @@ import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
-import org.hongxi.jaws.transport.StreamPublisher;
+import org.hongxi.jaws.transport.StreamSubject;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -25,7 +26,7 @@ import java.util.concurrent.TimeoutException;
  * stripping stack traces before transferring), and turns {@link Error} throwables into
  * exceptions so a provider crash never takes down the caller.
  * <p>
- * Also supports streaming methods that return {@link Flow.Publisher}
+ * Also supports streaming methods that return {@link StreamSource}
  * via {@code callStream()}.
  *
  * <p>Created by shenhongxi on 2021/3/7.
@@ -138,7 +139,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
     }
 
     @Override
-    public Flow.Publisher<Object> callStream(Request request, Flow.Publisher<Object> requestStream) {
+    public StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
         Method method = lookupMethod(request.getMethodName(), request.getParamDesc());
 
         if (method == null) {
@@ -148,14 +149,14 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
         }
 
         try {
-            // Server-streaming: requestStream is null, method returns Flow.Publisher
+            // Server-streaming: requestStream is null, method returns StreamSource
             if (requestStream == null) {
                 Object result = method.invoke(ref, request.getArguments());
-                if (result instanceof Flow.Publisher<?> publisher) {
+                if (result instanceof StreamSource<?> source) {
                     //noinspection unchecked
-                    return (Flow.Publisher<Object>) publisher;
+                    return (StreamSource<Object>) source;
                 }
-                throw new JawsBizException("server-streaming method must return Flow.Publisher: "
+                throw new JawsBizException("server-streaming method must return StreamSource: "
                         + request.getInterfaceName() + "." + request.getMethodName());
             }
 
@@ -171,35 +172,33 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
             }
             Object result = method.invoke(ref, streamArgs);
 
-            // Bidi-streaming: method returns Flow.Publisher
-            if (result instanceof Flow.Publisher<?> publisher) {
+            // Bidi-streaming: method returns StreamSource
+            if (result instanceof StreamSource<?> source) {
                 //noinspection unchecked
-                return (Flow.Publisher<Object>) publisher;
+                return (StreamSource<Object>) source;
             }
 
             // Client-streaming: method returns a single value (or CompletableFuture);
-            // wrap it in a Publisher for the transport layer.
-            // Use StreamPublisher (synchronous delivery) instead of SubmissionPublisher
-            // to guarantee onNext fires before onComplete on the subscriber.
-            StreamPublisher publisher = new StreamPublisher();
+            // wrap it in a StreamSource for the transport layer.
+            StreamSubject<Object> observer = new StreamSubject<>();
             if (result instanceof CompletableFuture<?> future) {
                 future.whenComplete((value, throwable) -> {
                     if (throwable != null) {
-                        publisher.completeExceptionally(throwable);
+                        observer.onError(throwable);
                     } else {
                         if (value != null) {
-                            publisher.addItem(value);
+                            observer.onNext(value);
                         }
-                        publisher.complete();
+                        observer.onCompleted();
                     }
                 });
             } else {
                 if (result != null) {
-                    publisher.addItem(result);
+                    observer.onNext(result);
                 }
-                publisher.complete();
+                observer.onCompleted();
             }
-            return publisher;
+            return observer;
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new JawsBizException("provider stream call failed",

@@ -108,8 +108,8 @@ public class Hessian2Serialization implements Serialization {
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public <T> T readObject(Class<T> clazz) throws IOException {
+            //noinspection unchecked
             return (T) in.readObject(clazz);
         }
 

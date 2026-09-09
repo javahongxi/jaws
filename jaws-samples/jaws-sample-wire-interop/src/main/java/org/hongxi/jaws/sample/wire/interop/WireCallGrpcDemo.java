@@ -8,11 +8,13 @@ import org.hongxi.jaws.transport.http2.Http2Constants;
 import org.hongxi.jaws.transport.http2.StreamType;
 import org.hongxi.jaws.wire.WireClient;
 
+import org.hongxi.jaws.transport.StreamSubject;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Flow;
-import java.util.concurrent.SubmissionPublisher;
 
 /**
  * Proves that {@link WireClient} (jaws-wire, zero grpc-java dependency) can
@@ -126,14 +128,9 @@ public class WireCallGrpcDemo {
         CountDownLatch serverStreamLatch = new CountDownLatch(1);
         int[] serverStreamCount = {0};
 
-        Flow.Publisher<Object> serverStreamResponse =
+        StreamSource<Object> serverStreamResponse =
                 serverStreamClient.requestStream(serverStreamRequest, HelloReply.parser());
-        serverStreamResponse.subscribe(new Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(Flow.Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-            }
-
+        serverStreamResponse.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
                 serverStreamCount[0]++;
@@ -148,7 +145,7 @@ public class WireCallGrpcDemo {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 System.out.println("  server-stream completed (" + serverStreamCount[0] + " items)");
                 serverStreamLatch.countDown();
             }
@@ -173,17 +170,12 @@ public class WireCallGrpcDemo {
         clientStreamRequest.setArguments(new Object[0]);
         clientStreamRequest.setAttachment(Http2Constants.HEADER_STREAMING, StreamType.CLIENT.getValue());
 
-        SubmissionPublisher<Object> clientStreamPublisher = new SubmissionPublisher<>();
+        StreamSubject<Object> clientStreamObserver = new StreamSubject<>();
         CountDownLatch clientStreamLatch = new CountDownLatch(1);
 
-        Flow.Publisher<Object> clientStreamResponse =
-                clientStreamClient.requestStream(clientStreamRequest, clientStreamPublisher, HelloReply.parser());
-        clientStreamResponse.subscribe(new Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(Flow.Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-            }
-
+        StreamSource<Object> clientStreamResponse =
+                clientStreamClient.requestStream(clientStreamRequest, clientStreamObserver, HelloReply.parser());
+        clientStreamResponse.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
                 HelloReply reply = (HelloReply) item;
@@ -197,20 +189,20 @@ public class WireCallGrpcDemo {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 System.out.println("  client-stream completed");
                 clientStreamLatch.countDown();
             }
         });
 
         Thread.sleep(200);
-        clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Alice").build());
+        clientStreamObserver.onNext(HelloRequest.newBuilder().setName("Alice").build());
         Thread.sleep(100);
-        clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Bob").build());
+        clientStreamObserver.onNext(HelloRequest.newBuilder().setName("Bob").build());
         Thread.sleep(100);
-        clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Charlie").build());
+        clientStreamObserver.onNext(HelloRequest.newBuilder().setName("Charlie").build());
         Thread.sleep(100);
-        clientStreamPublisher.close();
+        clientStreamObserver.onCompleted();
 
         if (!clientStreamLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
             System.err.println("ERROR: client-streaming call timed out");
@@ -230,18 +222,13 @@ public class WireCallGrpcDemo {
         // all items flow through the requestStream publisher
         bidiRequest.setArguments(new Object[0]);
 
-        SubmissionPublisher<Object> requestPublisher = new SubmissionPublisher<>();
+        StreamSubject<Object> requestObserver = new StreamSubject<>();
         CountDownLatch bidiLatch = new CountDownLatch(1);
         int[] bidiCount = {0};
 
-        Flow.Publisher<Object> responsePublisher =
-                bidiClient.requestBiStream(bidiRequest, requestPublisher, HelloReply.parser());
-        responsePublisher.subscribe(new Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(Flow.Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-            }
-
+        StreamSource<Object> responseSource =
+                bidiClient.requestBiStream(bidiRequest, requestObserver, HelloReply.parser());
+        responseSource.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
                 bidiCount[0]++;
@@ -256,7 +243,7 @@ public class WireCallGrpcDemo {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 System.out.println("  bidi stream completed (" + bidiCount[0] + " items)");
                 bidiLatch.countDown();
             }
@@ -264,13 +251,13 @@ public class WireCallGrpcDemo {
 
         // Send request items with small delays
         Thread.sleep(200);
-        requestPublisher.submit(HelloRequest.newBuilder().setName("Alice").build());
+        requestObserver.onNext(HelloRequest.newBuilder().setName("Alice").build());
         Thread.sleep(100);
-        requestPublisher.submit(HelloRequest.newBuilder().setName("Bob").build());
+        requestObserver.onNext(HelloRequest.newBuilder().setName("Bob").build());
         Thread.sleep(100);
-        requestPublisher.submit(HelloRequest.newBuilder().setName("Charlie").build());
+        requestObserver.onNext(HelloRequest.newBuilder().setName("Charlie").build());
         Thread.sleep(100);
-        requestPublisher.close();
+        requestObserver.onCompleted();
 
         if (!bidiLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
             System.err.println("ERROR: bidi streaming call timed out");

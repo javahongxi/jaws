@@ -1,5 +1,8 @@
 package org.hongxi.jaws.transport;
 
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
@@ -18,7 +21,6 @@ import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Flow;
 
 /**
  * Abstract base class for provider-side message handling.
@@ -132,17 +134,17 @@ public abstract class AbstractRequestHandler implements MessageHandler {
 
     /**
      * Handle a streaming request: look up the provider, resolve the method,
-     * and delegate to {@link Provider#callStream(Request, Flow.Publisher)}.
+     * and delegate to {@link Provider#callStream(Request, StreamObserver)}.
      * <p>
      * {@code requestStream == null} means server-streaming;
      * {@code requestStream != null} means client/bidi-streaming.
      *
      * @param request       the incoming RPC request
-     * @param requestStream a publisher emitting client request items, or
+     * @param requestStream an observer receiving client request items, or
      *                      {@code null} for server-streaming
-     * @return a {@link Flow.Publisher} emitting the response items
+     * @return a {@link StreamSource} emitting the response items
      */
-    public Flow.Publisher<Object> handleStream(Request request, Flow.Publisher<Object> requestStream) {
+    public StreamSource<Object> handleStream(Request request, StreamObserver<Object> requestStream) {
         if (request == null) {
             throw new JawsFrameworkException("handleStream: request must not be null");
         }

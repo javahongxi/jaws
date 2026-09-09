@@ -29,14 +29,14 @@ public Object invoke(Object proxy, Method method, Object[] args) throws Throwabl
     if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
         return invokeAsync(request, method.getReturnType());
     }
-    if (Flow.Publisher.class.isAssignableFrom(method.getReturnType())) {
+    if (StreamSource.class.isAssignableFrom(method.getReturnType())) {
         return invokeStream(request);
     }
     return invoke(request, method.getReturnType());
 }
 ```
 
-三条路径：返回 `CompletableFuture` 走异步，返回 `Flow.Publisher` 走流式，其余走同步。消费端不需要任何注解或配置，**接口方法的返回类型就是调用模式的声明**。
+三条路径：返回 `CompletableFuture` 走异步，返回 `StreamSource` 走流式，其余走同步。消费端不需要任何注解或配置，**接口方法的返回类型就是调用模式的声明**。
 
 这意味着同一个服务接口可以混合使用三种模式：
 
@@ -44,7 +44,7 @@ public Object invoke(Object proxy, Method method, Object[] args) throws Throwabl
 public interface DemoService {
     String hello(String name);                              // 同步
     CompletableFuture<String> helloAsync(String name);      // 异步
-    Flow.Publisher<String> helloStream(String name);        // 流式
+    StreamSource<String> helloStream(String name);              // 流式
 }
 ```
 
@@ -97,7 +97,7 @@ CompletableFuture<Object> invokeAsync(Request request, Class<?> returnType) {
 public interface MessageHandler {
     CompletableFuture<Object> handleAsync(Channel channel, Object message);
 
-    default Flow.Publisher<Object> handleStream(Channel channel, Object message) {
+    default StreamSource<Object> handleStream(Channel channel, Object message) {
         throw new UnsupportedOperationException("Streaming not supported by this handler");
     }
 }
@@ -495,7 +495,7 @@ Provider 端的差异更明显。Dubbo 的 `AsyncRpcResult` 是一个专门的�
 
 jaws 的选择是：
 
-- **消费端**：返回类型即调用模式，`CompletableFuture` = 异步，`Flow.Publisher` = 流式，其余 = 同步
+- **消费端**：返回类型即调用模式，`CompletableFuture` = 异步，`StreamSource` = 流式，其余 = 同步
 - **传输层**：`MessageHandler.handleAsync()` 是一等公民的异步契约
 - **Provider 端**：`invoke()` 返回 `CompletableFuture<Response>`，自动适配同步/异步业务方法
 - **IO 层**：`whenComplete` 写回响应，event loop 零阻塞

@@ -10,6 +10,8 @@ import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.transport.MessageHandler;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
 import org.hongxi.jaws.wire.health.HealthCheckRequest;
 import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.slf4j.Logger;
@@ -19,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -95,16 +96,16 @@ sealed interface WireCallDispatcher
     /**
      * Dispatch a bidirectional streaming call. The first gRPC frame has already
      * been extracted as {@code firstFrame}; subsequent frames are fed to the
-     * returned {@link Flow.Publisher} via the {@code requestStream} parameter.
+     * returned {@link StreamSource} via the {@code requestStream} parameter.
      *
      * @param ctx              the stream channel context
      * @param firstFrame       the first gRPC frame data (caller releases)
      * @param serverHandler    the owning stream serverHandler
-     * @param requestStream    publisher that receives subsequent request items
+     * @param requestStream    observer that receives subsequent request items
      */
     void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                           WireStreamServerHandler serverHandler,
-                          Flow.Publisher<Object> requestStream);
+                          StreamObserver<Object> requestStream);
 
     /**
      * Dispatch a client-streaming call. The first gRPC frame has already been
@@ -114,11 +115,11 @@ sealed interface WireCallDispatcher
      * @param ctx              the stream channel context
      * @param firstFrame       the first gRPC frame data (caller releases)
      * @param serverHandler    the owning stream serverHandler
-     * @param requestStream    publisher that receives request items
+     * @param requestStream    observer that receives request items
      */
     void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                               WireStreamServerHandler serverHandler,
-                              Flow.Publisher<Object> requestStream);
+                              StreamObserver<Object> requestStream);
 
     // ========================================================================
     // Direct API mode — registry-based routing to typed WireMethodHandler
@@ -163,14 +164,14 @@ sealed interface WireCallDispatcher
         @Override
         public void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                      WireStreamServerHandler serverHandler,
-                                     Flow.Publisher<Object> requestStream) {
+                                     StreamObserver<Object> requestStream) {
             final WireMethodHandler methodHandler = this.handler;
             final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
             try {
                 // noinspection unchecked
-                Flow.Publisher<Message> typedStream = (Flow.Publisher<Message>) (Flow.Publisher<?>) requestStream;
-                Flow.Publisher<Message> responsePublisher = methodHandler.handleBiStream(typedStream, callContext);
-                serverHandler.dispatchStream(ctx, responsePublisher);
+                StreamObserver<Message> typedObserver = (StreamObserver<Message>) (StreamObserver<?>) requestStream;
+                StreamSource<Message> responseSource = methodHandler.handleBiStream(typedObserver, callContext);
+                serverHandler.dispatchStream(ctx, responseSource);
             } catch (Exception e) {
                 log.error("Wire bidi invoke failed: path={}", serverHandler.path, e);
                 if (!serverHandler.canceled && ctx.channel().isActive()) {
@@ -183,13 +184,13 @@ sealed interface WireCallDispatcher
         @Override
         public void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                          WireStreamServerHandler serverHandler,
-                                         Flow.Publisher<Object> requestStream) {
+                                         StreamObserver<Object> requestStream) {
             final WireMethodHandler methodHandler = this.handler;
             final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
             try {
                 // noinspection unchecked
-                Flow.Publisher<Message> typedStream = (Flow.Publisher<Message>) (Flow.Publisher<?>) requestStream;
-                Message response = methodHandler.handleClientStream(typedStream, callContext);
+                StreamObserver<Message> typedObserver = (StreamObserver<Message>) (StreamObserver<?>) requestStream;
+                Message response = methodHandler.handleClientStream(typedObserver, callContext);
                 serverHandler.sendUnaryResponse(ctx, response);
             } catch (Exception e) {
                 log.error("Wire client-stream invoke failed: path={}", serverHandler.path, e);
@@ -238,8 +239,8 @@ sealed interface WireCallDispatcher
                             serverHandler.path);
                     chain.intercept(request);
                 } else if (methodHandler.methodType() == WireMethodHandler.MethodType.SERVER_STREAMING) {
-                    Flow.Publisher<Message> publisher = methodHandler.handleStream(request, callContext);
-                    serverHandler.dispatchStream(ctx, publisher);
+                    StreamSource<Message> source = methodHandler.handleStream(request, callContext);
+                    serverHandler.dispatchStream(ctx, source);
                 } else {
                     Message response = methodHandler.handle(request, callContext);
                     serverHandler.sendUnaryResponse(ctx, response);
@@ -339,7 +340,7 @@ sealed interface WireCallDispatcher
         @Override
         public void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                      WireStreamServerHandler serverHandler,
-                                     Flow.Publisher<Object> requestStream) {
+                                     StreamObserver<Object> requestStream) {
             final String svcName = this.serviceName;
             final String mName = this.methodName;
             final Map<String, String> callAttachments = serverHandler.attachments;
@@ -358,9 +359,9 @@ sealed interface WireCallDispatcher
 
                 RpcContext.init(jawsRequest);
                 try {
-                    Flow.Publisher<Object> responsePublisher =
+                    StreamSource<Object> responseSource =
                             messageHandler.handleStream(jawsRequest, requestStream);
-                    serverHandler.dispatchStream(ctx, responsePublisher);
+                    serverHandler.dispatchStream(ctx, responseSource);
                 } finally {
                     // Note: RpcContext.destroy() deferred to response completion
                 }
@@ -376,11 +377,11 @@ sealed interface WireCallDispatcher
         @Override
         public void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                          WireStreamServerHandler serverHandler,
-                                         Flow.Publisher<Object> requestStream) {
+                                         StreamObserver<Object> requestStream) {
             // Client-streaming dispatch is identical to bidi in Provider mode:
             // both call handleStream(request, requestStream) which returns a
-            // Flow.Publisher wrapping the single result. dispatchStream handles
-            // the single-item Publisher correctly.
+            // StreamSource wrapping the single result. dispatchStream handles
+            // the single-item Source correctly.
             dispatchBiStream(ctx, firstFrame, serverHandler, requestStream);
         }
 
@@ -509,7 +510,7 @@ sealed interface WireCallDispatcher
             }
 
             // The result is typically a Response wrapping the business return value.
-            // For streaming methods, the wrapped value is a Flow.Publisher.
+            // For streaming methods, the wrapped value is a StreamSource.
             Object value = result;
             if (result instanceof Response response) {
                 if (response.getThrowable() != null) {
@@ -518,9 +519,9 @@ sealed interface WireCallDispatcher
                 value = response.getRawValue();
             }
 
-            if (value instanceof Flow.Publisher<?> publisher) {
+            if (value instanceof StreamSource<?> source) {
                 // Server streaming: subscribe and emit each Message as a DATA frame
-                serverHandler.dispatchStream(ctx, publisher);
+                serverHandler.dispatchStream(ctx, source);
             } else {
                 // Unary: single response Message
                 Message responseMessage = extractMessage(result);

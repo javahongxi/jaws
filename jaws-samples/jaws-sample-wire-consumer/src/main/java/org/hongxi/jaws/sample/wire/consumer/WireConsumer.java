@@ -7,9 +7,12 @@ import org.hongxi.jaws.sample.wire.proto.GreeterService;
 import org.hongxi.jaws.sample.wire.proto.HelloReply;
 import org.hongxi.jaws.sample.wire.proto.HelloRequest;
 
+import org.hongxi.jaws.transport.StreamSubject;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Flow;
-import java.util.concurrent.SubmissionPublisher;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Wire (gRPC wire format) consumer sample in direct mode.
@@ -94,12 +97,7 @@ public class WireConsumer {
         CountDownLatch latch = new CountDownLatch(1);
         greeterService.sayHelloStream(
                 HelloRequest.newBuilder().setName("StreamUser").build()
-        ).subscribe(new Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(Flow.Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-            }
-
+        ).subscribe(new StreamObserver<>() {
             @Override
             public void onNext(HelloReply item) {
                 System.out.println("Stream item: " + item.getMessage());
@@ -112,7 +110,7 @@ public class WireConsumer {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 System.out.println("Stream completed.");
                 latch.countDown();
             }
@@ -121,21 +119,19 @@ public class WireConsumer {
 
         // Client streaming call: stream names, get a single aggregated reply
         System.out.println("\n--- Client Streaming ---");
-        SubmissionPublisher<HelloRequest> clientStreamPublisher = new SubmissionPublisher<>();
+        StreamSubject<HelloRequest> clientStreamObserver = new StreamSubject<>();
 
-        // Start sending items in a background thread while the main thread
-        // blocks on the client-streaming call (which returns a single HelloReply)
+        // Start sending items in a background thread
         Thread senderThread = new Thread(() -> {
             try {
-                // Wait for subscription to propagate
                 Thread.sleep(200);
-                clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Alice").build());
+                clientStreamObserver.onNext(HelloRequest.newBuilder().setName("Alice").build());
                 Thread.sleep(100);
-                clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Bob").build());
+                clientStreamObserver.onNext(HelloRequest.newBuilder().setName("Bob").build());
                 Thread.sleep(100);
-                clientStreamPublisher.submit(HelloRequest.newBuilder().setName("Charlie").build());
+                clientStreamObserver.onNext(HelloRequest.newBuilder().setName("Charlie").build());
                 Thread.sleep(100);
-                clientStreamPublisher.close();
+                clientStreamObserver.onCompleted();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -144,22 +140,17 @@ public class WireConsumer {
         senderThread.start();
 
         // This call blocks until all request items are sent and the server replies
-        HelloReply clientStreamReply = greeterService.clientStreamGreet(clientStreamPublisher);
+        HelloReply clientStreamReply = greeterService.clientStreamGreet(clientStreamObserver);
         System.out.println("Client stream response: " + clientStreamReply.getMessage());
         senderThread.join(5000);
 
         // Bidirectional streaming call
         System.out.println("\n--- Bidirectional Streaming ---");
         CountDownLatch bidiLatch = new CountDownLatch(1);
-        SubmissionPublisher<HelloRequest> requestPublisher = new SubmissionPublisher<>();
+        StreamSubject<HelloRequest> requestObserver = new StreamSubject<>();
 
-        Flow.Publisher<HelloReply> bidiResponse = greeterService.bidiGreet(requestPublisher);
-        bidiResponse.subscribe(new Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(Flow.Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-            }
-
+        StreamSource<HelloReply> bidiResponse = greeterService.bidiGreet(requestObserver);
+        bidiResponse.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(HelloReply item) {
                 System.out.println("Bidi response: " + item.getMessage());
@@ -173,21 +164,21 @@ public class WireConsumer {
             }
 
             @Override
-            public void onComplete() {
+            public void onCompleted() {
                 System.out.println("Bidi stream completed.");
                 bidiLatch.countDown();
             }
         });
 
-        // Wait a bit for subscription to be established, then send request items
+        // Send request items
         Thread.sleep(200);
-        requestPublisher.submit(HelloRequest.newBuilder().setName("Alice").build());
+        requestObserver.onNext(HelloRequest.newBuilder().setName("Alice").build());
         Thread.sleep(100);
-        requestPublisher.submit(HelloRequest.newBuilder().setName("Bob").build());
+        requestObserver.onNext(HelloRequest.newBuilder().setName("Bob").build());
         Thread.sleep(100);
-        requestPublisher.submit(HelloRequest.newBuilder().setName("Charlie").build());
+        requestObserver.onNext(HelloRequest.newBuilder().setName("Charlie").build());
         Thread.sleep(100);
-        requestPublisher.close();
+        requestObserver.onCompleted();
 
         if (!bidiLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
             System.err.println("Bidi streaming timed out after 10 seconds!");

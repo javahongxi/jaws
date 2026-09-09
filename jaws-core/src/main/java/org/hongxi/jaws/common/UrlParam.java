@@ -244,6 +244,13 @@ public final class UrlParam {
          */
         public static final Def<Boolean> SEND_RECONNECT = new Def<>("sendReconnect", true);
 
+        /**
+         * Thread pool size for client-side stream subscription callbacks.
+         * These threads drive {@code Flow.Subscriber} onNext/onComplete/onError
+         * for server-streaming and bidi-streaming responses.
+         */
+        public static final Def<Integer> STREAM_SUBSCRIBE_THREADS = new Def<>("streamSubscribeThreads", 4);
+
         private Client() {
         }
     }
