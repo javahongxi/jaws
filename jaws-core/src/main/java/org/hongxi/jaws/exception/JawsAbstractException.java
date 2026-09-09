@@ -1,6 +1,5 @@
 package org.hongxi.jaws.exception;
 
-import org.hongxi.jaws.rpc.RpcContext;
 import java.io.Serial;
 
 /**
@@ -18,14 +17,6 @@ public abstract class JawsAbstractException extends RuntimeException {
     private static final long serialVersionUID = -6842400415484759967L;
 
     protected int errorCode;
-
-    /**
-     * Request id captured at construction time. Exceptions travel across threads
-     * and serialization boundaries, so the id must be frozen here instead of
-     * reading the thread-local {@link RpcContext} lazily in {@link #getMessage()}.
-     * Serializable, so the provider-side value survives transfer to the consumer.
-     */
-    private final String requestId = RpcContext.getContext().getRequestId();
 
     public JawsAbstractException() {
         super();
@@ -58,10 +49,21 @@ public abstract class JawsAbstractException extends RuntimeException {
         this.errorCode = errorCode;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * No request id here on purpose. It used to be frozen from
+     * {@code RpcContext} at construction time, which made its value depend on
+     * which thread built the exception: null on an I/O or continuation thread,
+     * and possibly the previous call's id on a pooled provider thread whose
+     * context had not been cleared. The id belongs to the {@code Request} and
+     * {@code Response} that carry it; a failure site that knows the id states it
+     * in its own message instead.
+     */
     @Override
     public String getMessage() {
-        return String.format("error_message: %s, error_code: %d, request_id: %s",
-                getOriginMessage(), errorCode, requestId);
+        return String.format("error_message: %s, error_code: %d",
+                getOriginMessage(), errorCode);
     }
 
     public String getOriginMessage() {

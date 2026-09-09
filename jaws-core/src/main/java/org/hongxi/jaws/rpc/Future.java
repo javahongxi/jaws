@@ -27,6 +27,17 @@ public interface Future {
     }
 
     /**
+     * Cancels the task and additionally says which error code a caller should see,
+     * so a local timeout is not reported as a generic service failure.
+     *
+     * @param reason    human-readable cause
+     * @param errorCode one of {@link org.hongxi.jaws.exception.JawsErrorCode}
+     */
+    default void cancel(String reason, int errorCode) {
+        cancel(reason);
+    }
+
+    /**
      * Returns whether the task has completed, either normally or with an exception.
      *
      * @return true if the task is done (success, failure, or canceled)

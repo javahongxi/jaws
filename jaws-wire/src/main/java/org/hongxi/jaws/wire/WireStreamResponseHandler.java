@@ -11,6 +11,7 @@ import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
+import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.DefaultResponseFuture;
@@ -93,30 +94,20 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
             } else if (msg instanceof Http2ResetFrame resetFrame) {
-                DefaultResponse errorResponse = responseBuilder.apply(null);
-                errorResponse.setThrowable(new RuntimeException(
-                        "gRPC stream reset: errorCode=" + resetFrame.errorCode()));
-                responseFuture.onFailure(errorResponse);
-                maybeComplete();
+                failCall("gRPC stream reset: errorCode=" + resetFrame.errorCode(), null);
             } else {
                 ReferenceCountUtil.release(msg);
             }
         } catch (Exception e) {
-            DefaultResponse errorResponse = responseBuilder.apply(null);
-            errorResponse.setThrowable(e);
-            responseFuture.onFailure(errorResponse);
-            maybeComplete();
+            failCall("gRPC response handling failed", e);
         }
     }
 
     private void onHeaders(Http2HeadersFrame headersFrame) {
         // Defense-in-depth: reject oversized inbound metadata
         if (maxInboundMetadataSize > 0 && WireMetadata.estimateHeaderSize(headersFrame.headers()) > maxInboundMetadataSize) {
-            DefaultResponse errorResponse = responseBuilder.apply(null);
-            errorResponse.setThrowable(new RuntimeException(
-                    "gRPC response metadata exceeds maxInboundMetadataSize: " + maxInboundMetadataSize));
-            responseFuture.onFailure(errorResponse);
-            maybeComplete();
+            failCall("gRPC response metadata exceeds maxInboundMetadataSize: "
+                    + maxInboundMetadataSize, null);
             return;
         }
 
@@ -157,11 +148,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             // Guard against oversized responses: fail the call and reset the
             // stream instead of buffering unbounded data
             if (accumulator.readableBytes() > maxMessageSize + WireConstants.GRPC_HEADER_SIZE) {
-                DefaultResponse errorResponse = responseBuilder.apply(null);
-                errorResponse.setThrowable(new RuntimeException(
-                        "gRPC response exceeds maxInboundMessageSize: " + maxMessageSize));
-                responseFuture.onFailure(errorResponse);
-                maybeComplete();
+                failCall("gRPC response exceeds maxInboundMessageSize: " + maxMessageSize, null);
                 ctx.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
                 ctx.close();
                 return;
@@ -190,19 +177,13 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             }
 
             if (accumulator == null || accumulator.readableBytes() == 0) {
-                DefaultResponse errorResponse = responseBuilder.apply(null);
-                errorResponse.setThrowable(new RuntimeException("No response data received"));
-                responseFuture.onFailure(errorResponse);
-                maybeComplete();
+                failCall("gRPC response carried no message", null);
                 return;
             }
 
             ByteBuf frame = WireFrameCodec.tryExtractFrame(accumulator);
             if (frame == null) {
-                DefaultResponse errorResponse = responseBuilder.apply(null);
-                errorResponse.setThrowable(new RuntimeException("Incomplete gRPC response frame"));
-                responseFuture.onFailure(errorResponse);
-                maybeComplete();
+                failCall("incomplete gRPC response frame", null);
                 return;
             }
             try {
@@ -217,10 +198,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             }
             onCompletion.run();
         } catch (Exception e) {
-            DefaultResponse errorResponse = responseBuilder.apply(null);
-            errorResponse.setThrowable(e);
-            responseFuture.onFailure(errorResponse);
-            maybeComplete();
+            failCall("gRPC response could not be decoded", e);
         } finally {
             if (accumulator != null && accumulator.refCnt() > 0) {
                 accumulator.release();
@@ -228,30 +206,48 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
+    /**
+     * Fail this call with an exception the caller can actually catch.
+     * <p>
+     * The blocking read in {@code DefaultResponseFuture.getValue()} rethrows
+     * {@code RuntimeException}s untouched, so completing the future with a raw
+     * RuntimeException escapes every {@code JawsAbstractException} handler and
+     * leaves the transport's own error-code envelope empty. Everything that ends
+     * a call abnormally therefore goes through here, and every message names the
+     * request — the exception freezes {@code requestId} from a ThreadLocal that
+     * the event loop never populates, so the id only survives inside the text.
+     *
+     * @param message what happened, without the request id
+     * @param cause   the underlying failure, if any
+     */
+    private void failCall(String message, Throwable cause) {
+        if (responseFuture.isDone()) {
+            return; // first failure wins; a stream only ends once
+        }
+        String described = message + ": requestId=" + responseFuture.getRequestId();
+        Throwable failure;
+        if (cause instanceof JawsAbstractException) {
+            failure = cause; // already typed, with its own error code
+        } else if (cause != null) {
+            failure = new JawsServiceException(described, cause);
+        } else {
+            failure = new JawsServiceException(described);
+        }
+        DefaultResponse errorResponse = responseBuilder.apply(null);
+        errorResponse.setThrowable(failure);
+        responseFuture.onFailure(errorResponse);
+        maybeComplete();
+    }
+
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
-        if (!responseFuture.isDone()) {
-            DefaultResponse errorResponse = responseBuilder.apply(null);
-            // A raw RuntimeException here escapes every caller's catch block: the
-            // blocking read rethrows RuntimeExceptions as they are, so only a
-            // JawsAbstractException lets a consumer handle a closed stream.
-            errorResponse.setThrowable(new JawsServiceException(
-                    "gRPC stream closed before the response arrived: requestId="
-                            + responseFuture.getRequestId()));
-            responseFuture.onFailure(errorResponse);
-            maybeComplete();
-        }
+        failCall("gRPC stream closed before the response arrived", null);
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Wire client stream error", cause);
-        if (!responseFuture.isDone()) {
-            DefaultResponse errorResponse = responseBuilder.apply(null);
-            errorResponse.setThrowable(cause);
-            responseFuture.onFailure(errorResponse);
-            maybeComplete();
-        }
+        failCall("gRPC stream failed", cause);
         ctx.close();
     }
 

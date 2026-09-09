@@ -1,5 +1,6 @@
 package org.hongxi.jaws.rpc;
 
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 
 import java.util.Map;
@@ -23,8 +24,10 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
 
     private final Request request;
     private final int timeout;
-    /** Why this future was cancelled; set by {@link #cancel(String)}. */
+    /** Why this future was cancelled; set by {@link #cancel(String, int)}. */
     private volatile String cancellationReason;
+    /** Error code to report for the cancellation; a timeout is not a generic failure. */
+    private volatile int cancellationErrorCode = JawsErrorCode.SERVICE_DEFAULT;
 
     public DefaultResponseFuture(Request request, int timeout) {
         this.request = request;
@@ -97,7 +100,13 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
 
     @Override
     public void cancel(String reason) {
+        cancel(reason, JawsErrorCode.SERVICE_DEFAULT);
+    }
+
+    @Override
+    public void cancel(String reason, int errorCode) {
         this.cancellationReason = reason;
+        this.cancellationErrorCode = errorCode;
         cancel(true);
     }
 
@@ -111,7 +120,7 @@ public class DefaultResponseFuture extends CompletableFuture<Response> implement
         String reason = cancellationReason != null ? cancellationReason : "cancelled";
         return new JawsServiceException(reason + ": " + request.getInterfaceName() + "."
                 + request.getMethodName() + ", requestId=" + request.getRequestId()
-                + ", timeout=" + timeout + "ms", cause);
+                + ", timeout=" + timeout + "ms", cause, cancellationErrorCode);
     }
 
     @Override

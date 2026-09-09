@@ -148,7 +148,8 @@ public abstract class AbstractClient implements Client {
                 if (future != null) {
                     timeoutMap.remove(requestId);
                     try {
-                        future.cancel("request timed out after " + timeout + "ms");
+                        future.cancel("request timed out after " + timeout + "ms",
+                                JawsErrorCode.SERVICE_TIMEOUT);
                     } catch (Exception e) {
                         log.error("failed to cancel timeout task: uri={} requestId={}", url.getUri(), requestId, e);
                     }

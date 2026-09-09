@@ -1,6 +1,7 @@
 package org.hongxi.jaws.wire;
 
 import org.hongxi.jaws.exception.JawsAbstractException;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
@@ -118,6 +120,69 @@ class WireClientTimeoutTest {
         client.close();
     }
 
+    /**
+     * An HTTP/2 RST_STREAM for stream 1 (length 4, type 3, no flags, stream 1)
+     * with error code 0xE (INTERNAL). The client opens exactly one stream here,
+     * so the id is known ahead of time.
+     */
+    private static final byte[] RST_STREAM_INTERNAL_ON_1 = {
+            0x00, 0x00, 0x04, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x0E
+    };
+
+    /**
+     * A peer that resets the stream instead of answering must also fail the call
+     * with a type a caller can catch: the handler used to complete the future
+     * with a raw RuntimeException, which the blocking read rethrows untouched and
+     * which therefore escapes every {@code JawsAbstractException} handler.
+     */
+    @Test
+    void resetStreamFailsWithATypedException() throws Exception {
+        ServerSocket server = new ServerSocket(0);
+        Thread thread = new Thread(() -> {
+            try (Socket socket = server.accept()) {
+                socket.getOutputStream().write(EMPTY_SETTINGS_FRAME);
+                socket.getOutputStream().flush();
+                socket.getInputStream().read(new byte[4096]);
+                try {
+                    Thread.sleep(500); // let the call finish being written
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                socket.getOutputStream().write(RST_STREAM_INTERNAL_ON_1);
+                socket.getOutputStream().flush();
+                Thread.sleep(500); // keep the pipe open long enough to deliver it
+            } catch (IOException | InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "wire-reset-server");
+        thread.setDaemon(true);
+        thread.start();
+
+        Map<String, String> parameters = new HashMap<>();
+        parameters.put("connectTimeout", "2000");
+        parameters.put("requestTimeout", "5000");
+        URL url = new URL("wire", "127.0.0.1", server.getLocalPort(), "interop.Greeter", parameters);
+
+        WireClient client = new WireClient(url);
+        assertTrue(client.open(), "client should connect to the resetting server");
+
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            JawsAbstractException failure = assertThrows(JawsAbstractException.class, () ->
+                    client.request(helloRequest(), HealthCheckResponse.parser()).getValue());
+            // Netty turns the inbound RST_STREAM into a child-channel close, so the
+            // exact wording may be "reset" or "closed"; what must never regress is
+            // that it is catchable and says what happened to this call.
+            String message = String.valueOf(failure.getMessage());
+            assertTrue(message.contains("stream"),
+                    "the failure must name what happened, got: " + message);
+            assertTrue(message.contains("requestId="),
+                    "the failure must identify the call, got: " + message);
+        });
+
+        client.close();
+    }
+
     private static Request helloRequest() {
         DefaultRequest request = new DefaultRequest();
         request.setInterfaceName("interop.Greeter");
@@ -155,6 +220,8 @@ class WireClientTimeoutTest {
         assertTrue(message.contains("timed out"), "cause must be named, got: " + message);
         assertTrue(message.contains("interop.Greeter.SayHello"), "call must be named, got: " + message);
         assertTrue(message.contains(REQUEST_TIMEOUT_MS + "ms"), "budget must be shown, got: " + message);
+        assertEquals(JawsErrorCode.SERVICE_TIMEOUT, failure.getErrorCode(),
+                "a local timeout must not be reported as a generic service failure");
 
         assertTrue(receivedBytes.get() > 0, "the request must have reached the peer");
         assertTrue(elapsed >= REQUEST_TIMEOUT_MS / 2,
