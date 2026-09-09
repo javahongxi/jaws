@@ -5,6 +5,7 @@ import org.hongxi.jaws.stream.StreamSource;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -12,25 +13,39 @@ import java.util.concurrent.atomic.AtomicReference;
  * (receiving side) and {@link StreamSource} (sending side).
  * <p>
  * Items produced via {@link #onNext} are buffered until a consumer subscribes
- * via {@link #subscribe}. Once subscribed, all buffered items are delivered
- * synchronously, and subsequent items are forwarded immediately.
+ * via {@link #subscribe}, which must be able to receive everything produced
+ * before it attached: in the RPC flow the producer (a business method, or an
+ * inbound DATA frame decoded on the event loop) starts emitting before the
+ * framework has finished wiring the consumer.
  * <p>
- * This replaces the previous {@code StreamPublisher} which required a complex
- * drain loop with re-check conditions. The simplified design:
+ * Design:
  * <ul>
- *   <li><b>No drain loop</b> — items are either forwarded directly (if a
- *       subscriber is attached) or buffered for later replay.</li>
+ *   <li><b>One drainer at a time</b> — every signal funnels into
+ *       {@link #drain()}, and only the thread that holds the drain right
+ *       delivers. This is what keeps a producer running on the event loop and
+ *       a consumer being attached on the business executor from delivering
+ *       through two paths at once.</li>
+ *   <li><b>Delivery outside the lock</b> — consumer callbacks are never
+ *       invoked while holding this instance's monitor, so a slow consumer
+ *       cannot block producers.</li>
+ *   <li><b>Terminal ordering</b> — {@link #onCompleted} / {@link #onError}
+ *       are delivered strictly after every item that preceded them, including
+ *       items or terminals that arrive while a replay is in flight. A stream
+ *       that emits {@code a}, {@code b} and then completes can never be seen
+ *       by the consumer as {@code a}, terminal, {@code b}.</li>
  *   <li><b>No backpressure</b> — RPC streaming items are typically small
- *       protobuf messages; unbounded buffering is acceptable.</li>
- *   <li><b>Terminal signal ordering</b> — {@link #onCompleted}/{@link #onError}
- *       always delivers after all buffered items, because the buffer is
- *       flushed before the terminal signal in both the subscribe and
- *       direct-forward paths.</li>
+ *       messages; buffering them unbounded until the consumer drains them is
+ *       an accepted trade-off of dropping {@code Flow.Subscription.request(n)}.</li>
  * </ul>
  * <p>
- * Thread-safety: all mutable state is guarded by {@code synchronized} on this
- * instance, except {@code onCancel} which uses an {@link AtomicReference} for
- * lock-free at-most-once cancel semantics.
+ * Re-entrancy: a consumer that touches this subject from inside
+ * {@code onNext} (closing the stream while consuming an item, or pushing the
+ * next one) is handled by the loop — the nested call enqueues and lets the
+ * running drainer pick it up.
+ * <p>
+ * Thread-safety: all mutable state except {@code onCancel} is guarded by
+ * {@code synchronized} on this instance. {@code observer} is single-subscriber:
+ * the framework attaches exactly one consumer per stream.
  *
  * @param <T> the type of items
  * @author shenhongxi
@@ -39,9 +54,13 @@ public class StreamSubject<T> implements StreamObserver<T>, StreamSource<T> {
 
     private final List<T> items = new ArrayList<>();
     private StreamObserver<? super T> observer;
-    private boolean replaying;
     private boolean completed;
     private Throwable error;
+
+    /** True while some thread owns the delivery loop. */
+    private boolean draining;
+    /** True once the terminal signal has been handed to the consumer. */
+    private boolean terminalDelivered;
 
     /**
      * Optional action invoked when the consumer cancels (calls
@@ -50,69 +69,115 @@ public class StreamSubject<T> implements StreamObserver<T>, StreamSource<T> {
     private final AtomicReference<Runnable> onCancel = new AtomicReference<>();
 
     @Override
-    public synchronized void onNext(T item) {
-        if (completed || error != null) return;
-        if (observer != null && !replaying) {
-            observer.onNext(item);
-        } else {
+    public void onNext(T item) {
+        synchronized (this) {
+            if (completed || error != null) {
+                return;
+            }
             items.add(item);
         }
+        drain();
     }
 
     @Override
-    public synchronized void onError(Throwable t) {
-        if (completed || error != null) return;
-        error = t;
-        if (observer != null) {
-            flushAndComplete();
+    public void onError(Throwable t) {
+        synchronized (this) {
+            if (completed || error != null) {
+                return;
+            }
+            error = t;
         }
+        drain();
     }
 
     @Override
-    public synchronized void onCompleted() {
-        if (completed) return;
-        completed = true;
-        if (observer != null) {
-            flushAndComplete();
+    public void onCompleted() {
+        synchronized (this) {
+            if (completed || error != null) {
+                return;
+            }
+            completed = true;
         }
+        drain();
     }
 
     @Override
     public void subscribe(StreamObserver<? super T> observer) {
-        if (observer == null) {
-            throw new NullPointerException("observer must not be null");
-        }
-        List<T> buffered;
-        Throwable terminalError;
-        boolean isCompleted;
+        Objects.requireNonNull(observer, "observer must not be null");
         synchronized (this) {
-            replaying = true;
             this.observer = observer;
-            buffered = new ArrayList<>(items);
-            items.clear();
-            terminalError = error;
-            isCompleted = completed;
         }
-        // Deliver all buffered items first (outside the lock to avoid
-        // blocking producers during potentially slow consumer callbacks).
-        // During this window, onNext() sees replaying=true and enqueues
-        // new items instead of delivering them out of order.
-        for (T item : buffered) {
-            observer.onNext(item);
-        }
-        // Close the replay window: deliver any items that arrived during
-        // replay, then the terminal signal if the stream has ended.
+        // A drainer already in flight re-reads the state on each round, so it
+        // will see this observer; otherwise this call starts the loop.
+        drain();
+    }
+
+    /**
+     * Deliver buffered items — and then the terminal signal, if the stream has
+     * ended — using a single-owner loop. Returns without doing anything when
+     * another thread already holds the drain right, when no consumer is
+     * attached yet, or when everything has been delivered.
+     */
+    private void drain() {
         synchronized (this) {
-            replaying = false;
-            for (T item : items) {
-                observer.onNext(item);
+            if (draining || observer == null || terminalDelivered) {
+                return;
             }
-            items.clear();
-            if (terminalError != null) {
-                observer.onError(terminalError);
-            } else if (isCompleted) {
-                observer.onCompleted();
+            draining = true;
+        }
+
+        try {
+            while (true) {
+                List<T> batch;
+                StreamObserver<? super T> consumer;
+                boolean terminal;
+                Throwable terminalError;
+
+                synchronized (this) {
+                    consumer = observer;
+                    if (!items.isEmpty()) {
+                        batch = new ArrayList<>(items);
+                        items.clear();
+                        terminal = false;
+                        terminalError = null;
+                    } else if (error != null || completed) {
+                        // Claim the terminal signal while still holding the
+                        // monitor, so no other thread can deliver a second one.
+                        batch = List.of();
+                        terminal = true;
+                        terminalError = error;
+                        terminalDelivered = true;
+                        draining = false;
+                    } else {
+                        // Nothing left to hand over right now. Clearing the flag
+                        // inside the monitor means a producer that adds an item
+                        // after this point is guaranteed to start its own drain.
+                        batch = null;
+                        terminal = false;
+                        terminalError = null;
+                        draining = false;
+                        return;
+                    }
+                }
+
+                for (T item : batch) {
+                    consumer.onNext(item);
+                }
+
+                if (terminal) {
+                    if (terminalError != null) {
+                        consumer.onError(terminalError);
+                    } else {
+                        consumer.onCompleted();
+                    }
+                    return;
+                }
             }
+        } catch (RuntimeException | Error e) {
+            synchronized (this) {
+                draining = false;
+            }
+            throw e;
         }
     }
 
@@ -126,23 +191,10 @@ public class StreamSubject<T> implements StreamObserver<T>, StreamSource<T> {
 
     /**
      * @return a {@link CancelableObserver} that wraps this instance's
-     *         subscriber side, allowing the framework to propagate cancel.
+     *         consumer side, allowing the framework to propagate cancel.
      */
     CancelableObserver cancelableObserver() {
         return new CancelableObserver();
-    }
-
-    private void flushAndComplete() {
-        // Deliver any items that arrived between the last onNext and now
-        for (int i = 0; i < items.size(); i++) {
-            observer.onNext(items.get(i));
-        }
-        items.clear();
-        if (error != null) {
-            observer.onError(error);
-        } else {
-            observer.onCompleted();
-        }
     }
 
     /**

@@ -30,6 +30,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -384,54 +385,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
      */
     private void dispatchStream(ChannelHandlerContext ctx, Request request) {
         StreamSource<Object> source = messageHandler.handleStream(request, null);
-
-        // Send response headers first (without END_STREAM)
-        if (ctx.channel().isActive()) {
-            Http2Headers respHeaders = new DefaultHttp2Headers()
-                    .status(Http2Constants.STATUS_OK)
-                    .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
-                    .set(Http2Constants.HEADER_STREAMING, StreamType.SERVER.getValue());
-            ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
-        }
-
-        // Subscribe to the source and stream responses
-        source.subscribe(new StreamObserver<>() {
-            @Override
-            public void onNext(Object item) {
-                if (!ctx.channel().isActive()) {
-                    return;
-                }
-                try {
-                    byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                    ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                            Unpooled.wrappedBuffer(itemBytes), false));
-                } catch (Exception e) {
-                    log.error("Failed to encode stream item", e);
-                    sendStreamError(ctx, e);
-                }
-            }
-
-            @Override
-            public void onError(Throwable throwable) {
-                log.error("Server streaming error: requestId={}", request.getRequestId(), throwable);
-                sendStreamError(ctx, throwable);
-                finishStream();
-            }
-
-            @Override
-            public void onCompleted() {
-                // Send final empty DATA frame with END_STREAM
-                if (ctx.channel().isActive()) {
-                    ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
-                }
-                finishStream();
-            }
-
-            private void finishStream() {
-                RpcContext.destroy();
-                inflightRequests.decrementAndGet();
-            }
-        });
+        source.subscribe(new StreamResponseWriter(ctx, StreamType.SERVER, request.getRequestId()));
     }
 
     /**
@@ -446,83 +400,18 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                     StreamSource<Object> responseSource =
                             messageHandler.handleStream(bidiRequest, requestObserver);
 
-                    // Bridge the source into a StreamSubject immediately to
-                    // guard against hot sources. Items are buffered here
-                    // until the event loop attaches the network subscriber.
+                    // Bridge into a StreamSubject immediately to guard against
+                    // hot sources that emit before a consumer is attached.
                     StreamSubject<Object> responseBuffer = new StreamSubject<>();
-                    responseSource.subscribe(new StreamObserver<>() {
-                        @Override
-                        public void onNext(Object item) {
-                            responseBuffer.onNext(item);
-                        }
+                    responseSource.subscribe(responseBuffer);
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            responseBuffer.onError(throwable);
-                        }
-
-                        @Override
-                        public void onCompleted() {
-                            responseBuffer.onCompleted();
-                        }
-                    });
-
-                    // All ctx writes (HEADERS + DATA) must happen on the
-                    // event loop to guarantee frame ordering. If we wrote
-                    // HEADERS here (executor thread), Netty would schedule
-                    // it as a task; but subscribe() below would trigger
-                    // writeAndFlush(DATA) directly on the event loop,
-                    // flushing DATA before the HEADERS task runs.
-                    ctx.executor().execute(() -> {
-                        // Send response HEADERS (without END_STREAM)
-                        if (ctx.channel().isActive()) {
-                            Http2Headers respHeaders = new DefaultHttp2Headers()
-                                    .status(Http2Constants.STATUS_OK)
-                                    .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
-                                    .set(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
-                            ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
-                        }
-
-                        // Subscribe the network-forwarding observer on the
-                        // event loop so all writes are sequential with the
-                        // HEADERS above.
-                        responseBuffer.subscribe(new StreamObserver<>() {
-                            @Override
-                            public void onNext(Object item) {
-                                if (!ctx.channel().isActive()) {
-                                    return;
-                                }
-                                try {
-                                    byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
-                                    ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                                            Unpooled.wrappedBuffer(itemBytes), false));
-                                } catch (Exception e) {
-                                    log.error("Failed to encode bidi stream item", e);
-                                    sendStreamError(ctx, e);
-                                }
-                            }
-
-                            @Override
-                            public void onError(Throwable throwable) {
-                                log.error("Bidi streaming error: requestId={}", bidiRequest.getRequestId(), throwable);
-                                sendStreamError(ctx, throwable);
-                                finishStream();
-                            }
-
-                            @Override
-                            public void onCompleted() {
-                                if (ctx.channel().isActive()) {
-                                    ctx.writeAndFlush(new DefaultHttp2DataFrame(true));
-                                }
-                                finishStream();
-                            }
-
-                            private void finishStream() {
-                                RpcContext.destroy();
-                                inflightRequests.decrementAndGet();
-                            }
-                        });
-                    });
+                    // The writer commits response HEADERS itself, paired with the
+                    // first outbound frame and decided on the event loop, so no
+                    // thread hop can split a HEADERS away from the DATA that
+                    // followed it — which is what made an inline write from the
+                    // loop overtake a queued eager HEADERS.
+                    responseBuffer.subscribe(new StreamResponseWriter(
+                            ctx, StreamType.BIDIRECTIONAL, bidiRequest.getRequestId()));
                 } catch (Exception e) {
                     log.error("HTTP/2 bidi dispatch failed: {}", bidiRequest, e);
                     sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
@@ -625,20 +514,156 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 });
     }
 
-    private void sendStreamError(ChannelHandlerContext ctx, Throwable error) {
-        if (ctx.channel().isActive()) {
+    /**
+     * Writes one streaming response — server-streaming or bidirectional — on a
+     * single HTTP/2 stream.
+     * <p>
+     * Response HEADERS are committed lazily and, crucially, <em>paired</em> with
+     * the first outbound frame inside a single event loop task. That pairing is
+     * what makes the frame order safe. Items may be delivered by the business
+     * executor or by the event loop itself (an echo-style handler does the
+     * latter): a HEADERS frame written eagerly from the executor thread only
+     * reaches the wire through the loop's task queue, while a DATA frame written
+     * on the loop executes inline and jumps that queue — which is how DATA
+     * overtook its own HEADERS and the client reported {@code status=null}.
+     * <p>
+     * Lifecycle: the in-flight counter is released when the terminal frame has
+     * actually been committed to the pipeline, so graceful shutdown does not
+     * count a stream as finished while its last frame is still queued.
+     * {@link RpcContext} is deliberately destroyed on the thread that produced
+     * the terminal signal instead, because it is a thread local.
+     */
+    private final class StreamResponseWriter implements StreamObserver<Object> {
+        private final ChannelHandlerContext ctx;
+        private final long requestId;
+        private final Http2Headers responseHeaders;
+        /** Touched on the event loop only. */
+        private boolean headersCommitted;
+        private final AtomicBoolean contextDestroyed = new AtomicBoolean();
+        private final AtomicBoolean inflightReleased = new AtomicBoolean();
+
+        StreamResponseWriter(ChannelHandlerContext ctx, StreamType streamType, long requestId) {
+            this.ctx = ctx;
+            this.requestId = requestId;
+            this.responseHeaders = new DefaultHttp2Headers()
+                    .status(Http2Constants.STATUS_OK)
+                    .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE)
+                    .set(Http2Constants.HEADER_STREAMING, streamType.getValue());
+        }
+
+        @Override
+        public void onNext(Object item) {
             try {
-                String errorMsg = Objects.toString(error.getMessage(), error.getClass().getName());
-                byte[] errorBytes = errorMsg.getBytes(StandardCharsets.UTF_8);
-                ctx.writeAndFlush(new DefaultHttp2DataFrame(
-                        Unpooled.wrappedBuffer(errorBytes), true))
-                        .addListener(f -> {
-                            if (!f.isSuccess()) {
-                                log.error("Failed to send stream error", f.cause());
-                            }
-                        });
+                byte[] itemBytes = Http2StreamCodec.encodeItem(item, serialization);
+                submit(Unpooled.wrappedBuffer(itemBytes));
             } catch (Exception e) {
-                log.error("Failed to send stream error", e);
+                log.error("Failed to encode stream item: requestId={}", requestId, e);
+                fail(e);
+            }
+        }
+
+        @Override
+        public void onError(Throwable throwable) {
+            log.error("Streaming response error: requestId={}", requestId, throwable);
+            fail(throwable);
+        }
+
+        @Override
+        public void onCompleted() {
+            destroyContext();
+            submit(null);
+        }
+
+        /**
+         * Hand one data frame over to the event loop, introducing it with the
+         * response HEADERS if none has been committed yet.
+         *
+         * @param payload frame payload, or {@code null} for the terminal
+         *                empty DATA frame with END_STREAM
+         */
+        private void submit(ByteBuf payload) {
+            boolean endStream = payload == null;
+            try {
+                ctx.executor().execute(() -> {
+                    if (!ctx.channel().isActive()) {
+                        releasePayload(payload);
+                        releaseInflight();
+                        return;
+                    }
+                    commitHeaders();
+                    Http2DataFrame frame = endStream
+                            ? new DefaultHttp2DataFrame(true)
+                            : new DefaultHttp2DataFrame(payload, false);
+                    ctx.writeAndFlush(frame).addListener(f -> {
+                        if (!f.isSuccess()) {
+                            log.error("Failed to write stream frame: requestId={}", requestId, f.cause());
+                        }
+                        if (endStream) {
+                            releaseInflight();
+                        }
+                    });
+                });
+            } catch (RejectedExecutionException e) {
+                log.error("Failed to commit stream frame: requestId={}", requestId, e);
+                releasePayload(payload);
+                releaseInflight();
+            }
+        }
+
+        /**
+         * Answer the stream with an error DATA frame and close it out. The error
+         * frame needs its HEADERS too, which is why this cannot reuse the
+         * connection-level {@link #sendError} path.
+         */
+        private void fail(Throwable cause) {
+            destroyContext();
+            String message = Objects.toString(cause.getMessage(), cause.getClass().getName());
+            byte[] errorBytes = message.getBytes(StandardCharsets.UTF_8);
+            try {
+                ctx.executor().execute(() -> {
+                    if (!ctx.channel().isActive()) {
+                        releaseInflight();
+                        return;
+                    }
+                    commitHeaders();
+                    ctx.writeAndFlush(new DefaultHttp2DataFrame(
+                                    Unpooled.wrappedBuffer(errorBytes), true))
+                            .addListener(f -> {
+                                if (!f.isSuccess()) {
+                                    log.error("Failed to write stream error: requestId={}", requestId, f.cause());
+                                }
+                                releaseInflight();
+                            });
+                });
+            } catch (RejectedExecutionException e) {
+                log.error("Failed to commit stream error frame: requestId={}", requestId, e);
+                releaseInflight();
+            }
+        }
+
+        /** Caller must be on the event loop; commits at most once per stream. */
+        private void commitHeaders() {
+            if (!headersCommitted) {
+                headersCommitted = true;
+                ctx.write(new DefaultHttp2HeadersFrame(responseHeaders));
+            }
+        }
+
+        private void releasePayload(ByteBuf payload) {
+            if (payload != null) {
+                payload.release();
+            }
+        }
+
+        private void destroyContext() {
+            if (contextDestroyed.compareAndSet(false, true)) {
+                RpcContext.destroy();
+            }
+        }
+
+        private void releaseInflight() {
+            if (inflightReleased.compareAndSet(false, true)) {
+                inflightRequests.decrementAndGet();
             }
         }
     }

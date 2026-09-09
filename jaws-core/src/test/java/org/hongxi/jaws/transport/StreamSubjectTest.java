@@ -99,4 +99,88 @@ class StreamSubjectTest {
         assertEquals("boom", consumer.error.get().getMessage());
         assertEquals(1, consumer.received.size(), "items before the error must still be delivered");
     }
+
+    /**
+     * Records every signal in arrival order so sequence assertions need no
+     * latches. The hook runs inside the first {@code onNext}, which lets a test
+     * drive the subject from within a delivery — the same re-entrant shape a
+     * business handler exhibits when it closes the stream while consuming an
+     * item, and the same window an inbound frame on the event loop exhibits.
+     */
+    private static final class RecordingObserver implements StreamObserver<Object> {
+        final List<String> events = new CopyOnWriteArrayList<>();
+        private boolean first = true;
+        private final Runnable onFirstItem;
+
+        RecordingObserver(Runnable onFirstItem) {
+            this.onFirstItem = onFirstItem;
+        }
+
+        @Override
+        public void onNext(Object item) {
+            events.add("onNext:" + item);
+            if (first) {
+                first = false;
+                onFirstItem.run();
+            }
+        }
+
+        @Override
+        public void onError(Throwable throwable) {
+            events.add("onError:" + throwable.getMessage());
+        }
+
+        @Override
+        public void onCompleted() {
+            events.add("onCompleted");
+        }
+    }
+
+    @Test
+    void completionDuringReplayMustNotCutAheadOfBufferedItems() {
+        StreamSubject<Object> subject = new StreamSubject<>();
+        subject.onNext("item-1");
+        subject.onNext("item-2");
+
+        // The consumer completes the stream while receiving the FIRST buffered
+        // item, so the terminal signal lands inside the subscribe() replay window
+        // while item-2 is still undelivered.
+        RecordingObserver consumer = new RecordingObserver(subject::onCompleted);
+        subject.subscribe(consumer);
+
+        assertEquals(List.of("onNext:item-1", "onNext:item-2", "onCompleted"), consumer.events,
+                "a terminal signal must never overtake items buffered before it");
+    }
+
+    @Test
+    void errorDuringReplayMustNotCutAheadOfBufferedItems() {
+        StreamSubject<Object> subject = new StreamSubject<>();
+        subject.onNext("item-1");
+        subject.onNext("item-2");
+
+        RecordingObserver consumer = new RecordingObserver(
+                () -> subject.onError(new RuntimeException("boom")));
+        subject.subscribe(consumer);
+
+        assertEquals(List.of("onNext:item-1", "onNext:item-2", "onError:boom"), consumer.events,
+                "an error terminal must never overtake items buffered before it");
+    }
+
+    @Test
+    void itemsArrivingDuringReplayMustFollowBufferedOnes() {
+        StreamSubject<Object> subject = new StreamSubject<>();
+        subject.onNext("item-1");
+        subject.onNext("item-2");
+
+        // A new item is pushed while the replay is in flight — this is exactly
+        // the event-loop delivering an inbound request item next to a business
+        // thread that is draining the buffer.
+        RecordingObserver consumer = new RecordingObserver(() -> subject.onNext("item-late"));
+        subject.subscribe(consumer);
+        subject.onCompleted();
+
+        assertEquals(List.of("onNext:item-1", "onNext:item-2", "onNext:item-late", "onCompleted"),
+                consumer.events,
+                "items pushed during the replay window must follow the replayed ones");
+    }
 }
