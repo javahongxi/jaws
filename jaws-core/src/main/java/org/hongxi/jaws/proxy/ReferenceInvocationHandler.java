@@ -60,38 +60,39 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
         }
 
         // Streaming detection
-        int observerIndex = findObserverArgIndex(method, args);
+        int requestStreamIndex = findRequestStreamArgIndex(method, args);
         boolean returnsSource = StreamSource.class.isAssignableFrom(method.getReturnType());
 
-        if (observerIndex >= 0 && returnsSource) {
-            // Bidi streaming: StreamObserver param + StreamSource return
+        if (requestStreamIndex >= 0 && returnsSource) {
+            // Bidi streaming: StreamSource request parameter + StreamSource return
             //noinspection unchecked
-            return invokeBidiStream(request, (StreamObserver<Object>) args[observerIndex], args, observerIndex);
+            return invokeBidiStream(request, (StreamSource<Object>) args[requestStreamIndex], args, requestStreamIndex);
         }
         if (returnsSource) {
-            // Server streaming: StreamSource return, no StreamObserver param
+            // Server streaming: StreamSource return, no request stream parameter
             return invokeStream(request);
         }
-        if (observerIndex >= 0) {
-            // Client streaming: StreamObserver param, non-StreamSource return
+        if (requestStreamIndex >= 0) {
+            // Client streaming: StreamSource request parameter, non-StreamSource return
             //noinspection unchecked
-            return invokeClientStream(request, (StreamObserver<Object>) args[observerIndex], args, observerIndex);
+            return invokeClientStream(request, (StreamSource<Object>) args[requestStreamIndex], args, requestStreamIndex);
         }
 
         return invoke(request, method.getReturnType());
     }
 
     /**
-     * Find the index of the first {@link StreamObserver} argument in the method
-     * parameters. Returns {@code -1} if no StreamObserver parameter is found.
+     * Find the index of the first request stream argument — a {@link StreamSource}
+     * the client feeds and the framework subscribes to. Returns {@code -1} when
+     * the method takes no request stream.
      */
-    private static int findObserverArgIndex(Method method, Object[] args) {
+    private static int findRequestStreamArgIndex(Method method, Object[] args) {
         if (args == null) {
             return -1;
         }
         Class<?>[] paramTypes = method.getParameterTypes();
         for (int i = 0; i < paramTypes.length; i++) {
-            if (StreamObserver.class.isAssignableFrom(paramTypes[i]) && args[i] instanceof StreamObserver) {
+            if (StreamSource.class.isAssignableFrom(paramTypes[i]) && args[i] instanceof StreamSource) {
                 return i;
             }
         }
@@ -99,25 +100,25 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
     }
 
     /**
-     * Bidirectional streaming: strip the StreamObserver arg and invoke with the
-     * request stream, returning a StreamSource to the caller.
+     * Bidirectional streaming: strip the request stream arg and invoke with it,
+     * returning a {@link StreamSource} of response items to the caller.
      */
-    private Object invokeBidiStream(DefaultRequest request, StreamObserver<Object> observer,
-                                    Object[] args, int observerIndex) throws Throwable {
-        request.setArguments(stripArg(args, observerIndex));
+    private Object invokeBidiStream(DefaultRequest request, StreamSource<Object> requestStream,
+                                    Object[] args, int requestStreamIndex) throws Throwable {
+        request.setArguments(stripArg(args, requestStreamIndex));
         request.setAttachment(Http2Constants.HEADER_STREAMING, StreamType.BIDIRECTIONAL.getValue());
-        return invokeStream(request, observer);
+        return invokeStream(request, requestStream);
     }
 
     /**
-     * Client streaming: strip the StreamObserver arg, send the request stream, and
+     * Client streaming: strip the request stream arg, send the request stream, and
      * block for the single response value.
      */
-    private Object invokeClientStream(DefaultRequest request, StreamObserver<Object> observer,
-                                      Object[] args, int observerIndex) throws Throwable {
-        request.setArguments(stripArg(args, observerIndex));
+    private Object invokeClientStream(DefaultRequest request, StreamSource<Object> requestStream,
+                                      Object[] args, int requestStreamIndex) throws Throwable {
+        request.setArguments(stripArg(args, requestStreamIndex));
         request.setAttachment(Http2Constants.HEADER_STREAMING, StreamType.CLIENT.getValue());
-        return blockForClientStream(request, observer);
+        return blockForClientStream(request, requestStream);
     }
 
     private static Object[] stripArg(Object[] args, int index) {
@@ -135,7 +136,7 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
      * Client streaming: send the request observer and block for the single
      * response value from the returned StreamSource.
      */
-    private Object blockForClientStream(DefaultRequest request, StreamObserver<Object> requestObserver) throws Throwable {
+    private Object blockForClientStream(DefaultRequest request, StreamSource<Object> requestObserver) throws Throwable {
         StreamSource<Object> responseSource = invokeStream(request, requestObserver);
         CompletableFuture<Object> resultFuture = new CompletableFuture<>();
         responseSource.subscribe(new StreamObserver<>() {

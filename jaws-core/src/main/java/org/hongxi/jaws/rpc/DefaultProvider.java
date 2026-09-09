@@ -7,7 +7,6 @@ import org.hongxi.jaws.exception.JawsBizException;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.transport.StreamSubject;
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -139,7 +138,7 @@ public class DefaultProvider<T> extends AbstractProvider<T> {
     }
 
     @Override
-    public StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
+    public StreamSource<Object> callStream(Request request, StreamSource<Object> requestStream) {
         Method method = lookupMethod(request.getMethodName(), request.getParamDesc());
 
         if (method == null) {

@@ -1,6 +1,5 @@
 package org.hongxi.jaws.transport;
 
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 import org.hongxi.jaws.rpc.Request;
@@ -40,11 +39,11 @@ public interface MessageHandler {
      * {@link UnsupportedOperationException}.
      *
      * @param request       the incoming RPC request
-     * @param requestStream an observer receiving client request items, or
+     * @param requestStream a source of client request items that the framework subscribes to, or
      *                      {@code null} for server-streaming
      * @return a {@link StreamSource} emitting the response items
      */
-    default StreamSource<Object> handleStream(Request request, StreamObserver<Object> requestStream) {
+    default StreamSource<Object> handleStream(Request request, StreamSource<Object> requestStream) {
         throw new UnsupportedOperationException("Streaming not supported by this handler");
     }
 }

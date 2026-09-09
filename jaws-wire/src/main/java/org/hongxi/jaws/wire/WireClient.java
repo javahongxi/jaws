@@ -428,7 +428,7 @@ public class WireClient extends AbstractHttp2Client {
      *
      * @param request        the RPC request; {@code arguments[0]} must be a protobuf {@link Message}
      * @param responseParser the parser for the expected response message type
-     * @return a publisher emitting streamed response messages
+     * @return a source emitting streamed response messages
      */
     public StreamSource<Object> requestStream(Request request, Parser<? extends Message> responseParser) {
         if (!isAvailable()) {
@@ -502,11 +502,11 @@ public class WireClient extends AbstractHttp2Client {
      * otherwise → bidirectional streaming (streamed response).
      *
      * @param request        the RPC request (carries metadata/attachments)
-     * @param requestStream  an observer emitting client request {@link Message} items
+     * @param requestStream  a source of client request {@link Message} items
      * @param responseParser the parser for the expected response message type
      * @return a source emitting response items (single item for client-streaming)
      */
-    public StreamSource<Object> requestStream(Request request, StreamObserver<Object> requestStream,
+    public StreamSource<Object> requestStream(Request request, StreamSource<Object> requestStream,
                                               Parser<? extends Message> responseParser) {
         String streamingHeader = request.getAttachments().get(Http2Constants.HEADER_STREAMING);
         StreamType streamType = StreamType.fromValue(streamingHeader);
@@ -519,7 +519,7 @@ public class WireClient extends AbstractHttp2Client {
     /**
      * Client-streaming: send a stream of request items, receive a single response.
      */
-    private StreamSource<Object> doClientStreamRequest(Request request, StreamObserver<Object> requestStream,
+    private StreamSource<Object> doClientStreamRequest(Request request, StreamSource<Object> requestStream,
                                                        Parser<? extends Message> responseParser) {
         if (!isAvailable()) {
             throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
@@ -587,12 +587,9 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
 
-            // Forward request stream items to the network.
-            // The caller must pass an object implementing both StreamObserver
-            // and StreamSource (e.g. StreamSubject), so the cast is safe.
-            //noinspection unchecked
-            StreamSource<Object> requestSource = (StreamSource<Object>) requestStream;
-            requestSource.subscribe(new StreamObserver<>() {
+            // Subscribe to the caller's request stream and forward each item
+            // to the network as it is produced.
+            requestStream.subscribe(new StreamObserver<>() {
                 @Override
                 public void onNext(Object item) {
                     if (!streamChannel0.isActive()) {
@@ -663,11 +660,11 @@ public class WireClient extends AbstractHttp2Client {
      * the provided {@code responseParser}.
      *
      * @param request        the RPC request (carries metadata/attachments)
-     * @param requestStream  an observer emitting client request {@link Message} items
+     * @param requestStream  a source of client request {@link Message} items
      * @param responseParser the parser for the expected response message type
      * @return a source emitting streamed response messages
      */
-    public StreamSource<Object> requestBiStream(Request request, StreamObserver<Object> requestStream,
+    public StreamSource<Object> requestBiStream(Request request, StreamSource<Object> requestStream,
                                                  Parser<? extends Message> responseParser) {
         if (!isAvailable()) {
             throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
@@ -709,12 +706,9 @@ public class WireClient extends AbstractHttp2Client {
                         }
                     });
 
-            // Forward request stream items to the network.
-            // The caller must pass an object implementing both StreamObserver
-            // and StreamSource (e.g. StreamSubject), so the cast is safe.
-            //noinspection unchecked
-            StreamSource<Object> requestSource = (StreamSource<Object>) requestStream;
-            requestSource.subscribe(new StreamObserver<>() {
+            // Subscribe to the caller's request stream and forward each item
+            // to the network as it is produced.
+            requestStream.subscribe(new StreamObserver<>() {
                 @Override
                 public void onNext(Object item) {
                     if (!streamChannel0.isActive()) {

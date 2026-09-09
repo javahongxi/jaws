@@ -8,7 +8,6 @@ import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.Client;
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 import org.hongxi.jaws.transport.TransportFactory;
 import org.hongxi.jaws.transport.TransportResolver;
@@ -49,7 +48,7 @@ public class JawsReference<T> extends AbstractReference<T> {
     }
 
     @Override
-    public StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
+    public StreamSource<Object> callStream(Request request, StreamSource<Object> requestStream) {
         if (!isAvailable()) {
             throw new JawsServiceException(this.getClass().getSimpleName() +
                     " callStream failed: endpoint is not available, url=" + url.getUri());

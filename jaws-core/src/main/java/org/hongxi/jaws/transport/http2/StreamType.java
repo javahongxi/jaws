@@ -1,6 +1,5 @@
 package org.hongxi.jaws.transport.http2;
 
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 /**
@@ -10,7 +9,7 @@ import org.hongxi.jaws.stream.StreamSource;
  * <ul>
  *   <li>{@link #UNARY} - Traditional request-response (no streaming)</li>
  *   <li>{@link #SERVER} - Client sends one request, server returns a {@link StreamSource}</li>
- *   <li>{@link #CLIENT} - Client streams requests via a {@link StreamObserver}, server returns a single response</li>
+ *   <li>{@link #CLIENT} - Client streams requests via a {@link StreamSource} it feeds, server returns a single response</li>
  *   <li>{@link #BIDIRECTIONAL} - Client streams requests and server streams responses concurrently</li>
  * </ul>
  * <p>

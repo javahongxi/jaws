@@ -1,6 +1,5 @@
 package org.hongxi.jaws.sample.wire.proto;
 
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 /**
@@ -27,11 +26,11 @@ public interface GreeterService {
      * Client-streaming: client streams {@link HelloRequest} names,
      * server replies with a single aggregated {@link HelloReply}.
      */
-    HelloReply clientStreamGreet(StreamObserver<HelloRequest> names);
+    HelloReply clientStreamGreet(StreamSource<HelloRequest> names);
 
     /**
      * Bidirectional streaming: client streams {@link HelloRequest} names,
      * server streams {@link HelloReply} greetings.
      */
-    StreamSource<HelloReply> bidiGreet(StreamObserver<HelloRequest> names);
+    StreamSource<HelloReply> bidiGreet(StreamSource<HelloRequest> names);
 }

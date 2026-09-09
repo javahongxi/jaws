@@ -136,36 +136,31 @@ public class GrpcCallWireDemo {
             }
 
             @Override
-            public Message handleClientStream(org.hongxi.jaws.stream.StreamObserver<Message> requestStream) {
+            public Message handleClientStream(org.hongxi.jaws.stream.StreamSource<Message> requestStream) {
                 System.out.println("[jaws-wire server] ClientStreamGreet stream opened");
                 java.util.List<String> names = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
                 CountDownLatch latch = new CountDownLatch(1);
                 AtomicReference<Throwable> error = new AtomicReference<>();
 
-                if (requestStream instanceof org.hongxi.jaws.stream.StreamSource<?> source) {
-                    @SuppressWarnings("unchecked")
-                    org.hongxi.jaws.stream.StreamSource<Message> typedSource =
-                            (org.hongxi.jaws.stream.StreamSource<Message>) source;
-                    typedSource.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
-                        @Override
-                        public void onNext(Message item) {
-                            HelloRequest req = (HelloRequest) item;
-                            System.out.println("[jaws-wire server] ClientStreamGreet received: " + req.getName());
-                            names.add(req.getName());
-                        }
+                requestStream.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
+                    @Override
+                    public void onNext(Message item) {
+                        HelloRequest req = (HelloRequest) item;
+                        System.out.println("[jaws-wire server] ClientStreamGreet received: " + req.getName());
+                        names.add(req.getName());
+                    }
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            error.set(throwable);
-                            latch.countDown();
-                        }
+                    @Override
+                    public void onError(Throwable throwable) {
+                        error.set(throwable);
+                        latch.countDown();
+                    }
 
-                        @Override
-                        public void onCompleted() {
-                            latch.countDown();
-                        }
-                    });
-                }
+                    @Override
+                    public void onCompleted() {
+                        latch.countDown();
+                    }
+                });
 
                 try {
                     latch.await();
@@ -200,37 +195,32 @@ public class GrpcCallWireDemo {
 
             @Override
             public org.hongxi.jaws.stream.StreamSource<Message> handleBiStream(
-                    org.hongxi.jaws.stream.StreamObserver<Message> requestStream) {
+                    org.hongxi.jaws.stream.StreamSource<Message> requestStream) {
                 System.out.println("[jaws-wire server] BidiGreet stream opened");
                 StreamSubject<Message> responseObserver = new StreamSubject<>();
 
-                if (requestStream instanceof org.hongxi.jaws.stream.StreamSource<?> source) {
-                    @SuppressWarnings("unchecked")
-                    org.hongxi.jaws.stream.StreamSource<Message> typedSource =
-                            (org.hongxi.jaws.stream.StreamSource<Message>) source;
-                    typedSource.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
-                        @Override
-                        public void onNext(Message item) {
-                            HelloRequest req = (HelloRequest) item;
-                            System.out.println("[jaws-wire server] BidiGreet received: " + req.getName());
-                            responseObserver.onNext(HelloReply.newBuilder()
-                                    .setMessage("Hello, " + req.getName() + "! (from jaws-wire bidi)")
-                                    .build());
-                        }
+                requestStream.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
+                    @Override
+                    public void onNext(Message item) {
+                        HelloRequest req = (HelloRequest) item;
+                        System.out.println("[jaws-wire server] BidiGreet received: " + req.getName());
+                        responseObserver.onNext(HelloReply.newBuilder()
+                                .setMessage("Hello, " + req.getName() + "! (from jaws-wire bidi)")
+                                .build());
+                    }
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            System.err.println("[jaws-wire server] BidiGreet error: " + throwable.getMessage());
-                            responseObserver.onError(throwable);
-                        }
+                    @Override
+                    public void onError(Throwable throwable) {
+                        System.err.println("[jaws-wire server] BidiGreet error: " + throwable.getMessage());
+                        responseObserver.onError(throwable);
+                    }
 
-                        @Override
-                        public void onCompleted() {
-                            System.out.println("[jaws-wire server] BidiGreet request stream completed");
-                            responseObserver.onCompleted();
-                        }
-                    });
-                }
+                    @Override
+                    public void onCompleted() {
+                        System.out.println("[jaws-wire server] BidiGreet request stream completed");
+                        responseObserver.onCompleted();
+                    }
+                });
                 return responseObserver;
             }
 

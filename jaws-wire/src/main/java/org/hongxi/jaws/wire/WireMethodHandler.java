@@ -73,7 +73,7 @@ public interface WireMethodHandler {
      * {@link UnsupportedOperationException}; override for streaming methods.
      *
      * @param request the decoded protobuf request message
-     * @return a publisher emitting response messages
+     * @return a source emitting response messages
      */
     default StreamSource<Message> handleStream(Message request) {
         throw new UnsupportedOperationException("Not a streaming method");
@@ -86,7 +86,7 @@ public interface WireMethodHandler {
      *
      * @param request the decoded protobuf request message
      * @param context the call context carrying inbound gRPC metadata
-     * @return a publisher emitting response messages
+     * @return a source emitting response messages
      */
     default StreamSource<Message> handleStream(Message request, WireCallContext context) {
         return handleStream(request);
@@ -98,23 +98,23 @@ public interface WireMethodHandler {
      * implementation throws {@link UnsupportedOperationException}; override
      * for client-streaming methods.
      *
-     * @param requestStream a publisher emitting client request messages
+     * @param requestStream the client's request messages, consumed by subscribing
      * @return the protobuf response message
      */
-    default Message handleClientStream(StreamObserver<Message> requestStream) {
+    default Message handleClientStream(StreamSource<Message> requestStream) {
         throw new UnsupportedOperationException("Not a client-streaming method");
     }
 
     /**
      * Handle a client-streaming gRPC call with the per-call context (inbound
      * metadata). The default implementation delegates to
-     * {@link #handleClientStream(StreamObserver)}.
+     * {@link #handleClientStream(StreamSource)}.
      *
-     * @param requestStream a publisher emitting client request messages
+     * @param requestStream the client's request messages, consumed by subscribing
      * @param context       the call context carrying inbound gRPC metadata
      * @return the protobuf response message
      */
-    default Message handleClientStream(StreamObserver<Message> requestStream, WireCallContext context) {
+    default Message handleClientStream(StreamSource<Message> requestStream, WireCallContext context) {
         return handleClientStream(requestStream);
     }
 
@@ -124,23 +124,23 @@ public interface WireMethodHandler {
      * The default implementation throws {@link UnsupportedOperationException};
      * override for bidirectional streaming methods.
      *
-     * @param requestStream a publisher emitting client request messages
-     * @return a publisher emitting response messages
+     * @param requestStream the client's request messages, consumed by subscribing
+     * @return a source emitting response messages
      */
-    default StreamSource<Message> handleBiStream(StreamObserver<Message> requestStream) {
+    default StreamSource<Message> handleBiStream(StreamSource<Message> requestStream) {
         throw new UnsupportedOperationException("Not a bidirectional streaming method");
     }
 
     /**
      * Handle a bidirectional streaming gRPC call with the per-call context
      * (inbound metadata). The default implementation delegates to
-     * {@link #handleBiStream(StreamObserver)}.
+     * {@link #handleBiStream(StreamSource)}.
      *
-     * @param requestStream a publisher emitting client request messages
+     * @param requestStream the client's request messages, consumed by subscribing
      * @param context       the call context carrying inbound gRPC metadata
-     * @return a publisher emitting response messages
+     * @return a source emitting response messages
      */
-    default StreamSource<Message> handleBiStream(StreamObserver<Message> requestStream, WireCallContext context) {
+    default StreamSource<Message> handleBiStream(StreamSource<Message> requestStream, WireCallContext context) {
         return handleBiStream(requestStream);
     }
 

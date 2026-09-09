@@ -8,7 +8,6 @@ import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 import java.util.concurrent.CompletableFuture;
@@ -52,7 +51,7 @@ class FilterReferenceWrapper<T> implements Reference<T> {
     }
 
     @Override
-    public StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
+    public StreamSource<Object> callStream(Request request, StreamSource<Object> requestStream) {
         return original.callStream(request, requestStream);
     }
 

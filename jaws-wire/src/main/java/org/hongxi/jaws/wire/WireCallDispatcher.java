@@ -10,7 +10,6 @@ import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.transport.MessageHandler;
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 import org.hongxi.jaws.wire.health.HealthCheckRequest;
 import org.hongxi.jaws.wire.health.HealthCheckResponse;
@@ -86,40 +85,41 @@ sealed interface WireCallDispatcher
     }
 
     /**
-     * @return the protobuf parser for request stream items in bidi mode, or null
-     *         when bidi streaming is not active or the parser is not available
+     * @return the protobuf parser for the items of a streaming request (bidi or
+     *         client-streaming), or {@code null} when the method takes no request
+     *         stream or the parser is not available
      */
-    default Parser<? extends Message> getBiStreamRequestParser() {
+    default Parser<? extends Message> getRequestStreamParser() {
         return null;
     }
 
     /**
      * Dispatch a bidirectional streaming call. The first gRPC frame has already
-     * been extracted as {@code firstFrame}; subsequent frames are fed to the
-     * returned {@link StreamSource} via the {@code requestStream} parameter.
+     * been extracted as {@code firstFrame}; subsequent frames are pushed into
+     * {@code requestStream}, which the handler subscribes to.
      *
      * @param ctx              the stream channel context
      * @param firstFrame       the first gRPC frame data (caller releases)
      * @param serverHandler    the owning stream serverHandler
-     * @param requestStream    observer that receives subsequent request items
+     * @param requestStream    request stream the handler consumes
      */
     void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                           WireStreamServerHandler serverHandler,
-                          StreamObserver<Object> requestStream);
+                          StreamSource<Object> requestStream);
 
     /**
      * Dispatch a client-streaming call. The first gRPC frame has already been
-     * extracted and added to the {@code requestStream}; subsequent frames are
-     * fed to the publisher. The handler returns a single response message.
+     * extracted and pushed into {@code requestStream}; the handler consumes the
+     * whole stream and returns a single response message.
      *
      * @param ctx              the stream channel context
      * @param firstFrame       the first gRPC frame data (caller releases)
      * @param serverHandler    the owning stream serverHandler
-     * @param requestStream    observer that receives request items
+     * @param requestStream    request stream the handler consumes
      */
     void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                               WireStreamServerHandler serverHandler,
-                              StreamObserver<Object> requestStream);
+                              StreamSource<Object> requestStream);
 
     // ========================================================================
     // Direct API mode — registry-based routing to typed WireMethodHandler
@@ -157,20 +157,23 @@ sealed interface WireCallDispatcher
         }
 
         @Override
-        public Parser<? extends Message> getBiStreamRequestParser() {
+        public Parser<? extends Message> getRequestStreamParser() {
             return handler != null ? handler.getRequestParser() : null;
         }
 
         @Override
         public void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                      WireStreamServerHandler serverHandler,
-                                     StreamObserver<Object> requestStream) {
+                                     StreamSource<Object> requestStream) {
             final WireMethodHandler methodHandler = this.handler;
             final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
             try {
+                // The transport carries items as Object; a wire handler declares
+                // them as protobuf Message, so narrowing the type argument here
+                // is inherent to this boundary.
                 // noinspection unchecked
-                StreamObserver<Message> typedObserver = (StreamObserver<Message>) (StreamObserver<?>) requestStream;
-                StreamSource<Message> responseSource = methodHandler.handleBiStream(typedObserver, callContext);
+                StreamSource<Message> requestItems = (StreamSource<Message>) (StreamSource<?>) requestStream;
+                StreamSource<Message> responseSource = methodHandler.handleBiStream(requestItems, callContext);
                 serverHandler.dispatchStream(ctx, responseSource);
             } catch (Exception e) {
                 log.error("Wire bidi invoke failed: path={}", serverHandler.path, e);
@@ -184,13 +187,13 @@ sealed interface WireCallDispatcher
         @Override
         public void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                          WireStreamServerHandler serverHandler,
-                                         StreamObserver<Object> requestStream) {
+                                         StreamSource<Object> requestStream) {
             final WireMethodHandler methodHandler = this.handler;
             final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
             try {
                 // noinspection unchecked
-                StreamObserver<Message> typedObserver = (StreamObserver<Message>) (StreamObserver<?>) requestStream;
-                Message response = methodHandler.handleClientStream(typedObserver, callContext);
+                StreamSource<Message> requestItems = (StreamSource<Message>) (StreamSource<?>) requestStream;
+                Message response = methodHandler.handleClientStream(requestItems, callContext);
                 serverHandler.sendUnaryResponse(ctx, response);
             } catch (Exception e) {
                 log.error("Wire client-stream invoke failed: path={}", serverHandler.path, e);
@@ -309,14 +312,6 @@ sealed interface WireCallDispatcher
             return true;
         }
 
-        /**
-         * Mark this dispatcher as bidirectional streaming. Called by
-         * {@link WireStreamServerHandler} after consulting the proto types.
-         */
-        void setBiStreaming(boolean biStreaming) {
-            this.biStreaming = biStreaming;
-        }
-
         @Override
         public boolean isBiStreaming() {
             return biStreaming;
@@ -328,7 +323,7 @@ sealed interface WireCallDispatcher
         }
 
         @Override
-        public Parser<? extends Message> getBiStreamRequestParser() {
+        public Parser<? extends Message> getRequestStreamParser() {
             // Both bidi and client-streaming need request item parsing
             if (biStreaming || clientStreaming) {
                 // The request parser is resolved from the proto types via the method info
@@ -340,7 +335,7 @@ sealed interface WireCallDispatcher
         @Override
         public void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                      WireStreamServerHandler serverHandler,
-                                     StreamObserver<Object> requestStream) {
+                                     StreamSource<Object> requestStream) {
             final String svcName = this.serviceName;
             final String mName = this.methodName;
             final Map<String, String> callAttachments = serverHandler.attachments;
@@ -377,7 +372,7 @@ sealed interface WireCallDispatcher
         @Override
         public void dispatchClientStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
                                          WireStreamServerHandler serverHandler,
-                                         StreamObserver<Object> requestStream) {
+                                         StreamSource<Object> requestStream) {
             // Client-streaming dispatch is identical to bidi in Provider mode:
             // both call handleStream(request, requestStream) which returns a
             // StreamSource wrapping the single result. dispatchStream handles

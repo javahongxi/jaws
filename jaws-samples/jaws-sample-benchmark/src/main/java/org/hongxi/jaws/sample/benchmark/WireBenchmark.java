@@ -186,13 +186,13 @@ public class WireBenchmark {
         }
 
         @Override
-        public HelloReply clientStreamGreet(org.hongxi.jaws.stream.StreamObserver<HelloRequest> names) {
+        public HelloReply clientStreamGreet(org.hongxi.jaws.stream.StreamSource<HelloRequest> names) {
             throw new UnsupportedOperationException("Streaming not used in benchmark");
         }
 
         @Override
         public org.hongxi.jaws.stream.StreamSource<HelloReply> bidiGreet(
-                org.hongxi.jaws.stream.StreamObserver<HelloRequest> names) {
+                org.hongxi.jaws.stream.StreamSource<HelloRequest> names) {
             throw new UnsupportedOperationException("Streaming not used in benchmark");
         }
     }

@@ -12,7 +12,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 /**
@@ -20,14 +19,14 @@ import org.hongxi.jaws.stream.StreamSource;
  * <p>
  * Scans all declared methods of the interface to build per-method metadata:
  * the request message type (first parameter extending {@code Message}, or the
- * type argument of a {@code StreamObserver<Message>} parameter for bidirectional
+ * type argument of a {@code StreamSource<Message>} request-stream parameter for
  * streaming) and the response message type (return type extending {@code Message},
  * or the generic type argument of {@code StreamSource<Message>} for server-
  * streaming methods). Each type's static {@code parser()} method is invoked
  * reflectively to obtain the protobuf {@link Parser}.
  * <p>
  * Convention: every service interface method has either a protobuf {@code Message}
- * parameter (unary / server streaming) or a {@code StreamObserver<Message>}
+ * parameter (unary / server streaming) or a {@code StreamSource<Message>}
  * parameter (bidirectional streaming), and returns either a protobuf {@code Message}
  * (unary) or a {@code StreamSource<Message>} (streaming).
  *
@@ -44,7 +43,7 @@ public final class WireProtoTypes {
     /**
      * Per-method protobuf type metadata.
      *
-     * @param biStreaming true when the method has a {@code StreamObserver} parameter
+     * @param hasRequestStream true when the method takes a request stream
      *                    (bidirectional streaming), meaning the request type is
      *                    extracted from the observer's type argument
      */
@@ -53,7 +52,7 @@ public final class WireProtoTypes {
                              Parser<? extends Message> requestParser,
                              Parser<? extends Message> responseParser,
                              boolean streaming,
-                             boolean biStreaming) {}
+                             boolean hasRequestStream) {}
 
     /**
      * @return the method info for the given method name
@@ -101,23 +100,23 @@ public final class WireProtoTypes {
             }
 
             // Request type: first parameter that extends Message, or the type
-            // argument of a StreamObserver parameter (bidirectional streaming)
+            // argument of a StreamSource request-stream parameter (streaming request)
             Class<?> requestType = null;
-            boolean biStreaming = false;
+            boolean hasRequestStream = false;
             for (Parameter param : method.getParameters()) {
                 if (Message.class.isAssignableFrom(param.getType())) {
                     requestType = param.getType();
                     break;
                 }
-                if (StreamObserver.class.isAssignableFrom(param.getType())) {
-                    requestType = resolveStreamObserverParamType(method, param);
-                    biStreaming = true;
+                if (StreamSource.class.isAssignableFrom(param.getType())) {
+                    requestType = resolveStreamSourceParamType(method, param);
+                    hasRequestStream = true;
                     break;
                 }
             }
             if (requestType == null) {
                 throw new IllegalArgumentException(
-                        "Wire service interface method has no protobuf Message or StreamObserver<Message> parameter: "
+                        "Wire service interface method has no protobuf Message or StreamSource<Message> request parameter: "
                                 + serviceInterface.getName() + "." + method.getName());
             }
 
@@ -138,7 +137,7 @@ public final class WireProtoTypes {
 
             MethodInfo info = new MethodInfo(
                     asMessageClass(requestType), asMessageClass(responseType),
-                    resolveParser(requestType), resolveParser(responseType), streaming, biStreaming);
+                    resolveParser(requestType), resolveParser(responseType), streaming, hasRequestStream);
             // Register under the Java method name (camelCase: sayHello)
             map.put(method.getName(), info);
             // Also register under the gRPC method name (PascalCase: SayHello)
@@ -180,11 +179,11 @@ public final class WireProtoTypes {
     }
     
     /**
-     * Resolve the type argument of a {@code StreamObserver<T>} parameter.
-     * Used for bidirectional streaming methods where the request stream
-     * carries protobuf messages.
+     * Resolve the type argument of a {@code StreamSource<T>} request-stream
+     * parameter, used by client- and bidirectional-streaming methods whose
+     * request stream carries protobuf messages.
      */
-    private static Class<?> resolveStreamObserverParamType(Method method, Parameter param) {
+    private static Class<?> resolveStreamSourceParamType(Method method, Parameter param) {
         Type genericType = param.getParameterizedType();
         if (genericType instanceof ParameterizedType pt) {
             Type[] typeArgs = pt.getActualTypeArguments();
@@ -194,7 +193,7 @@ public final class WireProtoTypes {
             }
         }
         throw new IllegalArgumentException(
-                "Cannot resolve StreamObserver type argument for bidirectional streaming parameter: "
+                "Cannot resolve request-stream type argument for streaming method: "
                         + method.getDeclaringClass().getName() + "." + method.getName()
                         + ". The type argument must be a concrete protobuf Message class.");
     }

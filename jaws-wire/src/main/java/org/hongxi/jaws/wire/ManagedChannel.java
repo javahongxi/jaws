@@ -135,7 +135,7 @@ public class ManagedChannel implements Closeable {
      * @param responseParser the parser for the expected response type
      * @param <Req>          request message type
      * @param <Resp>         response message type
-     * @return a publisher emitting streamed response messages
+     * @return a source emitting streamed response messages
      */
     public <Req extends Message, Resp extends Message> StreamSource<Resp> streamingCall(
             String serviceName, String methodName,

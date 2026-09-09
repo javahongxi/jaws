@@ -1,6 +1,5 @@
 package org.hongxi.jaws.transport;
 
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 import org.hongxi.jaws.rpc.Request;
@@ -37,12 +36,12 @@ public interface Client extends Channel {
      * Only supported by transports that implement streaming (e.g. HTTP/2).
      *
      * @param request       the RPC request (carries metadata/attachments)
-     * @param requestStream an observer receiving client request items, or
+     * @param requestStream a source of client request items that the framework subscribes to, or
      *                      {@code null} for server-streaming
      * @return a source emitting streamed response items
      * @throws UnsupportedOperationException if the transport does not support streaming
      */
-    default StreamSource<Object> requestStream(Request request, StreamObserver<Object> requestStream) {
+    default StreamSource<Object> requestStream(Request request, StreamSource<Object> requestStream) {
         throw new UnsupportedOperationException("Streaming not supported by this transport");
     }
 }

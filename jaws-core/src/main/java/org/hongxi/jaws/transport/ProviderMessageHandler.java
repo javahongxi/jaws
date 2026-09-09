@@ -1,6 +1,5 @@
 package org.hongxi.jaws.transport;
 
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 import org.hongxi.jaws.rpc.Provider;
@@ -45,13 +44,13 @@ public class ProviderMessageHandler implements MessageHandler {
      * Handle a streaming request by delegating to the normal handler.
      *
      * @param request       the incoming RPC request
-     * @param requestStream an observer receiving client request items, or
+     * @param requestStream a source of client request items that the framework subscribes to, or
      *                      {@code null} for server-streaming
      * @return a {@link StreamSource} emitting the response items
      */
     @Override
     public StreamSource<Object> handleStream(Request request,
-                                                StreamObserver<Object> requestStream) {
+                                                StreamSource<Object> requestStream) {
         return normalHandler.handleStream(request, requestStream);
     }
 }

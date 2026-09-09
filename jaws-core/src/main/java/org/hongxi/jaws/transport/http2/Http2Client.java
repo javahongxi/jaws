@@ -159,12 +159,12 @@ public class Http2Client extends AbstractHttp2Client {
      * </ul>
      *
      * @param request       the RPC request
-     * @param requestStream an observer receiving client request items, or
+     * @param requestStream a source of client request items that the framework subscribes to, or
      *                      {@code null} for server-streaming
      * @return a source emitting streamed response items
      */
     @Override
-    public StreamSource<Object> requestStream(Request request, StreamObserver<Object> requestStream) {
+    public StreamSource<Object> requestStream(Request request, StreamSource<Object> requestStream) {
         if (requestStream == null) {
             return doServerStreamRequest(request);
         }
@@ -238,7 +238,7 @@ public class Http2Client extends AbstractHttp2Client {
      * Client/bidi-streaming: send a stream of request items and receive a
      * StreamSource of response items.
      */
-    private StreamSource<Object> doClientOrBidiStreamRequest(Request request, StreamObserver<Object> requestStream) {
+    private StreamSource<Object> doClientOrBidiStreamRequest(Request request, StreamSource<Object> requestStream) {
         // Detect stream type from the request's streaming header if present,
         // otherwise default to BIDIRECTIONAL (the common case for non-null requestStream)
         StreamType streamType = StreamType.BIDIRECTIONAL;
@@ -255,7 +255,7 @@ public class Http2Client extends AbstractHttp2Client {
     /**
      * Bidirectional streaming: send request items, receive response items concurrently.
      */
-    private StreamSource<Object> doBidiStreamRequest(Request request, StreamObserver<Object> requestStream) {
+    private StreamSource<Object> doBidiStreamRequest(Request request, StreamSource<Object> requestStream) {
         if (!isAvailable()) {
             throw new JawsServiceException("HTTP/2 channel is not available: url="
                     + url.getUri() + RpcUtils.toString(request));
@@ -305,12 +305,9 @@ public class Http2Client extends AbstractHttp2Client {
                         }
                     });
 
-            // Forward request stream items to the network.
-            // The caller must pass an object implementing both StreamObserver
-            // and StreamSource (e.g. StreamSubject), so the cast is safe.
-            //noinspection unchecked
-            StreamSource<Object> requestSource = (StreamSource<Object>) requestStream;
-            requestSource.subscribe(new StreamObserver<>() {
+            // Subscribe to the caller's request stream and forward each item
+            // to the network as it is produced.
+            requestStream.subscribe(new StreamObserver<>() {
                 @Override
                 public void onNext(Object item) {
                     if (!streamChannel0.isActive()) {
@@ -375,7 +372,7 @@ public class Http2Client extends AbstractHttp2Client {
     /**
      * Client-streaming: send request items, receive a single response.
      */
-    private StreamSource<Object> doClientStreamRequest(Request request, StreamObserver<Object> requestStream) {
+    private StreamSource<Object> doClientStreamRequest(Request request, StreamSource<Object> requestStream) {
         if (!isAvailable()) {
             throw new JawsServiceException("HTTP/2 channel is not available: url="
                     + url.getUri() + RpcUtils.toString(request));
@@ -450,12 +447,9 @@ public class Http2Client extends AbstractHttp2Client {
                         }
                     });
 
-            // Forward request stream items to the network.
-            // The caller must pass an object implementing both StreamObserver
-            // and StreamSource (e.g. StreamSubject), so the cast is safe.
-            //noinspection unchecked
-            StreamSource<Object> requestSource = (StreamSource<Object>) requestStream;
-            requestSource.subscribe(new StreamObserver<>() {
+            // Subscribe to the caller's request stream and forward each item
+            // to the network as it is produced.
+            requestStream.subscribe(new StreamObserver<>() {
                 @Override
                 public void onNext(Object item) {
                     if (!streamChannel0.isActive()) {

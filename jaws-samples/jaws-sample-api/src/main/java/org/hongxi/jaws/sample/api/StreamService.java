@@ -1,6 +1,5 @@
 package org.hongxi.jaws.sample.api;
 
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 /**
@@ -30,10 +29,10 @@ public interface StreamService {
      * collects all names and returns a single greeting when the stream
      * completes.
      *
-     * @param names an observer receiving client request names
+     * @param names a source of client request names that the framework subscribes to
      * @return a single aggregated greeting string
      */
-    String collectGreet(StreamObserver<String> names);
+    String collectGreet(StreamSource<String> names);
 
     /**
      * Bidirectional-streaming: receives a stream of names from the client
@@ -43,8 +42,8 @@ public interface StreamService {
      * echoes each one as a greeting.  When the client completes its stream,
      * the server completes its response stream.
      *
-     * @param names an observer receiving client request names
+     * @param names a source of client request names that the framework subscribes to
      * @return a source emitting greeting responses
      */
-    StreamSource<String> bidiGreet(StreamObserver<String> names);
+    StreamSource<String> bidiGreet(StreamSource<String> names);
 }

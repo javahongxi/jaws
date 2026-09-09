@@ -154,35 +154,30 @@ class Http2BiStreamingTest {
     // ---- Service interface and implementation ----------------------------
 
     public interface BidiService {
-        StreamSource<String> echo(StreamObserver<String> requests);
+        StreamSource<String> echo(StreamSource<String> requests);
     }
 
     public static class BidiServiceImpl implements BidiService {
         @Override
-        public StreamSource<String> echo(StreamObserver<String> requests) {
+        public StreamSource<String> echo(StreamSource<String> requests) {
             StreamSubject<String> responseObserver = new StreamSubject<>();
 
-            // Subscribe to the request stream
-            if (requests instanceof StreamSource<?> source) {
-                @SuppressWarnings("unchecked")
-                StreamSource<String> requestSource = (StreamSource<String>) source;
-                requestSource.subscribe(new StreamObserver<>() {
-                    @Override
-                    public void onNext(String item) {
-                        responseObserver.onNext("echo:" + item);
-                    }
+                        requests.subscribe(new StreamObserver<>() {
+                @Override
+                public void onNext(String item) {
+                    responseObserver.onNext("echo:" + item);
+                }
 
-                    @Override
-                    public void onError(Throwable throwable) {
-                        responseObserver.onError(throwable);
-                    }
+                @Override
+                public void onError(Throwable throwable) {
+                    responseObserver.onError(throwable);
+                }
 
-                    @Override
-                    public void onCompleted() {
-                        responseObserver.onCompleted();
-                    }
-                });
-            }
+                @Override
+                public void onCompleted() {
+                    responseObserver.onCompleted();
+                }
+            });
 
             return responseObserver;
         }

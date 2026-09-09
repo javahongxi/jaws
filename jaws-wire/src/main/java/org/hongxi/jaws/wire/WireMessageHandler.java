@@ -92,7 +92,7 @@ class WireMessageHandler implements MessageHandler {
      * instances, then delegate to the filter chain.
      */
     @Override
-    public StreamSource<Object> handleStream(Request request, StreamObserver<Object> requestStream) {
+    public StreamSource<Object> handleStream(Request request, StreamSource<Object> requestStream) {
         WireProtoTypes.MethodInfo methodInfo;
         try {
             methodInfo = protoTypes.getMethodInfo(request.getMethodName());
@@ -100,65 +100,60 @@ class WireMessageHandler implements MessageHandler {
             throw new UnsupportedOperationException("Unknown method: " + request.getMethodName(), e);
         }
 
-        // Wrap the request stream to convert byte[] items → typed Messages.
-        // In practice requestStream is always a StreamSubject (which
-        // implements both StreamObserver and StreamSource), so we can subscribe
-        // to it when it's also a StreamSource.
+        // Wrap the request stream so that handlers see typed protobuf messages
+        // instead of the raw byte[] items the transport decodes.
         Parser<? extends Message> requestParser = methodInfo.requestParser();
-        StreamSubject<Object> typedObserver = new StreamSubject<>();
-        if (requestStream instanceof StreamSource<?>) {
-            //noinspection unchecked
-            StreamSource<Object> source = (StreamSource<Object>) requestStream;
-            source.subscribe(new StreamObserver<>() {
-                @Override
-                public void onNext(Object item) {
-                    if (item instanceof byte[] bytes) {
-                        try {
-                            Message msg = requestParser.parseFrom(bytes);
-                            typedObserver.onNext(msg);
-                        } catch (InvalidProtocolBufferException e) {
-                            log.error("Wire bidi stream item decode failed", e);
-                            typedObserver.onError(e);
-                        }
-                    } else {
-                        typedObserver.onNext(item);
+        StreamSubject<Object> typedStream = new StreamSubject<>();
+        requestStream.subscribe(new StreamObserver<Object>() {
+            @Override
+            public void onNext(Object item) {
+                if (item instanceof byte[] bytes) {
+                    try {
+                        typedStream.onNext(requestParser.parseFrom(bytes));
+                    } catch (InvalidProtocolBufferException e) {
+                        log.error("Wire stream request item decode failed", e);
+                        typedStream.onError(e);
                     }
+                } else {
+                    typedStream.onNext(item);
                 }
+            }
 
-                @Override
-                public void onError(Throwable throwable) {
-                    typedObserver.onError(throwable);
-                }
+            @Override
+            public void onError(Throwable throwable) {
+                typedStream.onError(throwable);
+            }
 
-                @Override
-                public void onCompleted() {
-                    typedObserver.onCompleted();
-                }
-            });
-        }
+            @Override
+            public void onCompleted() {
+                typedStream.onCompleted();
+            }
+        });
 
-        return delegate.handleStream(request, typedObserver);
+        return delegate.handleStream(request, typedStream);
     }
 
     /**
-     * Check if the given method is a bidirectional streaming method.
+     * Check if the given method is bidirectional streaming: it consumes a request
+     * stream and returns a response stream.
      */
     boolean isBiStreaming(String methodName) {
         try {
-            return protoTypes.getMethodInfo(methodName).biStreaming();
+            WireProtoTypes.MethodInfo info = protoTypes.getMethodInfo(methodName);
+            return info.hasRequestStream() && info.streaming();
         } catch (IllegalArgumentException e) {
             return false;
         }
     }
 
     /**
-     * Check whether the given method is client-streaming:
-     * has a {@code StreamObserver} parameter but a non-Source return type.
+     * Check whether the given method is client-streaming: it consumes a request
+     * stream and its response is a single message rather than a source.
      */
     boolean isClientStreaming(String methodName) {
         try {
             WireProtoTypes.MethodInfo info = protoTypes.getMethodInfo(methodName);
-            return info.biStreaming() && !info.streaming();
+            return info.hasRequestStream() && !info.streaming();
         } catch (IllegalArgumentException e) {
             return false;
         }

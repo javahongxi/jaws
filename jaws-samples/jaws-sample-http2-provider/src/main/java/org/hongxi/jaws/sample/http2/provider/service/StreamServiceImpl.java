@@ -26,40 +26,30 @@ public class StreamServiceImpl implements StreamService {
     }
 
     @Override
-    public String collectGreet(StreamObserver<String> names) {
-        // The names observer is already fed by the framework; we need to
-        // subscribe to collect items. Use a StreamSubject bridge
-        // to synchronously collect.
+    public String collectGreet(StreamSource<String> names) {
+        // Consume the request stream and collect every name until it completes.
         List<String> collected = new ArrayList<>();
         CompletableFuture<Void> done = new CompletableFuture<>();
 
-        // The names parameter is a StreamObserver (receiving side). The framework
-        // pushes items into it. We need a StreamSource to subscribe to.
-        // Since the framework passes a StreamSubject (which is also
-        // a StreamSource), we can check and subscribe.
-        if (names instanceof StreamSource<?> source) {
-            @SuppressWarnings("unchecked")
-            StreamSource<String> typedSource = (StreamSource<String>) source;
-            typedSource.subscribe(new StreamObserver<String>() {
-                @Override
-                public void onNext(String name) {
-                    System.out.println("collectGreet received: " + name);
-                    collected.add(name);
-                }
+        names.subscribe(new StreamObserver<String>() {
+            @Override
+            public void onNext(String name) {
+                System.out.println("collectGreet received: " + name);
+                collected.add(name);
+            }
 
-                @Override
-                public void onError(Throwable throwable) {
-                    System.err.println("collectGreet request stream error: " + throwable.getMessage());
-                    done.completeExceptionally(throwable);
-                }
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("collectGreet request stream error: " + throwable.getMessage());
+                done.completeExceptionally(throwable);
+            }
 
-                @Override
-                public void onCompleted() {
-                    System.out.println("collectGreet request stream completed. names=" + collected);
-                    done.complete(null);
-                }
-            });
-        }
+            @Override
+            public void onCompleted() {
+                System.out.println("collectGreet request stream completed. names=" + collected);
+                done.complete(null);
+            }
+        });
 
         try {
             done.get(10, TimeUnit.SECONDS);
@@ -70,32 +60,28 @@ public class StreamServiceImpl implements StreamService {
     }
 
     @Override
-    public StreamSource<String> bidiGreet(StreamObserver<String> names) {
+    public StreamSource<String> bidiGreet(StreamSource<String> names) {
         StreamSubject<String> responseObserver = new StreamSubject<>();
 
-        if (names instanceof StreamSource<?> source) {
-            @SuppressWarnings("unchecked")
-            StreamSource<String> typedSource = (StreamSource<String>) source;
-            typedSource.subscribe(new StreamObserver<String>() {
-                @Override
-                public void onNext(String name) {
-                    System.out.println("bidiGreet received: " + name);
-                    responseObserver.onNext("Hello, " + name + "! (from bidi stream)");
-                }
+        names.subscribe(new StreamObserver<String>() {
+            @Override
+            public void onNext(String name) {
+                System.out.println("bidiGreet received: " + name);
+                responseObserver.onNext("Hello, " + name + "! (from bidi stream)");
+            }
 
-                @Override
-                public void onError(Throwable throwable) {
-                    System.err.println("bidiGreet request stream error: " + throwable.getMessage());
-                    responseObserver.onError(throwable);
-                }
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("bidiGreet request stream error: " + throwable.getMessage());
+                responseObserver.onError(throwable);
+            }
 
-                @Override
-                public void onCompleted() {
-                    System.out.println("bidiGreet request stream completed.");
-                    responseObserver.onCompleted();
-                }
-            });
-        }
+            @Override
+            public void onCompleted() {
+                System.out.println("bidiGreet request stream completed.");
+                responseObserver.onCompleted();
+            }
+        });
 
         return responseObserver;
     }

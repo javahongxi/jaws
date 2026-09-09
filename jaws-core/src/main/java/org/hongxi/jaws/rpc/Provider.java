@@ -1,6 +1,5 @@
 package org.hongxi.jaws.rpc;
 
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 import java.lang.reflect.Method;
@@ -36,13 +35,13 @@ public interface Provider<T> extends Caller<T> {
      * implementations must override this method to support streaming.
      *
      * @param request       the RPC request
-     * @param requestStream an observer receiving client request items, or
+     * @param requestStream a source of client request items that the framework subscribes to, or
      *                      {@code null} for server-streaming
      * @return a StreamSource emitting response items
      * @throws UnsupportedOperationException if streaming is not supported
      */
     @Override
-    default StreamSource<Object> callStream(Request request, StreamObserver<Object> requestStream) {
+    default StreamSource<Object> callStream(Request request, StreamSource<Object> requestStream) {
         throw new UnsupportedOperationException(
                 "Streaming not supported by this provider. Override callStream() to enable.");
     }

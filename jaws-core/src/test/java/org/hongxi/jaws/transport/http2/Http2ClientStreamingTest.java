@@ -62,7 +62,7 @@ class Http2ClientStreamingTest {
         DefaultRequest request = new DefaultRequest();
         request.setInterfaceName(INTERFACE);
         request.setMethodName("collectNames");
-        request.setParamDesc("org.hongxi.jaws.stream.StreamObserver");
+        request.setParamDesc("org.hongxi.jaws.stream.StreamSource");
         request.setArguments(new Object[]{});
         // CRITICAL: set the streaming header so the server knows this is client-streaming
         request.setAttachment(Http2Constants.HEADER_STREAMING, StreamType.CLIENT.getValue());
@@ -118,40 +118,36 @@ class Http2ClientStreamingTest {
     // ---- Service interface and implementation ----------------------------
 
     public interface ClientStreamService {
-        String collectNames(StreamObserver<String> names);
+        String collectNames(StreamSource<String> names);
     }
 
     public static class ClientStreamServiceImpl implements ClientStreamService {
         @Override
-        public String collectNames(StreamObserver<String> names) {
+        public String collectNames(StreamSource<String> names) {
             System.out.println("[Server] collectNames called");
             CompletableFuture<String> future = new CompletableFuture<>();
             List<String> collected = new ArrayList<>();
 
-            // names is a StreamSource (StreamSubject); subscribe to it
-            if (names instanceof StreamSource<?> source) {
-                @SuppressWarnings("unchecked")
-                StreamSource<String> requestSource = (StreamSource<String>) source;
-                requestSource.subscribe(new StreamObserver<>() {
-                    @Override
-                    public void onNext(String name) {
-                        System.out.println("[Server] received: " + name);
-                        collected.add(name);
-                    }
+            // Consume the request stream the framework hands over.
+            names.subscribe(new StreamObserver<>() {
+                @Override
+                public void onNext(String name) {
+                    System.out.println("[Server] received: " + name);
+                    collected.add(name);
+                }
 
-                    @Override
-                    public void onError(Throwable throwable) {
-                        System.err.println("[Server] stream error: " + throwable.getMessage());
-                        future.completeExceptionally(throwable);
-                    }
+                @Override
+                public void onError(Throwable throwable) {
+                    System.err.println("[Server] stream error: " + throwable.getMessage());
+                    future.completeExceptionally(throwable);
+                }
 
-                    @Override
-                    public void onCompleted() {
-                        System.out.println("[Server] stream completed. names=" + collected);
-                        future.complete("Hello, " + String.join(" & ", collected) + "!");
-                    }
-                });
-            }
+                @Override
+                public void onCompleted() {
+                    System.out.println("[Server] stream completed. names=" + collected);
+                    future.complete("Hello, " + String.join(" & ", collected) + "!");
+                }
+            });
 
             try {
                 return future.get(10, TimeUnit.SECONDS);

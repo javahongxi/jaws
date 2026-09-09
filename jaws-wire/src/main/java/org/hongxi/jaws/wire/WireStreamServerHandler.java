@@ -246,7 +246,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             biStreaming = dispatcher.isBiStreaming();
             clientStreaming = dispatcher.isClientStreaming();
             if (biStreaming || clientStreaming) {
-                streamRequestParser = dispatcher.getBiStreamRequestParser();
+                streamRequestParser = dispatcher.getRequestStreamParser();
             }
         }
 

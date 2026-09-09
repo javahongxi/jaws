@@ -9,7 +9,6 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -165,7 +164,7 @@ public class ReferenceInvoker<T> {
      * {@code callStream} method with the request stream, and return the
      * resulting {@link StreamSource}.
      */
-    StreamSource<Object> invokeStream(Request request, StreamObserver<Object> requestStream) throws Throwable {
+    StreamSource<Object> invokeStream(Request request, StreamSource<Object> requestStream) throws Throwable {
         Map<String, String> attachments = RpcContext.getContext().getRpcAttachments();
         if (!attachments.isEmpty()) {
             for (Map.Entry<String, String> entry : attachments.entrySet()) {

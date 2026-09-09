@@ -134,17 +134,17 @@ public abstract class AbstractRequestHandler implements MessageHandler {
 
     /**
      * Handle a streaming request: look up the provider, resolve the method,
-     * and delegate to {@link Provider#callStream(Request, StreamObserver)}.
+     * and delegate to {@link Provider#callStream(Request, StreamSource)}.
      * <p>
      * {@code requestStream == null} means server-streaming;
      * {@code requestStream != null} means client/bidi-streaming.
      *
      * @param request       the incoming RPC request
-     * @param requestStream an observer receiving client request items, or
+     * @param requestStream a source of client request items that the framework subscribes to, or
      *                      {@code null} for server-streaming
      * @return a {@link StreamSource} emitting the response items
      */
-    public StreamSource<Object> handleStream(Request request, StreamObserver<Object> requestStream) {
+    public StreamSource<Object> handleStream(Request request, StreamSource<Object> requestStream) {
         if (request == null) {
             throw new JawsFrameworkException("handleStream: request must not be null");
         }

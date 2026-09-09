@@ -58,34 +58,30 @@ public class GreeterServiceImpl implements GreeterService {
     }
 
     @Override
-    public HelloReply clientStreamGreet(StreamObserver<HelloRequest> names) {
+    public HelloReply clientStreamGreet(StreamSource<HelloRequest> names) {
         System.out.println("Client stream greet: subscribing to request stream");
         List<String> collectedNames = Collections.synchronizedList(new ArrayList<>());
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<Throwable> error = new AtomicReference<>();
 
-        if (names instanceof StreamSource<?> source) {
-            @SuppressWarnings("unchecked")
-            StreamSource<HelloRequest> typedSource = (StreamSource<HelloRequest>) source;
-            typedSource.subscribe(new StreamObserver<HelloRequest>() {
-                @Override
-                public void onNext(HelloRequest item) {
-                    System.out.println("Client stream received: " + item.getName());
-                    collectedNames.add(item.getName());
-                }
+        names.subscribe(new StreamObserver<HelloRequest>() {
+            @Override
+            public void onNext(HelloRequest item) {
+                System.out.println("Client stream received: " + item.getName());
+                collectedNames.add(item.getName());
+            }
 
-                @Override
-                public void onError(Throwable throwable) {
-                    error.set(throwable);
-                    latch.countDown();
-                }
+            @Override
+            public void onError(Throwable throwable) {
+                error.set(throwable);
+                latch.countDown();
+            }
 
-                @Override
-                public void onCompleted() {
-                    latch.countDown();
-                }
-            });
-        }
+            @Override
+            public void onCompleted() {
+                latch.countDown();
+            }
+        });
 
         try {
             latch.await();
@@ -105,35 +101,31 @@ public class GreeterServiceImpl implements GreeterService {
     }
 
     @Override
-    public StreamSource<HelloReply> bidiGreet(StreamObserver<HelloRequest> names) {
+    public StreamSource<HelloReply> bidiGreet(StreamSource<HelloRequest> names) {
         System.out.println("Bidi greet: subscribing to request stream");
         StreamSubject<HelloReply> responseObserver = new StreamSubject<>();
 
-        if (names instanceof StreamSource<?> source) {
-            @SuppressWarnings("unchecked")
-            StreamSource<HelloRequest> typedSource = (StreamSource<HelloRequest>) source;
-            typedSource.subscribe(new StreamObserver<HelloRequest>() {
-                @Override
-                public void onNext(HelloRequest item) {
-                    System.out.println("Bidi received: " + item.getName());
-                    responseObserver.onNext(HelloReply.newBuilder()
-                            .setMessage("Hello, " + item.getName() + "! (from jaws-wire bidi)")
-                            .build());
-                }
+        names.subscribe(new StreamObserver<HelloRequest>() {
+            @Override
+            public void onNext(HelloRequest item) {
+                System.out.println("Bidi received: " + item.getName());
+                responseObserver.onNext(HelloReply.newBuilder()
+                        .setMessage("Hello, " + item.getName() + "! (from jaws-wire bidi)")
+                        .build());
+            }
 
-                @Override
-                public void onError(Throwable throwable) {
-                    System.err.println("Bidi stream error: " + throwable.getMessage());
-                    responseObserver.onError(throwable);
-                }
+            @Override
+            public void onError(Throwable throwable) {
+                System.err.println("Bidi stream error: " + throwable.getMessage());
+                responseObserver.onError(throwable);
+            }
 
-                @Override
-                public void onCompleted() {
-                    System.out.println("Bidi request stream completed");
-                    responseObserver.onCompleted();
-                }
-            });
-        }
+            @Override
+            public void onCompleted() {
+                System.out.println("Bidi request stream completed");
+                responseObserver.onCompleted();
+            }
+        });
 
         return responseObserver;
     }

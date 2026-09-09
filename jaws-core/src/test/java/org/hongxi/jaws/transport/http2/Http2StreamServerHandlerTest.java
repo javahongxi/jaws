@@ -294,12 +294,9 @@ class Http2StreamServerHandlerTest {
         }
 
         @Override
-        public StreamSource<Object> handleStream(Request request, StreamObserver<Object> requestStream) {
+        public StreamSource<Object> handleStream(Request request, StreamSource<Object> requestStream) {
             if (onItem != null) {
-                // The framework hands the business a StreamSubject as an observer;
-                // consuming request items means subscribing to it, which is what
-                // the sample services do too.
-                ((StreamSource<Object>) requestStream).subscribe(new StreamObserver<Object>() {
+                requestStream.subscribe(new StreamObserver<Object>() {
                     @Override
                     public void onNext(Object item) {
                         onItem.accept(item);
