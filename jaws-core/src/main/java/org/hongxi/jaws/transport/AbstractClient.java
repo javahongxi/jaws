@@ -64,6 +64,9 @@ public abstract class AbstractClient implements Client {
     private final ConcurrentMap<Long, ResponseFuture> callbackMap = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, Timeout> timeoutMap = new ConcurrentHashMap<>();
 
+    /** One warning per client about an unarmed request timeout. */
+    private boolean warnUnboundedWait = true;
+
     protected AbstractClient(URL url) {
         this.url = url;
         this.fusingThreshold = url.getIntParameter(UrlParam.Client.FUSING_THRESHOLD);
@@ -140,8 +143,16 @@ public abstract class AbstractClient implements Client {
 
         callbackMap.put(requestId, responseFuture);
 
-        // Schedule a one-shot timeout task for this request
+        // Schedule a one-shot timeout task for this request. Without one a call
+        // whose peer goes silent — or resets the stream, which this client cannot
+        // observe (see WireStreamResponseHandler) — waits for a reply that will
+        // never come, so say so once instead of letting it hang quietly.
         int timeout = responseFuture.getTimeout();
+        if (timeout <= 0 && warnUnboundedWait) {
+            warnUnboundedWait = false;
+            log.warn("{} has no request timeout; calls to a silent peer will block "
+                    + "indefinitely: set requestTimeout>0, url={}", getClass().getSimpleName(), url.getUri());
+        }
         if (timeout > 0) {
             Timeout timerTimeout = timeoutTimer.newTimeout(t -> {
                 ResponseFuture future = callbackMap.remove(requestId);

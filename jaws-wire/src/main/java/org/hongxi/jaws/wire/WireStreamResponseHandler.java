@@ -9,7 +9,6 @@ import io.netty.handler.codec.http2.DefaultHttp2ResetFrame;
 import io.netty.handler.codec.http2.Http2DataFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
-import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -93,8 +92,6 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 onHeaders(headersFrame);
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
-            } else if (msg instanceof Http2ResetFrame resetFrame) {
-                failCall("gRPC stream reset: errorCode=" + resetFrame.errorCode(), null);
             } else {
                 ReferenceCountUtil.release(msg);
             }
@@ -239,6 +236,16 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
         maybeComplete();
     }
 
+    /**
+     * Note there is no {@code Http2ResetFrame} branch here. Measured on Netty
+     * 4.1.132 with {@code Http2FrameCodec} + {@code Http2MultiplexHandler}, an
+     * inbound RST_STREAM for a client-created stream channel is consumed inside
+     * the codec: it reaches neither this pipeline, nor the parent pipeline, nor
+     * the stream channel's own lifecycle — so a peer that resets the call while
+     * keeping the connection alive cannot be observed from here at all. Such a
+     * call is recovered by the per-request timeout, which is why
+     * {@code AbstractClient} warns when a client would arm no timer at all.
+     */
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
         failCall("gRPC stream closed before the response arrived", null);

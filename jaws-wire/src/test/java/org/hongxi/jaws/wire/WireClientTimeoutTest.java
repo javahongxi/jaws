@@ -20,20 +20,31 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pins the client-side request timeout on the wire transport: when a peer accepts
- * the connection, completes the HTTP/2 handshake well enough for the request to go
- * out, and then never answers, {@code requestTimeout} must still fail the call
- * instead of letting the caller block forever.
- * <p>
- * The stub is deliberately a silent sink rather than a live {@link WireServer}: a
- * real server would answer, and the deadline the server enforces for itself would
- * mask whether the client armed its own timer.
+ * Pins how a wire client call ends when the peer never answers, for the three
+ * shapes a peer can leave us in:
+ * <ul>
+ *   <li><b>silent connection</b> — nothing but the per-request timeout can free
+ *       the caller, so {@code requestTimeout} must fire and must be reported as a
+ *       timeout (40003) rather than a generic service failure;</li>
+ *   <li><b>GOAWAY</b> — the pending call must fail at once, not after its
+ *       budget, otherwise every connection teardown would read as a timeout;</li>
+ *   <li><b>stream reset</b> — Netty consumes an inbound {@code RST_STREAM} inside
+ *       {@code Http2FrameCodec}: measured on 4.1.132 it reaches neither the parent
+ *       pipeline nor the client-created stream channel (no channelRead, no user
+ *       event, no channelInactive), so only the local timeout recovers the caller.
+ *       That case is asserted rather than assumed: when a Netty release starts
+ *       delivering resets to the client side, this test goes red and the correct
+ *       response is to handle the reset instead of timing out.</li>
+ * </ul>
+ * The stub is a raw socket on purpose. A real {@link WireServer} would answer, and
+ * a grpc-java server enforces the propagated deadline, either of which hides
+ * whether the client armed its own timer.
  *
  * @author shenhongxi
  */
@@ -43,144 +54,65 @@ class WireClientTimeoutTest {
     private static final byte[] EMPTY_SETTINGS_FRAME =
             {0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-    private static final int REQUEST_TIMEOUT_MS = 300;
+    /** GOAWAY: length 8, type 0x7, last stream id 1, error NO_ERROR. */
+    private static final byte[] GOAWAY_FRAME = {
+            0x00, 0x00, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00};
+
+    /** RST_STREAM: length 4, type 0x3, stream 1, error CANCEL. */
+    private static final byte[] RST_STREAM_ON_1 = {
+            0x00, 0x00, 0x04, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x08};
 
     /**
-     * Accepts connections, answers only the SETTINGS frame a client needs before it
-     * writes its request, then swallows everything and never replies.
+     * Handshakes, swallows one read (the call), and then sends {@code frame} — or
+     * nothing when it is empty — while holding the connection open.
      *
-     * @return the bound port; the accepting thread is a daemon
+     * @param frame            the frame to send after the request, or empty for a silent peer
+     * @param holdOpenMs       how long to keep the connection alive afterwards
+     * @param receivedBytes    counts bytes read, to prove the call reached the peer
+     * @return the port the stub listens on
      */
-    private static int startSilentServer(AtomicLong receivedBytes) throws IOException {
+    private static int startPeer(byte[] frame, long holdOpenMs, AtomicLong receivedBytes)
+            throws IOException {
         ServerSocket server = new ServerSocket(0);
-        server.setReuseAddress(true);
         Thread thread = new Thread(() -> {
-            while (!server.isClosed()) {
-                try (Socket socket = server.accept()) {
-                    OutputStream out = socket.getOutputStream();
-                    out.write(EMPTY_SETTINGS_FRAME);
-                    out.flush();
-                    InputStream in = socket.getInputStream();
-                    byte[] buffer = new byte[8192];
-                    int read;
-                    while ((read = in.read(buffer)) >= 0) {
-                        receivedBytes.addAndGet(read);
-                    }
+            try (Socket socket = server.accept()) {
+                socket.setSoTimeout(3000);
+                OutputStream out = socket.getOutputStream();
+                out.write(EMPTY_SETTINGS_FRAME);
+                out.flush();
+                InputStream in = socket.getInputStream();
+                try {
+                    receivedBytes.addAndGet(in.read(new byte[8192]));
                 } catch (IOException e) {
-                    return; // socket or server closed by the test
+                    return; // no call arrived; the test will fail on its assertion
+                }
+                Thread.sleep(300); // let the call finish being written
+                if (frame.length > 0) {
+                    out.write(frame);
+                    out.flush();
+                }
+                Thread.sleep(holdOpenMs);
+            } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
                 }
             }
-        }, "wire-silent-server");
+        }, "wire-stub-peer");
         thread.setDaemon(true);
         thread.start();
         return server.getLocalPort();
     }
 
-    /**
-     * Same handshake, but the peer hangs up instead of answering: the caller must
-     * still get a typed failure it can catch, not a bare RuntimeException.
-     */
-    @Test
-    void closedStreamFailsWithATypedException() throws Exception {
-        ServerSocket server = new ServerSocket(0);
-        Thread thread = new Thread(() -> {
-            try (Socket socket = server.accept()) {
-                socket.getOutputStream().write(EMPTY_SETTINGS_FRAME);
-                socket.getOutputStream().flush();
-                socket.getInputStream().read(new byte[4096]);
-                // Let the call finish being written, then hang up without answering,
-                // so the only failure left is the stream going inactive.
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            } catch (IOException ignored) {
-                // the accepted socket closing ends the stub
-            }
-        }, "wire-hangup-server");
-        thread.setDaemon(true);
-        thread.start();
-
+    private static WireClient openClient(int port, int requestTimeoutMs) {
         Map<String, String> parameters = new HashMap<>();
         parameters.put("connectTimeout", "2000");
-        parameters.put("requestTimeout", "5000");
-        URL url = new URL("wire", "127.0.0.1", server.getLocalPort(), "interop.Greeter", parameters);
-
-        WireClient client = new WireClient(url);
-        assertTrue(client.open(), "client should connect to the hanging-up server");
-
-        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
-            JawsAbstractException failure = assertThrows(JawsAbstractException.class, () ->
-                    client.request(helloRequest(), HealthCheckResponse.parser()).getValue());
-            assertTrue(String.valueOf(failure.getMessage()).contains("stream closed"),
-                    "the failure must say what happened, got: " + failure.getMessage());
-        });
-
-        client.close();
-    }
-
-    /**
-     * An HTTP/2 RST_STREAM for stream 1 (length 4, type 3, no flags, stream 1)
-     * with error code 0xE (INTERNAL). The client opens exactly one stream here,
-     * so the id is known ahead of time.
-     */
-    private static final byte[] RST_STREAM_INTERNAL_ON_1 = {
-            0x00, 0x00, 0x04, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01,
-            0x00, 0x00, 0x00, 0x0E
-    };
-
-    /**
-     * A peer that resets the stream instead of answering must also fail the call
-     * with a type a caller can catch: the handler used to complete the future
-     * with a raw RuntimeException, which the blocking read rethrows untouched and
-     * which therefore escapes every {@code JawsAbstractException} handler.
-     */
-    @Test
-    void resetStreamFailsWithATypedException() throws Exception {
-        ServerSocket server = new ServerSocket(0);
-        Thread thread = new Thread(() -> {
-            try (Socket socket = server.accept()) {
-                socket.getOutputStream().write(EMPTY_SETTINGS_FRAME);
-                socket.getOutputStream().flush();
-                socket.getInputStream().read(new byte[4096]);
-                try {
-                    Thread.sleep(500); // let the call finish being written
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                socket.getOutputStream().write(RST_STREAM_INTERNAL_ON_1);
-                socket.getOutputStream().flush();
-                Thread.sleep(500); // keep the pipe open long enough to deliver it
-            } catch (IOException | InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }, "wire-reset-server");
-        thread.setDaemon(true);
-        thread.start();
-
-        Map<String, String> parameters = new HashMap<>();
-        parameters.put("connectTimeout", "2000");
-        parameters.put("requestTimeout", "5000");
-        URL url = new URL("wire", "127.0.0.1", server.getLocalPort(), "interop.Greeter", parameters);
-
-        WireClient client = new WireClient(url);
-        assertTrue(client.open(), "client should connect to the resetting server");
-
-        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
-            JawsAbstractException failure = assertThrows(JawsAbstractException.class, () ->
-                    client.request(helloRequest(), HealthCheckResponse.parser()).getValue());
-            // Netty turns the inbound RST_STREAM into a child-channel close, so the
-            // exact wording may be "reset" or "closed"; what must never regress is
-            // that it is catchable and says what happened to this call.
-            String message = String.valueOf(failure.getMessage());
-            assertTrue(message.contains("stream"),
-                    "the failure must name what happened, got: " + message);
-            assertTrue(message.contains("requestId="),
-                    "the failure must identify the call, got: " + message);
-        });
-
-        client.close();
+        parameters.put("requestTimeout", String.valueOf(requestTimeoutMs));
+        WireClient client = new WireClient(new URL(
+                "wire", "127.0.0.1", port, "interop.Greeter", parameters));
+        assertTrue(client.open(), "client should connect to the stub peer");
+        return client;
     }
 
     private static Request helloRequest() {
@@ -188,45 +120,78 @@ class WireClientTimeoutTest {
         request.setInterfaceName("interop.Greeter");
         request.setMethodName("SayHello");
         request.setArguments(new Object[]{
-                HealthCheckRequest.newBuilder().setService("slow-never-answers").build()
+                HealthCheckRequest.newBuilder().setService("never-answered").build()
         });
         return request;
     }
 
+    /** The blocking read is where the failure surfaces, so the test must consume it. */
+    private static JawsAbstractException failCall(WireClient client) {
+        return assertThrows(JawsAbstractException.class, () -> {
+            Response response = client.request(helloRequest(), HealthCheckResponse.parser());
+            response.getValue();
+        });
+    }
+
     @Test
-    void unaryCallFailsWithRequestTimeoutWhenPeerNeverAnswers() throws Exception {
+    void silentPeerIsBackstoppedByTheRequestTimeout() throws Exception {
         AtomicLong receivedBytes = new AtomicLong();
-        int port = startSilentServer(receivedBytes);
+        WireClient client = openClient(startPeer(new byte[0], 6000, receivedBytes), 300);
 
-        Map<String, String> parameters = new HashMap<>();
-        parameters.put("connectTimeout", "2000");
-        parameters.put("requestTimeout", String.valueOf(REQUEST_TIMEOUT_MS));
-        URL url = new URL("wire", "127.0.0.1", port, "interop.Greeter", parameters);
-
-        WireClient client = new WireClient(url);
-        assertTrue(client.open(), "client should connect to the silent server");
-
-        // The whole point: without an armed per-request timer this blocks forever,
-        // so bound it preemptively and let the test report the hang.
         long start = System.currentTimeMillis();
-        JawsAbstractException failure = assertTimeoutPreemptively(Duration.ofSeconds(5), () ->
-                assertThrows(JawsAbstractException.class, () -> {
-                    Response response = client.request(helloRequest(), HealthCheckResponse.parser());
-                    response.getValue();
-                }));
+        JawsAbstractException failure = assertTimeoutPreemptively(Duration.ofSeconds(5),
+                () -> failCall(client));
         long elapsed = System.currentTimeMillis() - start;
 
         String message = String.valueOf(failure.getMessage());
-        assertTrue(message.contains("timed out"), "cause must be named, got: " + message);
-        assertTrue(message.contains("interop.Greeter.SayHello"), "call must be named, got: " + message);
-        assertTrue(message.contains(REQUEST_TIMEOUT_MS + "ms"), "budget must be shown, got: " + message);
+        assertTrue(receivedBytes.get() > 0, "the call must have reached the peer");
+        assertTrue(message.contains("timed out"), "the cause must be named, got: " + message);
+        assertTrue(message.contains("interop.Greeter.SayHello"), "the call must be named, got: " + message);
+        assertTrue(message.contains("300ms"), "the budget must be shown, got: " + message);
         assertEquals(JawsErrorCode.SERVICE_TIMEOUT, failure.getErrorCode(),
                 "a local timeout must not be reported as a generic service failure");
+        assertTrue(elapsed >= 150, "firing far earlier than the budget hides another fault: " + elapsed);
+        assertTrue(elapsed < 2000, "requestTimeout=300ms was not honoured: " + elapsed + "ms");
 
-        assertTrue(receivedBytes.get() > 0, "the request must have reached the peer");
-        assertTrue(elapsed >= REQUEST_TIMEOUT_MS / 2,
-                "firing far earlier than requestTimeout means something else failed: " + elapsed + "ms");
-        assertTrue(elapsed < 3000, "requestTimeout=" + REQUEST_TIMEOUT_MS + "ms was not honoured: " + elapsed + "ms");
+        client.close();
+    }
+
+    @Test
+    void goAwayFailsThePendingCallImmediately() throws Exception {
+        AtomicLong receivedBytes = new AtomicLong();
+        WireClient client = openClient(startPeer(GOAWAY_FRAME, 5000, receivedBytes), 3000);
+
+        long start = System.currentTimeMillis();
+        JawsAbstractException failure = assertTimeoutPreemptively(Duration.ofSeconds(2),
+                () -> failCall(client));
+        long elapsed = System.currentTimeMillis() - start;
+
+        String message = String.valueOf(failure.getMessage());
+        assertTrue(elapsed < 2000, "GOAWAY must fail the call at once, not after 3s: " + elapsed + "ms");
+        assertTrue(message.contains("requestId="), "the failure must identify the call: " + message);
+
+        client.close();
+    }
+
+    @Test
+    void streamResetIsInvisibleToTheClientAndBackstoppedByTheTimeout() throws Exception {
+        AtomicLong receivedBytes = new AtomicLong();
+        WireClient client = openClient(startPeer(RST_STREAM_ON_1, 6000, receivedBytes), 600);
+
+        long start = System.currentTimeMillis();
+        JawsAbstractException failure = assertTimeoutPreemptively(Duration.ofSeconds(5),
+                () -> failCall(client));
+        long elapsed = System.currentTimeMillis() - start;
+
+        String message = String.valueOf(failure.getMessage());
+        assertTrue(message.contains("timed out"),
+                "Netty 4.1.132 never surfaces an inbound RST_STREAM to the client side "
+                        + "(no channelRead, no user event, no channelInactive), so only the "
+                        + "local budget can end this call, got: " + message);
+        assertEquals(JawsErrorCode.SERVICE_TIMEOUT, failure.getErrorCode(),
+                "from the caller's side it is still a timeout: " + message);
+        assertTrue(elapsed >= 300 && elapsed < 2500,
+                "the reset must not be mistaken for a fast failure: " + elapsed + "ms");
 
         client.close();
     }
