@@ -434,8 +434,6 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         // Now subscribe the network-forwarding observer to the buffer.
         // The buffer replays all items from the beginning, including any
         // that were already produced by the source before this point.
-        // All ctx writes are dispatched to the event loop because this
-        // observer may be driven by the business executor thread.
         buffer.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
@@ -449,15 +447,9 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                     return;
                 }
                 if (item instanceof Message msg) {
+                    sendResponseHeaders(ctx);
                     ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc(), compression);
-                    Http2Headers headers = responseHeadersSent ? null : buildResponseHeaders();
-                    responseHeadersSent = true;
-                    ctx.executor().execute(() -> {
-                        if (headers != null) {
-                            ctx.write(new DefaultHttp2HeadersFrame(headers, false));
-                        }
-                        ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
-                    });
+                    ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
                 } else {
                     log.warn("streaming: expected protobuf Message but got: {}",
                             item != null ? item.getClass().getName() : "null");
@@ -579,16 +571,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             sendError(ctx, WireConstants.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
             return;
         }
-        // Build all objects synchronously; write to ctx on the event loop
-        Http2Headers respHeaders = buildResponseHeaders();
+        sendResponseHeaders(ctx);
         ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), compression);
-        Http2Headers trailers = buildTrailers(WireConstants.STATUS_OK, null);
-        responseHeadersSent = true;
-        ctx.executor().execute(() -> {
-            ctx.write(new DefaultHttp2HeadersFrame(respHeaders, false));
-            ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
-            ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
-        });
+        ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
+        sendTrailers(ctx, WireConstants.STATUS_OK, null);
     }
 
     /**
@@ -601,12 +587,6 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             return;
         }
         responseHeadersSent = true;
-        Http2Headers headers = buildResponseHeaders();
-        // Dispatch to event loop — callers may run on the business executor
-        ctx.executor().execute(() -> ctx.write(new DefaultHttp2HeadersFrame(headers, false)));
-    }
-
-    private Http2Headers buildResponseHeaders() {
         Http2Headers headers = new DefaultHttp2Headers()
                 .status("200")
                 .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
@@ -615,30 +595,15 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
             headers.set(WireConstants.GRPC_ENCODING, compression);
         }
-        return headers;
+        ctx.write(new DefaultHttp2HeadersFrame(headers, false));
     }
 
     protected void sendTrailers(ChannelHandlerContext ctx, int status, String message) {
         if (!ctx.channel().isActive()) {
             return;
         }
-        Http2Headers trailers = buildTrailers(status, message);
-        // Build headers object synchronously so responseHeadersSent is set
-        // before any caller checks it; the actual ctx write is deferred.
-        Http2Headers headers = responseHeadersSent ? null : buildResponseHeaders();
-        responseHeadersSent = true;
-        // Dispatch to event loop — callers may run on the business executor.
-        // When headers is non-null the HEADERS frame is written before the
-        // trailers on the event loop (single task, FIFO within the task).
-        ctx.executor().execute(() -> {
-            if (headers != null) {
-                ctx.write(new DefaultHttp2HeadersFrame(headers, false));
-            }
-            ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
-        });
-    }
-
-    private static Http2Headers buildTrailers(int status, String message) {
+        // Ensure initial response HEADERS are sent before trailers
+        sendResponseHeaders(ctx);
         Http2Headers trailers = new DefaultHttp2Headers()
                 .set(WireConstants.GRPC_STATUS, String.valueOf(status));
         if (message != null) {
@@ -648,7 +613,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         if (status != WireConstants.STATUS_OK) {
             WireErrorDetails.writeToTrailers(trailers, status, message);
         }
-        return trailers;
+        ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
     }
 
     /**
@@ -664,13 +629,19 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             sendTrailers(ctx, status, message);
             return;
         }
-        responseHeadersSent = true;
         // Trailers-only response: status + content-type + grpc-status in one frame
-        Http2Headers trailersOnly = buildTrailers(status, message);
-        trailersOnly.status("200");
-        trailersOnly.set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC);
-        // Dispatch to event loop — callers may run on the business executor
-        ctx.executor().execute(() -> ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailersOnly, true)));
+        Http2Headers trailersOnly = new DefaultHttp2Headers()
+                .status("200")
+                .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
+                .set(WireConstants.GRPC_STATUS, String.valueOf(status));
+        if (message != null) {
+            trailersOnly.set(WireConstants.GRPC_MESSAGE, message);
+        }
+        // Rich error model for trailers-only errors too
+        if (status != WireConstants.STATUS_OK) {
+            WireErrorDetails.writeToTrailers(trailersOnly, status, message);
+        }
+        ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailersOnly, true));
     }
 
     /**
