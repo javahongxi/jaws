@@ -26,6 +26,9 @@ WIRE_CONSUMER_MODULE="jaws-samples/jaws-sample-wire-consumer"
 WIRE_INTEROP_MODULE="jaws-samples/jaws-sample-wire-interop"
 ADAPTIVE_PROVIDER_MODULE="jaws-samples/jaws-sample-adaptive-provider"
 ADAPTIVE_CONSUMER_MODULE="jaws-samples/jaws-sample-adaptive-consumer"
+HARBOR_BOOTSTRAP_MODULE="jaws-samples/jaws-sample-harbor"
+HARBOR_PROVIDER_MODULE="jaws-samples/jaws-sample-harbor-provider"
+HARBOR_CONSUMER_MODULE="jaws-samples/jaws-sample-harbor-consumer"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -48,6 +51,9 @@ WIRE_INTEROP_MANAGED="org.hongxi.jaws.sample.wire.interop.ManagedChannelDemo"
 WIRE_INTEROP_KEEPALIVE="org.hongxi.jaws.sample.wire.interop.WireKeepaliveDemo"
 ADAPTIVE_PROVIDER_MAIN="org.hongxi.jaws.sample.adaptive.provider.AdaptiveProvider"
 ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsumer"
+HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.sample.harbor.HarborBootstrap"
+HARBOR_PROVIDER_MAIN="org.hongxi.jaws.sample.harbor.provider.HarborProvider"
+HARBOR_CONSUMER_MAIN="org.hongxi.jaws.sample.harbor.consumer.HarborConsumer"
 
 usage() {
     cat <<'EOF'
@@ -72,6 +78,8 @@ usage() {
     interop [--keepalive]  Run all wire-interop demos (GrpcCallWireDemo, WireHealthDemo, ManagedChannelDemo, WireCallGrpcDemo)
                        Add --keepalive to also run WireKeepaliveDemo (~55s)
     adaptive [port]    One-shot Adaptive direct-connect sample (single port, multi-protocol, no registry required)
+    harbor-server [port]  Start HarborServer (Nacos-compatible control plane, default port 19848)
+    harbor [port]      One-shot Harbor sample: Provider -> Consumer (requires HarborServer running)
     consumer           Run ZkConsumer (provider must be started first)
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
@@ -106,6 +114,8 @@ usage() {
     ./run-sample.sh interop            # All wire-interop demos (quick, ~10s)
     ./run-sample.sh interop --keepalive  # All demos including keepalive (~65s)
     ./run-sample.sh adaptive           # One-shot Adaptive direct-connect (multi-protocol) provider + consumer
+    ./run-sample.sh harbor-server      # Start HarborServer on port 19848
+    ./run-sample.sh harbor             # One-shot Provider + Consumer (requires HarborServer)
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
@@ -129,7 +139,7 @@ ensure_built() {
     if [ ! -f "$marker" ]; then
         need_build=1
     else
-        for src in jaws-stream-api/src/main/java jaws-core/src/main/java jaws-wire/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
+        for src in jaws-stream-api/src/main/java jaws-core/src/main/java jaws-wire/src/main/java jaws-harbor/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
             if [ -d "$src" ] && [ "$(find "$src" -name '*.java' -newer "$marker" -print -quit 2>/dev/null)" ]; then
                 need_build=1
                 break
@@ -157,6 +167,10 @@ build_classpath() {
     case "$deps" in *curator*) project_cp="$project_cp:jaws-registry-zookeeper/target/classes" ;; esac
     case "$deps" in *nacos-client*) project_cp="$project_cp:jaws-registry-nacos/target/classes" ;; esac
     case "$deps" in *protobuf-java*) project_cp="$project_cp:jaws-wire-proto/target/classes:jaws-wire/target/classes:jaws-samples/jaws-sample-wire-api/target/classes" ;; esac
+    # Include jaws-harbor classes if the module depends on it
+    if grep -q 'jaws-harbor' "$module/pom.xml" 2>/dev/null; then
+        project_cp="$project_cp:jaws-harbor/target/classes"
+    fi
     echo "$project_cp:$deps"
 }
 
@@ -361,6 +375,92 @@ cmd_run_adaptive() {
         10000 "" "${1:-}"
 }
 
+cmd_harbor_server() {
+    ensure_built
+    local harbor_port="${1:-19848}"
+    local bootstrap_cp
+    bootstrap_cp=$(build_classpath "$HARBOR_BOOTSTRAP_MODULE")
+
+    echo "Starting HarborServer on port $harbor_port ..."
+    echo "Press Ctrl+C to stop."
+    echo "--------------------------------------------"
+    java -cp "$bootstrap_cp:$HARBOR_BOOTSTRAP_MODULE/target/classes" \
+        "$HARBOR_BOOTSTRAP_MAIN" "$harbor_port"
+}
+
+cmd_harbor() {
+    ensure_built
+    local harbor_port="${1:-19848}"
+    local provider_port="${2:-20000}"
+
+    # Check if HarborServer is already running
+    if ! (echo >/dev/tcp/127.0.0.1/$harbor_port) 2>/dev/null; then
+        echo "HarborServer is not running on port $harbor_port."
+        echo ""
+        echo "Please start it first:"
+        echo "  ./run-sample.sh harbor-server          # port 19848"
+        echo "  ./run-sample.sh harbor-server $harbor_port  # custom port"
+        exit 1
+    fi
+    echo "HarborServer detected on port $harbor_port."
+
+    local provider_pid_file=".provider-harbor-svc.pid"
+    local provider_log_file="provider-harbor-svc.log"
+
+    # 1. Start HarborProvider in background
+    echo "[1/4] Starting HarborProvider port=$provider_port ..."
+    local provider_cp
+    provider_cp=$(build_classpath "$HARBOR_PROVIDER_MODULE")
+    java -cp "$provider_cp:$HARBOR_PROVIDER_MODULE/target/classes" \
+        -Dport="$provider_port" \
+        -Dharbor.port="$harbor_port" \
+        "$HARBOR_PROVIDER_MAIN" > "$provider_log_file" 2>&1 &
+    local provider_pid=$!
+    echo "$provider_pid" > "$provider_pid_file"
+
+    # 2. Wait for provider to register services
+    echo -n "[2/4] Waiting for Provider registered "
+    local max_wait=15
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if grep -q "exported" "$provider_log_file" 2>/dev/null; then
+            echo " ready (${waited}s)"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        echo -n "."
+    done
+    if [ $waited -ge $max_wait ]; then
+        echo " timeout (${max_wait}s), continuing..."
+    fi
+
+    # 3. Run consumer
+    echo "[3/4] Running Consumer ..."
+    echo "--------------------------------------------"
+    local consumer_cp
+    consumer_cp=$(build_classpath "$HARBOR_CONSUMER_MODULE")
+    java -cp "$consumer_cp:$HARBOR_CONSUMER_MODULE/target/classes" \
+        -Dharbor.port="$harbor_port" \
+        "$HARBOR_CONSUMER_MAIN"
+    local consumer_exit=$?
+    echo "--------------------------------------------"
+
+    # 4. Stop provider and clean up
+    echo "[4/4] Stopping Provider ..."
+    if kill -0 "$provider_pid" 2>/dev/null; then
+        kill "$provider_pid" 2>/dev/null
+        wait "$provider_pid" 2>/dev/null || true
+    fi
+    rm -f "$provider_pid_file" "$provider_log_file"
+
+    if [ $consumer_exit -ne 0 ]; then
+        echo "Consumer exit code: $consumer_exit"
+        exit $consumer_exit
+    fi
+    echo "=== Done ==="
+}
+
 cmd_wire_interop() {
     ensure_built
     local run_keepalive=0
@@ -562,6 +662,8 @@ case "${1:-}" in
     wire)          cmd_run_wire "${2:-}" ;;
     interop)       shift; cmd_wire_interop "$@" ;;
     adaptive)      cmd_run_adaptive "${2:-}" ;;
+    harbor)        cmd_harbor "${2:-}" "${3:-}" ;;
+    harbor-server) cmd_harbor_server "${2:-}" ;;
     consumer)    cmd_consumer ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;

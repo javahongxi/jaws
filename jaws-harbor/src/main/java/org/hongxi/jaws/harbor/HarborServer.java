@@ -10,8 +10,8 @@ import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.config.ConfigStorage;
 import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
+import org.hongxi.jaws.harbor.distro.GrpcHarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
-import org.hongxi.jaws.harbor.distro.NoopHarborNodeTransport;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.stream.StreamObserver;
@@ -119,7 +119,7 @@ public class HarborServer {
     private final Map<String, String> connectionIdByClientIp = new ConcurrentHashMap<>();
 
     public HarborServer(URL url) {
-        this(url, new NoopHarborNodeTransport());
+        this(url, new GrpcHarborNodeTransport());
     }
 
     public HarborServer(URL url, HarborNodeTransport transport) {
