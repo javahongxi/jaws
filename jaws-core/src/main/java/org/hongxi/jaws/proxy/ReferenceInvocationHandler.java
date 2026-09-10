@@ -1,7 +1,6 @@
 package org.hongxi.jaws.proxy;
 
 import org.hongxi.jaws.cluster.Cluster;
-import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.ReflectUtils;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
@@ -14,7 +13,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 
 /**
@@ -138,37 +137,29 @@ public class ReferenceInvocationHandler<T> extends ReferenceInvoker<T> implement
      */
     private Object blockForClientStream(DefaultRequest request, StreamSource<Object> requestObserver) throws Throwable {
         StreamSource<Object> responseSource = invokeStream(request, requestObserver);
-        CompletableFuture<Object> resultFuture = new CompletableFuture<>();
+        Object[] result = {null};
+        Throwable[] error = {null};
+        CountDownLatch latch = new CountDownLatch(1);
         responseSource.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
-                resultFuture.complete(item);
+                result[0] = item;
             }
             @Override
             public void onError(Throwable throwable) {
-                resultFuture.completeExceptionally(throwable);
+                error[0] = throwable;
+                latch.countDown();
             }
             @Override
             public void onCompleted() {
-                resultFuture.complete(null);
+                latch.countDown();
             }
         });
-        try {
-            return resultFuture.get();
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof Exception ex) {
-                if (ExceptionUtils.isBizException(ex)) {
-                    Throwable t = ex.getCause();
-                    if (t instanceof Exception inner) {
-                        throw inner;
-                    }
-                    throw new JawsServiceException("biz exception in client streaming call: " + ex.getMessage());
-                }
-                throw ex;
-            }
-            throw new JawsServiceException("client streaming call failed", cause);
+        latch.await();
+        if (error[0] != null) {
+            throw error[0];
         }
+        return result[0];
     }
 
     /**

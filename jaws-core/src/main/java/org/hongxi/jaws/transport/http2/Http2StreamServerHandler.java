@@ -120,7 +120,8 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                 headers.get(Http2Constants.HEADER_SERIALIZATION), defaultSerializationName);
         serialization = Http2PayloadCodec.resolveSerialization(serializationName);
         if (serialization == null) {
-            sendError(ctx, Http2Constants.STATUS_BAD_REQUEST, "Unsupported serialization: " + serializationName);
+            sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
+                    "Unsupported serialization: " + serializationName);
             return;
         }
 
@@ -205,7 +206,7 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
             try {
                 bidiRequest = Http2PayloadCodec.decodeRequest(bytes, serialization);
                 requestObserver = new StreamSubject<>();
-                dispatchBiStream(ctx);
+                dispatchBidiStream(ctx);
             } catch (Exception e) {
                 log.error("Failed to decode bidi request metadata", e);
                 sendError(ctx, Http2Constants.STATUS_BAD_REQUEST,
@@ -303,7 +304,8 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                     RpcContext.init(request);
 
                     if (streamType == StreamType.SERVER) {
-                        dispatchStream(ctx, request);
+                        StreamSource<Object> source = messageHandler.handleStream(request, null);
+                        source.subscribe(new StreamResponseWriter(ctx, StreamType.SERVER, request.getRequestId()));
                     } else {
                         dispatchUnary(ctx, request, startTime);
                     }
@@ -380,19 +382,10 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Dispatch a streaming invocation: single request, server streams
-     * multiple response items via {@link StreamSource}.
-     */
-    private void dispatchStream(ChannelHandlerContext ctx, Request request) {
-        StreamSource<Object> source = messageHandler.handleStream(request, null);
-        source.subscribe(new StreamResponseWriter(ctx, StreamType.SERVER, request.getRequestId()));
-    }
-
-    /**
      * Dispatch a bidirectional streaming invocation: client streams request
      * items via {@code requestObserver}, server streams response items.
      */
-    private void dispatchBiStream(ChannelHandlerContext ctx) {
+    private void dispatchBidiStream(ChannelHandlerContext ctx) {
         try {
             serverExecutor.execute(() -> {
                 try {

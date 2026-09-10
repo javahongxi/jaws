@@ -242,7 +242,7 @@ public class WireCallGrpcDemo {
         int[] bidiCount = {0};
 
         StreamSource<Object> responseSource =
-                bidiClient.requestBiStream(bidiRequest, requestObserver, HelloReply.parser());
+                bidiClient.requestBidiStream(bidiRequest, requestObserver, HelloReply.parser());
         responseSource.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {

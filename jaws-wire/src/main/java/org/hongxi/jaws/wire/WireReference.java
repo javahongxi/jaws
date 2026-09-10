@@ -78,8 +78,7 @@ public class WireReference<T> extends AbstractReference<T> {
             Object[] args = request.getArguments();
             if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
                 throw new JawsServiceException(
-                        "WireReference callStream failed: argument must be a protobuf Message, url="
-                                + url.getUri());
+                        "WireReference callStream failed: argument must be a protobuf Message, url=" + url.getUri());
             }
             DefaultRequest streamRequest = buildWireRequest(request, new Object[]{requestMessage});
             return wireClient.requestStream(streamRequest, methodInfo.responseParser());
@@ -93,7 +92,7 @@ public class WireReference<T> extends AbstractReference<T> {
             }
             // Bidi-streaming
             DefaultRequest biStreamRequest = buildWireRequest(request, request.getArguments());
-            return wireClient.requestBiStream(biStreamRequest, requestStream, methodInfo.responseParser());
+            return wireClient.requestBidiStream(biStreamRequest, requestStream, methodInfo.responseParser());
         }
     }
 

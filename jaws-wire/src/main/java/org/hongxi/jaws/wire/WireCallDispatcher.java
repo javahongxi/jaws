@@ -73,14 +73,14 @@ sealed interface WireCallDispatcher
     /**
      * @return {@code true} when the resolved path is a bidirectional streaming method
      */
-    default boolean isBiStreaming() {
+    default boolean isBidiStream() {
         return false;
     }
 
     /**
      * @return {@code true} when the resolved path is a client-streaming method
      */
-    default boolean isClientStreaming() {
+    default boolean isClientStream() {
         return false;
     }
 
@@ -103,9 +103,9 @@ sealed interface WireCallDispatcher
      * @param serverHandler    the owning stream serverHandler
      * @param requestStream    request stream the handler consumes
      */
-    void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
-                          WireStreamServerHandler serverHandler,
-                          StreamSource<Object> requestStream);
+    void dispatchBidiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
+                            WireStreamServerHandler serverHandler,
+                            StreamSource<Object> requestStream);
 
     /**
      * Dispatch a client-streaming call. The first gRPC frame has already been
@@ -147,12 +147,12 @@ sealed interface WireCallDispatcher
         }
 
         @Override
-        public boolean isBiStreaming() {
+        public boolean isBidiStream() {
             return handler != null && handler.methodType() == WireMethodHandler.MethodType.BIDIRECTIONAL;
         }
 
         @Override
-        public boolean isClientStreaming() {
+        public boolean isClientStream() {
             return handler != null && handler.methodType() == WireMethodHandler.MethodType.CLIENT_STREAMING;
         }
 
@@ -162,9 +162,9 @@ sealed interface WireCallDispatcher
         }
 
         @Override
-        public void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
-                                     WireStreamServerHandler serverHandler,
-                                     StreamSource<Object> requestStream) {
+        public void dispatchBidiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
+                                       WireStreamServerHandler serverHandler,
+                                       StreamSource<Object> requestStream) {
             final WireMethodHandler methodHandler = this.handler;
             final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
             try {
@@ -284,8 +284,8 @@ sealed interface WireCallDispatcher
 
         private String serviceName;
         private String methodName;
-        private boolean biStreaming;
-        private boolean clientStreaming;
+        private boolean bidiStream;
+        private boolean clientStream;
 
         ProviderCallDispatcher(MessageHandler messageHandler, WireHealthService healthService) {
             this.messageHandler = messageHandler;
@@ -305,37 +305,27 @@ sealed interface WireCallDispatcher
             }
             // Resolve streaming flags from the WireMessageHandler's proto types
             if (messageHandler instanceof WireMessageHandler wmh && methodName != null) {
-                this.biStreaming = wmh.isBiStreaming(methodName);
-                this.clientStreaming = wmh.isClientStreaming(methodName);
+                this.bidiStream = wmh.isBidiStream(methodName);
+                this.clientStream = wmh.isClientStream(methodName);
             }
             // Provider pipeline mode defers path validation to dispatch time
             return true;
         }
 
         @Override
-        public boolean isBiStreaming() {
-            return biStreaming;
+        public boolean isBidiStream() {
+            return bidiStream;
         }
 
         @Override
-        public boolean isClientStreaming() {
-            return clientStreaming;
+        public boolean isClientStream() {
+            return clientStream;
         }
 
         @Override
-        public Parser<? extends Message> getRequestStreamParser() {
-            // Both bidi and client-streaming need request item parsing
-            if (biStreaming || clientStreaming) {
-                // The request parser is resolved from the proto types via the method info
-                return null; // Provider mode uses byte[] items, not typed Messages
-            }
-            return null;
-        }
-
-        @Override
-        public void dispatchBiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
-                                     WireStreamServerHandler serverHandler,
-                                     StreamSource<Object> requestStream) {
+        public void dispatchBidiStream(ChannelHandlerContext ctx, ByteBuf firstFrame,
+                                       WireStreamServerHandler serverHandler,
+                                       StreamSource<Object> requestStream) {
             final String svcName = this.serviceName;
             final String mName = this.methodName;
             final Map<String, String> callAttachments = serverHandler.attachments;
@@ -377,7 +367,7 @@ sealed interface WireCallDispatcher
             // both call handleStream(request, requestStream) which returns a
             // StreamSource wrapping the single result. dispatchStream handles
             // the single-item Source correctly.
-            dispatchBiStream(ctx, firstFrame, serverHandler, requestStream);
+            dispatchBidiStream(ctx, firstFrame, serverHandler, requestStream);
         }
 
         private static String toJavaMethodName(String grpcMethodName) {

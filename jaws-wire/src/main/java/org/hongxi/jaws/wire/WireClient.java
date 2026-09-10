@@ -499,30 +499,21 @@ public class WireClient extends AbstractHttp2Client {
     }
 
     /**
-     * Unified client/bidi streaming entry point. Routes based on the
-     * {@code x-jaws-streaming} header in the request attachments:
-     * {@link StreamType#CLIENT} → client-streaming (single response);
-     * otherwise → bidirectional streaming (streamed response).
+     * Open a client-streaming call: send a stream of request items and receive
+     * a single response using the gRPC wire format.
+     * <p>
+     * HEADERS are sent immediately (without END_STREAM). Each item from the
+     * {@code requestStream} is encoded as a gRPC DATA frame. When the request
+     * stream completes, END_STREAM is sent and the server processes the
+     * accumulated items into a single response, which is delivered through
+     * the returned {@link StreamSource}.
      *
      * @param request        the RPC request (carries metadata/attachments)
      * @param requestStream  a source of client request {@link Message} items
      * @param responseParser the parser for the expected response message type
-     * @return a source emitting response items (single item for client-streaming)
+     * @return a source emitting the single response message
      */
     public StreamSource<Object> requestStream(Request request, StreamSource<Object> requestStream,
-                                              Parser<? extends Message> responseParser) {
-        String streamingHeader = request.getAttachments().get(Http2Constants.HEADER_STREAMING);
-        StreamType streamType = StreamType.fromValue(streamingHeader);
-        if (streamType == StreamType.CLIENT) {
-            return doClientStreamRequest(request, requestStream, responseParser);
-        }
-        return requestBiStream(request, requestStream, responseParser);
-    }
-
-    /**
-     * Client-streaming: send a stream of request items, receive a single response.
-     */
-    private StreamSource<Object> doClientStreamRequest(Request request, StreamSource<Object> requestStream,
                                                        Parser<? extends Message> responseParser) {
         if (!isAvailable()) {
             throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
@@ -667,8 +658,8 @@ public class WireClient extends AbstractHttp2Client {
      * @param responseParser the parser for the expected response message type
      * @return a source emitting streamed response messages
      */
-    public StreamSource<Object> requestBiStream(Request request, StreamSource<Object> requestStream,
-                                                 Parser<? extends Message> responseParser) {
+    public StreamSource<Object> requestBidiStream(Request request, StreamSource<Object> requestStream,
+                                                  Parser<? extends Message> responseParser) {
         if (!isAvailable()) {
             throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
         }

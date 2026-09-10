@@ -137,7 +137,7 @@ class WireMessageHandler implements MessageHandler {
      * Check if the given method is bidirectional streaming: it consumes a request
      * stream and returns a response stream.
      */
-    boolean isBiStreaming(String methodName) {
+    boolean isBidiStream(String methodName) {
         try {
             WireProtoTypes.MethodInfo info = protoTypes.getMethodInfo(methodName);
             return info.hasRequestStream() && info.streaming();
@@ -150,7 +150,7 @@ class WireMessageHandler implements MessageHandler {
      * Check whether the given method is client-streaming: it consumes a request
      * stream and its response is a single message rather than a source.
      */
-    boolean isClientStreaming(String methodName) {
+    boolean isClientStream(String methodName) {
         try {
             WireProtoTypes.MethodInfo info = protoTypes.getMethodInfo(methodName);
             return info.hasRequestStream() && !info.streaming();

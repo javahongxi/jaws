@@ -102,10 +102,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     private boolean reflectionPath;
 
     /** True when the resolved path is a bidirectional streaming method. */
-    private boolean biStreaming;
+    private boolean bidiStream;
 
     /** True when the resolved path is a client-streaming method. */
-    private boolean clientStreaming;
+    private boolean clientStream;
 
     /** Thread-safe observer bridging event loop → handler thread for streaming request items. */
     private StreamSubject<Object> streamRequestObserver;
@@ -238,16 +238,16 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
 
         // Check if the resolved method is streaming (bidi or client-streaming)
         if (!reflectionPath) {
-            biStreaming = dispatcher.isBiStreaming();
-            clientStreaming = dispatcher.isClientStreaming();
-            if (biStreaming || clientStreaming) {
+            bidiStream = dispatcher.isBidiStream();
+            clientStream = dispatcher.isClientStream();
+            if (bidiStream || clientStream) {
                 streamRequestParser = dispatcher.getRequestStreamParser();
             }
         }
 
         // Non-reflection paths require END_STREAM to carry the request payload
         // (unless streaming, where frames arrive incrementally)
-        if (endStream && !reflectionPath && !biStreaming && !clientStreaming) {
+        if (endStream && !reflectionPath && !bidiStream && !clientStream) {
             sendError(ctx, WireConstants.STATUS_INTERNAL, "Missing request payload");
         }
     }
@@ -258,10 +258,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             // not be blocked by the 'dispatched' flag (which is set after the
             // first frame triggers async dispatch). Only unary/server-streaming
             // use 'dispatched' as a one-shot guard.
-            if (!biStreaming && !clientStreaming && (dispatched || rejected)) {
+            if (!bidiStream && !clientStream && (dispatched || rejected)) {
                 return;
             }
-            if ((biStreaming || clientStreaming) && rejected) {
+            if ((bidiStream || clientStream) && rejected) {
                 return;
             }
 
@@ -290,10 +290,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             }
 
             // Business streaming: extract frames incrementally
-            if (biStreaming || clientStreaming) {
+            if (bidiStream || clientStream) {
                 processStreamFrames(ctx);
-                if (dataFrame.isEndStream()) {
-                    completeRequestStream();
+                if (dataFrame.isEndStream() && streamRequestObserver != null) {
+                    streamRequestObserver.onCompleted();
                 }
                 return;
             }
@@ -508,10 +508,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 try {
                     serverExecutor.execute(() -> {
                         try {
-                            if (clientStreaming) {
+                            if (clientStream) {
                                 dispatcher.dispatchClientStream(ctx, null, this, streamRequestObserver);
                             } else {
-                                dispatcher.dispatchBiStream(ctx, null, this, streamRequestObserver);
+                                dispatcher.dispatchBidiStream(ctx, null, this, streamRequestObserver);
                             }
                         } catch (Exception e) {
                             log.error("unexpected stream dispatch error: path={}", path, e);
@@ -542,16 +542,6 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             }
         }
     }
-
-    /**
-     * Signal that the client has finished sending request items (END_STREAM received).
-     */
-    private void completeRequestStream() {
-        if (streamRequestObserver != null) {
-            streamRequestObserver.onCompleted();
-        }
-    }
-
 
     /**
      * Send a unary response: check cancellation and deadline, then write
