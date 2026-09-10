@@ -26,10 +26,10 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Multi-protocol server that auto-detects the transport protocol from the
- * first bytes of each inbound TCP connection and configures the Netty
- * pipeline accordingly. A single {@code AdaptiveServer} instance can
- * simultaneously serve:
+ * Multi-protocol server that auto-detects the protocol from the first
+ * bytes of each inbound TCP connection and configures the Netty pipeline
+ * accordingly. A single {@code AdaptiveServer} instance can simultaneously
+ * serve:
  * <ul>
  *   <li><b>Jaws binary protocol</b> (TCP, magic 0x4A57) — via
  *       {@link NettyDecoder} + {@link NettyChannelHandler}</li>
