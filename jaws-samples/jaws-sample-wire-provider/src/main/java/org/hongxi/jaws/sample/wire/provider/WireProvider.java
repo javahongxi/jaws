@@ -30,7 +30,9 @@ import java.util.concurrent.CountDownLatch;
  *   <li>{@code maxConnectionIdleMs} — close idle connections after 5 minutes</li>
  *   <li>{@code maxConnectionAgeMs} — recycle connections after 30 minutes</li>
  *   <li>{@code maxInboundMetadataSize} — reject request metadata larger than 16KB</li>
- *   <li>{@code permitPingIntervalMs} — guard against overly frequent client PINGs (disabled in sample for grpcurl interop)</li>
+ *   <li>{@code permitPingIntervalMs} — disabled (0) in this sample so grpcurl
+ *       works without {@code -keep-alive-time 0}; production should use the
+ *       default 300000ms to guard against overly frequent client PINGs</li>
  * </ul>
  * <p>
  * Test with grpcurl (no proto file needed, via server reflection):
@@ -38,6 +40,11 @@ import java.util.concurrent.CountDownLatch;
  *   grpcurl -plaintext -d '{"name":"World"}' \
  *     localhost:50051 greeter.Greeter/SayHello
  * </pre>
+ * <p>
+ * Note: this sample sets {@code permitPingIntervalMs=0} (guard disabled) so
+ * that plain {@code grpcurl} commands work without extra flags. Production
+ * servers should keep the default 300 000ms guard and tell grpcurl users to
+ * add {@code -keep-alive-time 0} to suppress client-side keepalive PINGs.
  */
 public class WireProvider {
 
@@ -59,9 +66,10 @@ public class WireProvider {
         protocolConfig.setParameter("maxConnectionAgeGraceMs", "5000");
         // Reject request metadata larger than 16KB
         protocolConfig.setParameter("maxInboundMetadataSize", "16384");
-        // Guard against overly frequent client PINGs (default 5min);
-        // set 0 to disable — grpcurl sends PINGs more aggressively than
-        // grpc-java, so the sample disables the guard for interop testing.
+        // Keepalive guard disabled (0) for sample convenience — plain grpcurl
+        // commands work without -keep-alive-time 0. Production servers should
+        // use the default 300000ms; grpc-java clients have PING_DELAYED and
+        // will never trigger the guard under normal traffic.
         protocolConfig.setParameter("permitPingIntervalMs", "0");
 
         ServiceConfig<GreeterService> serviceConfig = new ServiceConfig<>();

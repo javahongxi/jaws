@@ -114,6 +114,14 @@ public final class UrlParam {
         public static final Def<Long> PERMIT_PING_INTERVAL_MS = new Def<>("permitPingIntervalMs", 300_000L);
 
         /**
+         * gRPC keepalive policy (wire transport, server side): how many
+         * too-frequent PINGs (judged without data) are tolerated before
+         * GOAWAY too_many_pings, mirroring grpc-java's
+         * GRPC_ARG_HTTP2_MAX_PING_STRIKES. 0 accepts any number of bad pings.
+         */
+        public static final Def<Integer> PERMIT_PING_STRIKES = new Def<>("permitPingStrikes", 2);
+
+        /**
          * Maximum size of a single inbound gRPC message in bytes (wire
          * transport, both client and server). Oversized messages are rejected
          * with RESOURCE_EXHAUSTED, same default as grpc-java.

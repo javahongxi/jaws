@@ -124,7 +124,8 @@ public class WireServer extends AbstractHttp2Server {
         // permitPingIntervalMs (default 5min, same as grpc-java); faster PINGs
         // get GOAWAY too_many_pings. Set 0 to permit all.
         long permitMs = url.getLongParameter(UrlParam.Transport.PERMIT_PING_INTERVAL_MS);
-        pipeline.addLast("wire_keepalive", new WireKeepaliveHandler(permitMs));
+        int permitStrikes = url.getIntParameter(UrlParam.Transport.PERMIT_PING_STRIKES);
+        pipeline.addLast("wire_keepalive", new WireKeepaliveHandler(permitMs, permitStrikes));
 
         // Connection lifecycle: max idle / max age
         long maxIdle = url.getLongParameter(UrlParam.Server.MAX_CONNECTION_IDLE_MS);
