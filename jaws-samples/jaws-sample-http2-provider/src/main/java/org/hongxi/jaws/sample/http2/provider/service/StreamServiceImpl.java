@@ -31,7 +31,7 @@ public class StreamServiceImpl implements StreamService {
         List<String> collected = new ArrayList<>();
         CompletableFuture<Void> done = new CompletableFuture<>();
 
-        names.subscribe(new StreamObserver<String>() {
+        names.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(String name) {
                 System.out.println("collectGreet received: " + name);
@@ -63,7 +63,7 @@ public class StreamServiceImpl implements StreamService {
     public StreamSource<String> bidiGreet(StreamSource<String> names) {
         StreamSubject<String> responseObserver = new StreamSubject<>();
 
-        names.subscribe(new StreamObserver<String>() {
+        names.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(String name) {
                 System.out.println("bidiGreet received: " + name);

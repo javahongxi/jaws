@@ -30,7 +30,7 @@ import java.util.concurrent.CountDownLatch;
  *   <li>{@code maxConnectionIdleMs} — close idle connections after 5 minutes</li>
  *   <li>{@code maxConnectionAgeMs} — recycle connections after 30 minutes</li>
  *   <li>{@code maxInboundMetadataSize} — reject request metadata larger than 16KB</li>
- *   <li>{@code permitPingIntervalMs} — guard against overly frequent client PINGs</li>
+ *   <li>{@code permitPingIntervalMs} — guard against overly frequent client PINGs (disabled in sample for grpcurl interop)</li>
  * </ul>
  * <p>
  * Test with grpcurl (no proto file needed, via server reflection):
@@ -59,8 +59,10 @@ public class WireProvider {
         protocolConfig.setParameter("maxConnectionAgeGraceMs", "5000");
         // Reject request metadata larger than 16KB
         protocolConfig.setParameter("maxInboundMetadataSize", "16384");
-        // Guard against overly frequent client PINGs (default 5min)
-        protocolConfig.setParameter("permitPingIntervalMs", "300000");
+        // Guard against overly frequent client PINGs (default 5min);
+        // set 0 to disable — grpcurl sends PINGs more aggressively than
+        // grpc-java, so the sample disables the guard for interop testing.
+        protocolConfig.setParameter("permitPingIntervalMs", "0");
 
         ServiceConfig<GreeterService> serviceConfig = new ServiceConfig<>();
         serviceConfig.setInterface(GreeterService.class);

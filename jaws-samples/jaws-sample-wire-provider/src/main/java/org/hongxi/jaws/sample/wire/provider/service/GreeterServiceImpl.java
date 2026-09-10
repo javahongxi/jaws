@@ -11,11 +11,8 @@ import org.hongxi.jaws.stream.StreamSource;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 
 /**
  * Greeter service implementation for the wire sample.
@@ -64,7 +61,7 @@ public class GreeterServiceImpl implements GreeterService {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<Throwable> error = new AtomicReference<>();
 
-        names.subscribe(new StreamObserver<HelloRequest>() {
+        names.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(HelloRequest item) {
                 System.out.println("Client stream received: " + item.getName());
@@ -93,7 +90,7 @@ public class GreeterServiceImpl implements GreeterService {
             throw new RuntimeException("Client stream failed", error.get());
         }
 
-        String namesList = collectedNames.stream().collect(Collectors.joining(", "));
+        String namesList = String.join(", ", collectedNames);
         System.out.println("Client stream completed, names: " + namesList);
         return HelloReply.newBuilder()
                 .setMessage("Hello, " + namesList + "! (from jaws-wire client-stream)")
@@ -105,7 +102,7 @@ public class GreeterServiceImpl implements GreeterService {
         System.out.println("Bidi greet: subscribing to request stream");
         StreamSubject<HelloReply> responseObserver = new StreamSubject<>();
 
-        names.subscribe(new StreamObserver<HelloRequest>() {
+        names.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(HelloRequest item) {
                 System.out.println("Bidi received: " + item.getName());
