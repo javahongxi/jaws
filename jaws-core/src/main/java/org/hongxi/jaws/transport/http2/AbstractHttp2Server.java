@@ -1,5 +1,7 @@
 package org.hongxi.jaws.transport.http2;
 
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
@@ -22,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.net.SocketException;
 
 /**
  * Base class for HTTP/2 based servers, adding the HTTP/2-specific parts on top
@@ -122,6 +125,21 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
                         initStreamChannel(streamChannel);
                     }
                 }));
+
+        // Add exception handler to gracefully handle client disconnects before HTTP/2 handshake
+        pipeline.addLast("exception_handler", new ChannelInboundHandlerAdapter() {
+            @Override
+            public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                if (cause instanceof SocketException || cause.getCause() instanceof SocketException) {
+                    log.debug("client disconnected before HTTP/2 handshake: {} error={}",
+                            ctx.channel().remoteAddress(), cause.getMessage());
+                    ctx.close();
+                    return;
+                }
+                log.error("channel exception: {}", ctx.channel().remoteAddress(), cause);
+                ctx.close();
+            }
+        });
 
         // Track connection channel for GOAWAY on shutdown
         connectionChannels.add(ch);

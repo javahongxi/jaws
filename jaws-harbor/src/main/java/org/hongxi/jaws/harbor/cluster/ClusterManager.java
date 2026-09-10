@@ -32,6 +32,10 @@ public class ClusterManager {
         this.selfAddress = selfAddress;
     }
 
+    public String getSelfAddress() {
+        return selfAddress;
+    }
+
     public void addMember(ClusterMember member) {
         if (members.add(member)) {
             log.info("[harbor] cluster member added: {}", member.address());

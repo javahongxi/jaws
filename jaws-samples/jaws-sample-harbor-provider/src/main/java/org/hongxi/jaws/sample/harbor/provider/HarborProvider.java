@@ -75,7 +75,7 @@ public class HarborProvider {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setProtocol(protocolName);
         registryConfig.setId("defaultRegistry");
-        registryConfig.setAddress("127.0.0.1");
+        registryConfig.setAddress("127.0.0.1:19848,127.0.0.1:19849,127.0.0.1:19850");
         registryConfig.setPort(HARBOR_PORT);
         return registryConfig;
     }

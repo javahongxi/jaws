@@ -26,7 +26,7 @@ WIRE_CONSUMER_MODULE="jaws-samples/jaws-sample-wire-consumer"
 WIRE_INTEROP_MODULE="jaws-samples/jaws-sample-wire-interop"
 ADAPTIVE_PROVIDER_MODULE="jaws-samples/jaws-sample-adaptive-provider"
 ADAPTIVE_CONSUMER_MODULE="jaws-samples/jaws-sample-adaptive-consumer"
-HARBOR_BOOTSTRAP_MODULE="jaws-samples/jaws-sample-harbor"
+HARBOR_BOOTSTRAP_MODULE="jaws-harbor"
 HARBOR_PROVIDER_MODULE="jaws-samples/jaws-sample-harbor-provider"
 HARBOR_CONSUMER_MODULE="jaws-samples/jaws-sample-harbor-consumer"
 
@@ -51,7 +51,7 @@ WIRE_INTEROP_MANAGED="org.hongxi.jaws.sample.wire.interop.ManagedChannelDemo"
 WIRE_INTEROP_KEEPALIVE="org.hongxi.jaws.sample.wire.interop.WireKeepaliveDemo"
 ADAPTIVE_PROVIDER_MAIN="org.hongxi.jaws.sample.adaptive.provider.AdaptiveProvider"
 ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsumer"
-HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.sample.harbor.HarborBootstrap"
+HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.harbor.HarborBootstrap"
 HARBOR_PROVIDER_MAIN="org.hongxi.jaws.sample.harbor.provider.HarborProvider"
 HARBOR_CONSUMER_MAIN="org.hongxi.jaws.sample.harbor.consumer.HarborConsumer"
 
@@ -78,7 +78,7 @@ usage() {
     interop [--keepalive]  Run all wire-interop demos (GrpcCallWireDemo, WireHealthDemo, ManagedChannelDemo, WireCallGrpcDemo)
                        Add --keepalive to also run WireKeepaliveDemo (~55s)
     adaptive [port]    One-shot Adaptive direct-connect sample (single port, multi-protocol, no registry required)
-    harbor-server [port]  Start HarborServer (Nacos-compatible control plane, default port 19848)
+    harbor-server [port] [--cluster peers]  Start HarborServer (default port 19848)
     harbor [port]      One-shot Harbor sample: Provider -> Consumer (requires HarborServer running)
     consumer           Run ZkConsumer (provider must be started first)
     bench-injvm        Benchmark - injvm protocol
@@ -115,6 +115,7 @@ usage() {
     ./run-sample.sh interop --keepalive  # All demos including keepalive (~65s)
     ./run-sample.sh adaptive           # One-shot Adaptive direct-connect (multi-protocol) provider + consumer
     ./run-sample.sh harbor-server      # Start HarborServer on port 19848
+    ./run-sample.sh harbor-server 19848 --cluster 10.0.0.2:19848,10.0.0.3:19848  # 3-node cluster
     ./run-sample.sh harbor             # One-shot Provider + Consumer (requires HarborServer)
     ./run-sample.sh consumer
     ./run-sample.sh bench-injvm
@@ -377,15 +378,39 @@ cmd_run_adaptive() {
 
 cmd_harbor_server() {
     ensure_built
-    local harbor_port="${1:-19848}"
+    local harbor_port="19848"
+    local cluster_args=()
+
+    # Parse: [port] [--cluster host1:port1,host2:port2]
+    local i=1
+    while [ $i -le $# ]; do
+        local arg="${!i}"
+        case "$arg" in
+            --cluster)
+                i=$((i + 1))
+                cluster_args=("--cluster" "${!i}")
+                ;;
+            [0-9]*)
+                harbor_port="$arg"
+                ;;
+        esac
+        i=$((i + 1))
+    done
+
     local bootstrap_cp
     bootstrap_cp=$(build_classpath "$HARBOR_BOOTSTRAP_MODULE")
 
     echo "Starting HarborServer on port $harbor_port ..."
+    if [ ${#cluster_args[@]} -gt 0 ]; then
+        echo "Cluster peers: ${cluster_args[1]}"
+    else
+        echo "Single-node mode (no cluster peers)"
+    fi
+    echo "HTTP Management API: http://localhost:$((harbor_port + 10))/api/*"
     echo "Press Ctrl+C to stop."
     echo "--------------------------------------------"
     java -cp "$bootstrap_cp:$HARBOR_BOOTSTRAP_MODULE/target/classes" \
-        "$HARBOR_BOOTSTRAP_MAIN" "$harbor_port"
+        "$HARBOR_BOOTSTRAP_MAIN" "$harbor_port" "${cluster_args[@]}"
 }
 
 cmd_harbor() {
@@ -393,8 +418,20 @@ cmd_harbor() {
     local harbor_port="${1:-19848}"
     local provider_port="${2:-20000}"
 
-    # Check if HarborServer is already running
-    if ! (echo >/dev/tcp/127.0.0.1/$harbor_port) 2>/dev/null; then
+    # Check if HarborServer is already running (use lsof to avoid triggering HTTP/2 handler errors)
+    local harbor_running=0
+    if command -v lsof >/dev/null 2>&1; then
+        if lsof -Pi :$harbor_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+            harbor_running=1
+        fi
+    else
+        # Fallback: try /dev/tcp but suppress errors
+        if (echo > /dev/tcp/127.0.0.1/$harbor_port) 2>/dev/null; then
+            harbor_running=1
+        fi
+    fi
+
+    if [ $harbor_running -eq 0 ]; then
         echo "HarborServer is not running on port $harbor_port."
         echo ""
         echo "Please start it first:"
@@ -663,7 +700,7 @@ case "${1:-}" in
     interop)       shift; cmd_wire_interop "$@" ;;
     adaptive)      cmd_run_adaptive "${2:-}" ;;
     harbor)        cmd_harbor "${2:-}" "${3:-}" ;;
-    harbor-server) cmd_harbor_server "${2:-}" ;;
+    harbor-server) shift; cmd_harbor_server "$@" ;;
     consumer)    cmd_consumer ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;

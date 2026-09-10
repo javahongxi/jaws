@@ -61,6 +61,12 @@ public class ServiceStorage {
             int port = instance.getIntValue("port", 0);
             existing.removeIf(inst ->
                     ip.equals(inst.getString("ip")) && port == inst.getIntValue("port", 0));
+            
+            // Add registration time and last beat time for health check
+            long currentTime = System.currentTimeMillis();
+            instance.put("registerTime", currentTime);
+            instance.put("lastBeat", currentTime);
+            
             existing.add(instance);
             return existing;
         });

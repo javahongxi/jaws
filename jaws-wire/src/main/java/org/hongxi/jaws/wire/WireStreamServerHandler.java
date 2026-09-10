@@ -22,6 +22,7 @@ import org.hongxi.jaws.wire.reflection.ServerReflectionResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.SocketException;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
@@ -696,6 +697,13 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        // Ignore expected client disconnects (Connection reset, Broken pipe, etc.)
+        // These are normal when clients close connections abruptly or use wrong protocol
+        if (cause instanceof SocketException || cause.getCause() instanceof SocketException) {
+            log.debug("client disconnected: path={} error={}", path, cause.getMessage());
+            return;
+        }
+        
         log.error("stream exception: path={}", path, cause);
         if (!dispatched) {
             sendError(ctx, WireConstants.STATUS_INTERNAL, cause.getMessage());
