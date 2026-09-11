@@ -61,20 +61,6 @@ public class ConnectionManager {
     }
 
     /**
-     * @return the connection record, or null if not registered
-     */
-    public ConnectionRecord getConnection(String connectionId) {
-        return connections.get(connectionId);
-    }
-
-    /**
-     * @return true if the connection is registered and active
-     */
-    public boolean isRegistered(String connectionId) {
-        return connections.containsKey(connectionId);
-    }
-
-    /**
      * Push a Payload message to a specific connection via its BiStream.
      *
      * @return true if the push was enqueued, false if the connection is not found
