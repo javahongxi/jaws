@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -31,13 +30,6 @@ public class ConnectionManager {
     private static final Logger log = LoggerFactory.getLogger(ConnectionManager.class);
 
     private final Map<String, ConnectionRecord> connections = new ConcurrentHashMap<>();
-
-    /**
-     * Generate a unique connection ID for a new client.
-     */
-    public String generateConnectionId() {
-        return UUID.randomUUID().toString();
-    }
 
     /**
      * Register a connection after the client sends ConnectionSetupRequest
