@@ -24,7 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.net.SocketException;
+import java.io.IOException;
 
 /**
  * Base class for HTTP/2 based servers, adding the HTTP/2-specific parts on top
@@ -126,12 +126,14 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
                     }
                 }));
 
-        // Add exception handler to gracefully handle client disconnects before HTTP/2 handshake
+        // Add exception handler to gracefully handle expected client disconnects
+        // (Connection reset, Broken pipe, etc.) without propagating to the
+        // Http2ConnectionHandler which would attempt a GOAWAY and log the failure.
         pipeline.addLast("exception_handler", new ChannelInboundHandlerAdapter() {
             @Override
             public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-                if (cause instanceof SocketException || cause.getCause() instanceof SocketException) {
-                    log.debug("client disconnected before HTTP/2 handshake: {} error={}",
+                if (cause instanceof IOException || cause.getCause() instanceof IOException) {
+                    log.debug("client disconnected: {} error={}",
                             ctx.channel().remoteAddress(), cause.getMessage());
                     ctx.close();
                     return;
@@ -153,7 +155,13 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
             int count = 0;
             for (io.netty.channel.Channel ch : connectionChannels) {
                 if (ch.isActive()) {
-                    ch.writeAndFlush(new DefaultHttp2GoAwayFrame(Http2Error.NO_ERROR));
+                    ch.writeAndFlush(new DefaultHttp2GoAwayFrame(Http2Error.NO_ERROR))
+                            .addListener(f -> {
+                                if (!f.isSuccess()) {
+                                    log.debug("GOAWAY write failed (client likely disconnected): {}",
+                                            f.cause().getMessage());
+                                }
+                            });
                     count++;
                 }
             }
