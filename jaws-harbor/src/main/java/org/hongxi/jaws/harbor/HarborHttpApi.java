@@ -18,6 +18,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Minimal HTTP/1.1 JSON API for Harbor management (consumed by jaws-sample-admin).
@@ -29,7 +31,7 @@ import java.util.Map;
  *   <li>{@code GET /api/cluster} — cluster members</li>
  *   <li>{@code GET /api/connections} — active connection count</li>
  * </ul>
- * Runs on {@code grpcPort + 1}, zero external dependencies (JDK HttpServer only).
+ * Runs on {@code grpcPort + 10}, zero external dependencies (JDK HttpServer only).
  *
  * @author shenhongxi
  */
@@ -164,10 +166,31 @@ public class HarborHttpApi {
             }
 
             ConnectionManager connMgr = harborServer.getConnectionManager();
-            int activeConnections = connMgr.size();
+            Set<String> peerAddresses = harborServer.getClusterManager().allMembers().stream()
+                    .map(ClusterMember::address)
+                    .collect(Collectors.toSet());
+
+            JSONArray allConns = new JSONArray();
+            int clientCount = 0;
+
+            for (ConnectionManager.ConnectionRecord r : connMgr.allConnections()) {
+                JSONObject obj = new JSONObject();
+                obj.put("connectionId", r.connectionId());
+                obj.put("clientIp", r.clientIp());
+                obj.put("clientVersion", r.clientVersion());
+                obj.put("labels", r.labels());
+                boolean isPeer = peerAddresses.contains(r.clientIp());
+                obj.put("peer", isPeer);
+                allConns.add(obj);
+                if (!isPeer) {
+                    clientCount++;
+                }
+            }
 
             JSONObject result = new JSONObject();
-            result.put("activeConnections", activeConnections);
+            result.put("totalConnections", connMgr.size());
+            result.put("clientConnections", clientCount);
+            result.put("connections", allConns);
             sendJson(exchange, 200, result.toJSONString());
         }
     }

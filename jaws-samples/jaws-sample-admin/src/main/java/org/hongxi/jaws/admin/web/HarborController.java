@@ -128,21 +128,35 @@ public class HarborController {
 
     /**
      * Aggregated connections from all nodes.
+     * Returns total (including cluster peer connections) and client-only count.
      */
     @GetMapping("/connections")
     public JSONObject getConnections() {
         List<AdminConfig.NodeConfig> nodes = client.getNodes();
-        int total = 0;
+        int totalCount = 0;
+        int clientCount = 0;
+        JSONArray allConnections = new JSONArray();
 
         for (AdminConfig.NodeConfig node : nodes) {
             JSONObject nodeData = client.fetchFromNode(node.getUrl(), "/api/connections");
             if (!nodeData.getBooleanValue("error", false)) {
-                total += nodeData.getIntValue("activeConnections", 0);
+                totalCount += nodeData.getIntValue("totalConnections", 0);
+                clientCount += nodeData.getIntValue("clientConnections", 0);
+                JSONArray conns = nodeData.getJSONArray("connections");
+                if (conns != null) {
+                    for (int i = 0; i < conns.size(); i++) {
+                        JSONObject conn = conns.getJSONObject(i);
+                        conn.put("nodeName", node.getName());
+                        allConnections.add(conn);
+                    }
+                }
             }
         }
 
         JSONObject result = new JSONObject();
-        result.put("activeConnections", total);
+        result.put("totalConnections", totalCount);
+        result.put("clientConnections", clientCount);
+        result.put("connections", allConnections);
         return result;
     }
 
@@ -182,7 +196,7 @@ public class HarborController {
             // Fetch connections
             JSONObject connData = client.fetchFromNode(node.getUrl(), "/api/connections");
             if (!connData.getBooleanValue("error", false)) {
-                int connCount = connData.getIntValue("activeConnections", 0);
+                int connCount = connData.getIntValue("clientConnections", 0);
                 totalConnections += connCount;
                 connectionsByNode.put(node.getName(), connCount);
             }
@@ -191,7 +205,7 @@ public class HarborController {
         JSONObject overview = new JSONObject();
         overview.put("totalServices", totalServices);
         overview.put("totalConfigs", totalConfigs);
-        overview.put("activeConnections", totalConnections);
+        overview.put("clientConnections", totalConnections);
         overview.put("totalNodes", nodes.size());
         overview.put("nodeNames", nodeNames);
         overview.put("servicesByNode", servicesByNode);  // per-node service count

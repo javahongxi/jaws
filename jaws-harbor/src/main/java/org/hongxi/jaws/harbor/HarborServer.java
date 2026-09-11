@@ -5,6 +5,7 @@ import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
+import io.netty.channel.ChannelPipeline;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.config.ConfigStorage;
@@ -33,8 +34,10 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Jaws Harbor — a Nacos-compatible control plane server.
@@ -133,6 +136,13 @@ public class HarborServer {
      * BiRequestStream (bidi) on the same TCP connection share the same ID.
      */
     private final Map<String, String> connectionIdByClientIp = new ConcurrentHashMap<>();
+    /**
+     * Handlers waiting to be associated with a clientIp. Each new connection
+     * enqueues a handler in addOptionalChannelHandlers; handleServerCheck
+     * polls and claims it. This avoids any channel-ref passing.
+     */
+    private final Queue<ConnectionCleanupHandler> pendingCleanupHandlers =
+            new ConcurrentLinkedQueue<>();
 
     public HarborServer(URL url) {
         this(url, new GrpcHarborNodeTransport());
@@ -141,7 +151,7 @@ public class HarborServer {
     public HarborServer(URL url, HarborNodeTransport transport) {
         this.configStorage = new ConfigStorage(this::notifyConfigListener);
         this.serviceStorage = new ServiceStorage(this::notifySubscriber);
-        this.healthCheckManager = new HealthCheckManager(this.serviceStorage);
+        this.healthCheckManager = new HealthCheckManager(this.serviceStorage, this.connectionManager);
         this.clusterManager = new ClusterManager();
         String selfAddr = resolveSelfAddress(url.getHost()) + ":" + url.getPort();
         this.clusterManager.setSelfAddress(selfAddr);
@@ -154,7 +164,38 @@ public class HarborServer {
         registry.register(SERVICE_NAME_REQUEST, METHOD_REQUEST, new RequestHandler());
         registry.register(SERVICE_NAME_BI_STREAM, METHOD_BI_STREAM, new BiStreamHandler());
 
-        this.wireServer = new WireServer(url, registry);
+        this.wireServer = new WireServer(url, registry) {
+            @Override
+            protected void addOptionalChannelHandlers(ChannelPipeline pipeline) {
+                super.addOptionalChannelHandlers(pipeline);
+                // Close the connection on incoming GOAWAY and clean up connection
+                // state when the channel becomes inactive. Without this, a graceful
+                // client shutdown (GOAWAY) would leave the connection registered
+                // until the 90-second watchdog fires.
+                ConnectionCleanupHandler handler = new ConnectionCleanupHandler(HarborServer.this);
+                pipeline.addLast("conn_cleanup", handler);
+                pendingCleanupHandlers.add(handler);
+            }
+        };
+    }
+
+    /**
+     * Clean up connection state by clientIp. Called by {@link ConnectionCleanupHandler}
+     * when the connection channel becomes inactive (client GOAWAY, network failure, etc.).
+     * Deregisters instances, removes subscribers and config listeners.
+     */
+    void cleanupConnectionByClientIp(String clientIp) {
+        String connId = connectionIdByClientIp.remove(clientIp);
+        if (connId != null) {
+            connectionManager.remove(connId);
+            serviceStorage.removeAllSubscribersForConnection(connId);
+            configStorage.removeAllListenersForConnection(connId);
+            int removed = serviceStorage.deregisterInstancesByClientIp(clientIp);
+            if (removed > 0) {
+                log.info("[harbor] deregistered {} instance(s) on connection close: clientIp={}",
+                        removed, clientIp);
+            }
+        }
     }
 
     public void start() {
@@ -344,6 +385,12 @@ public class HarborServer {
             // Update heartbeat for all instances from this client (Nacos connection-level model)
             serviceStorage.updateHeartbeatByClientIp(clientIp);
 
+            // Touch the connection so the stale-connection watchdog knows it's alive
+            String connId = connectionIdByClientIp.get(clientIp);
+            if (connId != null) {
+                connectionManager.touch(connId);
+            }
+
             try {
                 return switch (type) {
                     // Naming
@@ -462,6 +509,10 @@ public class HarborServer {
                                 log.debug("[harbor] received ConfigChangeNotifyResponse ack");
                         default -> log.debug("[harbor] bi-stream received type={}", type);
                     }
+                    // Touch the connection on every inbound bi-stream message
+                    if (connectionId != null) {
+                        connectionManager.touch(connectionId);
+                    }
                 }
 
                 @Override
@@ -485,12 +536,18 @@ public class HarborServer {
                     connectionManager.remove(connId);
                     serviceStorage.removeAllSubscribersForConnection(connId);
                     configStorage.removeAllListenersForConnection(connId);
-                    // NOTE: Do NOT deregister instances here. The bi-stream is used for
-                    // server push notifications and can be cancelled/re-established by the
-                    // client independently of the actual connection lifecycle. Instance
-                    // lifecycle is managed by heartbeat timeout in HealthCheckManager.
+                    // Nacos 2.x connection-based health check model:
+                    // when the bi-stream closes, the client is gone — deregister
+                    // all its instances immediately and notify subscribers.
+                    // HealthCheckManager serves as a fallback for edge cases
+                    // (e.g. half-open TCP connections that haven't triggered onError yet).
                     if (clientIp != null) {
                         connectionIdByClientIp.remove(clientIp);
+                        int removed = serviceStorage.deregisterInstancesByClientIp(clientIp);
+                        if (removed > 0) {
+                            log.info("[harbor] deregistered {} instance(s) on disconnect for clientIp={}",
+                                    removed, clientIp);
+                        }
                     }
                 }
             });
@@ -515,6 +572,12 @@ public class HarborServer {
         String connectionId = UUID.randomUUID().toString();
         if (clientIp != null && !clientIp.isEmpty()) {
             connectionIdByClientIp.put(clientIp, connectionId);
+        }
+        // Claim the cleanup handler for this connection and set the clientIp
+        // so that channelInactive can deregister instances.
+        ConnectionCleanupHandler handler = pendingCleanupHandlers.poll();
+        if (handler != null) {
+            handler.setClientIp(clientIp);
         }
         ServerCheckResponse response = new ServerCheckResponse();
         response.setResultCode(200);

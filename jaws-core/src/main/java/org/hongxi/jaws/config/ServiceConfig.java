@@ -314,8 +314,10 @@ public class ServiceConfig<T> extends InterfaceConfig {
         for (Exporter<T> ep : exporters) {
             EXPORTED_SERVICES.add(ep.getProvider().getUrl().getIdentity());
         }
-        // Register JVM shutdown hook to trigger graceful shutdown
-        ShutdownHook.registerShutdownHook(this::unexport);
+        // Register JVM shutdown hook to trigger graceful shutdown.
+        // Priority 10: service unexport must run BEFORE registry close (default 20),
+        // so that deregister requests are sent while the naming client is still alive.
+        ShutdownHook.registerShutdownHook(this::unexport, 10);
     }
 
     private void afterUnexport() {

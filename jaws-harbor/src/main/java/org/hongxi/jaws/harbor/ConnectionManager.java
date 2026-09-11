@@ -6,6 +6,9 @@ import org.hongxi.jaws.transport.StreamSubject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,6 +35,13 @@ public class ConnectionManager {
     private final Map<String, ConnectionRecord> connections = new ConcurrentHashMap<>();
 
     /**
+     * Tracks the last activity timestamp (epoch millis) per connection.
+     * Updated on every inbound request from the client (unary or bi-stream).
+     * The watchdog uses this to detect and close dead connections.
+     */
+    private final Map<String, Long> lastActiveTime = new ConcurrentHashMap<>();
+
+    /**
      * Register a connection after the client sends ConnectionSetupRequest
      * via the BiRequestStream.
      *
@@ -45,6 +55,7 @@ public class ConnectionManager {
                          Map<String, String> labels, StreamSubject<Message> pushSubject) {
         connections.put(connectionId,
                 new ConnectionRecord(connectionId, clientIp, clientVersion, labels, pushSubject));
+        lastActiveTime.put(connectionId, System.currentTimeMillis());
         log.info("[harbor] connection registered: id={}, clientIp={}, version={}",
                 connectionId, clientIp, clientVersion);
     }
@@ -54,10 +65,46 @@ public class ConnectionManager {
      */
     public void remove(String connectionId) {
         ConnectionRecord removed = connections.remove(connectionId);
+        lastActiveTime.remove(connectionId);
         if (removed != null) {
             removed.pushSubject.onCompleted();
             log.info("[harbor] connection removed: id={}", connectionId);
         }
+    }
+
+    /**
+     * Update the last activity timestamp for a connection.
+     * Called on every inbound request from the client.
+     */
+    public void touch(String connectionId) {
+        lastActiveTime.put(connectionId, System.currentTimeMillis());
+    }
+
+    /**
+     * Remove connections whose last activity exceeds the timeout.
+     * Called by the periodic watchdog to clean up dead connections
+     * (e.g. half-open TCP after client process killed).
+     *
+     * @param timeoutMs the inactivity timeout in milliseconds
+     * @return list of removed connection records (caller should deregister instances)
+     */
+    public List<ConnectionRecord> removeStaleConnections(long timeoutMs) {
+        long now = System.currentTimeMillis();
+        List<ConnectionRecord> stale = new ArrayList<>();
+        for (Map.Entry<String, Long> entry : lastActiveTime.entrySet()) {
+            if (now - entry.getValue() > timeoutMs) {
+                String connId = entry.getKey();
+                ConnectionRecord removed = connections.remove(connId);
+                lastActiveTime.remove(connId);
+                if (removed != null) {
+                    removed.pushSubject.onCompleted();
+                    stale.add(removed);
+                    log.info("[harbor] stale connection removed: id={}, clientIp={}, inactive={}ms",
+                            connId, removed.clientIp(), now - entry.getValue());
+                }
+            }
+        }
+        return stale;
     }
 
     /**
@@ -79,6 +126,13 @@ public class ConnectionManager {
      */
     public int size() {
         return connections.size();
+    }
+
+    /**
+     * @return all active connection records (read-only view)
+     */
+    public Collection<ConnectionRecord> allConnections() {
+        return connections.values();
     }
 
     /**
