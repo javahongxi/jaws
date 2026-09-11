@@ -1,6 +1,6 @@
 package org.hongxi.jaws.harbor;
 
-import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSON;
 import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
@@ -29,7 +29,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * Verifies:
  * <ul>
  *   <li>Naming sync: register on node1 → visible on node2 and node3</li>
- *   <li>Config sync: publish on node2 → visible on node1 and node3</li>
  *   <li>Multi-instance sync: multiple services across nodes</li>
  * </ul>
  *
@@ -109,7 +108,7 @@ class HarborDistroClusterTest {
         // Register an instance on node1
         Instance instance = createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@demo-svc");
 
-        node1.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "demo-svc", instance);
+        node1.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "demo-svc", instance, "test-conn-1");
 
         // Trigger distro sync manually (in production, HarborServer.handleInstanceRequest does this)
         String key = "public@@DEFAULT_GROUP@@demo-svc";
@@ -135,7 +134,7 @@ class HarborDistroClusterTest {
         // Register on node2
         Instance instance = createInstance("10.0.0.2", 9090, "10.0.0.2#9090#DEFAULT_GROUP@@order-svc");
 
-        node2.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "order-svc", instance);
+        node2.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "order-svc", instance, "test-conn-2");
 
         String key = "public@@DEFAULT_GROUP@@order-svc";
         node2.getDistroProtocol().syncNamingChange(key, DistroProtocol.OP_CHANGE,
@@ -168,7 +167,7 @@ class HarborDistroClusterTest {
                 default -> node3;
             };
 
-            node.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "multi-svc", inst);
+            node.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "multi-svc", inst, "test-conn-" + i);
 
             String key = "public@@DEFAULT_GROUP@@multi-svc";
             node.getDistroProtocol().syncNamingChange(key, DistroProtocol.OP_CHANGE,
@@ -182,64 +181,6 @@ class HarborDistroClusterTest {
             assertEquals(3, instances.size(),
                     "Each node should have 3 instances, but " +
                             node.getClusterManager().allMembers() + " has " + instances.size());
-        }
-    }
-
-    // ========================================================================
-    // Config sync tests
-    // ========================================================================
-
-    @Test
-    void testConfigSyncFromNode2ToOthers() {
-        // Publish config on node2
-        node2.getConfigStorage().publishConfig("public", "app.yaml", "DEFAULT_GROUP",
-                "key: value-from-node2", "yaml");
-
-        // Trigger distro sync
-        String key = "public@@app.yaml@@DEFAULT_GROUP";
-        JSONObject syncData = new JSONObject();
-        syncData.put("content", "key: value-from-node2");
-        syncData.put("type", "yaml");
-        node2.getDistroProtocol().syncConfigChange(key, DistroProtocol.OP_CHANGE,
-                com.alibaba.fastjson2.JSON.toJSONBytes(syncData));
-
-        // Verify on node1
-        var record1 = node1.getConfigStorage().queryConfig("public", "app.yaml", "DEFAULT_GROUP");
-        assertNotNull(record1, "node1 should have the config");
-        assertEquals("key: value-from-node2", record1.content());
-
-        // Verify on node3
-        var record3 = node3.getConfigStorage().queryConfig("public", "app.yaml", "DEFAULT_GROUP");
-        assertNotNull(record3, "node3 should have the config");
-        assertEquals("key: value-from-node2", record3.content());
-    }
-
-    @Test
-    void testConfigSyncUpdate() {
-        // Publish initial version on node1
-        node1.getConfigStorage().publishConfig("public", "db.properties", "DEFAULT_GROUP",
-                "url=jdbc:mysql://localhost", "properties");
-        String key = "public@@db.properties@@DEFAULT_GROUP";
-        JSONObject syncData = new JSONObject();
-        syncData.put("content", "url=jdbc:mysql://localhost");
-        syncData.put("type", "properties");
-        node1.getDistroProtocol().syncConfigChange(key, DistroProtocol.OP_CHANGE,
-                com.alibaba.fastjson2.JSON.toJSONBytes(syncData));
-
-        // Update on node3
-        node3.getConfigStorage().publishConfig("public", "db.properties", "DEFAULT_GROUP",
-                "url=jdbc:mysql://remote-host", "properties");
-        JSONObject syncData2 = new JSONObject();
-        syncData2.put("content", "url=jdbc:mysql://remote-host");
-        syncData2.put("type", "properties");
-        node3.getDistroProtocol().syncConfigChange(key, DistroProtocol.OP_CHANGE,
-                com.alibaba.fastjson2.JSON.toJSONBytes(syncData2));
-
-        // All nodes should have the updated value
-        for (HarborServer node : List.of(node1, node2, node3)) {
-            var record = node.getConfigStorage().queryConfig("public", "db.properties", "DEFAULT_GROUP");
-            assertNotNull(record);
-            assertEquals("url=jdbc:mysql://remote-host", record.content());
         }
     }
 

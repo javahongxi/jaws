@@ -28,6 +28,8 @@ public class Instance {
     // server-side heartbeat tracking
     private long registerTime;
     private long lastBeat;
+    /** The gRPC connectionId that registered this instance (server-side internal). */
+    private String connectionId;
 
     public Instance() {
     }
@@ -118,5 +120,13 @@ public class Instance {
 
     public void setLastBeat(long lastBeat) {
         this.lastBeat = lastBeat;
+    }
+
+    public String getConnectionId() {
+        return connectionId;
+    }
+
+    public void setConnectionId(String connectionId) {
+        this.connectionId = connectionId;
     }
 }

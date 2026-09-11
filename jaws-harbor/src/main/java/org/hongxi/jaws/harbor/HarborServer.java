@@ -8,7 +8,6 @@ import com.google.protobuf.Parser;
 import io.netty.channel.ChannelPipeline;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
-import org.hongxi.jaws.harbor.config.ConfigStorage;
 import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.GrpcHarborNodeTransport;
@@ -53,8 +52,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * is fully compatible with nacos-client, so Jaws services can register with
  * jaws-harbor using the standard {@code nacos-client} SDK.
  * <p>
- * Phase 2 adds the Distro protocol for multi-node replication and a
- * config center with in-memory storage and listener push notifications.
+ * Phase 2 adds the Distro protocol for multi-node replication of
+ * service naming data.
  *
  * @author shenhongxi
  */
@@ -78,13 +77,6 @@ public class HarborServer {
     private static final String TYPE_NOTIFY_SUBSCRIBER_RESPONSE = "NotifySubscriberResponse";
     private static final String TYPE_HEALTH_CHECK_REQUEST = "HealthCheckRequest";
 
-    // Nacos config request types
-    private static final String TYPE_CONFIG_PUBLISH_REQUEST = "ConfigPublishRequest";
-    private static final String TYPE_CONFIG_QUERY_REQUEST = "ConfigQueryRequest";
-    private static final String TYPE_CONFIG_REMOVE_REQUEST = "ConfigRemoveRequest";
-    private static final String TYPE_CONFIG_BATCH_LISTEN_REQUEST = "ConfigBatchListenRequest";
-    private static final String TYPE_CONFIG_CHANGE_NOTIFY_RESPONSE = "ConfigChangeNotifyResponse";
-
     // Distro inter-node request types
     private static final String TYPE_DISTRO_SYNC_REQUEST = "DistroSyncRequest";
     private static final String TYPE_DISTRO_VERIFY_REQUEST = "DistroVerifyRequest";
@@ -98,13 +90,6 @@ public class HarborServer {
     private static final String TYPE_SERVICE_LIST_RESPONSE = "ServiceListResponse";
     private static final String TYPE_NOTIFY_SUBSCRIBER_REQUEST = "NotifySubscriberRequest";
     private static final String TYPE_HEALTH_CHECK_RESPONSE = "HealthCheckResponse";
-
-    // Nacos config response types
-    private static final String TYPE_CONFIG_PUBLISH_RESPONSE = "ConfigPublishResponse";
-    private static final String TYPE_CONFIG_QUERY_RESPONSE = "ConfigQueryResponse";
-    private static final String TYPE_CONFIG_REMOVE_RESPONSE = "ConfigRemoveResponse";
-    private static final String TYPE_CONFIG_BATCH_LISTEN_RESPONSE = "ConfigBatchListenResponse";
-    private static final String TYPE_CONFIG_CHANGE_NOTIFY_REQUEST = "ConfigChangeNotifyRequest";
 
     // Distro inter-node response types
     private static final String TYPE_DISTRO_SYNC_RESPONSE = "DistroSyncResponse";
@@ -124,7 +109,6 @@ public class HarborServer {
 
     private final ConnectionManager connectionManager = new ConnectionManager();
     private final ServiceStorage serviceStorage;
-    private final ConfigStorage configStorage;
     private final ClusterManager clusterManager;
     private final DistroProtocol distroProtocol;
     private final WireServer wireServer;
@@ -149,7 +133,6 @@ public class HarborServer {
     }
 
     public HarborServer(URL url, HarborNodeTransport transport) {
-        this.configStorage = new ConfigStorage(this::notifyConfigListener);
         this.serviceStorage = new ServiceStorage(this::notifySubscriber);
         this.healthCheckManager = new HealthCheckManager(this.serviceStorage, this.connectionManager);
         this.clusterManager = new ClusterManager();
@@ -158,7 +141,7 @@ public class HarborServer {
 
         DistroConfig distroConfig = new DistroConfig();
         this.distroProtocol = new DistroProtocol(clusterManager, distroConfig, transport,
-                serviceStorage, configStorage);
+                serviceStorage);
 
         WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register(SERVICE_NAME_REQUEST, METHOD_REQUEST, new RequestHandler());
@@ -182,18 +165,17 @@ public class HarborServer {
     /**
      * Clean up connection state by clientIp. Called by {@link ConnectionCleanupHandler}
      * when the connection channel becomes inactive (client GOAWAY, network failure, etc.).
-     * Deregisters instances, removes subscribers and config listeners.
+     * Deregisters instances and removes subscribers.
      */
     void cleanupConnectionByClientIp(String clientIp) {
         String connId = connectionIdByClientIp.remove(clientIp);
         if (connId != null) {
             connectionManager.remove(connId);
             serviceStorage.removeAllSubscribersForConnection(connId);
-            configStorage.removeAllListenersForConnection(connId);
-            int removed = serviceStorage.deregisterInstancesByClientIp(clientIp);
+            int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
             if (removed > 0) {
-                log.info("[harbor] deregistered {} instance(s) on connection close: clientIp={}",
-                        removed, clientIp);
+                log.info("[harbor] deregistered {} instance(s) on connection close: clientIp={}, connId={}",
+                        removed, clientIp, connId);
             }
         }
     }
@@ -253,10 +235,6 @@ public class HarborServer {
 
     public ServiceStorage getServiceStorage() {
         return serviceStorage;
-    }
-
-    public ConfigStorage getConfigStorage() {
-        return configStorage;
     }
 
     public ClusterManager getClusterManager() {
@@ -400,11 +378,6 @@ public class HarborServer {
                     case TYPE_SERVICE_QUERY_REQUEST -> handleServiceQuery(payload);
                     case TYPE_SERVICE_LIST_REQUEST -> handleServiceList(payload);
                     case TYPE_HEALTH_CHECK_REQUEST -> handleHealthCheck();
-                    // Config
-                    case TYPE_CONFIG_PUBLISH_REQUEST -> handleConfigPublish(payload, clientIp);
-                    case TYPE_CONFIG_QUERY_REQUEST -> handleConfigQuery(payload, clientIp);
-                    case TYPE_CONFIG_REMOVE_REQUEST -> handleConfigRemove(payload, clientIp);
-                    case TYPE_CONFIG_BATCH_LISTEN_REQUEST -> handleConfigBatchListen(payload, clientIp);
                     // Distro inter-node
                     case TYPE_DISTRO_SYNC_REQUEST -> handleDistroSync(payload);
                     case TYPE_DISTRO_VERIFY_REQUEST -> handleDistroVerify(payload);
@@ -504,9 +477,6 @@ public class HarborServer {
                         case TYPE_NOTIFY_SUBSCRIBER_RESPONSE ->
                             // Client ack for a NotifySubscriberRequest — no action needed
                                 log.debug("[harbor] received NotifySubscriberResponse ack");
-                        case TYPE_CONFIG_CHANGE_NOTIFY_RESPONSE ->
-                            // Client ack for a ConfigChangeNotifyRequest — no action needed
-                                log.debug("[harbor] received ConfigChangeNotifyResponse ack");
                         default -> log.debug("[harbor] bi-stream received type={}", type);
                     }
                     // Touch the connection on every inbound bi-stream message
@@ -535,19 +505,18 @@ public class HarborServer {
                 private void cleanupConnection(String connId) {
                     connectionManager.remove(connId);
                     serviceStorage.removeAllSubscribersForConnection(connId);
-                    configStorage.removeAllListenersForConnection(connId);
                     // Nacos 2.x connection-based health check model:
                     // when the bi-stream closes, the client is gone — deregister
-                    // all its instances immediately and notify subscribers.
-                    // HealthCheckManager serves as a fallback for edge cases
-                    // (e.g. half-open TCP connections that haven't triggered onError yet).
+                    // all instances registered by THIS connection (not by clientIp,
+                    // which would also remove instances from other connections on
+                    // the same machine, e.g. a co-located provider).
+                    int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
+                    if (removed > 0) {
+                        log.info("[harbor] deregistered {} instance(s) on disconnect for connId={}",
+                                removed, connId);
+                    }
                     if (clientIp != null) {
                         connectionIdByClientIp.remove(clientIp);
-                        int removed = serviceStorage.deregisterInstancesByClientIp(clientIp);
-                        if (removed > 0) {
-                            log.info("[harbor] deregistered {} instance(s) on disconnect for clientIp={}",
-                                    removed, clientIp);
-                        }
                     }
                 }
             });
@@ -608,7 +577,8 @@ public class HarborServer {
         }
 
         if (REGISTER_INSTANCE.equals(type)) {
-            serviceStorage.registerInstance(namespace, groupName, serviceName, instance);
+            String connId = connectionIdByClientIp.get(clientIp);
+            serviceStorage.registerInstance(namespace, groupName, serviceName, instance, connId);
             // Trigger distro sync to peers
             String key = namespace + "@@" + groupName + "@@" + serviceName;
             byte[] syncContent = JSON.toJSONBytes(instance);
@@ -697,113 +667,6 @@ public class HarborServer {
     }
 
     // ========================================================================
-    // Config handlers
-    // ========================================================================
-
-    private Payload handleConfigPublish(Payload payload, String clientIp) {
-        ConfigPublishRequest request = parseBody(payload, ConfigPublishRequest.class);
-        String dataId = request.getDataId();
-        String group = request.getGroup();
-        String tenant = request.getTenant();
-        if (tenant == null || tenant.isEmpty()) {
-            tenant = "public";
-        }
-        String content = request.getContent();
-        String type = request.getAdditionMap() != null
-                ? request.getAdditionMap().get("type")
-                : null;
-
-        boolean ok = configStorage.publishConfig(tenant, dataId, group, content, type);
-
-        // Trigger distro sync to peers
-        if (ok) {
-            String key = tenant + "@@" + dataId + "@@" + group;
-            ConfigSyncData syncData = new ConfigSyncData(content, type != null ? type : "text");
-            distroProtocol.syncConfigChange(key, DistroProtocol.OP_CHANGE,
-                    JSON.toJSONBytes(syncData));
-        }
-
-        ConfigPublishResponse response = new ConfigPublishResponse();
-        response.setResultCode(ok ? 200 : 500);
-        response.setSuccess(ok);
-        return buildPayload(TYPE_CONFIG_PUBLISH_RESPONSE, response, clientIp);
-    }
-
-    private Payload handleConfigQuery(Payload payload, String clientIp) {
-        ConfigQueryRequest request = parseBody(payload, ConfigQueryRequest.class);
-        String dataId = request.getDataId();
-        String group = request.getGroup();
-        String tenant = request.getTenant();
-        if (tenant == null || tenant.isEmpty()) {
-            tenant = "public";
-        }
-
-        ConfigStorage.ConfigRecord record = configStorage.queryConfig(tenant, dataId, group);
-
-        ConfigQueryResponse response = new ConfigQueryResponse();
-        response.setResultCode(200);
-        response.setSuccess(true);
-        if (record != null) {
-            response.setContent(record.content());
-            response.setMd5(record.md5());
-            response.setLastModified(record.lastModified());
-            response.setContentType(record.type());
-        } else {
-            response.setResultCode(302);
-            response.setSuccess(false);
-        }
-        return buildPayload(TYPE_CONFIG_QUERY_RESPONSE, response, clientIp);
-    }
-
-    private Payload handleConfigRemove(Payload payload, String clientIp) {
-        ConfigRemoveRequest request = parseBody(payload, ConfigRemoveRequest.class);
-        String dataId = request.getDataId();
-        String group = request.getGroup();
-        String tenant = request.getTenant();
-        if (tenant == null || tenant.isEmpty()) {
-            tenant = "public";
-        }
-
-        boolean ok = configStorage.removeConfig(tenant, dataId, group);
-
-        // Trigger distro sync
-        if (ok) {
-            String key = tenant + "@@" + dataId + "@@" + group;
-            distroProtocol.syncConfigChange(key, DistroProtocol.OP_DELETE, new byte[0]);
-        }
-
-        ConfigRemoveResponse response = new ConfigRemoveResponse();
-        response.setResultCode(ok ? 200 : 500);
-        response.setSuccess(ok);
-        return buildPayload(TYPE_CONFIG_REMOVE_RESPONSE, response, clientIp);
-    }
-
-    private Payload handleConfigBatchListen(Payload payload, String clientIp) {
-        ConfigBatchListenRequest request = parseBody(payload, ConfigBatchListenRequest.class);
-        boolean listen = request.isListen();
-        String connectionId = connectionIdByClientIp.get(clientIp);
-
-        if (connectionId != null && request.getConfigListenContexts() != null) {
-            for (ConfigBatchListenRequest.ConfigListenContext ctx : request.getConfigListenContexts()) {
-                String tenant = ctx.getTenant();
-                if (tenant == null || tenant.isEmpty()) {
-                    tenant = "public";
-                }
-                if (listen) {
-                    configStorage.addListener(tenant, ctx.getDataId(), ctx.getGroup(), connectionId);
-                } else {
-                    configStorage.removeListener(tenant, ctx.getDataId(), ctx.getGroup(), connectionId);
-                }
-            }
-        }
-
-        ConfigBatchListenResponse response = new ConfigBatchListenResponse();
-        response.setResultCode(200);
-        response.setSuccess(true);
-        return buildPayload(TYPE_CONFIG_BATCH_LISTEN_RESPONSE, response, clientIp);
-    }
-
-    // ========================================================================
     // Distro inter-node handlers
     // ========================================================================
 
@@ -889,45 +752,8 @@ public class HarborServer {
     }
 
     // ========================================================================
-    // Config change notification (server push via BiStream)
-    // ========================================================================
-
-    private void notifyConfigListener(String connectionId, String namespace,
-                                      String dataId, String group) {
-        ConfigChangeNotifyRequest push = new ConfigChangeNotifyRequest();
-        push.setDataId(dataId);
-        push.setGroup(group);
-        push.setTenant(namespace);
-
-        Payload pushPayload = buildPushPayload(TYPE_CONFIG_CHANGE_NOTIFY_REQUEST, push);
-        boolean pushed = connectionManager.pushToConnection(connectionId, pushPayload);
-        if (!pushed) {
-            log.debug("[harbor] failed to push config notify to connection {}: not found",
-                    connectionId);
-        }
-    }
-
-    // ========================================================================
     // Internal helper types
     // ========================================================================
-
-    /**
-     * Internal DTO for config sync data sent through Distro protocol.
-     */
-    static class ConfigSyncData {
-        private String content;
-        private String type;
-
-        ConfigSyncData() {}
-
-        ConfigSyncData(String content, String type) {
-            this.content = content;
-            this.type = type;
-        }
-
-        public String getContent() { return content; }
-        public String getType() { return type; }
-    }
 
     /**
      * Internal DTO for error responses that need an errorCode and message.

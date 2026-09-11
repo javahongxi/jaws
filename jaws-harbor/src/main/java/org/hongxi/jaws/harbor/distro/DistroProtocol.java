@@ -1,12 +1,10 @@
 package org.hongxi.jaws.harbor.distro;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.TypeReference;
 import org.hongxi.jaws.harbor.ServiceStorage;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
-import org.hongxi.jaws.harbor.config.ConfigStorage;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,8 +30,7 @@ import java.util.concurrent.TimeUnit;
  *   <li><b>Load</b> — on startup, load a snapshot from a peer to catch up on
  *       data that was written while this node was offline</li>
  * </ul>
- * Two resource types are managed: {@code naming} (service instances) and
- * {@code config} (configuration data).
+ * Two resource types are managed: {@code naming} (service instances).
  *
  * @author shenhongxi
  */
@@ -42,7 +39,6 @@ public class DistroProtocol {
     private static final Logger log = LoggerFactory.getLogger(DistroProtocol.class);
 
     public static final String RESOURCE_NAMING = "naming";
-    public static final String RESOURCE_CONFIG = "config";
 
     public static final String OP_CHANGE = "CHANGE";
     public static final String OP_DELETE = "DELETE";
@@ -51,7 +47,6 @@ public class DistroProtocol {
     private final DistroConfig distroConfig;
     private final HarborNodeTransport transport;
     private final ServiceStorage serviceStorage;
-    private final ConfigStorage configStorage;
 
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(2, r -> {
@@ -66,13 +61,11 @@ public class DistroProtocol {
     public DistroProtocol(ClusterManager clusterManager,
                           DistroConfig distroConfig,
                           HarborNodeTransport transport,
-                          ServiceStorage serviceStorage,
-                          ConfigStorage configStorage) {
+                          ServiceStorage serviceStorage) {
         this.clusterManager = clusterManager;
         this.distroConfig = distroConfig;
         this.transport = transport;
         this.serviceStorage = serviceStorage;
-        this.configStorage = configStorage;
     }
 
     /**
@@ -122,13 +115,6 @@ public class DistroProtocol {
         syncChange(RESOURCE_NAMING, resourceKey, operation, content);
     }
 
-    /**
-     * Sync a config data change to all peer nodes.
-     */
-    public void syncConfigChange(String resourceKey, String operation, byte[] content) {
-        syncChange(RESOURCE_CONFIG, resourceKey, operation, content);
-    }
-
     private void syncChange(String resourceType, String resourceKey,
                             String operation, byte[] content) {
         Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
@@ -164,9 +150,6 @@ public class DistroProtocol {
             if (RESOURCE_NAMING.equals(resourceType)) {
                 handleNamingSync(resourceKey, operation, content);
                 return true;
-            } else if (RESOURCE_CONFIG.equals(resourceType)) {
-                handleConfigSync(resourceKey, operation, content);
-                return true;
             }
             log.warn("[harbor] unknown distro resource type: {}", resourceType);
             return false;
@@ -195,9 +178,6 @@ public class DistroProtocol {
             if (RESOURCE_NAMING.equals(resourceType)) {
                 Map<String, List<Instance>> data = serviceStorage.getAllInstanceData();
                 return JSON.toJSONBytes(data);
-            } else if (RESOURCE_CONFIG.equals(resourceType)) {
-                Map<String, ConfigStorage.ConfigRecord> data = configStorage.getAllConfigs();
-                return JSON.toJSONBytes(data);
             }
         } catch (Exception e) {
             log.error("[harbor] error building snapshot for: {}", resourceType, e);
@@ -223,15 +203,9 @@ public class DistroProtocol {
             for (Map.Entry<String, Integer> e : serviceStorage.getVerifyChecksums().entrySet()) {
                 namingChecksums.put(e.getKey(), String.valueOf(e.getValue()));
             }
-            // Build config checksums: configKey → md5
-            Map<String, String> configChecksums = new java.util.HashMap<>();
-            for (Map.Entry<String, ConfigStorage.ConfigRecord> e : configStorage.getAllConfigs().entrySet()) {
-                configChecksums.put(e.getKey(), e.getValue().md5());
-            }
             for (ClusterMember peer : peers) {
                 try {
                     transport.syncVerify(peer.address(), RESOURCE_NAMING, namingChecksums);
-                    transport.syncVerify(peer.address(), RESOURCE_CONFIG, configChecksums);
                 } catch (Exception e) {
                     log.debug("[harbor] verify to {} failed: {}", peer.address(), e.getMessage());
                 }
@@ -267,22 +241,6 @@ public class DistroProtocol {
                     log.warn("[harbor] load naming from {} failed: {}", peer.address(), e.getMessage());
                 }
             }
-            for (ClusterMember peer : peers) {
-                try {
-                    log.info("[harbor] loading config snapshot from {}", peer.address());
-                    byte[] configSnapshot = transport.getSnapshot(peer.address(), RESOURCE_CONFIG);
-                    if (configSnapshot != null && configSnapshot.length > 0) {
-                        String json = new String(configSnapshot, StandardCharsets.UTF_8);
-                        Map<String, ConfigStorage.ConfigRecord> data =
-                                JSON.parseObject(json, new TypeReference<>() {});
-                        configStorage.applySnapshot(data);
-                        log.info("[harbor] config snapshot loaded from {}", peer.address());
-                        break;
-                    }
-                } catch (Exception e) {
-                    log.warn("[harbor] load config from {} failed: {}", peer.address(), e.getMessage());
-                }
-            }
         } catch (Exception e) {
             log.error("[harbor] load task error", e);
             // Retry after delay
@@ -314,27 +272,9 @@ public class DistroProtocol {
                     new String(content, StandardCharsets.UTF_8), Instance.class);
             String[] parts = resourceKey.split("@@");
             if (parts.length == 3 && instance != null) {
-                serviceStorage.registerInstance(parts[0], parts[1], parts[2], instance);
-            }
-        }
-    }
-
-    private void handleConfigSync(String resourceKey, String operation, byte[] content) {
-        if (OP_DELETE.equals(operation)) {
-            String[] parts = resourceKey.split("@@");
-            if (parts.length == 3) {
-                configStorage.removeConfig(parts[0], parts[1], parts[2]);
-            }
-            return;
-        }
-        if (content != null && content.length > 0) {
-            JSONObject configData = JSON.parseObject(
-                    new String(content, StandardCharsets.UTF_8));
-            String[] parts = resourceKey.split("@@");
-            if (parts.length == 3) {
-                configStorage.publishConfig(parts[0], parts[1], parts[2],
-                        configData.getString("content"),
-                        configData.getString("type"));
+                // Distro-synced instances carry the remote node's connectionId;
+                // pass null locally so they are not tied to a local connection.
+                serviceStorage.registerInstance(parts[0], parts[1], parts[2], instance, null);
             }
         }
     }

@@ -120,13 +120,6 @@
                 </div>
                 
                 <div class="metric">
-                    <div class="metric-label">Configs</div>
-                    <div class="metric-value" :class="{ mismatch: node.configsMismatch }">
-                        {{ node.configs !== null ? node.configs : '—' }}
-                    </div>
-                </div>
-                
-                <div class="metric">
                     <div class="metric-label">Cluster Members (not compared)</div>
                     <div class="metric-value" :class="{ mismatch: node.membersMismatch }">
                         {{ node.members !== null ? node.members : '—' }}
@@ -149,7 +142,7 @@
                 <div class="status-icon">✅</div>
                 <div>
                     <div class="status-text">All nodes are consistent</div>
-                    <div class="status-detail">Services and configs match across all nodes</div>
+                    <div class="status-detail">Services match across all nodes</div>
                 </div>
             </div>
             <div v-else class="consistency-status has-inconsistencies">
@@ -180,16 +173,6 @@
                         </td>
                         <td>
                             <span v-if="servicesConsistent" class="badge badge-green">Match</span>
-                            <span v-else class="badge badge-red">Mismatch</span>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><b>Configs</b></td>
-                        <td v-for="node in nodes" :key="node.name">
-                            {{ node.configs !== null ? node.configs : 'N/A' }}
-                        </td>
-                        <td>
-                            <span v-if="configsConsistent" class="badge badge-green">Match</span>
                             <span v-else class="badge badge-red">Mismatch</span>
                         </td>
                     </tr>
@@ -233,12 +216,6 @@ createApp({
             return new Set(values).size <= 1;
         });
         
-        const configsConsistent = computed(() => {
-            if (nodes.value.length === 0) return true;
-            const values = nodes.value.map(n => n.configs).filter(v => v !== null);
-            return new Set(values).size <= 1;
-        });
-        
         const membersConsistent = computed(() => {
             // Members not participating in consistency check
             return true;
@@ -250,14 +227,13 @@ createApp({
         });
         
         const allConsistent = computed(() => {
-            // Only services and configs participate in consistency check
-            return servicesConsistent.value && configsConsistent.value;
+            // Only services participate in consistency check
+            return servicesConsistent.value;
         });
         
         const inconsistencyDetails = computed(() => {
             const issues = [];
             if (!servicesConsistent.value) issues.push('Services');
-            if (!configsConsistent.value) issues.push('Configs');
             // Exclude members and connections from inconsistency reporting
             return `${issues.join(', ')} counts differ across nodes`;
         });
@@ -287,7 +263,6 @@ createApp({
                 // Build node list from configuration
                 const nodeNames = overview.nodeNames || [];
                 const servicesByNode = overview.servicesByNode || {};
-                const configsByNode = overview.configsByNode || {};
                 const connectionsByNode = overview.connectionsByNode || {};
                 
                 // Get cluster members count (same for all nodes in a consistent cluster)
@@ -304,20 +279,17 @@ createApp({
                 // Build node data
                 const nodeData = nodeNames.map(name => {
                     const services = servicesByNode[name] !== undefined ? servicesByNode[name] : null;
-                    const configs = configsByNode[name] !== undefined ? configsByNode[name] : null;
                     const connections = connectionsByNode[name] !== undefined ? connectionsByNode[name] : null;
-                    const online = services !== null || configs !== null || connections !== null;
+                    const online = services !== null || connections !== null;
                     
                     return {
                         name,
                         online,
                         services,
-                        configs,
                         members: memberCount > 0 ? memberCount : null,
                         connections,
                         isConsistent: false,
                         servicesMismatch: false,
-                        configsMismatch: false,
                         membersMismatch: false,
                         connectionsMismatch: false
                     };
@@ -325,16 +297,13 @@ createApp({
                 
                 // Calculate consistency for each node
                 const allServices = nodeData.map(n => n.services).filter(v => v !== null);
-                const allConfigs = nodeData.map(n => n.configs).filter(v => v !== null);
                 
                 const servicesConsistent = new Set(allServices).size <= 1;
-                const configsConsistent = new Set(allConfigs).size <= 1;
                 
                 // Update each node's consistency status
                 nodeData.forEach(node => {
-                    node.isConsistent = servicesConsistent && configsConsistent;
+                    node.isConsistent = servicesConsistent;
                     node.servicesMismatch = !servicesConsistent;
-                    node.configsMismatch = !configsConsistent;
                     node.membersMismatch = false;  // Not participating in consistency check
                     node.connectionsMismatch = false;  // Not participating in consistency check
                 });
@@ -352,7 +321,7 @@ createApp({
         
         return { 
             loading, loaded, nodes,
-            servicesConsistent, configsConsistent, membersConsistent, connectionsConsistent,
+            servicesConsistent, membersConsistent, connectionsConsistent,
             allConsistent, inconsistencyDetails,
             loadAll 
         };

@@ -67,6 +67,7 @@ public class GenericSampleConsumer {
         System.out.println("getUsers => " + r3);
 
         System.out.println("\nGeneric invocation done");
+        ref.destroy();
         System.exit(0);
     }
 

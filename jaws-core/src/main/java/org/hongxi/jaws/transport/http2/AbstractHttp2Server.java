@@ -135,6 +135,11 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
                 if (cause instanceof IOException || cause.getCause() instanceof IOException) {
                     log.debug("client disconnected: {} error={}",
                             ctx.channel().remoteAddress(), cause.getMessage());
+                    // Remove the HTTP/2 codec before closing so that
+                    // Http2ConnectionHandler does not attempt to send GOAWAY
+                    // on the broken socket (which would log "Sending GOAWAY
+                    // failed" with a noisy stack trace).
+                    ctx.pipeline().remove("http2_codec");
                     ctx.close();
                     return;
                 }

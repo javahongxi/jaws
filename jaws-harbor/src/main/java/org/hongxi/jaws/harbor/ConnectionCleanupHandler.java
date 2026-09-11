@@ -41,9 +41,13 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof Http2GoAwayFrame) {
             try {
-                log.info("[harbor] received GOAWAY from {}, closing connection",
+                log.info("[harbor] received GOAWAY from {}",
                         ctx.channel().remoteAddress());
-                ctx.close();
+                // Do NOT close the connection here. The nacos-client SDK
+                // reconnects on any connection close, causing an infinite
+                // loop (connect → GOAWAY → close → reconnect → ...).
+                // Let the bi-stream onError/onCompleted or the 90-second
+                // watchdog handle cleanup naturally.
             } finally {
                 ReferenceCountUtil.release(msg);
             }

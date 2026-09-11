@@ -58,46 +58,6 @@ public class HarborController {
     }
 
     /**
-     * Aggregated configs from all nodes, with per-node breakdown.
-     */
-    @GetMapping("/configs")
-    public JSONObject getConfigs() {
-        List<AdminConfig.NodeConfig> nodes = client.getNodes();
-        JSONArray allConfigs = new JSONArray();
-        JSONObject byNode = new JSONObject();  // per-node config count
-        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
-        int totalConfigs = 0;
-
-        for (AdminConfig.NodeConfig node : nodes) {
-            JSONObject nodeData = client.fetchFromNode(node.getUrl(), "/api/configs");
-            if (!nodeData.getBooleanValue("error", false)) {
-                int nodeConfigCount = nodeData.getIntValue("totalConfigs", 0);
-                totalConfigs += nodeConfigCount;
-                byNode.put(node.getName(), nodeConfigCount);
-                
-                JSONArray configs = nodeData.getJSONArray("configs");
-                if (configs != null) {
-                    for (int i = 0; i < configs.size(); i++) {
-                        JSONObject cfg = configs.getJSONObject(i);
-                        String key = cfg.getString("namespace") + "@@"
-                                + cfg.getString("group") + "@@"
-                                + cfg.getString("dataId");
-                        if (seen.add(key)) {
-                            allConfigs.add(cfg);
-                        }
-                    }
-                }
-            }
-        }
-
-        JSONObject result = new JSONObject();
-        result.put("totalConfigs", totalConfigs);
-        result.put("configs", allConfigs);
-        result.put("byNode", byNode);  // per-node breakdown
-        return result;
-    }
-
-    /**
      * Cluster info — fetched from the first reachable node.
      * The response already includes per-member services/connections counts.
      */
@@ -167,11 +127,9 @@ public class HarborController {
     public JSONObject getOverview() {
         List<AdminConfig.NodeConfig> nodes = client.getNodes();
         int totalServices = 0;
-        int totalConfigs = 0;
         int totalConnections = 0;
         JSONArray nodeNames = new JSONArray();
         JSONObject servicesByNode = new JSONObject();
-        JSONObject configsByNode = new JSONObject();
         JSONObject connectionsByNode = new JSONObject();
 
         for (AdminConfig.NodeConfig node : nodes) {
@@ -185,14 +143,6 @@ public class HarborController {
                 servicesByNode.put(node.getName(), svcCount);
             }
 
-            // Fetch configs
-            JSONObject cfgData = client.fetchFromNode(node.getUrl(), "/api/configs");
-            if (!cfgData.getBooleanValue("error", false)) {
-                int cfgCount = cfgData.getIntValue("totalConfigs", 0);
-                totalConfigs += cfgCount;
-                configsByNode.put(node.getName(), cfgCount);
-            }
-
             // Fetch connections
             JSONObject connData = client.fetchFromNode(node.getUrl(), "/api/connections");
             if (!connData.getBooleanValue("error", false)) {
@@ -204,12 +154,10 @@ public class HarborController {
 
         JSONObject overview = new JSONObject();
         overview.put("totalServices", totalServices);
-        overview.put("totalConfigs", totalConfigs);
         overview.put("clientConnections", totalConnections);
         overview.put("totalNodes", nodes.size());
         overview.put("nodeNames", nodeNames);
         overview.put("servicesByNode", servicesByNode);  // per-node service count
-        overview.put("configsByNode", configsByNode);    // per-node config count
         overview.put("connectionsByNode", connectionsByNode);  // per-node connection count
         return overview;
     }

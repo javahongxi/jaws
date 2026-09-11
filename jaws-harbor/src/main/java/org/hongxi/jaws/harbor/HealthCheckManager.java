@@ -90,13 +90,11 @@ public class HealthCheckManager {
             List<ConnectionManager.ConnectionRecord> staleConns =
                     connectionManager.removeStaleConnections(CONNECTION_TIMEOUT_MS);
             for (ConnectionManager.ConnectionRecord conn : staleConns) {
-                String clientIp = conn.clientIp();
-                if (clientIp != null) {
-                    int removed = serviceStorage.deregisterInstancesByClientIp(clientIp);
-                    if (removed > 0) {
-                        log.info("[harbor] watchdog deregistered {} instance(s) for dead connection: "
-                                + "connId={}, clientIp={}", removed, conn.connectionId(), clientIp);
-                    }
+                String connId = conn.connectionId();
+                int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
+                if (removed > 0) {
+                    log.info("[harbor] watchdog deregistered {} instance(s) for dead connection: "
+                            + "connId={}, clientIp={}", removed, connId, conn.clientIp());
                 }
             }
 

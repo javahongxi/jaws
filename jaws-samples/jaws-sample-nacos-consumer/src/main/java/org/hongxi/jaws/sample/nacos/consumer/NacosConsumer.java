@@ -133,7 +133,10 @@ public class NacosConsumer {
             System.out.println("server => " + serverUrl2.getHost() + ":" + serverUrl2.getPort());
         }
 
-        /* Sample calls done, force exit (non-daemon threads of Netty/Curator would prevent JVM auto-exit) */
+        /* Sample calls done — destroy references before exit to prevent
+           nacos-client shutdown hook from triggering reconnection loops. */
+        orderRef.destroy();
+        demoRef.destroy();
         System.exit(0);
     }
 

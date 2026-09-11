@@ -1,6 +1,7 @@
 package org.hongxi.jaws.cluster.directory;
 
 import org.hongxi.jaws.common.extension.ExtensionLoader;
+import org.hongxi.jaws.common.lifecycle.Closeable;
 import org.hongxi.jaws.registry.NotifyListener;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
@@ -80,8 +81,14 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             try {
                 Registry registry = getRegistry(registryUrl);
                 registry.unsubscribe(consumerUrl, this);
+                // Close the registry to release underlying resources
+                // (e.g. NacosRegistry closes NamingService and its gRPC connections).
+                // Without this, the registry's non-daemon threads prevent JVM exit.
+                if (registry instanceof Closeable) {
+                    ((Closeable) registry).close();
+                }
             } catch (Exception e) {
-                log.warn("Failed to unsubscribe for url={}, registry={}", url, registryUrl.getIdentity(), e);
+                log.warn("Failed to destroy registry for url={}, registry={}", url, registryUrl.getIdentity(), e);
             }
         }
     }

@@ -7,7 +7,6 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
-import org.hongxi.jaws.harbor.config.ConfigStorage;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +26,6 @@ import java.util.stream.Collectors;
  * Endpoints:
  * <ul>
  *   <li>{@code GET /api/services} — all registered services</li>
- *   <li>{@code GET /api/configs} — all configurations</li>
  *   <li>{@code GET /api/cluster} — cluster members</li>
  *   <li>{@code GET /api/connections} — active connection count</li>
  * </ul>
@@ -46,7 +44,6 @@ public class HarborHttpApi {
         this.harborServer = harborServer;
         this.httpServer = HttpServer.create(new InetSocketAddress(port), 0);
         this.httpServer.createContext("/api/services", new ServicesHandler());
-        this.httpServer.createContext("/api/configs", new ConfigsHandler());
         this.httpServer.createContext("/api/cluster", new ClusterHandler());
         this.httpServer.createContext("/api/connections", new ConnectionsHandler());
         this.httpServer.setExecutor(null); // use daemon threads
@@ -90,39 +87,6 @@ public class HarborHttpApi {
             JSONObject result = new JSONObject();
             result.put("totalServices", totalServices);
             result.put("services", services);
-            sendJson(exchange, 200, result.toJSONString());
-        }
-    }
-
-    private class ConfigsHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            if (!"GET".equals(exchange.getRequestMethod())) {
-                sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
-                return;
-            }
-
-            ConfigStorage storage = harborServer.getConfigStorage();
-            Map<String, ConfigStorage.ConfigRecord> allConfigs = storage.getAllConfigs();
-            JSONArray configs = new JSONArray();
-            int totalConfigs = 0;
-
-            for (Map.Entry<String, ConfigStorage.ConfigRecord> entry : allConfigs.entrySet()) {
-                JSONObject cfg = new JSONObject();
-                cfg.put("dataId", entry.getValue().dataId());
-                cfg.put("group", entry.getValue().group());
-                cfg.put("namespace", entry.getValue().namespace());
-                cfg.put("content", entry.getValue().content());
-                cfg.put("md5", entry.getValue().md5());
-                cfg.put("lastModified", entry.getValue().lastModified());
-                cfg.put("type", entry.getValue().type());
-                configs.add(cfg);
-                totalConfigs++;
-            }
-
-            JSONObject result = new JSONObject();
-            result.put("totalConfigs", totalConfigs);
-            result.put("configs", configs);
             sendJson(exchange, 200, result.toJSONString());
         }
     }

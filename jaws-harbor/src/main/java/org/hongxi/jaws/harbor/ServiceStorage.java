@@ -49,9 +49,13 @@ public class ServiceStorage {
 
     /**
      * Register an instance for the given service.
+     *
+     * @param connectionId the gRPC connectionId that registered this instance;
+     *                     used to scope deregistration to the owning connection
+     *                     so that other connections from the same clientIp are unaffected.
      */
     public void registerInstance(String namespace, String group, String serviceName,
-                                 Instance instance) {
+                                 Instance instance, String connectionId) {
         String key = buildKey(namespace, group, serviceName);
         instanceMap.compute(key, (k, existing) -> {
             if (existing == null) {
@@ -67,6 +71,7 @@ public class ServiceStorage {
             long currentTime = System.currentTimeMillis();
             instance.setRegisterTime(currentTime);
             instance.setLastBeat(currentTime);
+            instance.setConnectionId(connectionId);
 
             existing.add(instance);
             return existing;
@@ -295,13 +300,54 @@ public class ServiceStorage {
     }
 
     /**
+     * Remove all instances registered by the given connection across all services.
+     * Called when a client connection is closed (bi-stream completed/error or
+     * channelInactive). Only removes instances owned by this connection, leaving
+     * instances from other connections (even with the same clientIp) untouched.
+     * Notifies subscribers for each affected service.
+     *
+     * @param connectionId the connectionId from ServerCheck
+     * @return total number of instances removed
+     */
+    public int deregisterInstancesByConnectionId(String connectionId) {
+        if (connectionId == null || connectionId.isEmpty()) {
+            return 0;
+        }
+        int totalRemoved = 0;
+        for (Map.Entry<String, List<Instance>> entry : instanceMap.entrySet()) {
+            String serviceKey = entry.getKey();
+            List<Instance> instances = entry.getValue();
+            int before = instances.size();
+            instances.removeIf(inst -> connectionId.equals(inst.getConnectionId()));
+            int removed = before - instances.size();
+            if (removed > 0) {
+                totalRemoved += removed;
+                if (instances.isEmpty()) {
+                    instanceMap.remove(serviceKey);
+                }
+                // Parse serviceKey and notify subscribers
+                String[] parts = serviceKey.split("@@", 3);
+                if (parts.length == 3) {
+                    log.info("[harbor] instance(s) deregistered on disconnect: {} -> connId={} ({} instance(s))",
+                            serviceKey, connectionId, removed);
+                    notifySubscribers(serviceKey, parts[0], parts[1], parts[2]);
+                }
+            }
+        }
+        return totalRemoved;
+    }
+
+    /**
      * Remove all instances registered from the given client IP across all services.
      * Called when a client connection is closed (bi-stream completed/error).
      * Notifies subscribers for each affected service.
      *
      * @param clientIp the client IP from Payload metadata
      * @return total number of instances removed
+     * @deprecated use {@link #deregisterInstancesByConnectionId} to avoid
+     *             removing instances from other connections on the same clientIp
      */
+    @Deprecated
     public int deregisterInstancesByClientIp(String clientIp) {
         if (clientIp == null || clientIp.isEmpty()) {
             return 0;
