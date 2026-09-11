@@ -1,6 +1,5 @@
 package org.hongxi.jaws.harbor.distro;
 
-import com.alibaba.fastjson2.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,7 +23,7 @@ public class NoopHarborNodeTransport implements HarborNodeTransport {
     }
 
     @Override
-    public boolean syncVerify(String targetAddress, String resourceType, JSONObject checksums) {
+    public boolean syncVerify(String targetAddress, String resourceType, java.util.Map<String, String> checksums) {
         return true;
     }
 

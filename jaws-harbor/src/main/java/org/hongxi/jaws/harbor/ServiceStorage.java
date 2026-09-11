@@ -1,11 +1,12 @@
 package org.hongxi.jaws.harbor;
 
-import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONObject;
+import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,9 +31,9 @@ public class ServiceStorage {
 
     /**
      * Key: "namespace@@group@@serviceName"
-     * Value: list of registered instances (as JSON objects)
+     * Value: list of registered instances
      */
-    private final Map<String, List<JSONObject>> instanceMap = new ConcurrentHashMap<>();
+    private final Map<String, List<Instance>> instanceMap = new ConcurrentHashMap<>();
 
     /**
      * Key: "namespace@@group@@serviceName"
@@ -50,27 +51,27 @@ public class ServiceStorage {
      * Register an instance for the given service.
      */
     public void registerInstance(String namespace, String group, String serviceName,
-                                 JSONObject instance) {
+                                 Instance instance) {
         String key = buildKey(namespace, group, serviceName);
         instanceMap.compute(key, (k, existing) -> {
             if (existing == null) {
                 existing = new ArrayList<>();
             }
             // Replace existing instance with same ip#port, or add new
-            String ip = instance.getString("ip");
-            int port = instance.getIntValue("port", 0);
+            String ip = instance.getIp();
+            int port = instance.getPort();
             existing.removeIf(inst ->
-                    ip.equals(inst.getString("ip")) && port == inst.getIntValue("port", 0));
-            
+                    ip.equals(inst.getIp()) && port == inst.getPort());
+
             // Add registration time and last beat time for health check
             long currentTime = System.currentTimeMillis();
-            instance.put("registerTime", currentTime);
-            instance.put("lastBeat", currentTime);
-            
+            instance.setRegisterTime(currentTime);
+            instance.setLastBeat(currentTime);
+
             existing.add(instance);
             return existing;
         });
-        log.info("[harbor] instance registered: {} -> {}:{}", key, ip(instance), port(instance));
+        log.info("[harbor] instance registered: {} -> {}:{}", key, instance.getIp(), instance.getPort());
         notifySubscribers(key, namespace, group, serviceName);
     }
 
@@ -78,13 +79,13 @@ public class ServiceStorage {
      * Deregister an instance from the given service.
      */
     public void deregisterInstance(String namespace, String group, String serviceName,
-                                   JSONObject instance) {
+                                   Instance instance) {
         String key = buildKey(namespace, group, serviceName);
-        String ip = instance.getString("ip");
-        int port = instance.getIntValue("port", 0);
+        String ip = instance.getIp();
+        int port = instance.getPort();
         instanceMap.computeIfPresent(key, (k, existing) -> {
             existing.removeIf(inst ->
-                    ip.equals(inst.getString("ip")) && port == inst.getIntValue("port", 0));
+                    ip.equals(inst.getIp()) && port == inst.getPort());
             return existing.isEmpty() ? null : existing;
         });
         log.info("[harbor] instance deregistered: {} -> {}:{}", key, ip, port);
@@ -94,9 +95,9 @@ public class ServiceStorage {
     /**
      * Query all instances for the given service.
      */
-    public List<JSONObject> getInstances(String namespace, String group, String serviceName) {
+    public List<Instance> getInstances(String namespace, String group, String serviceName) {
         String key = buildKey(namespace, group, serviceName);
-        List<JSONObject> instances = instanceMap.get(key);
+        List<Instance> instances = instanceMap.get(key);
         return instances != null ? List.copyOf(instances) : List.of();
     }
 
@@ -155,39 +156,38 @@ public class ServiceStorage {
     }
 
     /**
-     * Build a ServiceInfo JSON object for the given service, including all instances.
+     * Build a {@link ServiceInfo} for the given service, including all instances.
      */
-    public JSONObject buildServiceInfo(String namespace, String group, String serviceName) {
-        List<JSONObject> instances = getInstances(namespace, group, serviceName);
+    public ServiceInfo buildServiceInfo(String namespace, String group, String serviceName) {
+        List<Instance> instances = getInstances(namespace, group, serviceName);
         String groupedName = group + "@@" + serviceName;
 
-        JSONObject serviceInfo = new JSONObject();
-        serviceInfo.put("name", groupedName);
-        serviceInfo.put("groupName", group);
-        serviceInfo.put("clusters", "");
-        serviceInfo.put("cacheMillis", 10000);
-        serviceInfo.put("lastRefTime", System.currentTimeMillis());
-        serviceInfo.put("checksum", "");
-        serviceInfo.put("allIPs", false);
-        serviceInfo.put("reachProtectionThreshold", false);
+        ServiceInfo info = new ServiceInfo();
+        info.setName(groupedName);
+        info.setGroupName(group);
+        info.setClusters("");
+        info.setCacheMillis(10000);
+        info.setLastRefTime(System.currentTimeMillis());
+        info.setChecksum("");
+        info.setAllIPs(false);
+        info.setReachProtectionThreshold(false);
 
-        JSONArray hosts = new JSONArray();
-        for (JSONObject inst : instances) {
-            JSONObject host = new JSONObject();
-            host.put("ip", inst.getString("ip"));
-            host.put("port", inst.getIntValue("port"));
-            host.put("weight", inst.containsKey("weight") ? inst.getDoubleValue("weight") : 1.0);
-            host.put("healthy", inst.getBooleanValue("healthy", true));
-            host.put("enabled", inst.getBooleanValue("enabled", true));
-            host.put("ephemeral", inst.getBooleanValue("ephemeral", true));
-            host.put("serviceName", groupedName);
-            host.put("instanceId", inst.getString("instanceId"));
-            host.put("metadata", inst.getJSONObject("metadata") != null
-                    ? inst.getJSONObject("metadata") : new JSONObject());
+        List<Instance> hosts = new ArrayList<>();
+        for (Instance inst : instances) {
+            Instance host = new Instance();
+            host.setIp(inst.getIp());
+            host.setPort(inst.getPort());
+            host.setWeight(inst.getWeight());
+            host.setHealthy(inst.isHealthy());
+            host.setEnabled(inst.isEnabled());
+            host.setEphemeral(inst.isEphemeral());
+            host.setServiceName(groupedName);
+            host.setInstanceId(inst.getInstanceId());
+            host.setMetadata(inst.getMetadata() != null ? inst.getMetadata() : new HashMap<>());
             hosts.add(host);
         }
-        serviceInfo.put("hosts", hosts);
-        return serviceInfo;
+        info.setHosts(hosts);
+        return info;
     }
 
     private void notifySubscribers(String key, String namespace, String group,
@@ -196,7 +196,7 @@ public class ServiceStorage {
         if (subscribers == null || subscribers.isEmpty()) {
             return;
         }
-        JSONObject serviceInfo = buildServiceInfo(namespace, group, serviceName);
+        ServiceInfo serviceInfo = buildServiceInfo(namespace, group, serviceName);
         for (String connId : subscribers) {
             listener.onServiceChange(connId, namespace, group, serviceName, serviceInfo);
         }
@@ -220,10 +220,10 @@ public class ServiceStorage {
         }
         int count = 0;
         long now = System.currentTimeMillis();
-        for (List<JSONObject> instances : instanceMap.values()) {
-            for (JSONObject inst : instances) {
-                if (clientIp.equals(inst.getString("ip"))) {
-                    inst.put("lastBeat", now);
+        for (List<Instance> instances : instanceMap.values()) {
+            for (Instance inst : instances) {
+                if (clientIp.equals(inst.getIp())) {
+                    inst.setLastBeat(now);
                     count++;
                 }
             }
@@ -240,11 +240,11 @@ public class ServiceStorage {
     public boolean updateInstanceHeartbeat(String namespace, String group, String serviceName,
                                            String ip, int port) {
         String key = buildKey(namespace, group, serviceName);
-        List<JSONObject> instances = instanceMap.get(key);
+        List<Instance> instances = instanceMap.get(key);
         if (instances != null) {
-            for (JSONObject inst : instances) {
-                if (ip.equals(inst.getString("ip")) && port == inst.getIntValue("port", 0)) {
-                    inst.put("lastBeat", System.currentTimeMillis());
+            for (Instance inst : instances) {
+                if (ip.equals(inst.getIp()) && port == inst.getPort()) {
+                    inst.setLastBeat(System.currentTimeMillis());
                     return true;
                 }
             }
@@ -261,15 +261,15 @@ public class ServiceStorage {
     public List<ExpiredInstance> getExpiredInstances(long timeoutMs) {
         long now = System.currentTimeMillis();
         List<ExpiredInstance> expired = new ArrayList<>();
-        for (Map.Entry<String, List<JSONObject>> entry : instanceMap.entrySet()) {
+        for (Map.Entry<String, List<Instance>> entry : instanceMap.entrySet()) {
             String serviceKey = entry.getKey();
-            for (JSONObject inst : entry.getValue()) {
-                long lastBeat = inst.getLongValue("lastBeat", 0);
+            for (Instance inst : entry.getValue()) {
+                long lastBeat = inst.getLastBeat();
                 if (lastBeat > 0 && now - lastBeat > timeoutMs) {
                     expired.add(new ExpiredInstance(
                             serviceKey,
-                            inst.getString("ip"),
-                            inst.getIntValue("port", 0)));
+                            inst.getIp(),
+                            inst.getPort()));
                 }
             }
         }
@@ -283,7 +283,7 @@ public class ServiceStorage {
     public void removeInstanceByIpPort(String serviceKey, String ip, int port) {
         instanceMap.computeIfPresent(serviceKey, (k, existing) -> {
             existing.removeIf(inst ->
-                    ip.equals(inst.getString("ip")) && port == inst.getIntValue("port", 0));
+                    ip.equals(inst.getIp()) && port == inst.getPort());
             return existing.isEmpty() ? null : existing;
         });
         // Parse serviceKey back to namespace/group/serviceName for notification
@@ -307,11 +307,11 @@ public class ServiceStorage {
             return 0;
         }
         int totalRemoved = 0;
-        for (Map.Entry<String, List<JSONObject>> entry : instanceMap.entrySet()) {
+        for (Map.Entry<String, List<Instance>> entry : instanceMap.entrySet()) {
             String serviceKey = entry.getKey();
-            List<JSONObject> instances = entry.getValue();
+            List<Instance> instances = entry.getValue();
             int before = instances.size();
-            instances.removeIf(inst -> clientIp.equals(inst.getString("ip")));
+            instances.removeIf(inst -> clientIp.equals(inst.getIp()));
             int removed = before - instances.size();
             if (removed > 0) {
                 totalRemoved += removed;
@@ -344,7 +344,7 @@ public class ServiceStorage {
      *
      * @return copy of the internal instance map
      */
-    public Map<String, List<JSONObject>> getAllInstanceData() {
+    public Map<String, List<Instance>> getAllInstanceData() {
         return Map.copyOf(instanceMap);
     }
 
@@ -352,8 +352,8 @@ public class ServiceStorage {
      * Apply a snapshot from a peer node — merges into local storage
      * without overwriting existing keys.
      */
-    public void applySnapshot(Map<String, List<JSONObject>> snapshot) {
-        for (Map.Entry<String, List<JSONObject>> entry : snapshot.entrySet()) {
+    public void applySnapshot(Map<String, List<Instance>> snapshot) {
+        for (Map.Entry<String, List<Instance>> entry : snapshot.entrySet()) {
             instanceMap.putIfAbsent(entry.getKey(), new ArrayList<>(entry.getValue()));
         }
         log.info("[harbor] naming snapshot applied, keys={}", instanceMap.size());
@@ -363,8 +363,8 @@ public class ServiceStorage {
      * Build a verify-data map: serviceKey → count of instances (simple checksum).
      */
     public Map<String, Integer> getVerifyChecksums() {
-        Map<String, Integer> result = new java.util.HashMap<>();
-        for (Map.Entry<String, List<JSONObject>> entry : instanceMap.entrySet()) {
+        Map<String, Integer> result = new HashMap<>();
+        for (Map.Entry<String, List<Instance>> entry : instanceMap.entrySet()) {
             result.put(entry.getKey(), entry.getValue().size());
         }
         return result;
@@ -374,19 +374,11 @@ public class ServiceStorage {
         return namespace + "@@" + group + "@@" + serviceName;
     }
 
-    private static String ip(JSONObject instance) {
-        return instance.getString("ip");
-    }
-
-    private static int port(JSONObject instance) {
-        return instance.getIntValue("port", 0);
-    }
-
     /**
      * Callback for notifying subscribers of service changes.
      */
     public interface SubscriberListener {
         void onServiceChange(String connectionId, String namespace, String group,
-                             String serviceName, JSONObject serviceInfo);
+                             String serviceName, ServiceInfo serviceInfo);
     }
 }

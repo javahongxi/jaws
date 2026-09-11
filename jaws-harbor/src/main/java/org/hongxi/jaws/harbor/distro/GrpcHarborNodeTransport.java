@@ -1,10 +1,15 @@
 package org.hongxi.jaws.harbor.distro;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.harbor.model.request.DistroSnapshotRequest;
+import org.hongxi.jaws.harbor.model.request.DistroSyncRequest;
+import org.hongxi.jaws.harbor.model.request.DistroVerifyRequest;
+import org.hongxi.jaws.harbor.model.response.DistroSnapshotResponse;
+import org.hongxi.jaws.harbor.model.response.DistroSyncResponse;
+import org.hongxi.jaws.harbor.model.response.DistroVerifyResponse;
 import org.hongxi.jaws.harbor.proto.Metadata;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.rpc.DefaultRequest;
@@ -51,50 +56,54 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
     @Override
     public boolean syncData(String targetAddress, String resourceType, String resourceKey,
                             String operation, byte[] content) {
-        JSONObject body = new JSONObject();
-        body.put("resourceType", resourceType);
-        body.put("resourceKey", resourceKey);
-        body.put("operation", operation);
-        body.put("content", content != null
+        DistroSyncRequest request = new DistroSyncRequest();
+        request.setResourceType(resourceType);
+        request.setResourceKey(resourceKey);
+        request.setOperation(operation);
+        request.setContent(content != null
                 ? java.util.Base64.getEncoder().encodeToString(content) : "");
 
-        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_SYNC_REQUEST, body);
+        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_SYNC_REQUEST,
+                JSON.toJSONBytes(request));
         if (responsePayload == null) {
             return false;
         }
-        JSONObject responseBody = parseBody(responsePayload);
-        return responseBody.getIntValue("resultCode") == 200;
+        DistroSyncResponse response = parseBody(responsePayload, DistroSyncResponse.class);
+        return response.getResultCode() == 200;
     }
 
     @Override
-    public boolean syncVerify(String targetAddress, String resourceType, JSONObject checksums) {
-        JSONObject body = new JSONObject();
-        body.put("resourceType", resourceType);
-        body.put("checksums", checksums);
+    public boolean syncVerify(String targetAddress, String resourceType,
+                              Map<String, String> checksums) {
+        DistroVerifyRequest request = new DistroVerifyRequest();
+        request.setResourceType(resourceType);
+        request.setChecksums(checksums);
 
-        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_VERIFY_REQUEST, body);
+        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_VERIFY_REQUEST,
+                JSON.toJSONBytes(request));
         if (responsePayload == null) {
             return false;
         }
-        JSONObject responseBody = parseBody(responsePayload);
-        return responseBody.getIntValue("resultCode") == 200;
+        DistroVerifyResponse response = parseBody(responsePayload, DistroVerifyResponse.class);
+        return response.getResultCode() == 200;
     }
 
     @Override
     public byte[] getSnapshot(String targetAddress, String resourceType) {
-        JSONObject body = new JSONObject();
-        body.put("resourceType", resourceType);
+        DistroSnapshotRequest request = new DistroSnapshotRequest();
+        request.setResourceType(resourceType);
 
-        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_SNAPSHOT_REQUEST, body);
+        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_SNAPSHOT_REQUEST,
+                JSON.toJSONBytes(request));
         if (responsePayload == null) {
             return null;
         }
-        JSONObject responseBody = parseBody(responsePayload);
-        if (responseBody.getIntValue("resultCode") != 200) {
-            log.warn("[harbor] snapshot from {} failed: {}", targetAddress, responseBody);
+        DistroSnapshotResponse response = parseBody(responsePayload, DistroSnapshotResponse.class);
+        if (response.getResultCode() != 200) {
+            log.warn("[harbor] snapshot from {} failed: {}", targetAddress, response);
             return null;
         }
-        String base64Content = responseBody.getString("content");
+        String base64Content = response.getContent();
         if (base64Content == null || base64Content.isEmpty()) {
             return new byte[0];
         }
@@ -123,10 +132,15 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
      * Send a unary Distro request to a peer Harbor server and return the
      * response Payload, or null if the call failed.
      */
-    private Payload sendRequest(String targetAddress, String type, JSONObject body) {
+    private Payload sendRequest(String targetAddress, String type, byte[] jsonBody) {
         try {
             WireClient client = getOrCreateClient(targetAddress);
-            Payload requestPayload = buildPayload(type, body);
+            Payload requestPayload = Payload.newBuilder()
+                    .setMetadata(Metadata.newBuilder().setType(type).build())
+                    .setBody(Any.newBuilder()
+                            .setValue(ByteString.copyFrom(jsonBody))
+                            .build())
+                    .build();
 
             DefaultRequest request = new DefaultRequest();
             request.setInterfaceName(SERVICE_NAME);
@@ -173,23 +187,15 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
         });
     }
 
-    private static Payload buildPayload(String type, JSONObject body) {
-        byte[] jsonBytes = JSON.toJSONBytes(body);
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(type)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
-    }
-
-    private static JSONObject parseBody(Payload payload) {
+    private static <T> T parseBody(Payload payload, Class<T> clazz) {
         byte[] bytes = payload.getBody().getValue().toByteArray();
         if (bytes.length == 0) {
-            return new JSONObject();
+            try {
+                return clazz.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to create empty " + clazz.getSimpleName(), e);
+            }
         }
-        return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8));
+        return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), clazz);
     }
 }

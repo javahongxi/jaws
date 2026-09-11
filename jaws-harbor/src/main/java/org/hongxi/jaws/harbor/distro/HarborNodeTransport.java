@@ -1,6 +1,6 @@
 package org.hongxi.jaws.harbor.distro;
 
-import com.alibaba.fastjson2.JSONObject;
+import java.util.Map;
 
 /**
  * Transport abstraction for inter-node Distro protocol communication.
@@ -35,7 +35,7 @@ public interface HarborNodeTransport {
      * @param checksums     map of resourceKey → checksum for verification
      * @return true if verify succeeded
      */
-    boolean syncVerify(String targetAddress, String resourceType, JSONObject checksums);
+    boolean syncVerify(String targetAddress, String resourceType, Map<String, String> checksums);
 
     /**
      * Request a full snapshot from a peer node.

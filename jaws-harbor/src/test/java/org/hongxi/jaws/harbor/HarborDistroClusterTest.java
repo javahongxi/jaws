@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
+import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -106,64 +107,48 @@ class HarborDistroClusterTest {
     @Test
     void testNamingSyncFromNode1ToOthers() {
         // Register an instance on node1
-        JSONObject instance = new JSONObject();
-        instance.put("ip", "10.0.0.1");
-        instance.put("port", 8080);
-        instance.put("instanceId", "10.0.0.1#8080#DEFAULT_GROUP@@demo-svc");
-        instance.put("healthy", true);
-        instance.put("enabled", true);
-        instance.put("ephemeral", true);
-        instance.put("weight", 1.0);
+        Instance instance = createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@demo-svc");
 
         node1.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "demo-svc", instance);
 
         // Trigger distro sync manually (in production, HarborServer.handleInstanceRequest does this)
         String key = "public@@DEFAULT_GROUP@@demo-svc";
-        JSONObject syncBody = new JSONObject();
-        syncBody.put("instance", instance);
         node1.getDistroProtocol().syncNamingChange(key, DistroProtocol.OP_CHANGE,
-                com.alibaba.fastjson2.JSON.toJSONBytes(syncBody));
+                com.alibaba.fastjson2.JSON.toJSONBytes(instance));
 
         // Verify on node2
-        List<JSONObject> node2Instances = node2.getServiceStorage()
+        List<Instance> node2Instances = node2.getServiceStorage()
                 .getInstances("public", "DEFAULT_GROUP", "demo-svc");
         assertEquals(1, node2Instances.size(), "node2 should have the instance");
-        assertEquals("10.0.0.1", node2Instances.get(0).getString("ip"));
-        assertEquals(8080, node2Instances.get(0).getIntValue("port"));
+        assertEquals("10.0.0.1", node2Instances.get(0).getIp());
+        assertEquals(8080, node2Instances.get(0).getPort());
 
         // Verify on node3
-        List<JSONObject> node3Instances = node3.getServiceStorage()
+        List<Instance> node3Instances = node3.getServiceStorage()
                 .getInstances("public", "DEFAULT_GROUP", "demo-svc");
         assertEquals(1, node3Instances.size(), "node3 should have the instance");
-        assertEquals("10.0.0.1", node3Instances.get(0).getString("ip"));
+        assertEquals("10.0.0.1", node3Instances.get(0).getIp());
     }
 
     @Test
     void testNamingSyncFromNode2ToOthers() {
         // Register on node2
-        JSONObject instance = new JSONObject();
-        instance.put("ip", "10.0.0.2");
-        instance.put("port", 9090);
-        instance.put("instanceId", "10.0.0.2#9090#DEFAULT_GROUP@@order-svc");
-        instance.put("healthy", true);
-        instance.put("enabled", true);
+        Instance instance = createInstance("10.0.0.2", 9090, "10.0.0.2#9090#DEFAULT_GROUP@@order-svc");
 
         node2.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "order-svc", instance);
 
         String key = "public@@DEFAULT_GROUP@@order-svc";
-        JSONObject syncBody = new JSONObject();
-        syncBody.put("instance", instance);
         node2.getDistroProtocol().syncNamingChange(key, DistroProtocol.OP_CHANGE,
-                com.alibaba.fastjson2.JSON.toJSONBytes(syncBody));
+                com.alibaba.fastjson2.JSON.toJSONBytes(instance));
 
         // Verify on node1
-        List<JSONObject> node1Instances = node1.getServiceStorage()
+        List<Instance> node1Instances = node1.getServiceStorage()
                 .getInstances("public", "DEFAULT_GROUP", "order-svc");
         assertEquals(1, node1Instances.size());
-        assertEquals("10.0.0.2", node1Instances.get(0).getString("ip"));
+        assertEquals("10.0.0.2", node1Instances.get(0).getIp());
 
         // Verify on node3
-        List<JSONObject> node3Instances = node3.getServiceStorage()
+        List<Instance> node3Instances = node3.getServiceStorage()
                 .getInstances("public", "DEFAULT_GROUP", "order-svc");
         assertEquals(1, node3Instances.size());
     }
@@ -172,10 +157,10 @@ class HarborDistroClusterTest {
     void testMultipleServicesSyncAcrossCluster() {
         // Register multiple services on different nodes
         for (int i = 0; i < 3; i++) {
-            JSONObject inst = new JSONObject();
-            inst.put("ip", "10.0.1." + (i + 1));
-            inst.put("port", 7000 + i);
-            inst.put("instanceId", "10.0.1." + (i + 1) + "#" + (7000 + i) + "#DEFAULT_GROUP@@multi-svc");
+            Instance inst = new Instance();
+            inst.setIp("10.0.1." + (i + 1));
+            inst.setPort(7000 + i);
+            inst.setInstanceId("10.0.1." + (i + 1) + "#" + (7000 + i) + "#DEFAULT_GROUP@@multi-svc");
 
             HarborServer node = switch (i) {
                 case 0 -> node1;
@@ -186,15 +171,13 @@ class HarborDistroClusterTest {
             node.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "multi-svc", inst);
 
             String key = "public@@DEFAULT_GROUP@@multi-svc";
-            JSONObject syncBody = new JSONObject();
-            syncBody.put("instance", inst);
             node.getDistroProtocol().syncNamingChange(key, DistroProtocol.OP_CHANGE,
-                    com.alibaba.fastjson2.JSON.toJSONBytes(syncBody));
+                    com.alibaba.fastjson2.JSON.toJSONBytes(inst));
         }
 
         // All 3 nodes should have all 3 instances of "multi-svc"
         for (HarborServer node : List.of(node1, node2, node3)) {
-            List<JSONObject> instances = node.getServiceStorage()
+            List<Instance> instances = node.getServiceStorage()
                     .getInstances("public", "DEFAULT_GROUP", "multi-svc");
             assertEquals(3, instances.size(),
                     "Each node should have 3 instances, but " +
@@ -296,6 +279,18 @@ class HarborDistroClusterTest {
         return new HarborServer(url, transport);
     }
 
+    private static Instance createInstance(String ip, int port, String instanceId) {
+        Instance instance = new Instance();
+        instance.setIp(ip);
+        instance.setPort(port);
+        instance.setInstanceId(instanceId);
+        instance.setHealthy(true);
+        instance.setEnabled(true);
+        instance.setEphemeral(true);
+        instance.setWeight(1.0);
+        return instance;
+    }
+
     /**
      * In-memory {@link HarborNodeTransport} that routes Distro messages
      * directly between nodes' {@link DistroProtocol} instances within the
@@ -321,7 +316,7 @@ class HarborDistroClusterTest {
 
         @Override
         public boolean syncVerify(String targetAddress, String resourceType,
-                                  JSONObject checksums) {
+                                  Map<String, String> checksums) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
                 return target.onVerify(resourceType, checksums);

@@ -8,6 +8,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.config.ConfigStorage;
+import org.hongxi.jaws.harbor.model.Instance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,11 +73,11 @@ public class HarborHttpApi {
             }
 
             ServiceStorage storage = harborServer.getServiceStorage();
-            Map<String, List<JSONObject>> allData = storage.getAllInstanceData();
+            Map<String, List<Instance>> allData = storage.getAllInstanceData();
             JSONArray services = new JSONArray();
             int totalServices = 0;
 
-            for (Map.Entry<String, List<JSONObject>> entry : allData.entrySet()) {
+            for (Map.Entry<String, List<Instance>> entry : allData.entrySet()) {
                 JSONObject svc = new JSONObject();
                 svc.put("serviceName", entry.getKey());
                 svc.put("instances", entry.getValue());

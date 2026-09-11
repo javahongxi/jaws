@@ -293,7 +293,13 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             // Business streaming: extract frames incrementally
             if (bidiStream || clientStream) {
                 processStreamFrames(ctx);
-                if (dataFrame.isEndStream() && streamRequestObserver != null) {
+                // For client-streaming, END_STREAM means the client finished sending
+                // and the handler should produce its single response.
+                // For bidirectional streams, END_STREAM only means the client closed
+                // its write side — the server must keep the stream open for push
+                // notifications (Nacos BiRequestStream pattern). The handler controls
+                // the response lifecycle independently via its StreamSource.
+                if (!bidiStream && dataFrame.isEndStream() && streamRequestObserver != null) {
                     streamRequestObserver.onCompleted();
                 }
                 return;
@@ -404,6 +410,13 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
      * forwarding.
      */
     protected void dispatchStream(ChannelHandlerContext ctx, StreamSource<?> source) {
+        // Send response headers immediately so the client knows the server has
+        // accepted the streaming call.  Without this, gRPC clients (notably
+        // nacos-client's BiRequestStream) wait for the headers, consider the
+        // stream failed, and reconnect in a tight loop.
+        sendResponseHeaders(ctx);
+        ctx.flush();
+
         // Bridge the source into a buffered StreamSubject immediately.
         // This ensures items emitted before the network subscriber attaches
         // are captured rather than dropped (hot source protection).

@@ -1,7 +1,6 @@
 package org.hongxi.jaws.harbor;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
@@ -13,7 +12,14 @@ import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.GrpcHarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
+import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.Request;
+import org.hongxi.jaws.harbor.model.Response;
+import org.hongxi.jaws.harbor.model.ServiceInfo;
+import org.hongxi.jaws.harbor.proto.Metadata;
 import org.hongxi.jaws.harbor.proto.Payload;
+import org.hongxi.jaws.harbor.model.request.*;
+import org.hongxi.jaws.harbor.model.response.*;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
@@ -26,7 +32,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,6 +67,7 @@ public class HarborServer {
     // Nacos naming request types
     private static final String TYPE_SERVER_CHECK_REQUEST = "ServerCheckRequest";
     private static final String TYPE_CONNECTION_SETUP_REQUEST = "ConnectionSetupRequest";
+    private static final String TYPE_SETUP_ACK_REQUEST = "SetupAckRequest";
     private static final String TYPE_INSTANCE_REQUEST = "InstanceRequest";
     private static final String TYPE_SUBSCRIBE_SERVICE_REQUEST = "SubscribeServiceRequest";
     private static final String TYPE_SERVICE_QUERY_REQUEST = "ServiceQueryRequest";
@@ -252,10 +258,28 @@ public class HarborServer {
     // Payload helpers
     // ========================================================================
 
-    static Payload buildPayload(String type, JSONObject body) {
-        byte[] jsonBytes = JSON.toJSONBytes(body);
+    /**
+     * Deserialize the Payload body into a typed request object.
+     */
+    static <T extends Request> T parseBody(Payload payload, Class<T> clazz) {
+        byte[] bytes = payload.getBody().getValue().toByteArray();
+        if (bytes.length == 0) {
+            try {
+                return clazz.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to create empty " + clazz.getSimpleName(), e);
+            }
+        }
+        return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), clazz);
+    }
+
+    /**
+     * Build a Payload envelope wrapping a typed response object.
+     */
+    static Payload buildPayload(String type, Response response) {
+        byte[] jsonBytes = JSON.toJSONBytes(response);
         return Payload.newBuilder()
-                .setMetadata(org.hongxi.jaws.harbor.proto.Metadata.newBuilder()
+                .setMetadata(Metadata.newBuilder()
                         .setType(type)
                         .build())
                 .setBody(Any.newBuilder()
@@ -264,10 +288,13 @@ public class HarborServer {
                 .build();
     }
 
-    static Payload buildPayload(String type, JSONObject body, String clientIp) {
-        byte[] jsonBytes = JSON.toJSONBytes(body);
+    /**
+     * Build a Payload envelope wrapping a typed response object with clientIp.
+     */
+    static Payload buildPayload(String type, Response response, String clientIp) {
+        byte[] jsonBytes = JSON.toJSONBytes(response);
         return Payload.newBuilder()
-                .setMetadata(org.hongxi.jaws.harbor.proto.Metadata.newBuilder()
+                .setMetadata(Metadata.newBuilder()
                         .setType(type)
                         .setClientIp(clientIp)
                         .build())
@@ -277,12 +304,19 @@ public class HarborServer {
                 .build();
     }
 
-    static JSONObject parseBody(Payload payload) {
-        byte[] bytes = payload.getBody().getValue().toByteArray();
-        if (bytes.length == 0) {
-            return new JSONObject();
-        }
-        return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8));
+    /**
+     * Build a Payload envelope wrapping a typed push request object.
+     */
+    static Payload buildPushPayload(String type, Request pushRequest) {
+        byte[] jsonBytes = JSON.toJSONBytes(pushRequest);
+        return Payload.newBuilder()
+                .setMetadata(Metadata.newBuilder()
+                        .setType(type)
+                        .build())
+                .setBody(Any.newBuilder()
+                        .setValue(ByteString.copyFrom(jsonBytes))
+                        .build())
+                .build();
     }
 
     // ========================================================================
@@ -318,7 +352,7 @@ public class HarborServer {
                     case TYPE_SUBSCRIBE_SERVICE_REQUEST -> handleSubscribe(payload, clientIp);
                     case TYPE_SERVICE_QUERY_REQUEST -> handleServiceQuery(payload);
                     case TYPE_SERVICE_LIST_REQUEST -> handleServiceList(payload);
-                    case TYPE_HEALTH_CHECK_REQUEST -> handleHealthCheck(payload);
+                    case TYPE_HEALTH_CHECK_REQUEST -> handleHealthCheck();
                     // Config
                     case TYPE_CONFIG_PUBLISH_REQUEST -> handleConfigPublish(payload, clientIp);
                     case TYPE_CONFIG_QUERY_REQUEST -> handleConfigQuery(payload, clientIp);
@@ -395,21 +429,30 @@ public class HarborServer {
 
                     switch (type) {
                         case TYPE_CONNECTION_SETUP_REQUEST -> {
-                            JSONObject body = parseBody(payload);
+                            ConnectionSetupRequest setup = parseBody(payload, ConnectionSetupRequest.class);
                             // Look up the connectionId assigned during ServerCheck
                             connectionId = connectionIdByClientIp.get(ip);
                             if (connectionId == null) {
                                 connectionId = UUID.randomUUID().toString();
                             }
                             this.clientIp = ip;
-                            String version = body.getString("clientVersion");
-                            // noinspection unchecked
-                            Map<String, String> labels = (Map<String, String>) body.get("labels");
+                            String version = setup.getClientVersion();
+                            Map<String, String> labels = setup.getLabels();
                             if (labels == null) {
                                 labels = Map.of();
                             }
                             connectionManager.register(connectionId, ip, version,
                                     labels, pushSubject);
+                            // Send SetupAckRequest back through the bi-stream.
+                            // The nacos-client bi-stream observer casts every incoming
+                            // payload to Request, NOT Response. Sending a Response subclass
+                            // causes ClassCastException → onError → switchServerAsync →
+                            // infinite reconnection loop (~10s cycle).
+                            if (setup.getAbilityTable() != null) {
+                                Payload setupAck = buildPushPayload(TYPE_SETUP_ACK_REQUEST,
+                                        new SetupAckRequest(Map.of()));
+                                pushSubject.onNext(setupAck);
+                            }
                         }
                         case TYPE_NOTIFY_SUBSCRIBER_RESPONSE ->
                             // Client ack for a NotifySubscriberRequest — no action needed
@@ -442,13 +485,11 @@ public class HarborServer {
                     connectionManager.remove(connId);
                     serviceStorage.removeAllSubscribersForConnection(connId);
                     configStorage.removeAllListenersForConnection(connId);
-                    // Deregister all instances registered by this client (Nacos ClientReleaseEvent equivalent)
+                    // NOTE: Do NOT deregister instances here. The bi-stream is used for
+                    // server push notifications and can be cancelled/re-established by the
+                    // client independently of the actual connection lifecycle. Instance
+                    // lifecycle is managed by heartbeat timeout in HealthCheckManager.
                     if (clientIp != null) {
-                        int removed = serviceStorage.deregisterInstancesByClientIp(clientIp);
-                        if (removed > 0) {
-                            log.info("[harbor] disconnected client {} had {} instance(s) deregistered",
-                                    connId, removed);
-                        }
                         connectionIdByClientIp.remove(clientIp);
                     }
                 }
@@ -475,31 +516,31 @@ public class HarborServer {
         if (clientIp != null && !clientIp.isEmpty()) {
             connectionIdByClientIp.put(clientIp, connectionId);
         }
-        JSONObject body = new JSONObject();
-        body.put("connectionId", connectionId);
-        body.put("supportAbilityNegotiation", false);
-        body.put("resultCode", 200);
-        body.put("success", true);
-        return buildPayload(TYPE_SERVER_CHECK_RESPONSE, body, clientIp);
+        ServerCheckResponse response = new ServerCheckResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setConnectionId(connectionId);
+        response.setSupportAbilityNegotiation(false);
+        return buildPayload(TYPE_SERVER_CHECK_RESPONSE, response, clientIp);
     }
 
     private Payload handleInstanceRequest(Payload payload, String clientIp) {
-        JSONObject body = parseBody(payload);
-        String namespace = body.getString("namespace");
-        String serviceName = body.getString("serviceName");
-        String groupName = body.getString("groupName");
-        String type = body.getString("type");
+        InstanceRequest request = parseBody(payload, InstanceRequest.class);
+        String namespace = request.getNamespace();
+        String serviceName = request.getServiceName();
+        String groupName = request.getGroupName();
+        String type = request.getType();
 
-        JSONObject instance = body.getJSONObject("instance");
+        Instance instance = request.getInstance();
         if (instance == null) {
             return buildErrorResponse(TYPE_INSTANCE_RESPONSE, "Missing instance");
         }
 
         // Set default instanceId if not provided
-        if (!instance.containsKey("instanceId") || instance.getString("instanceId") == null) {
+        if (instance.getInstanceId() == null || instance.getInstanceId().isEmpty()) {
             String groupedName = groupName + "@@" + serviceName;
-            instance.put("instanceId",
-                    instance.getString("ip") + "#" + instance.getIntValue("port")
+            instance.setInstanceId(
+                    instance.getIp() + "#" + instance.getPort()
                             + "#" + groupedName);
         }
 
@@ -507,10 +548,8 @@ public class HarborServer {
             serviceStorage.registerInstance(namespace, groupName, serviceName, instance);
             // Trigger distro sync to peers
             String key = namespace + "@@" + groupName + "@@" + serviceName;
-            JSONObject syncBody = new JSONObject();
-            syncBody.put("instance", instance);
-            distroProtocol.syncNamingChange(key, DistroProtocol.OP_CHANGE,
-                    JSON.toJSONBytes(syncBody));
+            byte[] syncContent = JSON.toJSONBytes(instance);
+            distroProtocol.syncNamingChange(key, DistroProtocol.OP_CHANGE, syncContent);
         } else if (DE_REGISTER_INSTANCE.equals(type)) {
             serviceStorage.deregisterInstance(namespace, groupName, serviceName, instance);
             String key = namespace + "@@" + groupName + "@@" + serviceName;
@@ -520,20 +559,19 @@ public class HarborServer {
                     "Unknown instance operation type: " + type);
         }
 
-        JSONObject response = new JSONObject();
-        response.put("type", type);
-        response.put("resultCode", 200);
-        response.put("success", true);
+        InstanceResponse response = new InstanceResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setType(type);
         return buildPayload(TYPE_INSTANCE_RESPONSE, response, clientIp);
     }
 
     private Payload handleSubscribe(Payload payload, String clientIp) {
-        JSONObject body = parseBody(payload);
-        String namespace = body.getString("namespace");
-        String serviceName = body.getString("serviceName");
-        String groupName = body.getString("groupName");
-        boolean subscribe = body.getBooleanValue("subscribe", true);
-        String clusters = body.getString("clusters");
+        SubscribeServiceRequest request = parseBody(payload, SubscribeServiceRequest.class);
+        String namespace = request.getNamespace();
+        String serviceName = request.getServiceName();
+        String groupName = request.getGroupName();
+        boolean subscribe = request.isSubscribe();
 
         // Find the connectionId for this client
         String connectionId = connectionIdByClientIp.get(clientIp);
@@ -543,53 +581,55 @@ public class HarborServer {
             serviceStorage.removeSubscriber(namespace, groupName, serviceName, connectionId);
         }
 
-        JSONObject serviceInfo = serviceStorage.buildServiceInfo(
+        ServiceInfo serviceInfo = serviceStorage.buildServiceInfo(
                 namespace, groupName, serviceName);
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", 200);
-        response.put("success", true);
-        response.put("serviceInfo", serviceInfo);
+        ServiceInfoResponse response = new ServiceInfoResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setServiceInfo(serviceInfo);
         return buildPayload(TYPE_SUBSCRIBE_SERVICE_RESPONSE, response, clientIp);
     }
 
     private Payload handleServiceQuery(Payload payload) {
-        JSONObject body = parseBody(payload);
-        String namespace = body.getString("namespace");
-        String serviceName = body.getString("serviceName");
-        String groupName = body.getString("groupName");
+        ServiceQueryRequest request = parseBody(payload, ServiceQueryRequest.class);
+        String namespace = request.getNamespace();
+        String serviceName = request.getServiceName();
+        String groupName = request.getGroupName();
 
-        JSONObject serviceInfo = serviceStorage.buildServiceInfo(
+        ServiceInfo serviceInfo = serviceStorage.buildServiceInfo(
                 namespace, groupName, serviceName);
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", 200);
-        response.put("success", true);
-        response.put("serviceInfo", serviceInfo);
+        ServiceInfoResponse response = new ServiceInfoResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setServiceInfo(serviceInfo);
         return buildPayload(TYPE_QUERY_SERVICE_RESPONSE, response);
     }
 
     private Payload handleServiceList(Payload payload) {
-        JSONObject body = parseBody(payload);
-        String namespace = body.getString("namespace");
-        String groupName = body.getString("groupName");
+        ServiceListRequest request = parseBody(payload, ServiceListRequest.class);
+        String namespace = request.getNamespace();
+        String groupName = request.getGroupName();
         if (groupName == null || groupName.isEmpty()) {
             groupName = "DEFAULT_GROUP";
         }
 
-        List<String> services = serviceStorage.listServices(namespace, groupName);
+        java.util.List<String> services = serviceStorage.listServices(namespace, groupName);
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", 200);
-        response.put("success", true);
-        response.put("count", services.size());
-        response.put("serviceNames", services);
+        ServiceListResponse response = new ServiceListResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setCount(services.size());
+        response.setServiceNames(services);
         return buildPayload(TYPE_SERVICE_LIST_RESPONSE, response);
     }
 
-    private Payload handleHealthCheck(Payload payload) {
-        JSONObject response = new JSONObject();
-        response.put("status", "SERVING");
+    private Payload handleHealthCheck() {
+        HealthCheckResponse response = new HealthCheckResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setStatus("SERVING");
         return buildPayload(TYPE_HEALTH_CHECK_RESPONSE, response);
     }
 
@@ -598,16 +638,16 @@ public class HarborServer {
     // ========================================================================
 
     private Payload handleConfigPublish(Payload payload, String clientIp) {
-        JSONObject body = parseBody(payload);
-        String dataId = body.getString("dataId");
-        String group = body.getString("group");
-        String tenant = body.getString("tenant");
+        ConfigPublishRequest request = parseBody(payload, ConfigPublishRequest.class);
+        String dataId = request.getDataId();
+        String group = request.getGroup();
+        String tenant = request.getTenant();
         if (tenant == null || tenant.isEmpty()) {
             tenant = "public";
         }
-        String content = body.getString("content");
-        String type = body.containsKey("additionMap")
-                ? body.getJSONObject("additionMap").getString("type")
+        String content = request.getContent();
+        String type = request.getAdditionMap() != null
+                ? request.getAdditionMap().get("type")
                 : null;
 
         boolean ok = configStorage.publishConfig(tenant, dataId, group, content, type);
@@ -615,50 +655,48 @@ public class HarborServer {
         // Trigger distro sync to peers
         if (ok) {
             String key = tenant + "@@" + dataId + "@@" + group;
-            JSONObject syncData = new JSONObject();
-            syncData.put("content", content);
-            syncData.put("type", type != null ? type : "text");
+            ConfigSyncData syncData = new ConfigSyncData(content, type != null ? type : "text");
             distroProtocol.syncConfigChange(key, DistroProtocol.OP_CHANGE,
                     JSON.toJSONBytes(syncData));
         }
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", ok ? 200 : 500);
-        response.put("success", ok);
+        ConfigPublishResponse response = new ConfigPublishResponse();
+        response.setResultCode(ok ? 200 : 500);
+        response.setSuccess(ok);
         return buildPayload(TYPE_CONFIG_PUBLISH_RESPONSE, response, clientIp);
     }
 
     private Payload handleConfigQuery(Payload payload, String clientIp) {
-        JSONObject body = parseBody(payload);
-        String dataId = body.getString("dataId");
-        String group = body.getString("group");
-        String tenant = body.getString("tenant");
+        ConfigQueryRequest request = parseBody(payload, ConfigQueryRequest.class);
+        String dataId = request.getDataId();
+        String group = request.getGroup();
+        String tenant = request.getTenant();
         if (tenant == null || tenant.isEmpty()) {
             tenant = "public";
         }
 
         ConfigStorage.ConfigRecord record = configStorage.queryConfig(tenant, dataId, group);
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", 200);
-        response.put("success", true);
+        ConfigQueryResponse response = new ConfigQueryResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
         if (record != null) {
-            response.put("content", record.content());
-            response.put("md5", record.md5());
-            response.put("lastModified", record.lastModified());
-            response.put("contentType", record.type());
+            response.setContent(record.content());
+            response.setMd5(record.md5());
+            response.setLastModified(record.lastModified());
+            response.setContentType(record.type());
         } else {
-            response.put("resultCode", 302);
-            response.put("message", "config data not exist");
+            response.setResultCode(302);
+            response.setSuccess(false);
         }
         return buildPayload(TYPE_CONFIG_QUERY_RESPONSE, response, clientIp);
     }
 
     private Payload handleConfigRemove(Payload payload, String clientIp) {
-        JSONObject body = parseBody(payload);
-        String dataId = body.getString("dataId");
-        String group = body.getString("group");
-        String tenant = body.getString("tenant");
+        ConfigRemoveRequest request = parseBody(payload, ConfigRemoveRequest.class);
+        String dataId = request.getDataId();
+        String group = request.getGroup();
+        String tenant = request.getTenant();
         if (tenant == null || tenant.isEmpty()) {
             tenant = "public";
         }
@@ -671,38 +709,34 @@ public class HarborServer {
             distroProtocol.syncConfigChange(key, DistroProtocol.OP_DELETE, new byte[0]);
         }
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", ok ? 200 : 500);
-        response.put("success", ok);
+        ConfigRemoveResponse response = new ConfigRemoveResponse();
+        response.setResultCode(ok ? 200 : 500);
+        response.setSuccess(ok);
         return buildPayload(TYPE_CONFIG_REMOVE_RESPONSE, response, clientIp);
     }
 
     private Payload handleConfigBatchListen(Payload payload, String clientIp) {
-        JSONObject body = parseBody(payload);
-        boolean listen = body.getBooleanValue("listen", true);
+        ConfigBatchListenRequest request = parseBody(payload, ConfigBatchListenRequest.class);
+        boolean listen = request.isListen();
         String connectionId = connectionIdByClientIp.get(clientIp);
 
-        if (connectionId != null && body.containsKey("configListenContexts")) {
-            var contexts = body.getJSONArray("configListenContexts");
-            for (int i = 0; i < contexts.size(); i++) {
-                JSONObject ctx = contexts.getJSONObject(i);
-                String dataId = ctx.getString("dataId");
-                String group = ctx.getString("group");
-                String tenant = ctx.getString("tenant");
+        if (connectionId != null && request.getConfigListenContexts() != null) {
+            for (ConfigBatchListenRequest.ConfigListenContext ctx : request.getConfigListenContexts()) {
+                String tenant = ctx.getTenant();
                 if (tenant == null || tenant.isEmpty()) {
                     tenant = "public";
                 }
                 if (listen) {
-                    configStorage.addListener(tenant, dataId, group, connectionId);
+                    configStorage.addListener(tenant, ctx.getDataId(), ctx.getGroup(), connectionId);
                 } else {
-                    configStorage.removeListener(tenant, dataId, group, connectionId);
+                    configStorage.removeListener(tenant, ctx.getDataId(), ctx.getGroup(), connectionId);
                 }
             }
         }
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", 200);
-        response.put("success", true);
+        ConfigBatchListenResponse response = new ConfigBatchListenResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
         return buildPayload(TYPE_CONFIG_BATCH_LISTEN_RESPONSE, response, clientIp);
     }
 
@@ -711,61 +745,65 @@ public class HarborServer {
     // ========================================================================
 
     private Payload handleDistroSync(Payload payload) {
-        JSONObject body = parseBody(payload);
-        String resourceType = body.getString("resourceType");
-        String resourceKey = body.getString("resourceKey");
-        String operation = body.getString("operation");
-        String contentStr = body.getString("content");
+        DistroSyncRequest request = parseBody(payload, DistroSyncRequest.class);
+        String resourceType = request.getResourceType();
+        String resourceKey = request.getResourceKey();
+        String operation = request.getOperation();
+        String contentStr = request.getContent();
         byte[] content = (contentStr != null && !contentStr.isEmpty())
                 ? java.util.Base64.getDecoder().decode(contentStr)
                 : new byte[0];
 
         boolean ok = distroProtocol.onReceive(resourceType, resourceKey, operation, content);
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", ok ? 200 : 500);
-        response.put("success", ok);
+        DistroSyncResponse response = new DistroSyncResponse();
+        response.setResultCode(ok ? 200 : 500);
+        response.setSuccess(ok);
         return buildPayload(TYPE_DISTRO_SYNC_RESPONSE, response);
     }
 
     private Payload handleDistroVerify(Payload payload) {
-        JSONObject body = parseBody(payload);
-        String resourceType = body.getString("resourceType");
-        JSONObject checksums = body.getJSONObject("checksums");
+        DistroVerifyRequest request = parseBody(payload, DistroVerifyRequest.class);
+        String resourceType = request.getResourceType();
+        Map<String, String> checksums = request.getChecksums();
         if (checksums == null) {
-            checksums = new JSONObject();
+            checksums = Map.of();
         }
 
         boolean ok = distroProtocol.onVerify(resourceType, checksums);
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", ok ? 200 : 500);
-        response.put("success", ok);
+        DistroVerifyResponse response = new DistroVerifyResponse();
+        response.setResultCode(ok ? 200 : 500);
+        response.setSuccess(ok);
         return buildPayload(TYPE_DISTRO_VERIFY_RESPONSE, response);
     }
 
     private Payload handleDistroSnapshot(Payload payload) {
-        JSONObject body = parseBody(payload);
-        String resourceType = body.getString("resourceType");
+        DistroSnapshotRequest request = parseBody(payload, DistroSnapshotRequest.class);
+        String resourceType = request.getResourceType();
 
         byte[] snapshot = distroProtocol.onSnapshot(resourceType);
 
-        JSONObject response = new JSONObject();
-        response.put("resultCode", 200);
-        response.put("success", true);
-        response.put("resourceType", resourceType);
-        response.put("content", snapshot != null
+        DistroSnapshotResponse response = new DistroSnapshotResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setResourceType(resourceType);
+        response.setContent(snapshot != null
                 ? java.util.Base64.getEncoder().encodeToString(snapshot) : "");
         return buildPayload(TYPE_DISTRO_SNAPSHOT_RESPONSE, response);
     }
 
     private Payload buildErrorResponse(String responseType, String message) {
-        JSONObject body = new JSONObject();
-        body.put("resultCode", 500);
-        body.put("success", false);
-        body.put("errorCode", 500);
-        body.put("message", message);
-        return buildPayload(responseType, body);
+        Response response = Response.error(500);
+        byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
+        return Payload.newBuilder()
+                .setMetadata(Metadata.newBuilder()
+                        .setType(responseType)
+                        .build())
+                .setBody(Any.newBuilder()
+                        .setValue(ByteString.copyFrom(jsonBytes))
+                        .build())
+                .build();
     }
 
     // ========================================================================
@@ -773,14 +811,14 @@ public class HarborServer {
     // ========================================================================
 
     private void notifySubscriber(String connectionId, String namespace, String group,
-                                  String serviceName, JSONObject serviceInfo) {
-        JSONObject body = new JSONObject();
-        body.put("namespace", namespace);
-        body.put("serviceName", serviceName);
-        body.put("groupName", group);
-        body.put("serviceInfo", serviceInfo);
+                                  String serviceName, ServiceInfo serviceInfo) {
+        NotifySubscriberRequest push = new NotifySubscriberRequest();
+        push.setNamespace(namespace);
+        push.setServiceName(serviceName);
+        push.setGroupName(group);
+        push.setServiceInfo(serviceInfo);
 
-        Payload pushPayload = buildPayload(TYPE_NOTIFY_SUBSCRIBER_REQUEST, body);
+        Payload pushPayload = buildPushPayload(TYPE_NOTIFY_SUBSCRIBER_REQUEST, push);
         boolean pushed = connectionManager.pushToConnection(connectionId, pushPayload);
         if (!pushed) {
             log.debug("[harbor] failed to push to connection {}: not found", connectionId);
@@ -793,16 +831,59 @@ public class HarborServer {
 
     private void notifyConfigListener(String connectionId, String namespace,
                                       String dataId, String group) {
-        JSONObject body = new JSONObject();
-        body.put("dataId", dataId);
-        body.put("group", group);
-        body.put("tenant", namespace);
+        ConfigChangeNotifyRequest push = new ConfigChangeNotifyRequest();
+        push.setDataId(dataId);
+        push.setGroup(group);
+        push.setTenant(namespace);
 
-        Payload pushPayload = buildPayload(TYPE_CONFIG_CHANGE_NOTIFY_REQUEST, body);
+        Payload pushPayload = buildPushPayload(TYPE_CONFIG_CHANGE_NOTIFY_REQUEST, push);
         boolean pushed = connectionManager.pushToConnection(connectionId, pushPayload);
         if (!pushed) {
             log.debug("[harbor] failed to push config notify to connection {}: not found",
                     connectionId);
         }
+    }
+
+    // ========================================================================
+    // Internal helper types
+    // ========================================================================
+
+    /**
+     * Internal DTO for config sync data sent through Distro protocol.
+     */
+    static class ConfigSyncData {
+        private String content;
+        private String type;
+
+        ConfigSyncData() {}
+
+        ConfigSyncData(String content, String type) {
+            this.content = content;
+            this.type = type;
+        }
+
+        public String getContent() { return content; }
+        public String getType() { return type; }
+    }
+
+    /**
+     * Internal DTO for error responses that need an errorCode and message.
+     */
+    static class ErrorResponse {
+        private int resultCode = 500;
+        private boolean success = false;
+        private int errorCode = 500;
+        private String message;
+
+        ErrorResponse() {}
+
+        ErrorResponse(String message) {
+            this.message = message;
+        }
+
+        public int getResultCode() { return resultCode; }
+        public boolean isSuccess() { return success; }
+        public int getErrorCode() { return errorCode; }
+        public String getMessage() { return message; }
     }
 }

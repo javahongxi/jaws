@@ -418,6 +418,12 @@ class WireServerStreamHandlerTest {
         ch.writeInbound(new DefaultHttp2DataFrame(
                 WireFrameCodec.encode(REQUEST, ch.alloc()), true));
 
+        // dispatchStream() sends response headers immediately (standard gRPC
+        // behavior), so drain them before the cancellation check.
+        Object initialHeaders = ch.readOutbound();
+        assertTrue(initialHeaders instanceof Http2HeadersFrame,
+                "response headers should be sent before any data");
+
         // Caller cancels with RST_STREAM(CANCEL)
         ch.writeInbound(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
 

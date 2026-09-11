@@ -7,9 +7,11 @@ import org.hongxi.jaws.harbor.ServiceStorage;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.config.ConfigStorage;
+import org.hongxi.jaws.harbor.model.Instance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -177,7 +179,7 @@ public class DistroProtocol {
     /**
      * Handle a verify request from a peer — compare checksums.
      */
-    public boolean onVerify(String resourceType, JSONObject checksums) {
+    public boolean onVerify(String resourceType, Map<String, String> checksums) {
         log.debug("[harbor] distro verify: {} checksums={}", resourceType, checksums);
         // For now, just acknowledge — a full implementation would compare
         // checksums and request missing data from the peer.
@@ -191,8 +193,7 @@ public class DistroProtocol {
         log.info("[harbor] distro snapshot requested for: {}", resourceType);
         try {
             if (RESOURCE_NAMING.equals(resourceType)) {
-                Map<String, List<com.alibaba.fastjson2.JSONObject>> data =
-                        serviceStorage.getAllInstanceData();
+                Map<String, List<Instance>> data = serviceStorage.getAllInstanceData();
                 return JSON.toJSONBytes(data);
             } else if (RESOURCE_CONFIG.equals(resourceType)) {
                 Map<String, ConfigStorage.ConfigRecord> data = configStorage.getAllConfigs();
@@ -217,9 +218,13 @@ public class DistroProtocol {
             if (peers.isEmpty()) {
                 return;
             }
-            JSONObject namingChecksums = new JSONObject();
-            namingChecksums.putAll(serviceStorage.getVerifyChecksums());
-            JSONObject configChecksums = new JSONObject();
+            // Build naming checksums: serviceKey → instance count
+            Map<String, String> namingChecksums = new java.util.HashMap<>();
+            for (Map.Entry<String, Integer> e : serviceStorage.getVerifyChecksums().entrySet()) {
+                namingChecksums.put(e.getKey(), String.valueOf(e.getValue()));
+            }
+            // Build config checksums: configKey → md5
+            Map<String, String> configChecksums = new java.util.HashMap<>();
             for (Map.Entry<String, ConfigStorage.ConfigRecord> e : configStorage.getAllConfigs().entrySet()) {
                 configChecksums.put(e.getKey(), e.getValue().md5());
             }
@@ -251,11 +256,9 @@ public class DistroProtocol {
                     log.info("[harbor] loading naming snapshot from {}", peer.address());
                     byte[] namingSnapshot = transport.getSnapshot(peer.address(), RESOURCE_NAMING);
                     if (namingSnapshot != null && namingSnapshot.length > 0) {
-                        String json = new String(namingSnapshot, java.nio.charset.StandardCharsets.UTF_8);
-                        Map<String, List<com.alibaba.fastjson2.JSONObject>> data =
-                                JSON.parseObject(json,
-                                        new TypeReference<>() {
-                                        });
+                        String json = new String(namingSnapshot, StandardCharsets.UTF_8);
+                        Map<String, List<Instance>> data =
+                                JSON.parseObject(json, new TypeReference<>() {});
                         serviceStorage.applySnapshot(data);
                         log.info("[harbor] naming snapshot loaded from {}", peer.address());
                         break;
@@ -269,11 +272,9 @@ public class DistroProtocol {
                     log.info("[harbor] loading config snapshot from {}", peer.address());
                     byte[] configSnapshot = transport.getSnapshot(peer.address(), RESOURCE_CONFIG);
                     if (configSnapshot != null && configSnapshot.length > 0) {
-                        String json = new String(configSnapshot, java.nio.charset.StandardCharsets.UTF_8);
+                        String json = new String(configSnapshot, StandardCharsets.UTF_8);
                         Map<String, ConfigStorage.ConfigRecord> data =
-                                JSON.parseObject(json,
-                                        new TypeReference<>() {
-                                        });
+                                JSON.parseObject(json, new TypeReference<>() {});
                         configStorage.applySnapshot(data);
                         log.info("[harbor] config snapshot loaded from {}", peer.address());
                         break;
@@ -309,11 +310,10 @@ public class DistroProtocol {
         }
         // For CHANGE: parse the instance data and register it
         if (content != null && content.length > 0) {
-            com.alibaba.fastjson2.JSONObject instanceData =
-                    JSON.parseObject(new String(content, java.nio.charset.StandardCharsets.UTF_8));
+            Instance instance = JSON.parseObject(
+                    new String(content, StandardCharsets.UTF_8), Instance.class);
             String[] parts = resourceKey.split("@@");
-            if (parts.length == 3 && instanceData.containsKey("instance")) {
-                com.alibaba.fastjson2.JSONObject instance = instanceData.getJSONObject("instance");
+            if (parts.length == 3 && instance != null) {
                 serviceStorage.registerInstance(parts[0], parts[1], parts[2], instance);
             }
         }
@@ -328,8 +328,8 @@ public class DistroProtocol {
             return;
         }
         if (content != null && content.length > 0) {
-            com.alibaba.fastjson2.JSONObject configData =
-                    JSON.parseObject(new String(content, java.nio.charset.StandardCharsets.UTF_8));
+            JSONObject configData = JSON.parseObject(
+                    new String(content, StandardCharsets.UTF_8));
             String[] parts = resourceKey.split("@@");
             if (parts.length == 3) {
                 configStorage.publishConfig(parts[0], parts[1], parts[2],

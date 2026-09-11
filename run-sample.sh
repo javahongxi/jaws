@@ -29,6 +29,7 @@ ADAPTIVE_CONSUMER_MODULE="jaws-samples/jaws-sample-adaptive-consumer"
 HARBOR_BOOTSTRAP_MODULE="jaws-harbor"
 HARBOR_PROVIDER_MODULE="jaws-samples/jaws-sample-harbor-provider"
 HARBOR_CONSUMER_MODULE="jaws-samples/jaws-sample-harbor-consumer"
+ADMIN_MODULE="jaws-samples/jaws-sample-admin"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -54,6 +55,7 @@ ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsume
 HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.harbor.HarborBootstrap"
 HARBOR_PROVIDER_MAIN="org.hongxi.jaws.sample.harbor.provider.HarborProvider"
 HARBOR_CONSUMER_MAIN="org.hongxi.jaws.sample.harbor.consumer.HarborConsumer"
+ADMIN_MAIN="org.hongxi.jaws.admin.AdminApplication"
 
 usage() {
     cat <<'EOF'
@@ -69,6 +71,7 @@ usage() {
                        port defaults to 10000, set to -1 for auto-allocation starting from 10000
     provider-bg [port] Start Provider in background, PID/log distinguished by port (e.g. .provider-10000.pid)
                        port -1 triggers auto-allocation, file suffix becomes auto-{seq}
+    consumer           Run ZkConsumer (provider must be started first)
     stop               Stop all background processes and clean up pid/log files
     run [port]         One-shot ZK sample: start provider -> run consumer -> stop provider
     nacos [port]       One-shot Nacos sample (requires Nacos at 127.0.0.1:8848)
@@ -78,9 +81,11 @@ usage() {
     interop [--keepalive]  Run all wire-interop demos (GrpcCallWireDemo, WireHealthDemo, ManagedChannelDemo, WireCallGrpcDemo)
                        Add --keepalive to also run WireKeepaliveDemo (~55s)
     adaptive [port]    One-shot Adaptive direct-connect sample (single port, multi-protocol, no registry required)
-    harbor-server [port] [--cluster peers]  Start HarborServer (default port 19848)
+    harbor-standalone [port]  Start HarborServer in standalone mode (default port 19848)
+    harbor-cluster       Start 3-node HarborServer cluster (ports 19848/19849/19850)
+    harbor-provider [port]  Start HarborProvider in foreground (requires HarborServer, default port 20000)
     harbor [port]      One-shot Harbor sample: Provider -> Consumer (requires HarborServer running)
-    consumer           Run ZkConsumer (provider must be started first)
+    admin [port]       Start Admin console (Spring Boot Web, default port 8088)
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
     bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
@@ -105,6 +110,7 @@ usage() {
     ./run-sample.sh provider-bg        # Start in background, port 10000
     ./run-sample.sh provider-bg 10001  # Start in background, port 10001
     ./run-sample.sh provider-bg -1     # Start in background, auto-allocate port
+    ./run-sample.sh consumer
     ./run-sample.sh stop               # Stop all background processes
     ./run-sample.sh run                # One-shot ZK provider + consumer
     ./run-sample.sh nacos              # One-shot Nacos provider + consumer
@@ -114,11 +120,13 @@ usage() {
     ./run-sample.sh interop            # All wire-interop demos (quick, ~10s)
     ./run-sample.sh interop --keepalive  # All demos including keepalive (~65s)
     ./run-sample.sh adaptive           # One-shot Adaptive direct-connect (multi-protocol) provider + consumer
-    ./run-sample.sh harbor-server      # Start HarborServer on port 19848
-    ./run-sample.sh harbor-server 19848 --cluster 10.0.0.2:19848,10.0.0.3:19848  # 3-node cluster
+    ./run-sample.sh harbor-standalone      # Start HarborServer on port 19848
+    ./run-sample.sh harbor-cluster          # Start 3-node cluster (19848/19849/19850)
+    ./run-sample.sh harbor-provider    # Start HarborProvider port 20000 (foreground, Ctrl+C to stop)
+    ./run-sample.sh harbor-provider 10001  # Start HarborProvider port 10001
     ./run-sample.sh harbor             # One-shot Provider + Consumer (requires HarborServer)
-    ./run-sample.sh consumer
-    ./run-sample.sh bench-injvm
+    ./run-sample.sh admin              # Start Admin console on port 8088
+    ./run-sample.sh admin 9090         # Start Admin console on port 9090
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -250,7 +258,7 @@ cmd_stop() {
     done
 
     # 2. Kill any remaining Jaws sample Java processes
-    for main_class in "$PROVIDER_MAIN" "$BENCHMARK_MAIN"; do
+    for main_class in "$PROVIDER_MAIN" "$BENCHMARK_MAIN" "$HARBOR_BOOTSTRAP_MAIN"; do
         local pids
         pids=$(jps -l 2>/dev/null | grep "$main_class" | awk '{print $1}')
         for pid in $pids; do
@@ -261,7 +269,7 @@ cmd_stop() {
     done
 
     # 3. Clean up log files
-    for log_file in provider-*.log; do
+    for log_file in provider-*.log harbor-node-*.log; do
         if [ -f "$log_file" ]; then
             rm -f "$log_file"
             echo "Removed $log_file"
@@ -376,41 +384,114 @@ cmd_run_adaptive() {
         10000 "" "${1:-}"
 }
 
-cmd_harbor_server() {
+cmd_harbor_standalone() {
     ensure_built
-    local harbor_port="19848"
-    local cluster_args=()
-
-    # Parse: [port] [--cluster host1:port1,host2:port2]
-    local i=1
-    while [ $i -le $# ]; do
-        local arg="${!i}"
-        case "$arg" in
-            --cluster)
-                i=$((i + 1))
-                cluster_args=("--cluster" "${!i}")
-                ;;
-            [0-9]*)
-                harbor_port="$arg"
-                ;;
-        esac
-        i=$((i + 1))
-    done
+    local harbor_port="${1:-19848}"
 
     local bootstrap_cp
     bootstrap_cp=$(build_classpath "$HARBOR_BOOTSTRAP_MODULE")
 
-    echo "Starting HarborServer on port $harbor_port ..."
-    if [ ${#cluster_args[@]} -gt 0 ]; then
-        echo "Cluster peers: ${cluster_args[1]}"
-    else
-        echo "Single-node mode (no cluster peers)"
-    fi
+    echo "Starting HarborServer (standalone) on port $harbor_port ..."
+    echo "Single-node mode (no cluster peers)"
     echo "HTTP Management API: http://localhost:$((harbor_port + 10))/api/*"
     echo "Press Ctrl+C to stop."
     echo "--------------------------------------------"
     java -cp "$bootstrap_cp:$HARBOR_BOOTSTRAP_MODULE/target/classes" \
-        "$HARBOR_BOOTSTRAP_MAIN" "$harbor_port" "${cluster_args[@]}"
+        "$HARBOR_BOOTSTRAP_MAIN" "$harbor_port"
+}
+
+cmd_harbor_cluster() {
+    ensure_built
+    local cluster="127.0.0.1:19848,127.0.0.1:19849,127.0.0.1:19850"
+    local ports=(19848 19849 19850)
+
+    local bootstrap_cp
+    bootstrap_cp=$(build_classpath "$HARBOR_BOOTSTRAP_MODULE")
+
+    echo "Starting 3-node HarborServer cluster ..."
+    echo "Cluster members: $cluster"
+    echo "--------------------------------------------"
+
+    local pids=()
+    for port in "${ports[@]}"; do
+        java -cp "$bootstrap_cp:$HARBOR_BOOTSTRAP_MODULE/target/classes" \
+            "$HARBOR_BOOTSTRAP_MAIN" "$port" --cluster "$cluster" \
+            > "harbor-node-${port}.log" 2>&1 &
+        pids+=($!)
+        echo "$!" > ".harbor-${port}.pid"
+        echo "  Node started: port=$port  PID=$!  log=harbor-node-${port}.log"
+    done
+
+    echo ""
+    echo -n "Waiting for all nodes ready "
+    local max_wait=20
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        local all_ready=1
+        for port in "${ports[@]}"; do
+            if ! (echo >/dev/tcp/127.0.0.1/$port) 2>/dev/null; then
+                all_ready=0
+                break
+            fi
+        done
+        if [ $all_ready -eq 1 ]; then
+            echo " ready (${waited}s)"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        echo -n "."
+    done
+    if [ $waited -ge $max_wait ]; then
+        echo " timeout (${max_wait}s)"
+    fi
+
+    echo ""
+    echo "Management APIs:"
+    for port in "${ports[@]}"; do
+        echo "  http://localhost:$((port + 10))/api/*"
+    done
+    echo ""
+    echo "Run ./run-sample.sh stop to shut down all nodes."
+    echo "============================================"
+
+    # Wait for any child to exit
+    wait "${pids[0]}" 2>/dev/null || true
+}
+
+cmd_harbor_provider() {
+    ensure_built
+    local provider_port="${1:-20000}"
+    local harbor_port=19848
+
+    # Check if HarborServer is already running
+    local harbor_running=0
+    if command -v lsof >/dev/null 2>&1; then
+        if lsof -Pi :$harbor_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+            harbor_running=1
+        fi
+    else
+        if (echo > /dev/tcp/127.0.0.1/$harbor_port) 2>/dev/null; then
+            harbor_running=1
+        fi
+    fi
+
+    if [ $harbor_running -eq 0 ]; then
+        echo "HarborServer is not running on port $harbor_port."
+        echo ""
+        echo "Please start it first:"
+        echo "  ./run-sample.sh harbor-standalone"
+        exit 1
+    fi
+    echo "HarborServer detected on port $harbor_port."
+    echo "Starting HarborProvider port=$provider_port (Ctrl+C to stop) ..."
+    echo "--------------------------------------------"
+    local provider_cp
+    provider_cp=$(build_classpath "$HARBOR_PROVIDER_MODULE")
+    java -cp "$provider_cp:$HARBOR_PROVIDER_MODULE/target/classes" \
+        -Dport="$provider_port" \
+        -Dharbor.port="$harbor_port" \
+        "$HARBOR_PROVIDER_MAIN"
 }
 
 cmd_harbor() {
@@ -435,8 +516,8 @@ cmd_harbor() {
         echo "HarborServer is not running on port $harbor_port."
         echo ""
         echo "Please start it first:"
-        echo "  ./run-sample.sh harbor-server          # port 19848"
-        echo "  ./run-sample.sh harbor-server $harbor_port  # custom port"
+        echo "  ./run-sample.sh harbor-standalone          # port 19848"
+        echo "  ./run-sample.sh harbor-standalone $harbor_port  # custom port"
         exit 1
     fi
     echo "HarborServer detected on port $harbor_port."
@@ -605,6 +686,15 @@ cmd_wire_interop() {
     echo "All wire-interop demos passed."
 }
 
+cmd_admin() {
+    ensure_built
+    local port="${1:-8088}"
+    echo "Starting Jaws Admin console on port $port ..."
+    echo "Dashboard: http://localhost:$port"
+    echo "--------------------------------------------"
+    $MVN spring-boot:run -pl "$ADMIN_MODULE" -Dspring-boot.run.arguments="--server.port=$port" -q
+}
+
 cmd_consumer() {
     ensure_built
     echo "Running ZkConsumer..."
@@ -691,6 +781,7 @@ case "${1:-}" in
     injvm)       cmd_injvm ;;
     provider)    cmd_provider "${2:-}" ;;
     provider-bg) cmd_provider_bg "${2:-}" ;;
+    consumer)    cmd_consumer ;;
     stop)          cmd_stop ;;
     run)           cmd_run "${2:-}" ;;
     nacos)         cmd_run_nacos "${2:-}" ;;
@@ -700,8 +791,10 @@ case "${1:-}" in
     interop)       shift; cmd_wire_interop "$@" ;;
     adaptive)      cmd_run_adaptive "${2:-}" ;;
     harbor)        cmd_harbor "${2:-}" "${3:-}" ;;
-    harbor-server) shift; cmd_harbor_server "$@" ;;
-    consumer)    cmd_consumer ;;
+    harbor-standalone) shift; cmd_harbor_standalone "$@" ;;
+    harbor-cluster)  cmd_harbor_cluster ;;
+    harbor-provider) shift; cmd_harbor_provider "$@" ;;
+    admin)         cmd_admin "${2:-}" ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;

@@ -9,6 +9,7 @@ import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.NoopHarborNodeTransport;
+import org.hongxi.jaws.harbor.model.Instance;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -81,10 +82,7 @@ class HarborPhase2Test {
 
     @Test
     void testConfigListenerNotification() {
-        // Add a listener (simulated by connectionId "conn-1")
         configStorage.addListener("public", "app.yaml", "DEFAULT_GROUP", "conn-1");
-
-        // Publish config — should trigger notification
         configStorage.publishConfig("public", "app.yaml", "DEFAULT_GROUP", "new content", null);
 
         assertEquals(1, notifications.size());
@@ -96,7 +94,6 @@ class HarborPhase2Test {
         configStorage.addListener("public", "app.yaml", "DEFAULT_GROUP", "conn-1");
         configStorage.removeAllListenersForConnection("conn-1");
 
-        // Publish config — should NOT trigger notification since listener was removed
         configStorage.publishConfig("public", "app.yaml", "DEFAULT_GROUP", "content", null);
         assertTrue(notifications.isEmpty());
     }
@@ -182,13 +179,10 @@ class HarborPhase2Test {
     void testServiceStorageSnapshot() {
         ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {});
 
-        JSONObject inst = new JSONObject();
-        inst.put("ip", "10.0.0.1");
-        inst.put("port", 8080);
-        inst.put("instanceId", "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
+        Instance inst = createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
         storage.registerInstance("public", "DEFAULT_GROUP", "svc1", inst);
 
-        Map<String, List<JSONObject>> snapshot = storage.getAllInstanceData();
+        Map<String, List<Instance>> snapshot = storage.getAllInstanceData();
         assertEquals(1, snapshot.size());
         assertTrue(snapshot.containsKey("public@@DEFAULT_GROUP@@svc1"));
     }
@@ -197,17 +191,10 @@ class HarborPhase2Test {
     void testServiceStorageVerifyChecksums() {
         ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {});
 
-        JSONObject inst1 = new JSONObject();
-        inst1.put("ip", "10.0.0.1");
-        inst1.put("port", 8080);
-        inst1.put("instanceId", "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
-        storage.registerInstance("public", "DEFAULT_GROUP", "svc1", inst1);
-
-        JSONObject inst2 = new JSONObject();
-        inst2.put("ip", "10.0.0.2");
-        inst2.put("port", 8081);
-        inst2.put("instanceId", "10.0.0.2#8081#DEFAULT_GROUP@@svc1");
-        storage.registerInstance("public", "DEFAULT_GROUP", "svc1", inst2);
+        storage.registerInstance("public", "DEFAULT_GROUP", "svc1",
+                createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1"));
+        storage.registerInstance("public", "DEFAULT_GROUP", "svc1",
+                createInstance("10.0.0.2", 8081, "10.0.0.2#8081#DEFAULT_GROUP@@svc1"));
 
         Map<String, Integer> checksums = storage.getVerifyChecksums();
         assertEquals(2, checksums.get("public@@DEFAULT_GROUP@@svc1"));
@@ -217,19 +204,15 @@ class HarborPhase2Test {
     void testServiceStorageApplySnapshot() {
         ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {});
 
-        JSONObject inst = new JSONObject();
-        inst.put("ip", "10.0.0.1");
-        inst.put("port", 8080);
-        inst.put("instanceId", "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
-
-        Map<String, List<JSONObject>> snapshot = Map.of(
+        Instance inst = createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
+        Map<String, List<Instance>> snapshot = Map.of(
                 "public@@DEFAULT_GROUP@@svc1", List.of(inst)
         );
         storage.applySnapshot(snapshot);
 
-        List<JSONObject> instances = storage.getInstances("public", "DEFAULT_GROUP", "svc1");
+        List<Instance> instances = storage.getInstances("public", "DEFAULT_GROUP", "svc1");
         assertEquals(1, instances.size());
-        assertEquals("10.0.0.1", instances.get(0).getString("ip"));
+        assertEquals("10.0.0.1", instances.get(0).getIp());
     }
 
     // ========================================================================
@@ -261,22 +244,16 @@ class HarborPhase2Test {
 
         DistroProtocol protocol = new DistroProtocol(cluster, config, transport, svcStorage, cfgStorage);
 
-        // Simulate receiving a naming sync from a peer
-        JSONObject syncData = new JSONObject();
-        JSONObject instance = new JSONObject();
-        instance.put("ip", "10.0.0.5");
-        instance.put("port", 9090);
-        instance.put("instanceId", "10.0.0.5#9090#DEFAULT_GROUP@@remote-svc");
-        syncData.put("instance", instance);
+        // Simulate receiving a naming sync — content is a serialized Instance
+        Instance instance = createInstance("10.0.0.5", 9090, "10.0.0.5#9090#DEFAULT_GROUP@@remote-svc");
 
         boolean ok = protocol.onReceive("naming", "public@@DEFAULT_GROUP@@remote-svc",
-                "CHANGE", JSON.toJSONBytes(syncData));
+                "CHANGE", JSON.toJSONBytes(instance));
         assertTrue(ok);
 
-        // Verify the instance was registered locally
-        List<JSONObject> instances = svcStorage.getInstances("public", "DEFAULT_GROUP", "remote-svc");
+        List<Instance> instances = svcStorage.getInstances("public", "DEFAULT_GROUP", "remote-svc");
         assertEquals(1, instances.size());
-        assertEquals("10.0.0.5", instances.get(0).getString("ip"));
+        assertEquals("10.0.0.5", instances.get(0).getIp());
     }
 
     @Test
@@ -289,7 +266,6 @@ class HarborPhase2Test {
 
         DistroProtocol protocol = new DistroProtocol(cluster, config, transport, svcStorage, cfgStorage);
 
-        // Simulate receiving a config sync from a peer
         JSONObject configData = new JSONObject();
         configData.put("content", "remote-config-value");
         configData.put("type", "properties");
@@ -298,7 +274,6 @@ class HarborPhase2Test {
                 "CHANGE", JSON.toJSONBytes(configData));
         assertTrue(ok);
 
-        // Verify the config was stored locally
         ConfigStorage.ConfigRecord record = cfgStorage.queryConfig("public", "app.properties", "DEFAULT_GROUP");
         assertNotNull(record);
         assertEquals("remote-config-value", record.content());
@@ -312,22 +287,16 @@ class HarborPhase2Test {
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
         ConfigStorage cfgStorage = new ConfigStorage((a, b, c, d) -> {});
 
-        // Add some data
-        JSONObject inst = new JSONObject();
-        inst.put("ip", "10.0.0.1");
-        inst.put("port", 8080);
-        inst.put("instanceId", "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
-        svcStorage.registerInstance("public", "DEFAULT_GROUP", "svc1", inst);
+        svcStorage.registerInstance("public", "DEFAULT_GROUP", "svc1",
+                createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1"));
         cfgStorage.publishConfig("public", "app.yaml", "DEFAULT_GROUP", "content", null);
 
         DistroProtocol protocol = new DistroProtocol(cluster, config, transport, svcStorage, cfgStorage);
 
-        // Get naming snapshot
         byte[] namingSnapshot = protocol.onSnapshot("naming");
         assertNotNull(namingSnapshot);
         assertTrue(namingSnapshot.length > 0);
 
-        // Get config snapshot
         byte[] configSnapshot = protocol.onSnapshot("config");
         assertNotNull(configSnapshot);
         assertTrue(configSnapshot.length > 0);
@@ -352,7 +321,8 @@ class HarborPhase2Test {
                 return true;
             }
             @Override
-            public boolean syncVerify(String targetAddress, String resourceType, JSONObject checksums) {
+            public boolean syncVerify(String targetAddress, String resourceType,
+                                      Map<String, String> checksums) {
                 return true;
             }
             @Override
@@ -369,11 +339,22 @@ class HarborPhase2Test {
 
         DistroProtocol protocol = new DistroProtocol(cluster, config, mockTransport, svcStorage, cfgStorage);
 
-        // Trigger a naming sync
         protocol.syncNamingChange("public@@DEFAULT_GROUP@@svc1", "CHANGE",
-                "{\"instance\":{}}".getBytes(StandardCharsets.UTF_8));
+                "{}".getBytes(StandardCharsets.UTF_8));
 
         assertEquals("10.0.0.2:9848", lastSyncTarget.get());
         assertEquals("naming:public@@DEFAULT_GROUP@@svc1", lastSyncType.get());
+    }
+
+    // ========================================================================
+    // Helpers
+    // ========================================================================
+
+    private static Instance createInstance(String ip, int port, String instanceId) {
+        Instance inst = new Instance();
+        inst.setIp(ip);
+        inst.setPort(port);
+        inst.setInstanceId(instanceId);
+        return inst;
     }
 }
