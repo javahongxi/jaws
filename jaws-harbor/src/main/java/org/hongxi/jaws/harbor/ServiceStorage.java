@@ -203,6 +203,103 @@ public class ServiceStorage {
     }
 
     // ========================================================================
+    // Heartbeat health check
+    // ========================================================================
+
+    /**
+     * Update the last heartbeat for all instances registered from the given client IP.
+     * This follows Nacos's connection-level health check model: any request from a
+     * client refreshes the heartbeat for all its registered instances.
+     *
+     * @param clientIp the client IP from Payload metadata
+     * @return number of instances whose heartbeat was updated
+     */
+    public int updateHeartbeatByClientIp(String clientIp) {
+        if (clientIp == null || clientIp.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        long now = System.currentTimeMillis();
+        for (List<JSONObject> instances : instanceMap.values()) {
+            for (JSONObject inst : instances) {
+                if (clientIp.equals(inst.getString("ip"))) {
+                    inst.put("lastBeat", now);
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Update the last heartbeat timestamp for a specific instance.
+     * Called when the instance sends any request (register, subscribe, health check).
+     *
+     * @return true if the instance was found and updated
+     */
+    public boolean updateInstanceHeartbeat(String namespace, String group, String serviceName,
+                                           String ip, int port) {
+        String key = buildKey(namespace, group, serviceName);
+        List<JSONObject> instances = instanceMap.get(key);
+        if (instances != null) {
+            for (JSONObject inst : instances) {
+                if (ip.equals(inst.getString("ip")) && port == inst.getIntValue("port", 0)) {
+                    inst.put("lastBeat", System.currentTimeMillis());
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Find all ephemeral instances whose last heartbeat exceeds the timeout.
+     *
+     * @param timeoutMs the heartbeat timeout in milliseconds
+     * @return list of expired instance descriptors (serviceKey + ip + port)
+     */
+    public List<ExpiredInstance> getExpiredInstances(long timeoutMs) {
+        long now = System.currentTimeMillis();
+        List<ExpiredInstance> expired = new ArrayList<>();
+        for (Map.Entry<String, List<JSONObject>> entry : instanceMap.entrySet()) {
+            String serviceKey = entry.getKey();
+            for (JSONObject inst : entry.getValue()) {
+                long lastBeat = inst.getLongValue("lastBeat", 0);
+                if (lastBeat > 0 && now - lastBeat > timeoutMs) {
+                    expired.add(new ExpiredInstance(
+                            serviceKey,
+                            inst.getString("ip"),
+                            inst.getIntValue("port", 0)));
+                }
+            }
+        }
+        return expired;
+    }
+
+    /**
+     * Remove a specific instance identified by ip:port from the given service.
+     * Notifies subscribers if the instance was actually removed.
+     */
+    public void removeInstanceByIpPort(String serviceKey, String ip, int port) {
+        instanceMap.computeIfPresent(serviceKey, (k, existing) -> {
+            existing.removeIf(inst ->
+                    ip.equals(inst.getString("ip")) && port == inst.getIntValue("port", 0));
+            return existing.isEmpty() ? null : existing;
+        });
+        // Parse serviceKey back to namespace/group/serviceName for notification
+        String[] parts = serviceKey.split("@@", 3);
+        if (parts.length == 3) {
+            log.info("[harbor] expired instance removed: {} -> {}:{}", serviceKey, ip, port);
+            notifySubscribers(serviceKey, parts[0], parts[1], parts[2]);
+        }
+    }
+
+    /**
+     * Descriptor for an expired instance returned by {@link #getExpiredInstances}.
+     */
+    public record ExpiredInstance(String serviceKey, String ip, int port) {}
+
+    // ========================================================================
     // Distro protocol support
     // ========================================================================
 
