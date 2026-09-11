@@ -28,7 +28,7 @@ public class HarborBootstrap {
 
     private static final int DEFAULT_PORT = 19848;
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         int port = DEFAULT_PORT;
         String clusterMembers = System.getProperty("harbor.clusterMembers", "");
 

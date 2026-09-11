@@ -383,6 +383,7 @@ public class HarborServer {
             // Process incoming client messages (ConnectionSetupRequest, acks, etc.)
             requestStream.subscribe(new StreamObserver<>() {
                 private String connectionId;
+                private String clientIp;
 
                 @Override
                 public void onNext(Message item) {
@@ -390,23 +391,24 @@ public class HarborServer {
                         return;
                     }
                     String type = payload.getMetadata().getType();
-                    String clientIp = payload.getMetadata().getClientIp();
+                    String ip = payload.getMetadata().getClientIp();
 
                     switch (type) {
                         case TYPE_CONNECTION_SETUP_REQUEST -> {
                             JSONObject body = parseBody(payload);
                             // Look up the connectionId assigned during ServerCheck
-                            connectionId = connectionIdByClientIp.get(clientIp);
+                            connectionId = connectionIdByClientIp.get(ip);
                             if (connectionId == null) {
                                 connectionId = UUID.randomUUID().toString();
                             }
+                            this.clientIp = ip;
                             String version = body.getString("clientVersion");
                             // noinspection unchecked
                             Map<String, String> labels = (Map<String, String>) body.get("labels");
                             if (labels == null) {
                                 labels = Map.of();
                             }
-                            connectionManager.register(connectionId, clientIp, version,
+                            connectionManager.register(connectionId, ip, version,
                                     labels, pushSubject);
                         }
                         case TYPE_NOTIFY_SUBSCRIBER_RESPONSE ->
@@ -440,6 +442,15 @@ public class HarborServer {
                     connectionManager.remove(connId);
                     serviceStorage.removeAllSubscribersForConnection(connId);
                     configStorage.removeAllListenersForConnection(connId);
+                    // Deregister all instances registered by this client (Nacos ClientReleaseEvent equivalent)
+                    if (clientIp != null) {
+                        int removed = serviceStorage.deregisterInstancesByClientIp(clientIp);
+                        if (removed > 0) {
+                            log.info("[harbor] disconnected client {} had {} instance(s) deregistered",
+                                    connId, removed);
+                        }
+                        connectionIdByClientIp.remove(clientIp);
+                    }
                 }
             });
 

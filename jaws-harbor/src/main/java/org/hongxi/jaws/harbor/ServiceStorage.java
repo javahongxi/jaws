@@ -295,6 +295,42 @@ public class ServiceStorage {
     }
 
     /**
+     * Remove all instances registered from the given client IP across all services.
+     * Called when a client connection is closed (bi-stream completed/error).
+     * Notifies subscribers for each affected service.
+     *
+     * @param clientIp the client IP from Payload metadata
+     * @return total number of instances removed
+     */
+    public int deregisterInstancesByClientIp(String clientIp) {
+        if (clientIp == null || clientIp.isEmpty()) {
+            return 0;
+        }
+        int totalRemoved = 0;
+        for (Map.Entry<String, List<JSONObject>> entry : instanceMap.entrySet()) {
+            String serviceKey = entry.getKey();
+            List<JSONObject> instances = entry.getValue();
+            int before = instances.size();
+            instances.removeIf(inst -> clientIp.equals(inst.getString("ip")));
+            int removed = before - instances.size();
+            if (removed > 0) {
+                totalRemoved += removed;
+                if (instances.isEmpty()) {
+                    instanceMap.remove(serviceKey);
+                }
+                // Parse serviceKey and notify subscribers
+                String[] parts = serviceKey.split("@@", 3);
+                if (parts.length == 3) {
+                    log.info("[harbor] instance(s) deregistered on disconnect: {} -> {} ({} instance(s))",
+                            serviceKey, clientIp, removed);
+                    notifySubscribers(serviceKey, parts[0], parts[1], parts[2]);
+                }
+            }
+        }
+        return totalRemoved;
+    }
+
+    /**
      * Descriptor for an expired instance returned by {@link #getExpiredInstances}.
      */
     public record ExpiredInstance(String serviceKey, String ip, int port) {}
