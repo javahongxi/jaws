@@ -26,7 +26,7 @@ public class HarborProvider {
     private static final int PORT = Integer.parseInt(System.getProperty("port", "20000"));
     private static final int HARBOR_PORT = Integer.parseInt(System.getProperty("harbor.port", "19848"));
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         // nacos-client gRPC port offset must be 0 so it connects directly to HarborServer
         System.setProperty("nacos.server.grpc.port.offset", "0");
 

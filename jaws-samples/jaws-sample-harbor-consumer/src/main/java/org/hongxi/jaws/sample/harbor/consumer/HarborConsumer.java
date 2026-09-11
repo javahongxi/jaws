@@ -36,7 +36,7 @@ public class HarborConsumer {
 
     private static final int HARBOR_PORT = Integer.parseInt(System.getProperty("harbor.port", "19848"));
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         // nacos-client gRPC port offset must be 0 so it connects directly to HarborServer
         System.setProperty("nacos.server.grpc.port.offset", "0");
 
@@ -155,7 +155,7 @@ public class HarborConsumer {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setProtocol(protocolName);
         registryConfig.setId("defaultRegistry");
-        registryConfig.setAddress("127.0.0.1");
+        registryConfig.setAddress("127.0.0.1:19848,127.0.0.1:19849,127.0.0.1:19850");
         registryConfig.setPort(HARBOR_PORT);
         return registryConfig;
     }

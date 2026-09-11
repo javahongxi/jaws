@@ -25,7 +25,7 @@ public class NacosProvider {
 
     private static final int PORT = Integer.parseInt(System.getProperty("port", "10000"));
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
         RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_NACOS);
 

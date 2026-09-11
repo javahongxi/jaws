@@ -32,7 +32,7 @@ public class WireHealthDemo {
 
     private static final int WIRE_PORT = 50062;
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         // Start jaws-wire server; health service is auto-registered
         URL url = new URL("wire", "localhost", WIRE_PORT, "health", Map.of());
         WireServer wireServer = new WireServer(url, new WireHandlerRegistry());

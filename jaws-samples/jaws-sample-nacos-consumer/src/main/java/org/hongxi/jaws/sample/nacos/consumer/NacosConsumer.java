@@ -33,7 +33,7 @@ import java.util.Map;
  */
 public class NacosConsumer {
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
         RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_NACOS);
 
