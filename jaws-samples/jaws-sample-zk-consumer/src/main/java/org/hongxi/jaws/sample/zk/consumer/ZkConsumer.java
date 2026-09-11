@@ -133,8 +133,6 @@ public class ZkConsumer {
             System.out.println("server => " + serverUrl2.getHost() + ":" + serverUrl2.getPort());
         }
 
-        /* Sample calls done, force exit (non-daemon threads of Netty/Curator would prevent JVM auto-exit) */
-        System.exit(0);
     }
 
     private static ProtocolConfig createProtocolConfig(String protocolName) {

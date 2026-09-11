@@ -167,8 +167,6 @@ public class AdaptiveConsumer {
             System.err.println("HTTP/1.1 verification failed: " + e.getMessage());
         }
 
-        /* Exit forcibly (Netty non-daemon threads would prevent JVM from exiting) */
-        System.exit(0);
     }
 
     private static ProtocolConfig createProtocolConfig(String transport) {

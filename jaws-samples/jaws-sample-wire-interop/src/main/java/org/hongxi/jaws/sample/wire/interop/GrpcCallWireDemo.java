@@ -411,7 +411,5 @@ public class GrpcCallWireDemo {
         } finally {
             wireServer.close();
         }
-
-        System.exit(0);
     }
 }

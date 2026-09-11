@@ -5,8 +5,8 @@ import org.hongxi.jaws.rpc.URL;
 /**
  * Standalone HarborServer — a Nacos-compatible control plane.
  *
- * <p>Starts a standalone HarborServer that handles service registration,
- * discovery, and configuration management via the Nacos 2.x gRPC protocol.</p>
+ * <p>Starts a standalone HarborServer that handles service registration and
+ * discovery via the Nacos 2.x gRPC protocol.</p>
  *
  * <pre>
  * Usage:

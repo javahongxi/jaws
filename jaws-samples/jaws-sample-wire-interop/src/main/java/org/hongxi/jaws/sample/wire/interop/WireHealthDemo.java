@@ -63,7 +63,5 @@ public class WireHealthDemo {
         } finally {
             wireServer.close();
         }
-
-        System.exit(0);
     }
 }

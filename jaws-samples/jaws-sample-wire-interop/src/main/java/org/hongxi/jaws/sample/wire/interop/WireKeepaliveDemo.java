@@ -53,7 +53,6 @@ public class WireKeepaliveDemo {
         tooManyPingsEnforced();
         System.out.println();
         System.out.println("=== ALL KEEPALIVE INTEROP CHECKS PASSED ===");
-        System.exit(0);
     }
 
     /**

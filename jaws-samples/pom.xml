@@ -37,7 +37,6 @@
         <module>jaws-sample-adaptive-consumer</module>
         <module>jaws-sample-harbor-provider</module>
         <module>jaws-sample-harbor-consumer</module>
-        <module>jaws-sample-admin</module>
     </modules>
 
     <dependencies>

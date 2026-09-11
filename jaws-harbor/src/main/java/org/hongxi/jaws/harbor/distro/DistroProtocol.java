@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit;
  *   <li><b>Load</b> — on startup, load a snapshot from a peer to catch up on
  *       data that was written while this node was offline</li>
  * </ul>
- * Two resource types are managed: {@code naming} (service instances).
+ * The only resource type managed is {@code naming} (service instances).
  *
  * @author shenhongxi
  */

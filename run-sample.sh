@@ -29,7 +29,6 @@ ADAPTIVE_CONSUMER_MODULE="jaws-samples/jaws-sample-adaptive-consumer"
 HARBOR_BOOTSTRAP_MODULE="jaws-harbor"
 HARBOR_PROVIDER_MODULE="jaws-samples/jaws-sample-harbor-provider"
 HARBOR_CONSUMER_MODULE="jaws-samples/jaws-sample-harbor-consumer"
-ADMIN_MODULE="jaws-samples/jaws-sample-admin"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -55,7 +54,6 @@ ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsume
 HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.harbor.HarborBootstrap"
 HARBOR_PROVIDER_MAIN="org.hongxi.jaws.sample.harbor.provider.HarborProvider"
 HARBOR_CONSUMER_MAIN="org.hongxi.jaws.sample.harbor.consumer.HarborConsumer"
-ADMIN_MAIN="org.hongxi.jaws.admin.AdminApplication"
 
 usage() {
     cat <<'EOF'
@@ -85,7 +83,6 @@ usage() {
     harbor-cluster       Start 3-node HarborServer cluster (ports 19848/19849/19850)
     harbor-provider [port]  Start HarborProvider in foreground (requires HarborServer, default port 20000)
     harbor [port]      One-shot Harbor sample: Provider -> Consumer (requires HarborServer running)
-    admin [port]       Start Admin console (Spring Boot Web, default port 8088)
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
     bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
@@ -125,8 +122,6 @@ usage() {
     ./run-sample.sh harbor-provider    # Start HarborProvider port 20000 (foreground, Ctrl+C to stop)
     ./run-sample.sh harbor-provider 10001  # Start HarborProvider port 10001
     ./run-sample.sh harbor             # One-shot Provider + Consumer (requires HarborServer)
-    ./run-sample.sh admin              # Start Admin console on port 8088
-    ./run-sample.sh admin 9090         # Start Admin console on port 9090
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -686,15 +681,6 @@ cmd_wire_interop() {
     echo "All wire-interop demos passed."
 }
 
-cmd_admin() {
-    ensure_built
-    local port="${1:-8088}"
-    echo "Starting Jaws Admin console on port $port ..."
-    echo "Dashboard: http://localhost:$port"
-    echo "--------------------------------------------"
-    $MVN spring-boot:run -pl "$ADMIN_MODULE" -Dspring-boot.run.arguments="--server.port=$port" -q
-}
-
 cmd_consumer() {
     ensure_built
     echo "Running ZkConsumer..."
@@ -794,7 +780,6 @@ case "${1:-}" in
     harbor-standalone) shift; cmd_harbor_standalone "$@" ;;
     harbor-cluster)  cmd_harbor_cluster ;;
     harbor-provider) shift; cmd_harbor_provider "$@" ;;
-    admin)         cmd_admin "${2:-}" ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;

@@ -10,6 +10,7 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import org.hongxi.jaws.transport.ChannelState;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
@@ -54,7 +55,12 @@ import java.util.concurrent.TimeUnit;
 public class NettyClient extends AbstractClient {
     private static final Logger log = LoggerFactory.getLogger(NettyClient.class);
 
-    private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
+    // Shared EventLoopGroup for all NettyClient instances.
+    // Daemon threads allow JVM to exit even if the group is not explicitly
+    // shut down (e.g. in sample applications). This follows the same pattern
+    // as Apache Dubbo's NettyEventLoopFactory.
+    private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup(
+            new DefaultThreadFactory("jaws-netty-client", true));
 
     private final InetSocketAddress remoteAddress;
     private final boolean needReconnect;

@@ -77,6 +77,9 @@ public class HarborServer {
     private static final String TYPE_NOTIFY_SUBSCRIBER_RESPONSE = "NotifySubscriberResponse";
     private static final String TYPE_HEALTH_CHECK_REQUEST = "HealthCheckRequest";
 
+    // Config requests from nacos-client (not supported — return silent success)
+    private static final String TYPE_CONFIG_BATCH_LISTEN_REQUEST = "ConfigBatchListenRequest";
+
     // Distro inter-node request types
     private static final String TYPE_DISTRO_SYNC_REQUEST = "DistroSyncRequest";
     private static final String TYPE_DISTRO_VERIFY_REQUEST = "DistroVerifyRequest";
@@ -163,21 +166,20 @@ public class HarborServer {
     }
 
     /**
-     * Clean up connection state by clientIp. Called by {@link ConnectionCleanupHandler}
+     * Clean up connection state by connectionId. Called by {@link ConnectionCleanupHandler}
      * when the connection channel becomes inactive (client GOAWAY, network failure, etc.).
      * Deregisters instances and removes subscribers.
      */
-    void cleanupConnectionByClientIp(String clientIp) {
-        String connId = connectionIdByClientIp.remove(clientIp);
-        if (connId != null) {
-            connectionManager.remove(connId);
-            serviceStorage.removeAllSubscribersForConnection(connId);
-            int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
-            if (removed > 0) {
-                log.info("[harbor] deregistered {} instance(s) on connection close: clientIp={}, connId={}",
-                        removed, clientIp, connId);
-            }
+    void cleanupConnectionById(String connId) {
+        connectionManager.remove(connId);
+        serviceStorage.removeAllSubscribersForConnection(connId);
+        int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
+        if (removed > 0) {
+            log.info("[harbor] deregistered {} instance(s) on connection close: connId={}",
+                    removed, connId);
         }
+        // Also clean up the clientIp mapping if it points to this connection
+        connectionIdByClientIp.values().removeIf(connId::equals);
     }
 
     public void start() {
@@ -382,6 +384,11 @@ public class HarborServer {
                     case TYPE_DISTRO_SYNC_REQUEST -> handleDistroSync(payload);
                     case TYPE_DISTRO_VERIFY_REQUEST -> handleDistroVerify(payload);
                     case TYPE_DISTRO_SNAPSHOT_REQUEST -> handleDistroSnapshot(payload);
+                    // Config requests — Harbor does not support config center;
+                    // return silent success to prevent nacos-client from retrying.
+                    case TYPE_CONFIG_BATCH_LISTEN_REQUEST ->
+                            buildPayload("ConfigBatchListenResponse",
+                                    org.hongxi.jaws.harbor.model.response.ConfigBatchListenResponse.ok());
                     default -> {
                         log.warn("[harbor] unknown request type: {}", type);
                         yield buildErrorResponse(type, "Unknown request type: " + type);
@@ -463,16 +470,19 @@ public class HarborServer {
                             }
                             connectionManager.register(connectionId, ip, version,
                                     labels, pushSubject);
-                            // Send SetupAckRequest back through the bi-stream.
+                            // Always send SetupAckRequest back through the bi-stream.
+                            // The nacos-client expects this ack to confirm the connection
+                            // is established. Not sending it causes the client to think
+                            // the connection is bad and trigger GOAWAY → reconnect loop.
                             // The nacos-client bi-stream observer casts every incoming
                             // payload to Request, NOT Response. Sending a Response subclass
                             // causes ClassCastException → onError → switchServerAsync →
                             // infinite reconnection loop (~10s cycle).
-                            if (setup.getAbilityTable() != null) {
-                                Payload setupAck = buildPushPayload(TYPE_SETUP_ACK_REQUEST,
-                                        new SetupAckRequest(Map.of()));
-                                pushSubject.onNext(setupAck);
-                            }
+                            Payload setupAck = buildPushPayload(TYPE_SETUP_ACK_REQUEST,
+                                    new SetupAckRequest(Map.of()));
+                            log.debug("[harbor] sending SetupAckRequest to connId={}, clientIp={}",
+                                    connectionId, ip);
+                            pushSubject.onNext(setupAck);
                         }
                         case TYPE_NOTIFY_SUBSCRIBER_RESPONSE ->
                             // Client ack for a NotifySubscriberRequest — no action needed
@@ -491,6 +501,12 @@ public class HarborServer {
                     if (connectionId != null) {
                         cleanupConnection(connectionId);
                     }
+                    // Do NOT call pushSubject.onCompleted() here.
+                    // The client already sent RST/GOAWAY — the stream is dead.
+                    // Sending trailers on a reset stream confuses the Nacos
+                    // client SDK and triggers an immediate reconnect cycle.
+                    // channelInactive will complete pushSubject when the TCP
+                    // connection actually closes.
                 }
 
                 @Override
@@ -499,7 +515,9 @@ public class HarborServer {
                     if (connectionId != null) {
                         cleanupConnection(connectionId);
                     }
-                    pushSubject.onCompleted();
+                    // Do NOT call pushSubject.onCompleted() — same reason as
+                    // onError: the client initiated the close, the stream is
+                    // already gone. channelInactive handles the final cleanup.
                 }
 
                 private void cleanupConnection(String connId) {
@@ -543,10 +561,13 @@ public class HarborServer {
             connectionIdByClientIp.put(clientIp, connectionId);
         }
         // Claim the cleanup handler for this connection and set the clientIp
-        // so that channelInactive can deregister instances.
+        // AND connectionId so that channelInactive can deregister instances
+        // using the exact connectionId (not the shared map, which may have
+        // been overwritten by another connection from the same clientIp).
         ConnectionCleanupHandler handler = pendingCleanupHandlers.poll();
         if (handler != null) {
             handler.setClientIp(clientIp);
+            handler.setConnectionId(connectionId);
         }
         ServerCheckResponse response = new ServerCheckResponse();
         response.setResultCode(200);

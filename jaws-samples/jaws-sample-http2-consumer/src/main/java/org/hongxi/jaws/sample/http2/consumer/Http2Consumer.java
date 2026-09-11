@@ -252,8 +252,6 @@ public class Http2Consumer {
         }
         System.out.println("bidi stream completed.");
 
-        /* Exit forcibly (Netty non-daemon threads would prevent JVM from exiting) */
-        System.exit(0);
     }
 
     private static ProtocolConfig createProtocolConfig() {

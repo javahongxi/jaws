@@ -68,7 +68,6 @@ public class GenericSampleConsumer {
 
         System.out.println("\nGeneric invocation done");
         ref.destroy();
-        System.exit(0);
     }
 
     private static ProtocolConfig createProtocolConfig() {

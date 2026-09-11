@@ -184,8 +184,5 @@ public class WireConsumer {
         }
 
         System.out.println("Done.");
-
-        // Force exit (Netty/Curator non-daemon threads prevent JVM exit)
-        System.exit(0);
     }
 }

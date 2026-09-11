@@ -18,7 +18,7 @@ public interface HarborNodeTransport {
      * Send a sync message to a peer node.
      *
      * @param targetAddress peer address (host:port)
-     * @param resourceType  the type of resource being synced (e.g. "naming", "config")
+     * @param resourceType  the type of resource being synced (e.g. "naming")
      * @param resourceKey   the key of the resource
      * @param operation     the operation type (CHANGE, DELETE)
      * @param content       the serialized data content

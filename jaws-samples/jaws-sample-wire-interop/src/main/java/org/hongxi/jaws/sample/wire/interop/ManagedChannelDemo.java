@@ -137,7 +137,5 @@ public class ManagedChannelDemo {
                 server.shutdown();
             }
         }
-
-        System.exit(0);
     }
 }

@@ -133,11 +133,9 @@ public class NacosConsumer {
             System.out.println("server => " + serverUrl2.getHost() + ":" + serverUrl2.getPort());
         }
 
-        /* Sample calls done — destroy references before exit to prevent
-           nacos-client shutdown hook from triggering reconnection loops. */
+        /* Sample calls done — destroy references for clean shutdown. */
         orderRef.destroy();
         demoRef.destroy();
-        System.exit(0);
     }
 
     private static ProtocolConfig createProtocolConfig(String protocolName) {

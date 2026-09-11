@@ -161,8 +161,6 @@ public class NettyConsumer {
             System.out.println("server => " + serverUrl2.getHost() + ":" + serverUrl2.getPort());
         }
 
-        /* Exit forcibly (Netty non-daemon threads would prevent JVM from exiting) */
-        System.exit(0);
     }
 
     private static ProtocolConfig createProtocolConfig() {

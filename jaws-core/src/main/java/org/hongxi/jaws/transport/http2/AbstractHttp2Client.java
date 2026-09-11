@@ -12,6 +12,7 @@ import io.netty.handler.ssl.ApplicationProtocolNames;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -53,8 +54,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class AbstractHttp2Client extends AbstractClient {
     private static final Logger log = LoggerFactory.getLogger(AbstractHttp2Client.class);
 
-    /** Shared event loop group for all HTTP/2 client connections. */
-    private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
+    /**
+     * Shared event loop group for all HTTP/2 client connections.
+     * Daemon threads allow JVM to exit even if the group is not explicitly
+     * shut down (e.g. in sample applications).
+     */
+    private static final NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup(
+            new DefaultThreadFactory("jaws-http2-client", true));
 
     /** Human-readable client name used in log messages and thread names. */
     private final String clientName;
