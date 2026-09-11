@@ -3,6 +3,7 @@ package org.hongxi.jaws.harbor;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http2.Http2GoAwayFrame;
+import io.netty.handler.codec.http2.Http2PingFrame;
 import io.netty.util.ReferenceCountUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +15,12 @@ import org.slf4j.LoggerFactory;
  *       forwarding them. The Nacos client SDK reconnects on any connection
  *       close, so closing here would cause an infinite
  *       connect → GOAWAY → close → reconnect loop.</li>
+ *   <li>Treats incoming HTTP/2 PING frames as proof-of-life: calls
+ *       {@link ConnectionManager#touch} so the stale-connection watchdog
+ *       does not mistake a PING-only connection for a dead one.  Nacos 3.x
+ *       clients rely on gRPC keepalive PINGs rather than Payload-level
+ *       heartbeats, so without this the watchdog fires after 90 s of idle
+ *       and deregisters healthy provider instances.</li>
  *   <li>On {@code channelInactive}, delegates to the {@link HarborServer} to
  *       deregister instances and clean up connection state.</li>
  * </ul>
@@ -23,7 +30,7 @@ import org.slf4j.LoggerFactory;
  * {@code channelInactive} callback is the definitive cleanup signal when
  * the TCP connection actually closes (client disconnect, watchdog, etc.).
  * <p>
- * The clientIp is set by {@code HarborServer.handleServerCheck()} via the
+ * The connectionId is set by {@code HarborServer.handleServerCheck()} via the
  * pending-queue mechanism (each new connection enqueues a handler; ServerCheck
  * polls and claims it).
  *
@@ -34,15 +41,10 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(ConnectionCleanupHandler.class);
 
     private final HarborServer server;
-    private volatile String clientIp;
     private volatile String connectionId;
 
     ConnectionCleanupHandler(HarborServer server) {
         this.server = server;
-    }
-
-    void setClientIp(String clientIp) {
-        this.clientIp = clientIp;
     }
 
     void setConnectionId(String connectionId) {
@@ -67,6 +69,15 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
                 ReferenceCountUtil.release(msg);
             }
             return;
+        }
+        if (msg instanceof Http2PingFrame ping && !ping.ack()) {
+            // Nacos 3.x clients keep connections alive via gRPC keepalive
+            // PINGs rather than Payload-level heartbeats.  Treat each
+            // incoming PING as proof-of-life so the stale-connection
+            // watchdog does not kill a healthy idle connection.
+            if (connectionId != null) {
+                server.getConnectionManager().touch(connectionId);
+            }
         }
         super.channelRead(ctx, msg);
     }

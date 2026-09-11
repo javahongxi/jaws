@@ -81,6 +81,28 @@ public class ConnectionManager {
     }
 
     /**
+     * Update the last activity timestamp for ALL connections from a given
+     * client IP.  This is needed for unary requests (e.g. HealthCheckRequest)
+     * where the stream-level channel is not directly associated with a
+     * specific connectionId.  The {@code connectionIdByClientIp} map in
+     * {@code HarborServer} can be overwritten when the same client IP opens
+     * multiple connections (Nacos client creates separate connections for
+     * naming, config, etc.), so a map lookup would touch the wrong
+     * connection and let the real one go stale.
+     */
+    public void touchByClientIp(String clientIp) {
+        if (clientIp == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (ConnectionRecord record : connections.values()) {
+            if (clientIp.equals(record.clientIp())) {
+                lastActiveTime.put(record.connectionId(), now);
+            }
+        }
+    }
+
+    /**
      * Remove connections whose last activity exceeds the timeout.
      * Called by the periodic watchdog to clean up dead connections
      * (e.g. half-open TCP after client process killed).

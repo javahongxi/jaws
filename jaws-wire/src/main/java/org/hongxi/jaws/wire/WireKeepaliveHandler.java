@@ -115,12 +115,17 @@ public class WireKeepaliveHandler extends ChannelInboundHandlerAdapter {
                     // Fall through: a strike still refreshes the reference ping
                     // time, otherwise every following PING would count again.
                     lastPingTimeNanos = now;
-                    return;
+                } else {
+                    lastPingTimeNanos = now;
                 }
+            } else {
+                lastPingTimeNanos = now;
             }
-            lastPingTimeNanos = now;
         }
-        // ACK PING frames are silently consumed here — the actual PING reply
-        // is handled by Http2FrameCodec's auto-ACK; no refcount to release.
+        // Forward PING downstream so that connection-level handlers (e.g.
+        // Harbor's ConnectionCleanupHandler) can observe it as proof-of-life.
+        // Http2FrameCodec has already auto-ACKed; forwarding does not cause
+        // a duplicate PING reply.
+        super.channelRead(ctx, msg);
     }
 }

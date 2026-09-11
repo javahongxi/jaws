@@ -195,8 +195,7 @@ public class ServiceStorage {
         return info;
     }
 
-    private void notifySubscribers(String key, String namespace, String group,
-                                   String serviceName) {
+    private void notifySubscribers(String key, String namespace, String group, String serviceName) {
         Set<String> subscribers = subscriberMap.get(key);
         if (subscribers == null || subscribers.isEmpty()) {
             return;
@@ -217,44 +216,19 @@ public class ServiceStorage {
      * client refreshes the heartbeat for all its registered instances.
      *
      * @param clientIp the client IP from Payload metadata
-     * @return number of instances whose heartbeat was updated
      */
-    public int updateHeartbeatByClientIp(String clientIp) {
+    public void updateHeartbeatByClientIp(String clientIp) {
         if (clientIp == null || clientIp.isEmpty()) {
-            return 0;
+            return;
         }
-        int count = 0;
         long now = System.currentTimeMillis();
         for (List<Instance> instances : instanceMap.values()) {
             for (Instance inst : instances) {
                 if (clientIp.equals(inst.getIp())) {
                     inst.setLastBeat(now);
-                    count++;
                 }
             }
         }
-        return count;
-    }
-
-    /**
-     * Update the last heartbeat timestamp for a specific instance.
-     * Called when the instance sends any request (register, subscribe, health check).
-     *
-     * @return true if the instance was found and updated
-     */
-    public boolean updateInstanceHeartbeat(String namespace, String group, String serviceName,
-                                           String ip, int port) {
-        String key = buildKey(namespace, group, serviceName);
-        List<Instance> instances = instanceMap.get(key);
-        if (instances != null) {
-            for (Instance inst : instances) {
-                if (ip.equals(inst.getIp()) && port == inst.getPort()) {
-                    inst.setLastBeat(System.currentTimeMillis());
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     /**
@@ -271,10 +245,7 @@ public class ServiceStorage {
             for (Instance inst : entry.getValue()) {
                 long lastBeat = inst.getLastBeat();
                 if (lastBeat > 0 && now - lastBeat > timeoutMs) {
-                    expired.add(new ExpiredInstance(
-                            serviceKey,
-                            inst.getIp(),
-                            inst.getPort()));
+                    expired.add(new ExpiredInstance(serviceKey, inst.getIp(), inst.getPort()));
                 }
             }
         }

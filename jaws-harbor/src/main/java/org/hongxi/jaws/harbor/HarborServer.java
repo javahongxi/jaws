@@ -365,11 +365,13 @@ public class HarborServer {
             // Update heartbeat for all instances from this client (Nacos connection-level model)
             serviceStorage.updateHeartbeatByClientIp(clientIp);
 
-            // Touch the connection so the stale-connection watchdog knows it's alive
-            String connId = connectionIdByClientIp.get(clientIp);
-            if (connId != null) {
-                connectionManager.touch(connId);
-            }
+            // Touch ALL connections from this client IP.  We cannot use
+            // connectionIdByClientIp here because the Nacos client opens
+            // multiple connections from the same IP (naming, config, etc.)
+            // and the map is overwritten by each new ServerCheck — touching
+            // the mapped connectionId would leave the REAL sender untouched,
+            // causing the watchdog to kill it after 90 s.
+            connectionManager.touchByClientIp(clientIp);
 
             try {
                 return switch (type) {
@@ -560,13 +562,12 @@ public class HarborServer {
         if (clientIp != null && !clientIp.isEmpty()) {
             connectionIdByClientIp.put(clientIp, connectionId);
         }
-        // Claim the cleanup handler for this connection and set the clientIp
-        // AND connectionId so that channelInactive can deregister instances
+        // Claim the cleanup handler for this connection and set the
+        // connectionId so that channelInactive can deregister instances
         // using the exact connectionId (not the shared map, which may have
         // been overwritten by another connection from the same clientIp).
         ConnectionCleanupHandler handler = pendingCleanupHandlers.poll();
         if (handler != null) {
-            handler.setClientIp(clientIp);
             handler.setConnectionId(connectionId);
         }
         ServerCheckResponse response = new ServerCheckResponse();
