@@ -149,17 +149,20 @@ public class ClientSession {
 
     /**
      * Recalculate the revision based on current publisher content.
-     * Uses a simple hash of service keys and instance ip#port, matching
-     * Nacos's approach of detecting data divergence.
+     * Uses XOR of per-entry hashes so the result is order-independent —
+     * critical because ConcurrentHashMap iteration order depends on
+     * physical bucket layout, which can differ between a native session
+     * (evolved incrementally) and a synced session (bulk-applied in
+     * array order).  Same logical data must always yield the same revision.
      */
     public void recalculateRevision() {
-        int hash = 1;
+        int hash = 0;
         for (Map.Entry<String, List<Instance>> entry : publishers.entrySet()) {
             for (Instance inst : entry.getValue()) {
                 int entryHash = entry.getKey().hashCode() * 31
                         + inst.getIp().hashCode() * 31
                         + inst.getPort();
-                hash = hash * 31 + entryHash;
+                hash ^= entryHash;
             }
         }
         revision.set(hash);

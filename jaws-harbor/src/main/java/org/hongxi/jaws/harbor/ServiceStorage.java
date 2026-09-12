@@ -536,7 +536,6 @@ public class ServiceStorage {
         // Create or update the ClientSession
         ClientSession session = new ClientSession(clientId);
         session.setNativeClient(false);
-        session.setRevision(data.getRevision());
 
         // Apply publishers — write to ClientSession + add clientId to publisherIndexes
         List<String> serviceKeys = data.getServiceKeys();
@@ -552,6 +551,11 @@ public class ServiceStorage {
                 invalidateServiceCache(serviceKey);
             }
         }
+
+        // Set the authoritative revision AFTER all addInstance calls,
+        // because each addInstance triggers recalculateRevision() which
+        // would otherwise overwrite the source revision we just received.
+        session.setRevision(data.getRevision());
 
         // Apply subscribers — write to ClientSession + add clientId to subscriberIndexes
         List<String> subscriberKeys = data.getSubscriberKeys();
