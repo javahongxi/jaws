@@ -43,8 +43,13 @@ public class DistroProtocol {
     public static final String OP_CHANGE = "CHANGE";
     public static final String OP_DELETE = "DELETE";
 
+    /** Verify interval matching Nacos {@code DEFAULT_HEALTH_CHECK_INTERVAL = 5s}. */
+    private static final long VERIFY_INTERVAL_MS = 5000L;
+
+    /** Load-data retry delay on failure. */
+    private static final long LOAD_DATA_RETRY_DELAY_MS = 30_000L;
+
     private final ClusterManager clusterManager;
-    private final DistroConfig distroConfig;
     private final HarborNodeTransport transport;
     private final ServiceStorage serviceStorage;
 
@@ -59,11 +64,9 @@ public class DistroProtocol {
     private volatile boolean running = false;
 
     public DistroProtocol(ClusterManager clusterManager,
-                          DistroConfig distroConfig,
                           HarborNodeTransport transport,
                           ServiceStorage serviceStorage) {
         this.clusterManager = clusterManager;
-        this.distroConfig = distroConfig;
         this.transport = transport;
         this.serviceStorage = serviceStorage;
     }
@@ -80,8 +83,8 @@ public class DistroProtocol {
 
         // Schedule periodic verify task
         scheduler.scheduleAtFixedRate(this::runVerifyTask,
-                distroConfig.getVerifyIntervalMillis(),
-                distroConfig.getVerifyIntervalMillis(),
+                VERIFY_INTERVAL_MS,
+                VERIFY_INTERVAL_MS,
                 TimeUnit.MILLISECONDS);
 
         // Schedule initial load task (runs once, retries on failure)
@@ -246,7 +249,7 @@ public class DistroProtocol {
             // Retry after delay
             if (running) {
                 scheduler.schedule(this::runLoadTask,
-                        distroConfig.getLoadDataRetryDelayMillis(), TimeUnit.MILLISECONDS);
+                        LOAD_DATA_RETRY_DELAY_MS, TimeUnit.MILLISECONDS);
             }
         }
     }

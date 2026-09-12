@@ -1,7 +1,6 @@
 package org.hongxi.jaws.harbor;
 
 import com.alibaba.fastjson2.JSON;
-import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.Instance;

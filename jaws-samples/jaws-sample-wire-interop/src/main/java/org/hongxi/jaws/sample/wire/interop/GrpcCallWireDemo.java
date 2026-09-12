@@ -31,14 +31,14 @@ import java.util.concurrent.atomic.AtomicReference;
  *       read the {@code x-trace-id} inbound metadata and echo it in the
  *       response</li>
  *   <li>The streaming handler overrides {@code methodType()} to return
- *       {@link MethodType#SERVER_STREAMING} and {@code handleStream()} to emit
+ *       {@link MethodType#SERVER_STREAM} and {@code handleStream()} to emit
  *       multiple replies via a cold {@link org.hongxi.jaws.stream.StreamSource}</li>
  *   <li>The bidi handler overrides {@code methodType()} to return
  *       {@link MethodType#BIDIRECTIONAL} and {@code handleBiStream()} to echo
  *       each request item as a response via a {@link StreamSubject}
  *       (synchronous delivery, unlike {@code SubmissionPublisher})</li>
  *   <li>The client-streaming handler overrides {@code methodType()} to return
- *       {@link MethodType#CLIENT_STREAMING} and {@code handleClientStream()} to
+ *       {@link MethodType#CLIENT_STREAM} and {@code handleClientStream()} to
  *       collect all names and return a single aggregated reply</li>
  *   <li>A grpc-java client sends unary calls with {@code x-trace-id} attached
  *       via {@link MetadataUtils} and a server-streaming call with an async
@@ -93,7 +93,7 @@ public class GrpcCallWireDemo {
         registry.register("interop.Greeter", "SayHelloStream", new WireMethodHandler() {
             @Override
             public MethodType methodType() {
-                return MethodType.SERVER_STREAMING;
+                return MethodType.SERVER_STREAM;
             }
 
             @Override
@@ -127,7 +127,7 @@ public class GrpcCallWireDemo {
         registry.register("interop.Greeter", "ClientStreamGreet", new WireMethodHandler() {
             @Override
             public MethodType methodType() {
-                return MethodType.CLIENT_STREAMING;
+                return MethodType.CLIENT_STREAM;
             }
 
             @Override
@@ -194,7 +194,7 @@ public class GrpcCallWireDemo {
             }
 
             @Override
-            public org.hongxi.jaws.stream.StreamSource<Message> handleBiStream(
+            public org.hongxi.jaws.stream.StreamSource<Message> handleBidiStream(
                     org.hongxi.jaws.stream.StreamSource<Message> requestStream) {
                 System.out.println("[jaws-wire server] BidiGreet stream opened");
                 StreamSubject<Message> responseObserver = new StreamSubject<>();

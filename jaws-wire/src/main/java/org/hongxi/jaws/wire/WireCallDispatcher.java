@@ -153,7 +153,7 @@ sealed interface WireCallDispatcher
 
         @Override
         public boolean isClientStream() {
-            return handler != null && handler.methodType() == WireMethodHandler.MethodType.CLIENT_STREAMING;
+            return handler != null && handler.methodType() == WireMethodHandler.MethodType.CLIENT_STREAM;
         }
 
         @Override
@@ -173,7 +173,7 @@ sealed interface WireCallDispatcher
                 // is inherent to this boundary.
                 // noinspection unchecked
                 StreamSource<Message> requestItems = (StreamSource<Message>) (StreamSource<?>) requestStream;
-                StreamSource<Message> responseSource = methodHandler.handleBiStream(requestItems, callContext);
+                StreamSource<Message> responseSource = methodHandler.handleBidiStream(requestItems, callContext);
                 serverHandler.dispatchStream(ctx, responseSource);
             } catch (Exception e) {
                 log.error("Wire bidi invoke failed: path={}", serverHandler.path, e);
@@ -241,7 +241,7 @@ sealed interface WireCallDispatcher
                             interceptors, 0, serverHandler, methodHandler, callContext,
                             serverHandler.path);
                     chain.intercept(request);
-                } else if (methodHandler.methodType() == WireMethodHandler.MethodType.SERVER_STREAMING) {
+                } else if (methodHandler.methodType() == WireMethodHandler.MethodType.SERVER_STREAM) {
                     StreamSource<Message> source = methodHandler.handleStream(request, callContext);
                     serverHandler.dispatchStream(ctx, source);
                 } else {

@@ -76,7 +76,8 @@ public class ServiceStorage {
             existing.add(instance);
             return existing;
         });
-        log.info("[harbor] instance registered: {} -> {}:{}", key, instance.getIp(), instance.getPort());
+        log.info("[harbor] instance registered: {} -> {}:{}",
+                key, instance.getIp(), instance.getPort());
         notifySubscribers(key, namespace, group, serviceName);
     }
 
@@ -301,45 +302,6 @@ public class ServiceStorage {
                 if (parts.length == 3) {
                     log.info("[harbor] instance(s) deregistered on disconnect: {} -> connId={} ({} instance(s))",
                             serviceKey, connectionId, removed);
-                    notifySubscribers(serviceKey, parts[0], parts[1], parts[2]);
-                }
-            }
-        }
-        return totalRemoved;
-    }
-
-    /**
-     * Remove all instances registered from the given client IP across all services.
-     * Called when a client connection is closed (bi-stream completed/error).
-     * Notifies subscribers for each affected service.
-     *
-     * @param clientIp the client IP from Payload metadata
-     * @return total number of instances removed
-     * @deprecated use {@link #deregisterInstancesByConnectionId} to avoid
-     *             removing instances from other connections on the same clientIp
-     */
-    @Deprecated
-    public int deregisterInstancesByClientIp(String clientIp) {
-        if (clientIp == null || clientIp.isEmpty()) {
-            return 0;
-        }
-        int totalRemoved = 0;
-        for (Map.Entry<String, List<Instance>> entry : instanceMap.entrySet()) {
-            String serviceKey = entry.getKey();
-            List<Instance> instances = entry.getValue();
-            int before = instances.size();
-            instances.removeIf(inst -> clientIp.equals(inst.getIp()));
-            int removed = before - instances.size();
-            if (removed > 0) {
-                totalRemoved += removed;
-                if (instances.isEmpty()) {
-                    instanceMap.remove(serviceKey);
-                }
-                // Parse serviceKey and notify subscribers
-                String[] parts = serviceKey.split("@@", 3);
-                if (parts.length == 3) {
-                    log.info("[harbor] instance(s) deregistered on disconnect: {} -> {} ({} instance(s))",
-                            serviceKey, clientIp, removed);
                     notifySubscribers(serviceKey, parts[0], parts[1], parts[2]);
                 }
             }

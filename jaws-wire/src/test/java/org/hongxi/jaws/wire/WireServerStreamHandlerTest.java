@@ -374,7 +374,7 @@ class WireServerStreamHandlerTest {
         registry.register("test.Health", "Watch", new WireMethodHandler() {
             @Override
             public MethodType methodType() {
-                return MethodType.SERVER_STREAMING;
+                return MethodType.SERVER_STREAM;
             }
 
             @Override

@@ -8,7 +8,6 @@ import com.google.protobuf.Parser;
 import io.netty.channel.ChannelPipeline;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
-import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.GrpcHarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
@@ -32,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
 import java.util.Queue;
 import java.util.UUID;
@@ -66,42 +66,40 @@ public class HarborServer {
     private static final String METHOD_REQUEST = "request";
     private static final String METHOD_BI_STREAM = "requestBiStream";
 
-    // Nacos naming request types
+    // Nacos naming request and response types
     private static final String TYPE_SERVER_CHECK_REQUEST = "ServerCheckRequest";
+    private static final String TYPE_SERVER_CHECK_RESPONSE = "ServerCheckResponse";
+    private static final String TYPE_INSTANCE_REQUEST = "InstanceRequest";
+    private static final String TYPE_INSTANCE_RESPONSE = "InstanceResponse";
+    private static final String TYPE_SUBSCRIBE_SERVICE_REQUEST = "SubscribeServiceRequest";
+    private static final String TYPE_SUBSCRIBE_SERVICE_RESPONSE = "SubscribeServiceResponse";
+    private static final String TYPE_SERVICE_QUERY_REQUEST = "ServiceQueryRequest";
+    private static final String TYPE_QUERY_SERVICE_RESPONSE = "QueryServiceResponse";
+    private static final String TYPE_SERVICE_LIST_REQUEST = "ServiceListRequest";
+    private static final String TYPE_SERVICE_LIST_RESPONSE = "ServiceListResponse";
+    private static final String TYPE_HEALTH_CHECK_REQUEST = "HealthCheckRequest";
+    private static final String TYPE_HEALTH_CHECK_RESPONSE = "HealthCheckResponse";
+
+    // Nacos naming bidi request types
     private static final String TYPE_CONNECTION_SETUP_REQUEST = "ConnectionSetupRequest";
     private static final String TYPE_SETUP_ACK_REQUEST = "SetupAckRequest";
-    private static final String TYPE_INSTANCE_REQUEST = "InstanceRequest";
-    private static final String TYPE_SUBSCRIBE_SERVICE_REQUEST = "SubscribeServiceRequest";
-    private static final String TYPE_SERVICE_QUERY_REQUEST = "ServiceQueryRequest";
-    private static final String TYPE_SERVICE_LIST_REQUEST = "ServiceListRequest";
+    private static final String TYPE_NOTIFY_SUBSCRIBER_REQUEST = "NotifySubscriberRequest";
     private static final String TYPE_NOTIFY_SUBSCRIBER_RESPONSE = "NotifySubscriberResponse";
-    private static final String TYPE_HEALTH_CHECK_REQUEST = "HealthCheckRequest";
+
+    // Nacos naming instance request types
+    private static final String REGISTER_INSTANCE = "registerInstance";
+    private static final String DEREGISTER_INSTANCE = "deregisterInstance";
 
     // Config requests from nacos-client (not supported — return silent success)
     private static final String TYPE_CONFIG_BATCH_LISTEN_REQUEST = "ConfigBatchListenRequest";
 
-    // Distro inter-node request types
+    // Distro inter-node request and response types
     private static final String TYPE_DISTRO_SYNC_REQUEST = "DistroSyncRequest";
-    private static final String TYPE_DISTRO_VERIFY_REQUEST = "DistroVerifyRequest";
-    private static final String TYPE_DISTRO_SNAPSHOT_REQUEST = "DistroSnapshotRequest";
-
-    // Nacos naming response types
-    private static final String TYPE_SERVER_CHECK_RESPONSE = "ServerCheckResponse";
-    private static final String TYPE_INSTANCE_RESPONSE = "InstanceResponse";
-    private static final String TYPE_SUBSCRIBE_SERVICE_RESPONSE = "SubscribeServiceResponse";
-    private static final String TYPE_QUERY_SERVICE_RESPONSE = "QueryServiceResponse";
-    private static final String TYPE_SERVICE_LIST_RESPONSE = "ServiceListResponse";
-    private static final String TYPE_NOTIFY_SUBSCRIBER_REQUEST = "NotifySubscriberRequest";
-    private static final String TYPE_HEALTH_CHECK_RESPONSE = "HealthCheckResponse";
-
-    // Distro inter-node response types
     private static final String TYPE_DISTRO_SYNC_RESPONSE = "DistroSyncResponse";
+    private static final String TYPE_DISTRO_VERIFY_REQUEST = "DistroVerifyRequest";
     private static final String TYPE_DISTRO_VERIFY_RESPONSE = "DistroVerifyResponse";
+    private static final String TYPE_DISTRO_SNAPSHOT_REQUEST = "DistroSnapshotRequest";
     private static final String TYPE_DISTRO_SNAPSHOT_RESPONSE = "DistroSnapshotResponse";
-
-    // Nacos naming remote constants
-    private static final String REGISTER_INSTANCE = "registerInstance";
-    private static final String DE_REGISTER_INSTANCE = "deregisterInstance";
 
     /**
      * URL parameter for specifying initial cluster members.
@@ -110,12 +108,13 @@ public class HarborServer {
      */
     public static final String PARAM_CLUSTER_MEMBERS = "clusterMembers";
 
-    private final ConnectionManager connectionManager = new ConnectionManager();
     private final ServiceStorage serviceStorage;
+    private final ConnectionManager connectionManager;
+    private final HealthCheckManager healthCheckManager;
     private final ClusterManager clusterManager;
     private final DistroProtocol distroProtocol;
     private final WireServer wireServer;
-    private final HealthCheckManager healthCheckManager;
+
     private HarborHttpApi httpApi;
 
     /**
@@ -128,8 +127,7 @@ public class HarborServer {
      * enqueues a handler in addOptionalChannelHandlers; handleServerCheck
      * polls and claims it. This avoids any channel-ref passing.
      */
-    private final Queue<ConnectionCleanupHandler> pendingCleanupHandlers =
-            new ConcurrentLinkedQueue<>();
+    private final Queue<ConnectionCleanupHandler> pendingCleanupHandlers = new ConcurrentLinkedQueue<>();
 
     public HarborServer(URL url) {
         this(url, new GrpcHarborNodeTransport());
@@ -137,14 +135,13 @@ public class HarborServer {
 
     public HarborServer(URL url, HarborNodeTransport transport) {
         this.serviceStorage = new ServiceStorage(this::notifySubscriber);
+        this.connectionManager = new ConnectionManager();
         this.healthCheckManager = new HealthCheckManager(this.serviceStorage, this.connectionManager);
+
         this.clusterManager = new ClusterManager();
         String selfAddr = resolveSelfAddress(url.getHost()) + ":" + url.getPort();
         this.clusterManager.setSelfAddress(selfAddr);
-
-        DistroConfig distroConfig = new DistroConfig();
-        this.distroProtocol = new DistroProtocol(clusterManager, distroConfig, transport,
-                serviceStorage);
+        this.distroProtocol = new DistroProtocol(clusterManager, transport, serviceStorage);
 
         WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register(SERVICE_NAME_REQUEST, METHOD_REQUEST, new RequestHandler());
@@ -165,25 +162,8 @@ public class HarborServer {
         };
     }
 
-    /**
-     * Clean up connection state by connectionId. Called by {@link ConnectionCleanupHandler}
-     * when the connection channel becomes inactive (client GOAWAY, network failure, etc.).
-     * Deregisters instances and removes subscribers.
-     */
-    void cleanupConnectionById(String connId) {
-        connectionManager.remove(connId);
-        serviceStorage.removeAllSubscribersForConnection(connId);
-        int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
-        if (removed > 0) {
-            log.info("[harbor] deregistered {} instance(s) on connection close: connId={}",
-                    removed, connId);
-        }
-        // Also clean up the clientIp mapping if it points to this connection
-        connectionIdByClientIp.values().removeIf(connId::equals);
-    }
-
     public void start() {
-        // Register self as a cluster member so the dashboard can show it
+        // Register self as a cluster member
         String selfAddr = clusterManager.getSelfAddress();
         clusterManager.addMember(new ClusterMember(selfAddr));
 
@@ -203,7 +183,7 @@ public class HarborServer {
         distroProtocol.start();
         healthCheckManager.start();
 
-        // Start HTTP/1.1 management API for jaws-sample-admin (port from URL param, default grpcPort + 10)
+        // Start HTTP/1.1 management API (port from URL param, default grpcPort + 10)
         int grpcPort = wireServer.getUrl().getPort();
         String httpApiPortStr = wireServer.getUrl().getParameter("httpApiPort");
         int httpApiPort = httpApiPortStr != null ? Integer.parseInt(httpApiPortStr) : grpcPort + 10;
@@ -231,12 +211,12 @@ public class HarborServer {
         log.info("[harbor] server closed");
     }
 
-    public ConnectionManager getConnectionManager() {
-        return connectionManager;
-    }
-
     public ServiceStorage getServiceStorage() {
         return serviceStorage;
+    }
+
+    public ConnectionManager getConnectionManager() {
+        return connectionManager;
     }
 
     public ClusterManager getClusterManager() {
@@ -258,6 +238,23 @@ public class HarborServer {
         clusterManager.addMember(new ClusterMember(address));
         log.info("[harbor] cluster member added: {} (cluster size={})",
                 address, clusterManager.size());
+    }
+
+    /**
+     * Clean up connection state by connectionId. Called by {@link ConnectionCleanupHandler}
+     * when the connection channel becomes inactive (client GOAWAY, network failure, etc.).
+     * Deregisters instances and removes subscribers.
+     */
+    void cleanupConnectionById(String connId) {
+        connectionManager.remove(connId);
+        serviceStorage.removeAllSubscribersForConnection(connId);
+        int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
+        if (removed > 0) {
+            log.info("[harbor] deregistered {} instance(s) on connection close: connId={}",
+                    removed, connId);
+        }
+        // Also clean up the clientIp mapping if it points to this connection
+        connectionIdByClientIp.values().removeIf(connId::equals);
     }
 
     /**
@@ -389,8 +386,7 @@ public class HarborServer {
                     // Config requests — Harbor does not support config center;
                     // return silent success to prevent nacos-client from retrying.
                     case TYPE_CONFIG_BATCH_LISTEN_REQUEST ->
-                            buildPayload("ConfigBatchListenResponse",
-                                    org.hongxi.jaws.harbor.model.response.ConfigBatchListenResponse.ok());
+                            buildPayload("ConfigBatchListenResponse", ConfigBatchListenResponse.ok());
                     default -> {
                         log.warn("[harbor] unknown request type: {}", type);
                         yield buildErrorResponse(type, "Unknown request type: " + type);
@@ -433,13 +429,13 @@ public class HarborServer {
         }
 
         @Override
-        public StreamSource<Message> handleBiStream(StreamSource<Message> requestStream) {
-            return handleBiStream(requestStream, null);
+        public StreamSource<Message> handleBidiStream(StreamSource<Message> requestStream) {
+            return handleBidiStream(requestStream, null);
         }
 
         @Override
-        public StreamSource<Message> handleBiStream(StreamSource<Message> requestStream,
-                                                     WireCallContext context) {
+        public StreamSource<Message> handleBidiStream(StreamSource<Message> requestStream,
+                                                      WireCallContext context) {
             // Create a push subject for server→client notifications
             StreamSubject<Message> pushSubject = new StreamSubject<>();
 
@@ -459,7 +455,7 @@ public class HarborServer {
                     switch (type) {
                         case TYPE_CONNECTION_SETUP_REQUEST -> {
                             ConnectionSetupRequest setup = parseBody(payload, ConnectionSetupRequest.class);
-                            // Look up the connectionId assigned during ServerCheck
+                            // Lookup the connectionId assigned during ServerCheck
                             connectionId = connectionIdByClientIp.get(ip);
                             if (connectionId == null) {
                                 connectionId = UUID.randomUUID().toString();
@@ -470,8 +466,7 @@ public class HarborServer {
                             if (labels == null) {
                                 labels = Map.of();
                             }
-                            connectionManager.register(connectionId, ip, version,
-                                    labels, pushSubject);
+                            connectionManager.register(connectionId, ip, version, labels, pushSubject);
                             // Always send SetupAckRequest back through the bi-stream.
                             // The nacos-client expects this ack to confirm the connection
                             // is established. Not sending it causes the client to think
@@ -593,9 +588,7 @@ public class HarborServer {
         // Set default instanceId if not provided
         if (instance.getInstanceId() == null || instance.getInstanceId().isEmpty()) {
             String groupedName = groupName + "@@" + serviceName;
-            instance.setInstanceId(
-                    instance.getIp() + "#" + instance.getPort()
-                            + "#" + groupedName);
+            instance.setInstanceId(instance.getIp() + "#" + instance.getPort() + "#" + groupedName);
         }
 
         if (REGISTER_INSTANCE.equals(type)) {
@@ -605,7 +598,7 @@ public class HarborServer {
             String key = namespace + "@@" + groupName + "@@" + serviceName;
             byte[] syncContent = JSON.toJSONBytes(instance);
             distroProtocol.syncNamingChange(key, DistroProtocol.OP_CHANGE, syncContent);
-        } else if (DE_REGISTER_INSTANCE.equals(type)) {
+        } else if (DEREGISTER_INSTANCE.equals(type)) {
             serviceStorage.deregisterInstance(namespace, groupName, serviceName, instance);
             String key = namespace + "@@" + groupName + "@@" + serviceName;
             distroProtocol.syncNamingChange(key, DistroProtocol.OP_DELETE, new byte[0]);
@@ -737,12 +730,12 @@ public class HarborServer {
         response.setSuccess(true);
         response.setResourceType(resourceType);
         response.setContent(snapshot != null
-                ? java.util.Base64.getEncoder().encodeToString(snapshot) : "");
+                ? Base64.getEncoder().encodeToString(snapshot) : "");
         return buildPayload(TYPE_DISTRO_SNAPSHOT_RESPONSE, response);
     }
 
     private Payload buildErrorResponse(String responseType, String message) {
-        Response response = Response.error(500);
+        record ErrorResponse(String message) {}
         byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
         return Payload.newBuilder()
                 .setMetadata(Metadata.newBuilder()
@@ -771,30 +764,5 @@ public class HarborServer {
         if (!pushed) {
             log.debug("[harbor] failed to push to connection {}: not found", connectionId);
         }
-    }
-
-    // ========================================================================
-    // Internal helper types
-    // ========================================================================
-
-    /**
-     * Internal DTO for error responses that need an errorCode and message.
-     */
-    static class ErrorResponse {
-        private int resultCode = 500;
-        private boolean success = false;
-        private int errorCode = 500;
-        private String message;
-
-        ErrorResponse() {}
-
-        ErrorResponse(String message) {
-            this.message = message;
-        }
-
-        public int getResultCode() { return resultCode; }
-        public boolean isSuccess() { return success; }
-        public int getErrorCode() { return errorCode; }
-        public String getMessage() { return message; }
     }
 }

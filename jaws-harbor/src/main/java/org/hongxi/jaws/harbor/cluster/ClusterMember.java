@@ -26,9 +26,4 @@ public record ClusterMember(String address) {
         int idx = address.lastIndexOf(':');
         return idx > 0 ? Integer.parseInt(address.substring(idx + 1)) : 0;
     }
-
-    @Override
-    public String toString() {
-        return address;
-    }
 }

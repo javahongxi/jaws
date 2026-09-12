@@ -147,7 +147,7 @@ public class WireHealthService {
     private class WatchHandler implements WireMethodHandler {
         @Override
         public MethodType methodType() {
-            return MethodType.SERVER_STREAMING;
+            return MethodType.SERVER_STREAM;
         }
 
         @Override

@@ -3,10 +3,8 @@ package org.hongxi.jaws.harbor;
 import com.alibaba.fastjson2.JSON;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
-import org.hongxi.jaws.harbor.distro.DistroConfig;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
-import org.hongxi.jaws.harbor.distro.NoopHarborNodeTransport;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.junit.jupiter.api.Test;
 
@@ -110,11 +108,10 @@ class HarborPhase2Test {
     @Test
     void testDistroProtocolStartAndShutdown() {
         ClusterManager cluster = new ClusterManager();
-        DistroConfig config = new DistroConfig();
-        NoopHarborNodeTransport transport = new NoopHarborNodeTransport();
+        HarborNodeTransport transport = noopTransport();
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
 
-        DistroProtocol protocol = new DistroProtocol(cluster, config, transport, svcStorage);
+        DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage);
         protocol.start();
         assertTrue(protocol.isInitialized());
 
@@ -124,11 +121,10 @@ class HarborPhase2Test {
     @Test
     void testDistroProtocolOnReceiveNaming() {
         ClusterManager cluster = new ClusterManager();
-        DistroConfig config = new DistroConfig();
-        NoopHarborNodeTransport transport = new NoopHarborNodeTransport();
+        HarborNodeTransport transport = noopTransport();
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
 
-        DistroProtocol protocol = new DistroProtocol(cluster, config, transport, svcStorage);
+        DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage);
 
         // Simulate receiving a naming sync — content is a serialized Instance
         Instance instance = createInstance("10.0.0.5", 9090, "10.0.0.5#9090#DEFAULT_GROUP@@remote-svc");
@@ -145,14 +141,13 @@ class HarborPhase2Test {
     @Test
     void testDistroProtocolSnapshot() {
         ClusterManager cluster = new ClusterManager();
-        DistroConfig config = new DistroConfig();
-        NoopHarborNodeTransport transport = new NoopHarborNodeTransport();
+        HarborNodeTransport transport = noopTransport();
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
 
         svcStorage.registerInstance("public", "DEFAULT_GROUP", "svc1",
                 createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1"), "test-conn");
 
-        DistroProtocol protocol = new DistroProtocol(cluster, config, transport, svcStorage);
+        DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage);
 
         byte[] namingSnapshot = protocol.onSnapshot("naming");
         assertNotNull(namingSnapshot);
@@ -190,10 +185,8 @@ class HarborPhase2Test {
             public void shutdown() {}
         };
 
-        DistroConfig config = new DistroConfig();
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
-
-        DistroProtocol protocol = new DistroProtocol(cluster, config, mockTransport, svcStorage);
+        DistroProtocol protocol = new DistroProtocol(cluster, mockTransport, svcStorage);
 
         protocol.syncNamingChange("public@@DEFAULT_GROUP@@svc1", "CHANGE",
                 "{}".getBytes(StandardCharsets.UTF_8));
@@ -205,6 +198,27 @@ class HarborPhase2Test {
     // ========================================================================
     // Helpers
     // ========================================================================
+
+    private static HarborNodeTransport noopTransport() {
+        return new HarborNodeTransport() {
+            @Override
+            public boolean syncData(String targetAddress, String resourceType,
+                                    String resourceKey, String operation, byte[] content) {
+                return true;
+            }
+            @Override
+            public boolean syncVerify(String targetAddress, String resourceType,
+                                      Map<String, String> checksums) {
+                return true;
+            }
+            @Override
+            public byte[] getSnapshot(String targetAddress, String resourceType) {
+                return null;
+            }
+            @Override
+            public void shutdown() {}
+        };
+    }
 
     private static Instance createInstance(String ip, int port, String instanceId) {
         Instance inst = new Instance();

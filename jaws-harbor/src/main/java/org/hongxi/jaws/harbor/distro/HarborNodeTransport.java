@@ -7,8 +7,6 @@ import java.util.Map;
  * <p>
  * Implementations send Distro messages (sync, verify, snapshot) to peer
  * Harbor servers using any underlying transport (gRPC, HTTP, etc.).
- * The default {@link NoopHarborNodeTransport} is a no-op for single-node
- * deployments.
  *
  * @author shenhongxi
  */

@@ -2,7 +2,6 @@ package org.hongxi.jaws.wire;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
-import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 
 /**
@@ -32,15 +31,15 @@ public interface WireMethodHandler {
      */
     enum MethodType {
         UNARY,
-        SERVER_STREAMING,
-        CLIENT_STREAMING,
+        SERVER_STREAM,
+        CLIENT_STREAM,
         BIDIRECTIONAL
     }
 
     /**
      * @return the invocation style of this method; defaults to {@link MethodType#UNARY}.
      *         Streaming handlers must override and return the appropriate
-     *         {@link MethodType#SERVER_STREAMING}, {@link MethodType#CLIENT_STREAMING},
+     *         {@link MethodType#SERVER_STREAM}, {@link MethodType#CLIENT_STREAM},
      *         or {@link MethodType#BIDIRECTIONAL}.
      */
     default MethodType methodType() {
@@ -127,21 +126,21 @@ public interface WireMethodHandler {
      * @param requestStream the client's request messages, consumed by subscribing
      * @return a source emitting response messages
      */
-    default StreamSource<Message> handleBiStream(StreamSource<Message> requestStream) {
+    default StreamSource<Message> handleBidiStream(StreamSource<Message> requestStream) {
         throw new UnsupportedOperationException("Not a bidirectional streaming method");
     }
 
     /**
      * Handle a bidirectional streaming gRPC call with the per-call context
      * (inbound metadata). The default implementation delegates to
-     * {@link #handleBiStream(StreamSource)}.
+     * {@link #handleBidiStream(StreamSource)}.
      *
      * @param requestStream the client's request messages, consumed by subscribing
      * @param context       the call context carrying inbound gRPC metadata
      * @return a source emitting response messages
      */
-    default StreamSource<Message> handleBiStream(StreamSource<Message> requestStream, WireCallContext context) {
-        return handleBiStream(requestStream);
+    default StreamSource<Message> handleBidiStream(StreamSource<Message> requestStream, WireCallContext context) {
+        return handleBidiStream(requestStream);
     }
 
     /**
