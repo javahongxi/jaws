@@ -320,6 +320,22 @@ public class HarborServer {
                 .build();
     }
 
+    /**
+     * Build an error response
+     */
+    static Payload buildErrorResponse(String responseType, String message) {
+        record ErrorResponse(String message) {}
+        byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
+        return Payload.newBuilder()
+                .setMetadata(Metadata.newBuilder()
+                        .setType(responseType)
+                        .build())
+                .setBody(Any.newBuilder()
+                        .setValue(ByteString.copyFrom(jsonBytes))
+                        .build())
+                .build();
+    }
+
     // ========================================================================
     // Request.request handler (unary)
     // ========================================================================
@@ -728,18 +744,5 @@ public class HarborServer {
         if (!pushed) {
             log.debug("[harbor] failed to push to connection {}: not found", connectionId);
         }
-    }
-
-    private Payload buildErrorResponse(String responseType, String message) {
-        record ErrorResponse(String message) {}
-        byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(responseType)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
     }
 }
