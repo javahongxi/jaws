@@ -16,10 +16,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for Phase 2 components: ClusterManager, DistroProtocol,
+ * Unit tests for Distro protocol components: ClusterManager, DistroProtocol,
  * and their integration with ServiceStorage.
  */
-class HarborPhase2Test {
+class HarborDistroProtocolTest {
 
     // ========================================================================
     // ClusterManager tests
@@ -173,9 +173,8 @@ class HarborPhase2Test {
                 return true;
             }
             @Override
-            public boolean syncVerify(String targetAddress, String resourceType,
+            public void syncVerify(String targetAddress, String resourceType,
                                       Map<String, String> checksums) {
-                return true;
             }
             @Override
             public byte[] getSnapshot(String targetAddress, String resourceType) {
@@ -207,9 +206,8 @@ class HarborPhase2Test {
                 return true;
             }
             @Override
-            public boolean syncVerify(String targetAddress, String resourceType,
+            public void syncVerify(String targetAddress, String resourceType,
                                       Map<String, String> checksums) {
-                return true;
             }
             @Override
             public byte[] getSnapshot(String targetAddress, String resourceType) {

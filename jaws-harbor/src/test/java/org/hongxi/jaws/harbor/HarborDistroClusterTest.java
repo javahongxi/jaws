@@ -255,13 +255,12 @@ class HarborDistroClusterTest {
         }
 
         @Override
-        public boolean syncVerify(String targetAddress, String resourceType,
+        public void syncVerify(String targetAddress, String resourceType,
                                   Map<String, String> checksums) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                return target.onVerify(resourceType, checksums);
+                target.onVerify(resourceType, checksums);
             }
-            return false;
         }
 
         @Override

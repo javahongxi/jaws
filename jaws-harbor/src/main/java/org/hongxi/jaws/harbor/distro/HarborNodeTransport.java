@@ -31,9 +31,8 @@ public interface HarborNodeTransport {
      * @param targetAddress peer address
      * @param resourceType  resource type
      * @param checksums     map of resourceKey → checksum for verification
-     * @return true if verify succeeded
      */
-    boolean syncVerify(String targetAddress, String resourceType, Map<String, String> checksums);
+    void syncVerify(String targetAddress, String resourceType, Map<String, String> checksums);
 
     /**
      * Request a full snapshot from a peer node.

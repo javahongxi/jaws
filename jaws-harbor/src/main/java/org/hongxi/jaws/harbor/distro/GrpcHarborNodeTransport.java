@@ -73,7 +73,7 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
     }
 
     @Override
-    public boolean syncVerify(String targetAddress, String resourceType,
+    public void syncVerify(String targetAddress, String resourceType,
                               Map<String, String> checksums) {
         DistroVerifyRequest request = new DistroVerifyRequest();
         request.setResourceType(resourceType);
@@ -82,10 +82,13 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
         Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_VERIFY_REQUEST,
                 JSON.toJSONBytes(request));
         if (responsePayload == null) {
-            return false;
+            log.warn("[harbor] verify to {} failed: no response", targetAddress);
+            return;
         }
         DistroVerifyResponse response = parseBody(responsePayload, DistroVerifyResponse.class);
-        return response.getResultCode() == 200;
+        if (response.getResultCode() != 200) {
+            log.warn("[harbor] verify to {} returned code {}", targetAddress, response.getResultCode());
+        }
     }
 
     @Override
