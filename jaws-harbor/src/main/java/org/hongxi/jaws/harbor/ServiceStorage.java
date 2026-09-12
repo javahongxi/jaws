@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -131,7 +132,7 @@ public class ServiceStorage {
                         }
                     }
                     log.info("[harbor] instance deregistered: {} -> {}:{}", key, ip, port);
-                    notifySubscribers(key, namespace, group, serviceName);
+                    checkAndCleanEmptyService(key, namespace, group, serviceName);
                     return;
                 }
             }
@@ -207,12 +208,14 @@ public class ServiceStorage {
         if (session != null) {
             session.removeSubscriber(key);
         }
+        checkAndCleanEmptyService(key, namespace, group, serviceName);
     }
 
     /**
      * Remove all subscriber entries for a given connection (on disconnect).
      */
     public void removeAllSubscribersForConnection(String connectionId) {
+        Set<String> affectedServices = new HashSet<>();
         ClientSession session = connectionManager.getClientSession(connectionId);
         if (session != null) {
             for (String serviceKey : session.getAllSubscribedServices()) {
@@ -223,6 +226,7 @@ public class ServiceStorage {
                         subscriberIndexes.remove(serviceKey);
                     }
                 }
+                affectedServices.add(serviceKey);
             }
         } else {
             // Fallback: scan all subscriber entries
@@ -231,6 +235,14 @@ public class ServiceStorage {
                 if (entry.getValue().isEmpty()) {
                     subscriberIndexes.remove(entry.getKey());
                 }
+                affectedServices.add(entry.getKey());
+            }
+        }
+        // Check affected services for emptiness
+        for (String serviceKey : affectedServices) {
+            String[] parts = splitServiceKey(serviceKey);
+            if (parts != null) {
+                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
             }
         }
     }
@@ -381,10 +393,10 @@ public class ServiceStorage {
                         }
                     }
                     invalidateServiceCache(serviceKey);
-                    String[] parts = serviceKey.split("@@", 3);
-                    if (parts.length == 3) {
+                    String[] parts = splitServiceKey(serviceKey);
+                    if (parts != null) {
                         log.info("[harbor] expired instance removed: {} -> {}:{}", serviceKey, ip, port);
-                        notifySubscribers(serviceKey, parts[0], parts[1], parts[2]);
+                        checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
                     }
                     return;
                 }
@@ -425,11 +437,11 @@ public class ServiceStorage {
                 }
             }
             invalidateServiceCache(serviceKey);
-            String[] parts = serviceKey.split("@@", 3);
-            if (parts.length == 3) {
+            String[] parts = splitServiceKey(serviceKey);
+            if (parts != null) {
                 log.info("[harbor] instance(s) deregistered on disconnect: {} -> connId={} ({} instance(s))",
                         serviceKey, connectionId, count);
-                notifySubscribers(serviceKey, parts[0], parts[1], parts[2]);
+                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
             }
         }
         return totalRemoved;
@@ -581,17 +593,17 @@ public class ServiceStorage {
         if (session == null) {
             return;
         }
-        // Notify subscribers before removing index entries
-        for (String serviceKey : session.getAllPublishedServices()) {
-            invalidateServiceCache(serviceKey);
-            String[] parts = serviceKey.split("@@", 3);
-            if (parts.length == 3) {
-                notifySubscribers(serviceKey, parts[0], parts[1], parts[2]);
-            }
-        }
+        Set<String> affectedServices = new HashSet<>(session.getAllPublishedServices());
         removeClientFromIndexes(clientId);
         session.release();
         connectionManager.removeClientSession(clientId);
+        // Check affected services for emptiness after removal
+        for (String serviceKey : affectedServices) {
+            String[] parts = splitServiceKey(serviceKey);
+            if (parts != null) {
+                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
+            }
+        }
         log.info("[harbor] removed synced client: {}", clientId);
     }
 
@@ -612,6 +624,53 @@ public class ServiceStorage {
                 subscriberIndexes.remove(entry.getKey());
             }
         }
+    }
+
+    /**
+     * Check if a service has no publishers and no subscribers.
+     * If so, remove it from all indexes and the service manager.
+     * Notifies subscribers before cleanup so they receive the final empty update.
+     */
+    private void checkAndCleanEmptyService(String serviceKey, String namespace,
+                                            String group, String serviceName) {
+        Set<String> publishers = publisherIndexes.get(serviceKey);
+        Set<String> subscribers = subscriberIndexes.get(serviceKey);
+        boolean noPublishers = publishers == null || publishers.isEmpty();
+        boolean noSubscribers = subscribers == null || subscribers.isEmpty();
+
+        if (noPublishers && noSubscribers) {
+            // Notify subscribers with empty service info before cleaning up
+            notifySubscribers(serviceKey, namespace, group, serviceName);
+            // Remove from all indexes
+            publisherIndexes.remove(serviceKey);
+            subscriberIndexes.remove(serviceKey);
+            invalidateServiceCache(serviceKey);
+            log.info("[harbor] empty service cleaned: {}", serviceKey);
+        } else {
+            // Service still has publishers or subscribers, just notify
+            notifySubscribers(serviceKey, namespace, group, serviceName);
+        }
+    }
+
+    /**
+     * Periodically clean up empty services (no publishers and no subscribers).
+     * Called by {@link HealthCheckManager} after instance/connection cleanup.
+     */
+    public void cleanEmptyServices() {
+        Set<String> allKeys = new HashSet<>();
+        allKeys.addAll(publisherIndexes.keySet());
+        allKeys.addAll(subscriberIndexes.keySet());
+        for (String serviceKey : allKeys) {
+            String[] parts = splitServiceKey(serviceKey);
+            if (parts != null) {
+                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
+            }
+        }
+    }
+
+    private static String[] splitServiceKey(String serviceKey) {
+        String[] parts = serviceKey.split("@@", 3);
+        return parts.length == 3 ? parts : null;
     }
 
     private void invalidateServiceCache(String serviceKey) {

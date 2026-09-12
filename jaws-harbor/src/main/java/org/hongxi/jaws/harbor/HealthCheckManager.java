@@ -107,6 +107,10 @@ public class HealthCheckManager {
                     serviceStorage.removeInstanceByIpPort(inst.serviceKey(), inst.ip(), inst.port());
                 }
             }
+
+            // Phase 3: empty service auto-cleanup — remove services with no publishers
+            // and no subscribers (memory leak prevention, matches Nacos EmptyServiceAutoCleanerV2)
+            serviceStorage.cleanEmptyServices();
         } catch (Exception e) {
             log.warn("[harbor] health check task failed", e);
         }

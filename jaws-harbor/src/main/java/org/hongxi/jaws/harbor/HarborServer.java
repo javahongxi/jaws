@@ -68,6 +68,7 @@ public class HarborServer {
     private static final String TYPE_SERVER_CHECK_REQUEST = "ServerCheckRequest";
     private static final String TYPE_SERVER_CHECK_RESPONSE = "ServerCheckResponse";
     private static final String TYPE_INSTANCE_REQUEST = "InstanceRequest";
+    private static final String TYPE_BATCH_INSTANCE_REQUEST = "BatchInstanceRequest";
     private static final String TYPE_INSTANCE_RESPONSE = "InstanceResponse";
     private static final String TYPE_SUBSCRIBE_SERVICE_REQUEST = "SubscribeServiceRequest";
     private static final String TYPE_SUBSCRIBE_SERVICE_RESPONSE = "SubscribeServiceResponse";
@@ -111,6 +112,7 @@ public class HarborServer {
     private final HealthCheckManager healthCheckManager;
     private final ClusterManager clusterManager;
     private final DistroProtocol distroProtocol;
+    private final PushRetryManager pushRetryManager;
     private final WireServer wireServer;
 
     private HarborHttpApi httpApi;
@@ -123,6 +125,7 @@ public class HarborServer {
         this.connectionManager = new ConnectionManager();
         this.serviceStorage = new ServiceStorage(this::notifySubscriber, this.connectionManager);
         this.healthCheckManager = new HealthCheckManager(this.serviceStorage, this.connectionManager);
+        this.pushRetryManager = new PushRetryManager(this.connectionManager);
 
         this.clusterManager = new ClusterManager(url);
         this.distroProtocol = new DistroProtocol(clusterManager, transport, serviceStorage, connectionManager);
@@ -201,6 +204,7 @@ public class HarborServer {
         if (httpApi != null) {
             httpApi.stop();
         }
+        pushRetryManager.shutdown();
         healthCheckManager.shutdown();
         distroProtocol.shutdown();
         wireServer.close();
@@ -385,6 +389,7 @@ public class HarborServer {
                     // Naming
                     case TYPE_SERVER_CHECK_REQUEST -> handleServerCheck(clientIp, connectionId);
                     case TYPE_INSTANCE_REQUEST -> handleInstanceRequest(payload, clientIp, connectionId);
+                    case TYPE_BATCH_INSTANCE_REQUEST -> handleBatchInstanceRequest(payload, clientIp, connectionId);
                     case TYPE_SUBSCRIBE_SERVICE_REQUEST -> handleSubscribe(payload, clientIp, connectionId);
                     case TYPE_SERVICE_QUERY_REQUEST -> handleServiceQuery(payload);
                     case TYPE_SERVICE_LIST_REQUEST -> handleServiceList(payload);
@@ -625,6 +630,36 @@ public class HarborServer {
         return buildPayload(TYPE_INSTANCE_RESPONSE, response, clientIp);
     }
 
+    private Payload handleBatchInstanceRequest(Payload payload, String clientIp, String connectionId) {
+        BatchInstanceRequest request = parseBody(payload, BatchInstanceRequest.class);
+        String namespace = request.getNamespace();
+        String serviceName = request.getServiceName();
+        String groupName = request.getGroupName();
+
+        List<Instance> instances = request.getInstances();
+        if (instances == null || instances.isEmpty()) {
+            return buildErrorResponse(TYPE_INSTANCE_RESPONSE, "Missing instances");
+        }
+
+        for (Instance instance : instances) {
+            // Set default instanceId if not provided
+            if (instance.getInstanceId() == null || instance.getInstanceId().isEmpty()) {
+                String groupedName = groupName + "@@" + serviceName;
+                instance.setInstanceId(instance.getIp() + "#" + instance.getPort() + "#" + groupedName);
+            }
+            serviceStorage.registerInstance(namespace, groupName, serviceName, instance, connectionId);
+        }
+
+        // Sync full client state to peers after batch registration
+        syncClientDataToPeers(connectionId);
+
+        InstanceResponse response = new InstanceResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setType(request.getType());
+        return buildPayload(TYPE_INSTANCE_RESPONSE, response, clientIp);
+    }
+
     private Payload handleSubscribe(Payload payload, String clientIp, String connectionId) {
         SubscribeServiceRequest request = parseBody(payload, SubscribeServiceRequest.class);
         String namespace = request.getNamespace();
@@ -773,7 +808,8 @@ public class HarborServer {
         Payload pushPayload = buildPushPayload(TYPE_NOTIFY_SUBSCRIBER_REQUEST, push);
         boolean pushed = connectionManager.pushToConnection(connectionId, pushPayload);
         if (!pushed) {
-            log.debug("[harbor] failed to push to connection {}: not found", connectionId);
+            log.debug("[harbor] failed to push to connection {}, scheduling retry", connectionId);
+            pushRetryManager.scheduleRetry(connectionId, namespace, group, serviceName, serviceInfo, 1);
         }
     }
 }
