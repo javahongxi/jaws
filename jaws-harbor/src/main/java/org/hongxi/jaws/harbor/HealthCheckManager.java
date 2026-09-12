@@ -41,7 +41,7 @@ public class HealthCheckManager {
      * Connection inactivity timeout (milliseconds).
      * If no request arrives from a connection within this window,
      * the connection is considered dead and cleaned up.
-     * 90s = 3× the typical Nacos client heartbeat interval (30s).
+     * 90s = 18× the default Nacos client heartbeat interval (5s).
      */
     private static final long CONNECTION_TIMEOUT_MS = 90_000;
 

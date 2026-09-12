@@ -312,24 +312,24 @@ public class ServiceStorage {
     // ========================================================================
 
     /**
-     * Update the last heartbeat for all instances registered from the given client IP.
-     * This follows Nacos's connection-level health check model: any request from a
-     * client refreshes the heartbeat for all its registered instances.
+     * Update the last heartbeat for all instances registered by the given connection.
+     * Follows Nacos's connection-based health check model: any request from a
+     * connection refreshes the heartbeat for all its registered instances.
      *
-     * @param clientIp the client IP from Payload metadata
+     * @param connectionId the gRPC connectionId from the wire call context
      */
-    public void updateHeartbeatByClientIp(String clientIp) {
-        if (clientIp == null || clientIp.isEmpty()) {
+    public void updateHeartbeatByConnectionId(String connectionId) {
+        if (connectionId == null || connectionId.isEmpty()) {
+            return;
+        }
+        ClientSession session = connectionManager.getClientSession(connectionId);
+        if (session == null) {
             return;
         }
         long now = System.currentTimeMillis();
-        for (ClientSession session : connectionManager.allClientSessions()) {
-            for (List<Instance> instances : session.getAllPublishers().values()) {
-                for (Instance inst : instances) {
-                    if (clientIp.equals(inst.getIp())) {
-                        inst.setLastBeat(now);
-                    }
-                }
+        for (List<Instance> instances : session.getAllPublishers().values()) {
+            for (Instance inst : instances) {
+                inst.setLastBeat(now);
             }
         }
     }

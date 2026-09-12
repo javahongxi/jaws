@@ -369,8 +369,8 @@ public class HarborServer {
                     ? context.getAttachment(WireConstants.CONNECTION_ID)
                     : null;
 
-            // Update heartbeat for all instances from this client (Nacos connection-level model)
-            serviceStorage.updateHeartbeatByClientIp(clientIp);
+            // Update heartbeat for all instances from this connection (Nacos connection-based model)
+            serviceStorage.updateHeartbeatByConnectionId(connectionId);
 
             // Touch the specific connection if identified, otherwise fall back
             // to touching ALL connections from this client IP.
