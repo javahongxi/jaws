@@ -80,23 +80,6 @@ class HarborDistroProtocolTest {
     }
 
     @Test
-    void testServiceStorageVerifyChecksums() {
-        ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
-
-        connMgr.register("test-conn-1", "10.0.0.1", "3.0.0", Map.of(), noopPushSubject());
-        connMgr.register("test-conn-2", "10.0.0.2", "3.0.0", Map.of(), noopPushSubject());
-
-        storage.registerInstance("public", "DEFAULT_GROUP", "svc1",
-                createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1"), "test-conn-1");
-        storage.registerInstance("public", "DEFAULT_GROUP", "svc1",
-                createInstance("10.0.0.2", 8081, "10.0.0.2#8081#DEFAULT_GROUP@@svc1"), "test-conn-2");
-
-        Map<String, Integer> checksums = storage.getVerifyChecksums();
-        assertEquals(2, checksums.get("public@@DEFAULT_GROUP@@svc1"));
-    }
-
-    @Test
     void testServiceStorageApplySnapshot() {
         ConnectionManager connMgr = new ConnectionManager();
         ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);

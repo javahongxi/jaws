@@ -473,22 +473,6 @@ public class ServiceStorage {
         log.info("[harbor] naming snapshot applied, {} clients", clientDataList.size());
     }
 
-    /**
-     * Build a verify-data map: serviceKey → count of instances (simple checksum).
-     * @deprecated Use {@link ConnectionManager#allNativeClientSessions()} for
-     *             per-client revision-based verify instead.
-     */
-    @Deprecated
-    public Map<String, Integer> getVerifyChecksums() {
-        Map<String, Integer> result = new HashMap<>();
-        for (ClientSession session : connectionManager.allClientSessions()) {
-            for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
-                result.merge(entry.getKey(), entry.getValue().size(), Integer::sum);
-            }
-        }
-        return result;
-    }
-
     // ========================================================================
     // Client-level Distro support
     // ========================================================================
