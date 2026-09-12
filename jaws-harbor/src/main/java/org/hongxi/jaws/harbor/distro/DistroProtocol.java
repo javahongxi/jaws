@@ -29,8 +29,9 @@ import java.util.concurrent.TimeUnit;
  * <ul>
  *   <li><b>Sync</b> — when local data changes, the full client state is pushed
  *       to all peers (client-level granularity, matching Nacos)</li>
- *   <li><b>Verify</b> — periodic heartbeat that sends per-client revisions to
- *       peers for consistency checking; mismatches trigger compensating sync</li>
+ *   <li><b>Verify</b> — periodically send per-client revisions to peers; on a
+ *       mismatch the OWNER re-pushes that client's latest state to the reporting
+ *       peer (targeted compensating sync), matching Nacos verify → syncToTarget</li>
  *   <li><b>Load</b> — on startup, load a snapshot of all client data from a
  *       peer to catch up on data written while this node was offline</li>
  * </ul>
@@ -55,7 +56,6 @@ public class DistroProtocol {
     private final HarborNodeTransport transport;
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
-    private final DistroSnapshotStorage snapshotStorage;
 
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(2, r -> {
@@ -70,30 +70,15 @@ public class DistroProtocol {
                           HarborNodeTransport transport,
                           ServiceStorage serviceStorage,
                           ConnectionManager connectionManager) {
-        this(clusterManager, transport, serviceStorage, connectionManager, null);
-    }
-
-    public DistroProtocol(ClusterManager clusterManager,
-                          HarborNodeTransport transport,
-                          ServiceStorage serviceStorage,
-                          ConnectionManager connectionManager,
-                          DistroSnapshotStorage snapshotStorage) {
         this.clusterManager = clusterManager;
         this.transport = transport;
         this.serviceStorage = serviceStorage;
         this.connectionManager = connectionManager;
-        this.snapshotStorage = snapshotStorage;
     }
 
     /**
-     * Start the Distro protocol: schedule verify and load tasks.
-     * <p>
-     * Startup sequence:
-     * <ol>
-     *   <li>Load local file snapshot (crash recovery when no peer is available)</li>
-     *   <li>Schedule periodic verify task (also saves snapshot to disk)</li>
-     *   <li>Schedule initial load from peer (overrides stale local data)</li>
-     * </ol>
+     * Start the Distro protocol: schedule the periodic verify task and the
+     * one-shot initial load from a peer.
      */
     public void start() {
         if (running) {
@@ -101,9 +86,6 @@ public class DistroProtocol {
         }
         running = true;
         log.info("[harbor] distro protocol starting");
-
-        // Phase 1: recover from local file snapshot before peer contact
-        loadLocalSnapshot();
 
         // Schedule periodic verify task
         scheduler.scheduleAtFixedRate(this::runVerifyTask,
@@ -183,7 +165,6 @@ public class DistroProtocol {
                     }
                 }
             }
-            persistSnapshot();
             return true;
         } catch (Exception e) {
             log.error("[harbor] error processing distro receive: clientId={}", clientId, e);
@@ -245,7 +226,6 @@ public class DistroProtocol {
 
     /**
      * Periodic verify: send per-client revisions to all peers.
-     * Also saves a local file snapshot for crash recovery.
      */
     private void runVerifyTask() {
         try {
@@ -261,9 +241,9 @@ public class DistroProtocol {
                         try {
                             List<String> mismatched = transport.syncVerify(peer.address(), verifyInfos);
                             if (!mismatched.isEmpty()) {
-                                log.warn("[harbor] verify mismatch with {}, pulling targeted snapshot for {} clients",
+                                log.warn("[harbor] verify mismatch with {}, re-pushing latest state of {} client(s) to it",
                                         peer.address(), mismatched.size());
-                                pullSnapshotFromPeer(peer, mismatched);
+                                resyncToPeer(peer, mismatched);
                             }
                         } catch (Exception e) {
                             log.debug("[harbor] verify to {} failed: {}", peer.address(), e.getMessage());
@@ -271,8 +251,6 @@ public class DistroProtocol {
                     }
                 }
             }
-            // Save local file snapshot after each verify cycle
-            persistSnapshot();
         } catch (Exception e) {
             log.warn("[harbor] verify task error", e);
         }
@@ -290,7 +268,7 @@ public class DistroProtocol {
             }
             for (ClusterMember peer : peers) {
                 try {
-                    if (pullSnapshotFromPeer(peer, null)) {
+                    if (pullSnapshotFromPeer(peer)) {
                         break;
                     }
                 } catch (Exception e) {
@@ -308,16 +286,12 @@ public class DistroProtocol {
     }
 
     /**
-     * Pull a snapshot from a peer and apply only the specified clients.
-     *
-     * @param peer          the peer to pull from
-     * @param clientFilter  if non-null, only apply entries whose clientId is in this set;
-     *                      if null, apply all entries (full load)
-     * @return true if snapshot was successfully loaded and applied
+     * Startup load: pull a full snapshot from a peer and apply clients we don't
+     * already hold. Any client we already have (native, or freshly synced from
+     * its owner) is left intact — we never overwrite a native session here.
      */
-    private boolean pullSnapshotFromPeer(ClusterMember peer, List<String> clientFilter) {
-        log.info("[harbor] loading naming snapshot from {}{}", peer.address(),
-                clientFilter != null ? " (filtered: " + clientFilter.size() + " clients)" : "");
+    private boolean pullSnapshotFromPeer(ClusterMember peer) {
+        log.info("[harbor] loading naming snapshot from {}", peer.address());
         byte[] snapshot = transport.getSnapshot(peer.address());
         if (snapshot == null || snapshot.length == 0) {
             return false;
@@ -327,52 +301,51 @@ public class DistroProtocol {
         if (clientDataList == null) {
             return false;
         }
-        Set<String> filterSet = clientFilter != null ? Set.copyOf(clientFilter) : null;
         int applied = 0;
         for (ClientSyncData data : clientDataList) {
             String cid = data.getClientId();
-            // For verify-triggered sync: only fill in MISSING clients.
-            // Existing clients (mismatched or not) are skipped — their
-            // consistency is maintained by the normal CHANGE sync flow.
-            if (filterSet != null && connectionManager.getClientSession(cid) != null) {
-                continue;
+            if (connectionManager.getClientSession(cid) != null) {
+                continue;   // already hold this client (native or newer) — don't clobber
             }
-            if (filterSet == null || filterSet.contains(cid)) {
-                serviceStorage.applyClientSyncData(data);
-                applied++;
-            }
+            serviceStorage.applyClientSyncData(data);
+            applied++;
         }
         log.info("[harbor] snapshot loaded from {}: {}/{} clients applied",
                 peer.address(), applied, clientDataList.size());
         return applied > 0;
     }
 
-    // ========================================================================
-    // Local file snapshot
-    // ========================================================================
-
     /**
-     * Load data from the local file snapshot into memory.
-     * Called during startup before peer contact, so that the node can
-     * serve service queries immediately even if all peers are also restarting.
-     * <p>
-     * Loaded sessions are marked as non-native — they will be replaced
-     * by fresh data from peers (via the load task) or by re-registering
-     * native clients.
+     * Targeted compensating sync — the correct repair direction. When a peer
+     * reports that its copy of one of OUR native clients is stale or missing,
+     * the owner re-pushes that client's CURRENT full state to exactly that peer.
+     * This mirrors Nacos: a verify failure triggers the responsible node to
+     * {@code syncToTarget(ADD)} the client back to the verifying peer. The owner
+     * holds the authoritative copy, so pulling from the (stale) peer would be
+     * wrong — and the previous pull path was additionally self-defeating, since
+     * the mismatched client is by definition a native one we already hold locally.
      */
-    private void loadLocalSnapshot() {
-        if (snapshotStorage == null) {
-            return;
-        }
-        try {
-            List<ClientSyncData> data = snapshotStorage.loadSnapshot();
-            if (data != null && !data.isEmpty()) {
-                serviceStorage.applySnapshot(data);
-                log.info("[harbor] recovered {} client(s) from local snapshot",
-                        data.size());
+    // Package-private (not private) so a same-package unit test can drive the
+    // verify-repair directly instead of waiting on the 5s verify scheduler.
+    void resyncToPeer(ClusterMember peer, List<String> clientIds) {
+        for (String cid : clientIds) {
+            ClientSession session = connectionManager.getClientSession(cid);
+            if (session == null || !session.isNativeClient()) {
+                continue;   // not ours to repair — skip
             }
-        } catch (Exception e) {
-            log.warn("[harbor] failed to load local snapshot: {}", e.getMessage());
+            ClientSyncData data = serviceStorage.buildClientSyncData(cid);
+            if (data == null || !hasContent(data)) {
+                continue;
+            }
+            try {
+                boolean ok = transport.syncData(peer.address(), cid, OP_CHANGE,
+                        JSON.toJSONBytes(data));
+                if (!ok) {
+                    log.warn("[harbor] verify-triggered resync failed: {} -> {}", cid, peer.address());
+                }
+            } catch (Exception e) {
+                log.warn("[harbor] verify-triggered resync error: {} -> {}", cid, peer.address(), e);
+            }
         }
     }
 
@@ -384,29 +357,5 @@ public class DistroProtocol {
     private static boolean hasContent(ClientSyncData data) {
         return (data.getInstances() != null && !data.getInstances().isEmpty())
                 || (data.getSubscriberKeys() != null && !data.getSubscriberKeys().isEmpty());
-    }
-
-    /**
-     * Save the current in-memory data to the local file snapshot.
-     * Silently no-op if no snapshot storage is configured.
-     */
-    private void persistSnapshot() {
-        if (snapshotStorage == null) {
-            return;
-        }
-        try {
-            List<ClientSyncData> allClientData = new ArrayList<>();
-            for (ClientSession session : connectionManager.allClientSessions()) {
-                ClientSyncData data = serviceStorage.buildClientSyncData(session.getClientId());
-                if (data != null && hasContent(data)) {
-                    allClientData.add(data);
-                }
-            }
-            if (!allClientData.isEmpty()) {
-                snapshotStorage.saveSnapshot(allClientData);
-            }
-        } catch (Exception e) {
-            log.warn("[harbor] failed to save snapshot: {}", e.getMessage());
-        }
     }
 }

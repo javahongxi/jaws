@@ -10,10 +10,8 @@ import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.net.ServerSocket;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,9 +36,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author shenhongxi
  */
 class HarborDistroClusterTest {
-
-    @TempDir
-    static Path tempDir;
 
     private static HarborServer node1;
     private static HarborServer node2;
@@ -259,7 +254,6 @@ class HarborDistroClusterTest {
 
     private static HarborServer createNode(String host, int port, InMemoryTransport transport) {
         URL url = new URL("harbor", host, port, "");
-        url.addParameter("snapshotDir", tempDir.resolve("snapshot-" + port).toString());
         return new HarborServer(url, transport);
     }
 

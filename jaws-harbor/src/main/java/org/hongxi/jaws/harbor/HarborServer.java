@@ -10,7 +10,6 @@ import io.netty.util.AttributeKey;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
-import org.hongxi.jaws.harbor.distro.DistroSnapshotStorage;
 import org.hongxi.jaws.harbor.distro.GrpcHarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
@@ -128,9 +127,8 @@ public class HarborServer {
         this.pushEngine = new PushDelayTaskEngine(this.serviceStorage, this.connectionManager);
 
         this.clusterManager = new ClusterManager(url);
-        DistroSnapshotStorage snapshotStorage = new DistroSnapshotStorage(url);
         this.distroProtocol = new DistroProtocol(
-                clusterManager, transport, serviceStorage, connectionManager, snapshotStorage);
+                clusterManager, transport, serviceStorage, connectionManager);
 
         WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register(SERVICE_NAME_REQUEST, METHOD_REQUEST, new RequestHandler());

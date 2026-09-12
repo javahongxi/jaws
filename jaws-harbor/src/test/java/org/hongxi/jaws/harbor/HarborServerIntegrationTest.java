@@ -8,10 +8,8 @@ import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.net.ServerSocket;
-import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
@@ -23,9 +21,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * register and discover services, verifying end-to-end compatibility.
  */
 class HarborServerIntegrationTest {
-
-    @TempDir
-    static Path tempDir;
 
     private static HarborServer harborServer;
     private static int port;
@@ -41,7 +36,6 @@ class HarborServerIntegrationTest {
         System.setProperty("nacos.server.grpc.port.offset", "0");
 
         URL url = new URL("harbor", "0.0.0.0", port, "");
-        url.addParameter("snapshotDir", tempDir.resolve("snapshot").toString());
         harborServer = new HarborServer(url);
         harborServer.start();
 
