@@ -104,7 +104,7 @@ public class ServiceStorage {
         invalidateServiceCache(key);
         log.info("[harbor] instance registered: {} -> {}:{}",
                 key, instance.getIp(), instance.getPort());
-        notifySubscribers(key, namespace, group, serviceName);
+        listener.onServiceChange(namespace, group, serviceName);
     }
 
     /**
@@ -308,15 +308,14 @@ public class ServiceStorage {
         return info;
     }
 
-    private void notifySubscribers(String key, String namespace, String group, String serviceName) {
-        Set<String> subscribers = subscriberIndexes.get(key);
-        if (subscribers == null || subscribers.isEmpty()) {
-            return;
-        }
-        ServiceInfo serviceInfo = buildServiceInfo(namespace, group, serviceName);
-        for (String connId : subscribers) {
-            listener.onServiceChange(connId, namespace, group, serviceName, serviceInfo);
-        }
+    /**
+     * Read-only view of the connections currently subscribed to a service, keyed by
+     * {@code "namespace@@group@@serviceName"}. The push engine re-reads this at fire
+     * time so it always targets the live subscriber set, not a stale one.
+     */
+    public Set<String> getSubscriberConnections(String serviceKey) {
+        Set<String> subscribers = subscriberIndexes.get(serviceKey);
+        return subscribers == null ? Set.of() : Set.copyOf(subscribers);
     }
 
     // ========================================================================
@@ -640,7 +639,7 @@ public class ServiceStorage {
 
         if (noPublishers && noSubscribers) {
             // Notify subscribers with empty service info before cleaning up
-            notifySubscribers(serviceKey, namespace, group, serviceName);
+            listener.onServiceChange(namespace, group, serviceName);
             // Remove from all indexes
             publisherIndexes.remove(serviceKey);
             subscriberIndexes.remove(serviceKey);
@@ -648,7 +647,7 @@ public class ServiceStorage {
             log.info("[harbor] empty service cleaned: {}", serviceKey);
         } else {
             // Service still has publishers or subscribers, just notify
-            notifySubscribers(serviceKey, namespace, group, serviceName);
+            listener.onServiceChange(namespace, group, serviceName);
         }
     }
 
@@ -686,7 +685,6 @@ public class ServiceStorage {
      */
     @FunctionalInterface
     public interface SubscriberListener {
-        void onServiceChange(String connectionId, String namespace, String group,
-                             String serviceName, ServiceInfo serviceInfo);
+        void onServiceChange(String namespace, String group, String serviceName);
     }
 }

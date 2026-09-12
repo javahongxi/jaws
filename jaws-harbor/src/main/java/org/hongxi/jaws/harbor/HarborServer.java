@@ -83,7 +83,6 @@ public class HarborServer {
     // Nacos naming bidi request types
     private static final String TYPE_CONNECTION_SETUP_REQUEST = "ConnectionSetupRequest";
     private static final String TYPE_SETUP_ACK_REQUEST = "SetupAckRequest";
-    private static final String TYPE_NOTIFY_SUBSCRIBER_REQUEST = "NotifySubscriberRequest";
     private static final String TYPE_NOTIFY_SUBSCRIBER_RESPONSE = "NotifySubscriberResponse";
 
     // Nacos naming instance request types
@@ -113,7 +112,7 @@ public class HarborServer {
     private final HealthCheckManager healthCheckManager;
     private final ClusterManager clusterManager;
     private final DistroProtocol distroProtocol;
-    private final PushRetryManager pushRetryManager;
+    private final PushDelayTaskEngine pushEngine;
     private final WireServer wireServer;
 
     private HarborHttpApi httpApi;
@@ -126,7 +125,7 @@ public class HarborServer {
         this.connectionManager = new ConnectionManager();
         this.serviceStorage = new ServiceStorage(this::notifySubscriber, this.connectionManager);
         this.healthCheckManager = new HealthCheckManager(this.serviceStorage, this.connectionManager);
-        this.pushRetryManager = new PushRetryManager(this.connectionManager);
+        this.pushEngine = new PushDelayTaskEngine(this.serviceStorage, this.connectionManager);
 
         this.clusterManager = new ClusterManager(url);
         DistroSnapshotStorage snapshotStorage = new DistroSnapshotStorage(url);
@@ -207,7 +206,7 @@ public class HarborServer {
         if (httpApi != null) {
             httpApi.stop();
         }
-        pushRetryManager.shutdown();
+        pushEngine.shutdown();
         healthCheckManager.shutdown();
         distroProtocol.shutdown();
         wireServer.close();
@@ -800,19 +799,12 @@ public class HarborServer {
     // Subscriber notification (server push via BiStream)
     // ========================================================================
 
-    private void notifySubscriber(String connectionId, String namespace, String group,
-                                  String serviceName, ServiceInfo serviceInfo) {
-        NotifySubscriberRequest push = new NotifySubscriberRequest();
-        push.setNamespace(namespace);
-        push.setServiceName(serviceName);
-        push.setGroupName(group);
-        push.setServiceInfo(serviceInfo);
-
-        Payload pushPayload = buildPushPayload(TYPE_NOTIFY_SUBSCRIBER_REQUEST, push);
-        boolean pushed = connectionManager.pushToConnection(connectionId, pushPayload);
-        if (!pushed) {
-            log.debug("[harbor] failed to push to connection {}, scheduling retry", connectionId);
-            pushRetryManager.scheduleRetry(connectionId, namespace, group, serviceName, serviceInfo, 1);
-        }
+    private void notifySubscriber(String namespace, String group, String serviceName) {
+        // Register that this service changed. The PushDelayTaskEngine coalesces every
+        // per-subscriber callback into ONE service-level task and, at fire time,
+        // re-reads the CURRENT ServiceInfo and the live subscriber set. No per-connection
+        // snapshot is cached: caching and resending a snapshot is exactly what risked
+        // regressing a client to stale state when retries arrived out of order.
+        pushEngine.requestPush(namespace, group, serviceName);
     }
 }

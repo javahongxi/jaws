@@ -168,7 +168,7 @@ class HarborDistroSnapshotTest {
     @Test
     void testProtocolSavesSnapshotOnSync() {
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         DistroSnapshotStorage storage = new DistroSnapshotStorage(tempDir);
 
@@ -209,7 +209,7 @@ class HarborDistroSnapshotTest {
 
         // Create a new protocol with the same snapshot storage
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
 
         DistroProtocol protocol = new DistroProtocol(
@@ -232,7 +232,7 @@ class HarborDistroSnapshotTest {
     void testProtocolWorksWithoutSnapshotStorage() {
         // The 4-arg constructor (null snapshot) should work fine
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
 
         DistroProtocol protocol = new DistroProtocol(
@@ -281,7 +281,7 @@ class HarborDistroSnapshotTest {
 
         // Recover
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         DistroProtocol protocol = new DistroProtocol(
                 cluster, noopTransport(), svcStorage, connMgr, storage);

@@ -66,7 +66,7 @@ class HarborDistroProtocolTest {
     @Test
     void testServiceStorageSnapshot() {
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage storage = new ServiceStorage((a, b, c) -> {}, connMgr);
 
         // Simulate a registered connection
         connMgr.register("test-conn", "10.0.0.1", "3.0.0", Map.of(), noopPushSubject());
@@ -82,7 +82,7 @@ class HarborDistroProtocolTest {
     @Test
     void testServiceStorageApplySnapshot() {
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage storage = new ServiceStorage((a, b, c) -> {}, connMgr);
 
         Instance inst = createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
         ClientSyncData syncData = new ClientSyncData(
@@ -102,7 +102,7 @@ class HarborDistroProtocolTest {
     @Test
     void testClientSyncDataBuildAndApply() {
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage storage = new ServiceStorage((a, b, c) -> {}, connMgr);
 
         connMgr.register("conn-1", "10.0.0.1", "3.0.0", Map.of(), noopPushSubject());
 
@@ -119,7 +119,7 @@ class HarborDistroProtocolTest {
 
         // Apply to another storage
         ConnectionManager connMgr2 = new ConnectionManager();
-        ServiceStorage storage2 = new ServiceStorage((a, b, c, d, e) -> {}, connMgr2);
+        ServiceStorage storage2 = new ServiceStorage((a, b, c) -> {}, connMgr2);
         storage2.applyClientSyncData(syncData);
 
         // Verify data was synced
@@ -172,7 +172,7 @@ class HarborDistroProtocolTest {
         // value survives — this locks the setRevision() repositioning independently of
         // the order-independence fix above.
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage storage = new ServiceStorage((a, b, c) -> {}, connMgr);
 
         ClientSyncData spoofed = new ClientSyncData(
                 "conn-1",
@@ -200,7 +200,7 @@ class HarborDistroProtocolTest {
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
 
         DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage, connMgr);
         protocol.start();
@@ -214,7 +214,7 @@ class HarborDistroProtocolTest {
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
 
         DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage, connMgr);
 
@@ -242,7 +242,7 @@ class HarborDistroProtocolTest {
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
 
         DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage, connMgr);
 
@@ -269,7 +269,7 @@ class HarborDistroProtocolTest {
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
 
         connMgr.register("test-conn", "10.0.0.1", "3.0.0", Map.of(), noopPushSubject());
         svcStorage.registerInstance("public", "DEFAULT_GROUP", "svc1",
@@ -312,7 +312,7 @@ class HarborDistroProtocolTest {
         };
 
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+        ServiceStorage svcStorage = new ServiceStorage((a, b, c) -> {}, connMgr);
         DistroProtocol protocol = new DistroProtocol(cluster, mockTransport, svcStorage, connMgr);
 
         // Sync with connectionId as resourceKey (client-level granularity)
