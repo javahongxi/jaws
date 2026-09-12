@@ -338,9 +338,54 @@ public class ServiceStorage {
             return;
         }
         long now = System.currentTimeMillis();
-        for (List<Instance> instances : session.getAllPublishers().values()) {
-            for (Instance inst : instances) {
+        Set<String> recoveredServices = new HashSet<>();
+        for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
+            for (Instance inst : entry.getValue()) {
                 inst.setLastBeat(now);
+                // Beat recovered: clear a prior unhealthy mark and re-announce,
+                // so subscribers stop steering traffic away from it.
+                if (!inst.isHealthy()) {
+                    inst.setHealthy(true);
+                    invalidateServiceCache(entry.getKey());
+                    recoveredServices.add(entry.getKey());
+                }
+            }
+        }
+        for (String serviceKey : recoveredServices) {
+            String[] parts = splitServiceKey(serviceKey);
+            if (parts != null) {
+                listener.onServiceChange(parts[0], parts[1], parts[2]);
+            }
+        }
+    }
+
+    /**
+     * First health tier (Nacos {@code HEART_BEAT_TIMEOUT}): an instance whose beat
+     * stopped for longer than {@code timeoutMs} — but which hasn't yet hit the delete
+     * window — is marked {@code healthy=false}, its service cache invalidated, and
+     * subscribers notified so they stop routing to it. Deletion stays a later tier
+     * via {@link #getExpiredInstances}; the next beat restores health via
+     * {@link #updateHeartbeatByConnectionId}.
+     */
+    public void markUnhealthyStale(long timeoutMs) {
+        long now = System.currentTimeMillis();
+        Set<String> affectedServices = new HashSet<>();
+        for (ClientSession session : connectionManager.allClientSessions()) {
+            for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
+                for (Instance inst : entry.getValue()) {
+                    long lastBeat = inst.getLastBeat();
+                    if (inst.isHealthy() && lastBeat > 0 && now - lastBeat > timeoutMs) {
+                        inst.setHealthy(false);
+                        invalidateServiceCache(entry.getKey());
+                        affectedServices.add(entry.getKey());
+                    }
+                }
+            }
+        }
+        for (String serviceKey : affectedServices) {
+            String[] parts = splitServiceKey(serviceKey);
+            if (parts != null) {
+                listener.onServiceChange(parts[0], parts[1], parts[2]);
             }
         }
     }

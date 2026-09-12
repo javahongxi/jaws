@@ -53,6 +53,13 @@ public class HealthCheckManager {
      */
     private static final long INSTANCE_TIMEOUT_MS = 180_000;
 
+    /**
+     * First health tier (Nacos {@code HEART_BEAT_TIMEOUT}): stale-for-longer-than-this
+     * instances are marked unhealthy (kept, but flagged) before the delete window at
+     * {@link #INSTANCE_TIMEOUT_MS}. ~3× the 5s beat interval.
+     */
+    private static final long INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000;
+
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
     private final ScheduledExecutorService scheduler;
@@ -97,6 +104,10 @@ public class HealthCheckManager {
                             + "connId={}, clientIp={}", removed, connId, conn.clientIp());
                 }
             }
+
+            // Phase 1.5: Nacos first health tier — mark stale-but-not-yet-expired
+            // instances unhealthy (kept) and notify, before deletion in Phase 2.
+            serviceStorage.markUnhealthyStale(INSTANCE_UNHEALTHY_TIMEOUT_MS);
 
             // Phase 2: instance heartbeat fallback — clean up any remaining expired instances
             List<ServiceStorage.ExpiredInstance> expired =
