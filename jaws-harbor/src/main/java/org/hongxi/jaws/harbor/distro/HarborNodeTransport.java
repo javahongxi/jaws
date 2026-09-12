@@ -16,32 +16,28 @@ public interface HarborNodeTransport {
      * Send a sync message to a peer node.
      *
      * @param targetAddress peer address (host:port)
-     * @param resourceType  the type of resource being synced (e.g. "naming")
      * @param resourceKey   the key of the resource
      * @param operation     the operation type (CHANGE, DELETE)
      * @param content       the serialized data content
      * @return true if sync succeeded
      */
-    boolean syncData(String targetAddress, String resourceType, String resourceKey,
-                     String operation, byte[] content);
+    boolean syncData(String targetAddress, String resourceKey, String operation, byte[] content);
 
     /**
      * Send a verify message to a peer node.
      *
      * @param targetAddress peer address
-     * @param resourceType  resource type
      * @param checksums     map of resourceKey → checksum for verification
      */
-    void syncVerify(String targetAddress, String resourceType, Map<String, String> checksums);
+    void syncVerify(String targetAddress, Map<String, String> checksums);
 
     /**
      * Request a full snapshot from a peer node.
      *
      * @param targetAddress peer address
-     * @param resourceType  resource type
      * @return the snapshot data, or null if failed
      */
-    byte[] getSnapshot(String targetAddress, String resourceType);
+    byte[] getSnapshot(String targetAddress);
 
     /**
      * Shut down the transport and release resources.

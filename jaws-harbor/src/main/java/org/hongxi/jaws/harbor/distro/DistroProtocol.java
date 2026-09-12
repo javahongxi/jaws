@@ -30,15 +30,13 @@ import java.util.concurrent.TimeUnit;
  *   <li><b>Load</b> — on startup, load a snapshot from a peer to catch up on
  *       data that was written while this node was offline</li>
  * </ul>
- * The only resource type managed is {@code naming} (service instances).
+ * Harbor focuses exclusively on naming (service instances).
  *
  * @author shenhongxi
  */
 public class DistroProtocol {
 
     private static final Logger log = LoggerFactory.getLogger(DistroProtocol.class);
-
-    public static final String RESOURCE_NAMING = "naming";
 
     public static final String OP_CHANGE = "CHANGE";
     public static final String OP_DELETE = "DELETE";
@@ -60,8 +58,8 @@ public class DistroProtocol {
                 return t;
             });
 
-    private volatile boolean initialized = false;
-    private volatile boolean running = false;
+    private volatile boolean initialized;
+    private volatile boolean running;
 
     public DistroProtocol(ClusterManager clusterManager,
                           HarborNodeTransport transport,
@@ -83,9 +81,7 @@ public class DistroProtocol {
 
         // Schedule periodic verify task
         scheduler.scheduleAtFixedRate(this::runVerifyTask,
-                VERIFY_INTERVAL_MS,
-                VERIFY_INTERVAL_MS,
-                TimeUnit.MILLISECONDS);
+                VERIFY_INTERVAL_MS, VERIFY_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
         // Schedule initial load task (runs once, retries on failure)
         scheduler.schedule(this::runLoadTask, 1, TimeUnit.SECONDS);
@@ -112,29 +108,23 @@ public class DistroProtocol {
     // ========================================================================
 
     /**
-     * Sync a naming data change to all peer nodes.
+     * Sync a data change to all peer nodes.
      */
-    public void syncNamingChange(String resourceKey, String operation, byte[] content) {
-        syncChange(RESOURCE_NAMING, resourceKey, operation, content);
-    }
-
-    private void syncChange(String resourceType, String resourceKey,
-                            String operation, byte[] content) {
+    public void syncChange(String resourceKey, String operation, byte[] content) {
         Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
         if (peers.isEmpty()) {
             return;
         }
         for (ClusterMember peer : peers) {
             try {
-                boolean ok = transport.syncData(peer.address(), resourceType,
-                        resourceKey, operation, content);
+                boolean ok = transport.syncData(peer.address(), resourceKey, operation, content);
                 if (!ok) {
-                    log.warn("[harbor] distro sync failed: {} {} -> {}",
-                            resourceType, resourceKey, peer.address());
+                    log.warn("[harbor] distro sync failed: {} -> {}",
+                            resourceKey, peer.address());
                 }
             } catch (Exception e) {
-                log.warn("[harbor] distro sync error: {} {} -> {}",
-                        resourceType, resourceKey, peer.address(), e);
+                log.warn("[harbor] distro sync error: {} -> {}",
+                        resourceKey, peer.address(), e);
             }
         }
     }
@@ -146,18 +136,13 @@ public class DistroProtocol {
     /**
      * Handle a sync request from a peer node — apply the received data locally.
      */
-    public boolean onReceive(String resourceType, String resourceKey,
-                             String operation, byte[] content) {
-        log.debug("[harbor] distro receive: {} {} op={}", resourceType, resourceKey, operation);
+    public boolean onReceive(String resourceKey, String operation, byte[] content) {
+        log.debug("[harbor] distro receive: {} op={}", resourceKey, operation);
         try {
-            if (RESOURCE_NAMING.equals(resourceType)) {
-                handleNamingSync(resourceKey, operation, content);
-                return true;
-            }
-            log.warn("[harbor] unknown distro resource type: {}", resourceType);
-            return false;
+            handleNamingSync(resourceKey, operation, content);
+            return true;
         } catch (Exception e) {
-            log.error("[harbor] error processing distro receive: {} {}", resourceType, resourceKey, e);
+            log.error("[harbor] error processing distro receive: {}", resourceKey, e);
             return false;
         }
     }
@@ -165,8 +150,8 @@ public class DistroProtocol {
     /**
      * Handle a verify request from a peer — compare checksums.
      */
-    public boolean onVerify(String resourceType, Map<String, String> checksums) {
-        log.debug("[harbor] distro verify: {} checksums={}", resourceType, checksums);
+    public boolean onVerify(Map<String, String> checksums) {
+        log.debug("[harbor] distro verify: checksums={}", checksums);
         // For now, just acknowledge — a full implementation would compare
         // checksums and request missing data from the peer.
         return true;
@@ -175,15 +160,13 @@ public class DistroProtocol {
     /**
      * Handle a snapshot request from a peer — return local data as snapshot.
      */
-    public byte[] onSnapshot(String resourceType) {
-        log.info("[harbor] distro snapshot requested for: {}", resourceType);
+    public byte[] onSnapshot() {
+        log.info("[harbor] distro snapshot requested");
         try {
-            if (RESOURCE_NAMING.equals(resourceType)) {
-                Map<String, List<Instance>> data = serviceStorage.getAllInstanceData();
-                return JSON.toJSONBytes(data);
-            }
+            Map<String, List<Instance>> data = serviceStorage.getAllInstanceData();
+            return JSON.toJSONBytes(data);
         } catch (Exception e) {
-            log.error("[harbor] error building snapshot for: {}", resourceType, e);
+            log.error("[harbor] error building snapshot", e);
         }
         return new byte[0];
     }
@@ -208,7 +191,7 @@ public class DistroProtocol {
             }
             for (ClusterMember peer : peers) {
                 try {
-                    transport.syncVerify(peer.address(), RESOURCE_NAMING, namingChecksums);
+                    transport.syncVerify(peer.address(), namingChecksums);
                 } catch (Exception e) {
                     log.debug("[harbor] verify to {} failed: {}", peer.address(), e.getMessage());
                 }
@@ -231,7 +214,7 @@ public class DistroProtocol {
             for (ClusterMember peer : peers) {
                 try {
                     log.info("[harbor] loading naming snapshot from {}", peer.address());
-                    byte[] namingSnapshot = transport.getSnapshot(peer.address(), RESOURCE_NAMING);
+                    byte[] namingSnapshot = transport.getSnapshot(peer.address());
                     if (namingSnapshot != null && namingSnapshot.length > 0) {
                         String json = new String(namingSnapshot, StandardCharsets.UTF_8);
                         Map<String, List<Instance>> data =

@@ -597,11 +597,11 @@ public class HarborServer {
             // Trigger distro sync to peers
             String key = namespace + "@@" + groupName + "@@" + serviceName;
             byte[] syncContent = JSON.toJSONBytes(instance);
-            distroProtocol.syncNamingChange(key, DistroProtocol.OP_CHANGE, syncContent);
+            distroProtocol.syncChange(key, DistroProtocol.OP_CHANGE, syncContent);
         } else if (DEREGISTER_INSTANCE.equals(type)) {
             serviceStorage.deregisterInstance(namespace, groupName, serviceName, instance);
             String key = namespace + "@@" + groupName + "@@" + serviceName;
-            distroProtocol.syncNamingChange(key, DistroProtocol.OP_DELETE, new byte[0]);
+            distroProtocol.syncChange(key, DistroProtocol.OP_DELETE, new byte[0]);
         } else {
             return buildErrorResponse(TYPE_INSTANCE_RESPONSE,
                     "Unknown instance operation type: " + type);
@@ -687,7 +687,6 @@ public class HarborServer {
 
     private Payload handleDistroSync(Payload payload) {
         DistroSyncRequest request = parseBody(payload, DistroSyncRequest.class);
-        String resourceType = request.getResourceType();
         String resourceKey = request.getResourceKey();
         String operation = request.getOperation();
         String contentStr = request.getContent();
@@ -695,7 +694,7 @@ public class HarborServer {
                 ? java.util.Base64.getDecoder().decode(contentStr)
                 : new byte[0];
 
-        boolean ok = distroProtocol.onReceive(resourceType, resourceKey, operation, content);
+        boolean ok = distroProtocol.onReceive(resourceKey, operation, content);
 
         DistroSyncResponse response = new DistroSyncResponse();
         response.setResultCode(ok ? 200 : 500);
@@ -705,13 +704,12 @@ public class HarborServer {
 
     private Payload handleDistroVerify(Payload payload) {
         DistroVerifyRequest request = parseBody(payload, DistroVerifyRequest.class);
-        String resourceType = request.getResourceType();
         Map<String, String> checksums = request.getChecksums();
         if (checksums == null) {
             checksums = Map.of();
         }
 
-        boolean ok = distroProtocol.onVerify(resourceType, checksums);
+        boolean ok = distroProtocol.onVerify(checksums);
 
         DistroVerifyResponse response = new DistroVerifyResponse();
         response.setResultCode(ok ? 200 : 500);
@@ -720,15 +718,11 @@ public class HarborServer {
     }
 
     private Payload handleDistroSnapshot(Payload payload) {
-        DistroSnapshotRequest request = parseBody(payload, DistroSnapshotRequest.class);
-        String resourceType = request.getResourceType();
-
-        byte[] snapshot = distroProtocol.onSnapshot(resourceType);
+        byte[] snapshot = distroProtocol.onSnapshot();
 
         DistroSnapshotResponse response = new DistroSnapshotResponse();
         response.setResultCode(200);
         response.setSuccess(true);
-        response.setResourceType(resourceType);
         response.setContent(snapshot != null
                 ? Base64.getEncoder().encodeToString(snapshot) : "");
         return buildPayload(TYPE_DISTRO_SNAPSHOT_RESPONSE, response);

@@ -10,18 +10,9 @@ import org.hongxi.jaws.harbor.model.Response;
  */
 public class DistroSnapshotResponse extends Response {
 
-    private String resourceType;
     private String content;
 
     public DistroSnapshotResponse() {
-    }
-
-    public String getResourceType() {
-        return resourceType;
-    }
-
-    public void setResourceType(String resourceType) {
-        this.resourceType = resourceType;
     }
 
     public String getContent() {

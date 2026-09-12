@@ -54,10 +54,8 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
     private final Map<String, WireClient> peerClients = new ConcurrentHashMap<>();
 
     @Override
-    public boolean syncData(String targetAddress, String resourceType, String resourceKey,
-                            String operation, byte[] content) {
+    public boolean syncData(String targetAddress, String resourceKey, String operation, byte[] content) {
         DistroSyncRequest request = new DistroSyncRequest();
-        request.setResourceType(resourceType);
         request.setResourceKey(resourceKey);
         request.setOperation(operation);
         request.setContent(content != null
@@ -73,10 +71,8 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
     }
 
     @Override
-    public void syncVerify(String targetAddress, String resourceType,
-                              Map<String, String> checksums) {
+    public void syncVerify(String targetAddress, Map<String, String> checksums) {
         DistroVerifyRequest request = new DistroVerifyRequest();
-        request.setResourceType(resourceType);
         request.setChecksums(checksums);
 
         Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_VERIFY_REQUEST,
@@ -92,9 +88,8 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
     }
 
     @Override
-    public byte[] getSnapshot(String targetAddress, String resourceType) {
+    public byte[] getSnapshot(String targetAddress) {
         DistroSnapshotRequest request = new DistroSnapshotRequest();
-        request.setResourceType(resourceType);
 
         Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_SNAPSHOT_REQUEST,
                 JSON.toJSONBytes(request));

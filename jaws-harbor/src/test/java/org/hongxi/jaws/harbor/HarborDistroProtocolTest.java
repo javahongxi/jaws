@@ -129,7 +129,7 @@ class HarborDistroProtocolTest {
         // Simulate receiving a naming sync — content is a serialized Instance
         Instance instance = createInstance("10.0.0.5", 9090, "10.0.0.5#9090#DEFAULT_GROUP@@remote-svc");
 
-        boolean ok = protocol.onReceive("naming", "public@@DEFAULT_GROUP@@remote-svc",
+        boolean ok = protocol.onReceive("public@@DEFAULT_GROUP@@remote-svc",
                 "CHANGE", JSON.toJSONBytes(instance));
         assertTrue(ok);
 
@@ -149,7 +149,7 @@ class HarborDistroProtocolTest {
 
         DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage);
 
-        byte[] namingSnapshot = protocol.onSnapshot("naming");
+        byte[] namingSnapshot = protocol.onSnapshot();
         assertNotNull(namingSnapshot);
         assertTrue(namingSnapshot.length > 0);
     }
@@ -162,22 +162,21 @@ class HarborDistroProtocolTest {
         cluster.addMember(new ClusterMember("10.0.0.2:9848")); // peer
 
         AtomicReference<String> lastSyncTarget = new AtomicReference<>();
-        AtomicReference<String> lastSyncType = new AtomicReference<>();
+        AtomicReference<String> lastSyncKey = new AtomicReference<>();
 
         HarborNodeTransport mockTransport = new HarborNodeTransport() {
             @Override
-            public boolean syncData(String targetAddress, String resourceType,
-                                    String resourceKey, String operation, byte[] content) {
+            public boolean syncData(String targetAddress, String resourceKey,
+                                    String operation, byte[] content) {
                 lastSyncTarget.set(targetAddress);
-                lastSyncType.set(resourceType + ":" + resourceKey);
+                lastSyncKey.set(resourceKey);
                 return true;
             }
             @Override
-            public void syncVerify(String targetAddress, String resourceType,
-                                      Map<String, String> checksums) {
+            public void syncVerify(String targetAddress, Map<String, String> checksums) {
             }
             @Override
-            public byte[] getSnapshot(String targetAddress, String resourceType) {
+            public byte[] getSnapshot(String targetAddress) {
                 return null;
             }
             @Override
@@ -187,11 +186,11 @@ class HarborDistroProtocolTest {
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
         DistroProtocol protocol = new DistroProtocol(cluster, mockTransport, svcStorage);
 
-        protocol.syncNamingChange("public@@DEFAULT_GROUP@@svc1", "CHANGE",
+        protocol.syncChange("public@@DEFAULT_GROUP@@svc1", "CHANGE",
                 "{}".getBytes(StandardCharsets.UTF_8));
 
         assertEquals("10.0.0.2:9848", lastSyncTarget.get());
-        assertEquals("naming:public@@DEFAULT_GROUP@@svc1", lastSyncType.get());
+        assertEquals("public@@DEFAULT_GROUP@@svc1", lastSyncKey.get());
     }
 
     // ========================================================================
@@ -201,16 +200,15 @@ class HarborDistroProtocolTest {
     private static HarborNodeTransport noopTransport() {
         return new HarborNodeTransport() {
             @Override
-            public boolean syncData(String targetAddress, String resourceType,
-                                    String resourceKey, String operation, byte[] content) {
+            public boolean syncData(String targetAddress, String resourceKey,
+                                    String operation, byte[] content) {
                 return true;
             }
             @Override
-            public void syncVerify(String targetAddress, String resourceType,
-                                      Map<String, String> checksums) {
+            public void syncVerify(String targetAddress, Map<String, String> checksums) {
             }
             @Override
-            public byte[] getSnapshot(String targetAddress, String resourceType) {
+            public byte[] getSnapshot(String targetAddress) {
                 return null;
             }
             @Override

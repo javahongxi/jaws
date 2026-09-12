@@ -8,14 +8,4 @@ import org.hongxi.jaws.harbor.model.Request;
  * @author shenhongxi
  */
 public class DistroRequest extends Request {
-
-    private String resourceType;
-
-    public String getResourceType() {
-        return resourceType;
-    }
-
-    public void setResourceType(String resourceType) {
-        this.resourceType = resourceType;
-    }
 }

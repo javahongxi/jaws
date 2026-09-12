@@ -111,7 +111,7 @@ class HarborDistroClusterTest {
 
         // Trigger distro sync manually (in production, HarborServer.handleInstanceRequest does this)
         String key = "public@@DEFAULT_GROUP@@demo-svc";
-        node1.getDistroProtocol().syncNamingChange(key, DistroProtocol.OP_CHANGE,
+        node1.getDistroProtocol().syncChange(key, DistroProtocol.OP_CHANGE,
                 com.alibaba.fastjson2.JSON.toJSONBytes(instance));
 
         // Verify on node2
@@ -136,7 +136,7 @@ class HarborDistroClusterTest {
         node2.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "order-svc", instance, "test-conn-2");
 
         String key = "public@@DEFAULT_GROUP@@order-svc";
-        node2.getDistroProtocol().syncNamingChange(key, DistroProtocol.OP_CHANGE,
+        node2.getDistroProtocol().syncChange(key, DistroProtocol.OP_CHANGE,
                 com.alibaba.fastjson2.JSON.toJSONBytes(instance));
 
         // Verify on node1
@@ -169,7 +169,7 @@ class HarborDistroClusterTest {
             node.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "multi-svc", inst, "test-conn-" + i);
 
             String key = "public@@DEFAULT_GROUP@@multi-svc";
-            node.getDistroProtocol().syncNamingChange(key, DistroProtocol.OP_CHANGE,
+            node.getDistroProtocol().syncChange(key, DistroProtocol.OP_CHANGE,
                     com.alibaba.fastjson2.JSON.toJSONBytes(inst));
         }
 
@@ -245,29 +245,28 @@ class HarborDistroClusterTest {
         }
 
         @Override
-        public boolean syncData(String targetAddress, String resourceType,
-                                String resourceKey, String operation, byte[] content) {
+        public boolean syncData(String targetAddress, String resourceKey,
+                                String operation, byte[] content) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                return target.onReceive(resourceType, resourceKey, operation, content);
+                return target.onReceive(resourceKey, operation, content);
             }
             return false;
         }
 
         @Override
-        public void syncVerify(String targetAddress, String resourceType,
-                                  Map<String, String> checksums) {
+        public void syncVerify(String targetAddress, Map<String, String> checksums) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                target.onVerify(resourceType, checksums);
+                target.onVerify(checksums);
             }
         }
 
         @Override
-        public byte[] getSnapshot(String targetAddress, String resourceType) {
+        public byte[] getSnapshot(String targetAddress) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                return target.onSnapshot(resourceType);
+                return target.onSnapshot();
             }
             return null;
         }
