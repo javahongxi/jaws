@@ -13,7 +13,7 @@ Jaws 是一个**核心 2.8 万多行、可以从头读到尾**的轻量级 RPC �
 - **自定义协议** — 基于 Netty TCP 自研 jaws 二进制协议，编解码全链路零拷贝
 - **HTTP/2 传输** — 可切换至 HTTP/2 传输层，支持 HTTP/2 三种流式，网关与 Service Mesh 友好
 - **HTTP/1.1 REST** — 注解驱动 REST 路由映射，兼容 Spring Web 与 JAX-RS 注解体系，泛化调用兜底
-- **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持三种流式及 gRPC 常用能力
+- **gRPC 线格式** — 自研 wire 协议支持与 gRPC 互通，支持一元及三种流式调用模式
 - **自适应协议** — 单端口按首字节识别 jaws 二进制 / HTTP/2 / HTTP/1.1，自动装配对应协议栈，探测后零常驻开销
 - **多种序列化** — 内置 fastjson2、hessian2、protostuff、fury，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
@@ -34,6 +34,8 @@ Jaws 是一个**核心 2.8 万多行、可以从头读到尾**的轻量级 RPC �
 - Maven 3.8+（或使用内置 `./mvnw`）
 - ZooKeeper 3.9+（ZooKeeper 注册中心模式需要）
 - Nacos 3.x（Nacos 注册中心模式需要）
+
+> 运行示例可使用内置轻量注册中心 Harbor，兼容 nacos-client，示例见下文
 
 ### 编译
 
@@ -57,9 +59,6 @@ Jaws 是一个**核心 2.8 万多行、可以从头读到尾**的轻量级 RPC �
 ./run-sample.sh nacos              # Nacos 注册中心（需要 Nacos 在 127.0.0.1:8848）
 ./run-sample.sh adaptive           # Adaptive 自适应协议直连（单端口多协议，无需注册中心）
 
-# injvm 协议示例（进程内直调，不走网络）
-./run-sample.sh injvm
-
 # 分步运行
 ./run-sample.sh provider           # 前台启动 provider（需要 ZK 在 127.0.0.1:2181 运行）
 ./run-sample.sh provider 10001     # 指定端口
@@ -67,6 +66,12 @@ Jaws 是一个**核心 2.8 万多行、可以从头读到尾**的轻量级 RPC �
 ./run-sample.sh provider-bg -1     # 后台启动，自动分配端口
 ./run-sample.sh consumer           # 运行 consumer（需要先启动 provider）
 ./run-sample.sh stop               # 停止所有后台 provider 并清理
+
+# 使用内置轻量注册中心（jaws-harbor）
+./run-sample.sh harbor-standalone  # 启动内置轻量注册中心（单机模式）
+./run-sample.sh harbor-cluster     # 启动内置轻量注册中心（集群模式）
+./run-sample.sh harbor             # 运行示例（sample-harbor-provider/consumer）
+./run-sample.sh stop               # 停止注册中心
 
 # 性能测试（8 核实测约 14 万 QPS，详见 doc/benchmark.md）
 ROLE=provider THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws  # 启动服务端
