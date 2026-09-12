@@ -55,6 +55,7 @@ public class DistroProtocol {
     private final HarborNodeTransport transport;
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
+    private final DistroSnapshotStorage snapshotStorage;
 
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(2, r -> {
@@ -69,14 +70,30 @@ public class DistroProtocol {
                           HarborNodeTransport transport,
                           ServiceStorage serviceStorage,
                           ConnectionManager connectionManager) {
+        this(clusterManager, transport, serviceStorage, connectionManager, null);
+    }
+
+    public DistroProtocol(ClusterManager clusterManager,
+                          HarborNodeTransport transport,
+                          ServiceStorage serviceStorage,
+                          ConnectionManager connectionManager,
+                          DistroSnapshotStorage snapshotStorage) {
         this.clusterManager = clusterManager;
         this.transport = transport;
         this.serviceStorage = serviceStorage;
         this.connectionManager = connectionManager;
+        this.snapshotStorage = snapshotStorage;
     }
 
     /**
      * Start the Distro protocol: schedule verify and load tasks.
+     * <p>
+     * Startup sequence:
+     * <ol>
+     *   <li>Load local file snapshot (crash recovery when no peer is available)</li>
+     *   <li>Schedule periodic verify task (also saves snapshot to disk)</li>
+     *   <li>Schedule initial load from peer (overrides stale local data)</li>
+     * </ol>
      */
     public void start() {
         if (running) {
@@ -84,6 +101,9 @@ public class DistroProtocol {
         }
         running = true;
         log.info("[harbor] distro protocol starting");
+
+        // Phase 1: recover from local file snapshot before peer contact
+        loadLocalSnapshot();
 
         // Schedule periodic verify task
         scheduler.scheduleAtFixedRate(this::runVerifyTask,
@@ -163,6 +183,7 @@ public class DistroProtocol {
                     }
                 }
             }
+            persistSnapshot();
             return true;
         } catch (Exception e) {
             log.error("[harbor] error processing distro receive: clientId={}", clientId, e);
@@ -207,7 +228,7 @@ public class DistroProtocol {
             List<ClientSyncData> allClientData = new ArrayList<>();
             for (ClientSession session : connectionManager.allClientSessions()) {
                 ClientSyncData data = serviceStorage.buildClientSyncData(session.getClientId());
-                if (data != null) {
+                if (data != null && hasContent(data)) {
                     allClientData.add(data);
                 }
             }
@@ -224,33 +245,34 @@ public class DistroProtocol {
 
     /**
      * Periodic verify: send per-client revisions to all peers.
+     * Also saves a local file snapshot for crash recovery.
      */
     private void runVerifyTask() {
         try {
             Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
-            if (peers.isEmpty()) {
-                return;
-            }
-            // Build per-client verify data from native clients only
-            List<ClientVerifyInfo> verifyInfos = new ArrayList<>();
-            for (ClientSession session : connectionManager.allNativeClientSessions()) {
-                verifyInfos.add(new ClientVerifyInfo(session.getClientId(), session.getRevision()));
-            }
-            if (verifyInfos.isEmpty()) {
-                return;
-            }
-            for (ClusterMember peer : peers) {
-                try {
-                    List<String> mismatched = transport.syncVerify(peer.address(), verifyInfos);
-                    if (!mismatched.isEmpty()) {
-                        log.warn("[harbor] verify mismatch with {}, pulling targeted snapshot for {} clients",
-                                peer.address(), mismatched.size());
-                        pullSnapshotFromPeer(peer, mismatched);
+            if (!peers.isEmpty()) {
+                // Build per-client verify data from native clients only
+                List<ClientVerifyInfo> verifyInfos = new ArrayList<>();
+                for (ClientSession session : connectionManager.allNativeClientSessions()) {
+                    verifyInfos.add(new ClientVerifyInfo(session.getClientId(), session.getRevision()));
+                }
+                if (!verifyInfos.isEmpty()) {
+                    for (ClusterMember peer : peers) {
+                        try {
+                            List<String> mismatched = transport.syncVerify(peer.address(), verifyInfos);
+                            if (!mismatched.isEmpty()) {
+                                log.warn("[harbor] verify mismatch with {}, pulling targeted snapshot for {} clients",
+                                        peer.address(), mismatched.size());
+                                pullSnapshotFromPeer(peer, mismatched);
+                            }
+                        } catch (Exception e) {
+                            log.debug("[harbor] verify to {} failed: {}", peer.address(), e.getMessage());
+                        }
                     }
-                } catch (Exception e) {
-                    log.debug("[harbor] verify to {} failed: {}", peer.address(), e.getMessage());
                 }
             }
+            // Save local file snapshot after each verify cycle
+            persistSnapshot();
         } catch (Exception e) {
             log.warn("[harbor] verify task error", e);
         }
@@ -323,5 +345,68 @@ public class DistroProtocol {
         log.info("[harbor] snapshot loaded from {}: {}/{} clients applied",
                 peer.address(), applied, clientDataList.size());
         return applied > 0;
+    }
+
+    // ========================================================================
+    // Local file snapshot
+    // ========================================================================
+
+    /**
+     * Load data from the local file snapshot into memory.
+     * Called during startup before peer contact, so that the node can
+     * serve service queries immediately even if all peers are also restarting.
+     * <p>
+     * Loaded sessions are marked as non-native — they will be replaced
+     * by fresh data from peers (via the load task) or by re-registering
+     * native clients.
+     */
+    private void loadLocalSnapshot() {
+        if (snapshotStorage == null) {
+            return;
+        }
+        try {
+            List<ClientSyncData> data = snapshotStorage.loadSnapshot();
+            if (data != null && !data.isEmpty()) {
+                serviceStorage.applySnapshot(data);
+                log.info("[harbor] recovered {} client(s) from local snapshot",
+                        data.size());
+            }
+        } catch (Exception e) {
+            log.warn("[harbor] failed to load local snapshot: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Check whether a ClientSyncData carries any publisher or subscriber data.
+     * Entries with both empty are zombie sessions (all instances expired) and
+     * should not be persisted or synced.
+     */
+    private static boolean hasContent(ClientSyncData data) {
+        return (data.getInstances() != null && !data.getInstances().isEmpty())
+                || (data.getSubscriberKeys() != null && !data.getSubscriberKeys().isEmpty());
+    }
+
+    /**
+     * Save the current in-memory data to the local file snapshot.
+     * Silently no-op if no snapshot storage is configured.
+     */
+    private void persistSnapshot() {
+        if (snapshotStorage == null) {
+            return;
+        }
+        try {
+            List<ClientSyncData> allClientData = new ArrayList<>();
+            for (ClientSession session : connectionManager.allClientSessions()) {
+                ClientSyncData data = serviceStorage.buildClientSyncData(session.getClientId());
+                if (data != null && hasContent(data)) {
+                    allClientData.add(data);
+                }
+            }
+            if (!allClientData.isEmpty()) {
+                snapshotStorage.saveSnapshot(allClientData);
+            }
+        } catch (Exception e) {
+            log.warn("[harbor] failed to save snapshot: {}", e.getMessage());
+        }
     }
 }
