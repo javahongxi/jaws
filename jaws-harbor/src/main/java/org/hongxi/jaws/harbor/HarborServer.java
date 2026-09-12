@@ -138,9 +138,7 @@ public class HarborServer {
         this.connectionManager = new ConnectionManager();
         this.healthCheckManager = new HealthCheckManager(this.serviceStorage, this.connectionManager);
 
-        this.clusterManager = new ClusterManager();
-        String selfAddr = resolveSelfAddress(url.getHost()) + ":" + url.getPort();
-        this.clusterManager.setSelfAddress(selfAddr);
+        this.clusterManager = new ClusterManager(url);
         this.distroProtocol = new DistroProtocol(clusterManager, transport, serviceStorage);
 
         WireHandlerRegistry registry = new WireHandlerRegistry();
@@ -255,21 +253,6 @@ public class HarborServer {
         }
         // Also clean up the clientIp mapping if it points to this connection
         connectionIdByClientIp.values().removeIf(connId::equals);
-    }
-
-    /**
-     * Resolve the bind address {@code 0.0.0.0} to the local hostname so that
-     * the cluster self-address is human-readable and reachable by peers.
-     */
-    private static String resolveSelfAddress(String host) {
-        if ("0.0.0.0".equals(host) || "::".equals(host)) {
-            try {
-                return java.net.InetAddress.getLocalHost().getHostAddress();
-            } catch (java.net.UnknownHostException e) {
-                return "127.0.0.1";
-            }
-        }
-        return host;
     }
 
     // ========================================================================

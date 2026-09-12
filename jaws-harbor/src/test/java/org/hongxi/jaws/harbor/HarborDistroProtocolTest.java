@@ -6,6 +6,7 @@ import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -27,14 +28,13 @@ class HarborDistroProtocolTest {
 
     @Test
     void testClusterManagerBasics() {
-        ClusterManager mgr = new ClusterManager();
+        ClusterManager mgr = newClusterManager("10.0.0.1", 9848);
         assertTrue(mgr.isEmpty());
 
         mgr.addMember(new ClusterMember("10.0.0.1:9848"));
         mgr.addMember(new ClusterMember("10.0.0.2:9848"));
         assertEquals(2, mgr.size());
 
-        mgr.setSelfAddress("10.0.0.1:9848");
         assertEquals(1, mgr.allMembersExceptSelf().size());
     }
 
@@ -48,7 +48,7 @@ class HarborDistroProtocolTest {
 
     @Test
     void testClusterManagerRemove() {
-        ClusterManager mgr = new ClusterManager();
+        ClusterManager mgr = newClusterManager("10.0.0.1", 9848);
         ClusterMember m = new ClusterMember("10.0.0.1:9848");
         mgr.addMember(m);
         assertEquals(1, mgr.size());
@@ -107,7 +107,7 @@ class HarborDistroProtocolTest {
 
     @Test
     void testDistroProtocolStartAndShutdown() {
-        ClusterManager cluster = new ClusterManager();
+        ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
 
@@ -120,7 +120,7 @@ class HarborDistroProtocolTest {
 
     @Test
     void testDistroProtocolOnReceiveNaming() {
-        ClusterManager cluster = new ClusterManager();
+        ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
 
@@ -140,7 +140,7 @@ class HarborDistroProtocolTest {
 
     @Test
     void testDistroProtocolSnapshot() {
-        ClusterManager cluster = new ClusterManager();
+        ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ServiceStorage svcStorage = new ServiceStorage((a, b, c, d, e) -> {});
 
@@ -156,8 +156,7 @@ class HarborDistroProtocolTest {
 
     @Test
     void testDistroSyncToPeers() {
-        ClusterManager cluster = new ClusterManager();
-        cluster.setSelfAddress("10.0.0.1:9848");
+        ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         cluster.addMember(new ClusterMember("10.0.0.1:9848")); // self
         cluster.addMember(new ClusterMember("10.0.0.2:9848")); // peer
 
@@ -214,6 +213,11 @@ class HarborDistroProtocolTest {
             @Override
             public void shutdown() {}
         };
+    }
+
+    private static ClusterManager newClusterManager(String host, int port) {
+        URL url = new URL("grpc", host, port, "");
+        return new ClusterManager(url);
     }
 
     private static Instance createInstance(String ip, int port, String instanceId) {

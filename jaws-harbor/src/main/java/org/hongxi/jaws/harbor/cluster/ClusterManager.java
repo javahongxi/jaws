@@ -1,5 +1,6 @@
 package org.hongxi.jaws.harbor.cluster;
 
+import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,14 +23,24 @@ public class ClusterManager {
     private static final Logger log = LoggerFactory.getLogger(ClusterManager.class);
 
     private final Set<ClusterMember> members = ConcurrentHashMap.newKeySet();
-    private volatile String selfAddress;
+    private final String selfAddress;
 
     /**
-     * Set the local node's own address so it can be excluded from
-     * peer lists.
+     * Create a ClusterManager, resolving the self address from the given URL.
+     * If the host is {@code 0.0.0.0} or {@code ::}, it is resolved to the
+     * local hostname so that the cluster self-address is human-readable
+     * and reachable by peers.
      */
-    public void setSelfAddress(String selfAddress) {
-        this.selfAddress = selfAddress;
+    public ClusterManager(URL url) {
+        String host = url.getHost();
+        if ("0.0.0.0".equals(host) || "::".equals(host)) {
+            try {
+                host = java.net.InetAddress.getLocalHost().getHostAddress();
+            } catch (java.net.UnknownHostException e) {
+                host = "127.0.0.1";
+            }
+        }
+        this.selfAddress = host + ":" + url.getPort();
     }
 
     public String getSelfAddress() {
