@@ -5,6 +5,7 @@ import com.google.protobuf.Parser;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
+import io.netty.util.AttributeKey;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Response;
@@ -166,7 +167,7 @@ sealed interface WireCallDispatcher
                                        WireStreamServerHandler serverHandler,
                                        StreamSource<Object> requestStream) {
             final WireMethodHandler methodHandler = this.handler;
-            final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
+            final WireCallContext callContext = buildContextWithConnectionId(ctx, serverHandler);
             try {
                 // The transport carries items as Object; a wire handler declares
                 // them as protobuf Message, so narrowing the type argument here
@@ -210,7 +211,7 @@ sealed interface WireCallDispatcher
                 serverHandler.sendError(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + serverHandler.path);
                 return;
             }
-            final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
+            final WireCallContext callContext = buildContextWithConnectionId(ctx, serverHandler);
 
             ByteBuf frame = null;
             try {
@@ -258,6 +259,30 @@ sealed interface WireCallDispatcher
                     frame.release();
                 }
             }
+        }
+
+        /**
+         * Build a {@link WireCallContext} that includes the connection-level ID
+         * (if available) from the parent channel attribute.  The parent channel
+         * (TCP connection) may carry a {@code CONNECTION_ID} attribute set by a
+         * connection-level handler; this method merges it into the per-call
+         * attachments so business handlers can distinguish connections from the
+         * same client IP.
+         */
+        private WireCallContext buildContextWithConnectionId(
+                ChannelHandlerContext ctx, WireStreamServerHandler serverHandler) {
+            io.netty.channel.Channel parent = ctx.channel().parent();
+            if (parent != null) {
+                String connectionId = parent.attr(
+                        AttributeKey.<String>valueOf(WireConstants.CONNECTION_ID)).get();
+                if (connectionId != null) {
+                    java.util.HashMap<String, String> merged =
+                            new java.util.HashMap<>(serverHandler.attachments);
+                    merged.put(WireConstants.CONNECTION_ID, connectionId);
+                    return WireCallContext.of(merged);
+                }
+            }
+            return WireCallContext.of(serverHandler.attachments);
         }
     }
 

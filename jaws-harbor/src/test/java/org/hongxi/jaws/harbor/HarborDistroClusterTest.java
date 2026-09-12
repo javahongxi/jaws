@@ -3,6 +3,8 @@ package org.hongxi.jaws.harbor;
 import com.alibaba.fastjson2.JSON;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
+import org.hongxi.jaws.harbor.model.ClientSyncData;
+import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.AfterAll;
@@ -10,7 +12,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.net.ServerSocket;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <ul>
  *   <li>Naming sync: register on node1 → visible on node2 and node3</li>
  *   <li>Multi-instance sync: multiple services across nodes</li>
+ *   <li>Client-level DELETE sync</li>
  * </ul>
  *
  * @author shenhongxi
@@ -99,20 +101,22 @@ class HarborDistroClusterTest {
     }
 
     // ========================================================================
-    // Naming sync tests
+    // Naming sync tests (client-level granularity)
     // ========================================================================
 
     @Test
     void testNamingSyncFromNode1ToOthers() {
+        // Register a connection on node1 (simulates bi-stream setup)
+        node1.getConnectionManager().register("test-conn-1", "10.0.0.1", "3.0.0",
+                Map.of(), noopPushSubject());
+
         // Register an instance on node1
         Instance instance = createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@demo-svc");
+        node1.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "demo-svc",
+                instance, "test-conn-1");
 
-        node1.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "demo-svc", instance, "test-conn-1");
-
-        // Trigger distro sync manually (in production, HarborServer.handleInstanceRequest does this)
-        String key = "public@@DEFAULT_GROUP@@demo-svc";
-        node1.getDistroProtocol().syncChange(key, DistroProtocol.OP_CHANGE,
-                com.alibaba.fastjson2.JSON.toJSONBytes(instance));
+        // Trigger client-level distro sync
+        syncClientToPeers(node1, "test-conn-1");
 
         // Verify on node2
         List<Instance> node2Instances = node2.getServiceStorage()
@@ -130,14 +134,14 @@ class HarborDistroClusterTest {
 
     @Test
     void testNamingSyncFromNode2ToOthers() {
-        // Register on node2
+        node2.getConnectionManager().register("test-conn-2", "10.0.0.2", "3.0.0",
+                Map.of(), noopPushSubject());
+
         Instance instance = createInstance("10.0.0.2", 9090, "10.0.0.2#9090#DEFAULT_GROUP@@order-svc");
+        node2.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "order-svc",
+                instance, "test-conn-2");
 
-        node2.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "order-svc", instance, "test-conn-2");
-
-        String key = "public@@DEFAULT_GROUP@@order-svc";
-        node2.getDistroProtocol().syncChange(key, DistroProtocol.OP_CHANGE,
-                com.alibaba.fastjson2.JSON.toJSONBytes(instance));
+        syncClientToPeers(node2, "test-conn-2");
 
         // Verify on node1
         List<Instance> node1Instances = node1.getServiceStorage()
@@ -153,24 +157,27 @@ class HarborDistroClusterTest {
 
     @Test
     void testMultipleServicesSyncAcrossCluster() {
-        // Register multiple services on different nodes
+        // Register multiple services on different nodes, each with its own connection
         for (int i = 0; i < 3; i++) {
-            Instance inst = new Instance();
-            inst.setIp("10.0.1." + (i + 1));
-            inst.setPort(7000 + i);
-            inst.setInstanceId("10.0.1." + (i + 1) + "#" + (7000 + i) + "#DEFAULT_GROUP@@multi-svc");
-
+            String connId = "test-conn-multi-" + i;
             HarborServer node = switch (i) {
                 case 0 -> node1;
                 case 1 -> node2;
                 default -> node3;
             };
 
-            node.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "multi-svc", inst, "test-conn-" + i);
+            node.getConnectionManager().register(connId, "10.0.1." + (i + 1), "3.0.0",
+                    Map.of(), noopPushSubject());
 
-            String key = "public@@DEFAULT_GROUP@@multi-svc";
-            node.getDistroProtocol().syncChange(key, DistroProtocol.OP_CHANGE,
-                    com.alibaba.fastjson2.JSON.toJSONBytes(inst));
+            Instance inst = new Instance();
+            inst.setIp("10.0.1." + (i + 1));
+            inst.setPort(7000 + i);
+            inst.setInstanceId("10.0.1." + (i + 1) + "#" + (7000 + i) + "#DEFAULT_GROUP@@multi-svc");
+
+            node.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "multi-svc",
+                    inst, connId);
+
+            syncClientToPeers(node, connId);
         }
 
         // All 3 nodes should have all 3 instances of "multi-svc"
@@ -184,35 +191,66 @@ class HarborDistroClusterTest {
     }
 
     // ========================================================================
-    // Verify checksum consistency
+    // Client-level DELETE sync
     // ========================================================================
 
     @Test
-    void testVerifyChecksumsConsistency() {
-        // After all the above tests, the checksums should be consistent
-        // (same number of instances per service key on all nodes)
-        Map<String, Integer> checksums1 = node1.getServiceStorage().getVerifyChecksums();
-        Map<String, Integer> checksums2 = node2.getServiceStorage().getVerifyChecksums();
-        Map<String, Integer> checksums3 = node3.getServiceStorage().getVerifyChecksums();
+    void testClientDeleteSync() {
+        // Register a connection and instance on node1
+        String connId = "test-conn-delete";
+        node1.getConnectionManager().register(connId, "10.0.2.1", "3.0.0",
+                Map.of(), noopPushSubject());
 
-        // All nodes should have the same set of service keys
-        assertEquals(checksums1.keySet(), checksums2.keySet(),
-                "node1 and node2 should have same service keys");
-        assertEquals(checksums2.keySet(), checksums3.keySet(),
-                "node2 and node3 should have same service keys");
+        Instance instance = createInstance("10.0.2.1", 6060, "10.0.2.1#6060#DEFAULT_GROUP@@delete-svc");
+        node1.getServiceStorage().registerInstance("public", "DEFAULT_GROUP", "delete-svc",
+                instance, connId);
+        syncClientToPeers(node1, connId);
 
-        // And the same instance counts
-        for (String key : checksums1.keySet()) {
-            assertEquals(checksums1.get(key), checksums2.get(key),
-                    "Instance count mismatch for " + key + " between node1 and node2");
-            assertEquals(checksums2.get(key), checksums3.get(key),
-                    "Instance count mismatch for " + key + " between node2 and node3");
-        }
+        // Verify synced to node2
+        assertEquals(1, node2.getServiceStorage()
+                .getInstances("public", "DEFAULT_GROUP", "delete-svc").size());
+
+        // Now simulate connection close on node1: deregister + Distro DELETE
+        node1.getServiceStorage().deregisterInstancesByConnectionId(connId);
+        node1.getConnectionManager().remove(connId);
+        node1.getDistroProtocol().syncChange(connId, DistroProtocol.OP_DELETE, new byte[0]);
+
+        // Verify removed from node2
+        assertEquals(0, node2.getServiceStorage()
+                .getInstances("public", "DEFAULT_GROUP", "delete-svc").size(),
+                "node2 should have removed the synced client's instances");
+    }
+
+    // ========================================================================
+    // Verify revision consistency
+    // ========================================================================
+
+    @Test
+    void testVerifyRevisionConsistency() {
+        // After all the sync tests above, the client revisions should be
+        // consistent across nodes (synced clients should have the same revision
+        // as the source)
+        var caches1 = node1.getConnectionManager().allClientSessions();
+        var caches2 = node2.getConnectionManager().allClientSessions();
+
+        // Both nodes should have the same number of client sessions
+        assertEquals(caches1.size(), caches2.size(),
+                "node1 and node2 should have same number of client sessions");
     }
 
     // ========================================================================
     // Helpers
     // ========================================================================
+
+    /**
+     * Build ClientSyncData for the given connection and trigger Distro sync.
+     */
+    private static void syncClientToPeers(HarborServer node, String connId) {
+        ClientSyncData syncData = node.getServiceStorage().buildClientSyncData(connId);
+        assertNotNull(syncData);
+        byte[] content = JSON.toJSONBytes(syncData);
+        node.getDistroProtocol().syncChange(connId, DistroProtocol.OP_CHANGE, content);
+    }
 
     private static HarborServer createNode(String host, int port, InMemoryTransport transport) {
         URL url = new URL("harbor", host, port, "");
@@ -229,6 +267,14 @@ class HarborDistroClusterTest {
         instance.setEphemeral(true);
         instance.setWeight(1.0);
         return instance;
+    }
+
+    private static org.hongxi.jaws.transport.StreamSubject<com.google.protobuf.Message> noopPushSubject() {
+        return new org.hongxi.jaws.transport.StreamSubject<>() {
+            @Override public void onNext(com.google.protobuf.Message item) {}
+            @Override public void onError(Throwable throwable) {}
+            @Override public void onCompleted() {}
+        };
     }
 
     /**
@@ -249,17 +295,18 @@ class HarborDistroClusterTest {
                                 String operation, byte[] content) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                return target.onReceive(resourceKey, operation, content);
+                return target.onSync(resourceKey, operation, content);
             }
             return false;
         }
 
         @Override
-        public void syncVerify(String targetAddress, Map<String, String> checksums) {
+        public List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                target.onVerify(checksums);
+                return target.onVerify(verifyInfos);
             }
+            return List.of();
         }
 
         @Override

@@ -11,6 +11,8 @@ import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.GrpcHarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
+import org.hongxi.jaws.harbor.model.ClientSyncData;
+import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.Request;
 import org.hongxi.jaws.harbor.model.Response;
@@ -23,20 +25,15 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 import org.hongxi.jaws.transport.StreamSubject;
-import org.hongxi.jaws.wire.WireCallContext;
-import org.hongxi.jaws.wire.WireHandlerRegistry;
-import org.hongxi.jaws.wire.WireMethodHandler;
-import org.hongxi.jaws.wire.WireServer;
+import org.hongxi.jaws.wire.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Jaws Harbor — a Nacos-compatible control plane server.
@@ -117,29 +114,17 @@ public class HarborServer {
 
     private HarborHttpApi httpApi;
 
-    /**
-     * Maps clientIp → connectionId so that the ServerCheck (unary) and
-     * BiRequestStream (bidi) on the same TCP connection share the same ID.
-     */
-    private final Map<String, String> connectionIdByClientIp = new ConcurrentHashMap<>();
-    /**
-     * Handlers waiting to be associated with a clientIp. Each new connection
-     * enqueues a handler in addOptionalChannelHandlers; handleServerCheck
-     * polls and claims it. This avoids any channel-ref passing.
-     */
-    private final Queue<ConnectionCleanupHandler> pendingCleanupHandlers = new ConcurrentLinkedQueue<>();
-
     public HarborServer(URL url) {
         this(url, new GrpcHarborNodeTransport());
     }
 
     public HarborServer(URL url, HarborNodeTransport transport) {
-        this.serviceStorage = new ServiceStorage(this::notifySubscriber);
         this.connectionManager = new ConnectionManager();
+        this.serviceStorage = new ServiceStorage(this::notifySubscriber, this.connectionManager);
         this.healthCheckManager = new HealthCheckManager(this.serviceStorage, this.connectionManager);
 
         this.clusterManager = new ClusterManager(url);
-        this.distroProtocol = new DistroProtocol(clusterManager, transport, serviceStorage);
+        this.distroProtocol = new DistroProtocol(clusterManager, transport, serviceStorage, connectionManager);
 
         WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register(SERVICE_NAME_REQUEST, METHOD_REQUEST, new RequestHandler());
@@ -153,9 +138,22 @@ public class HarborServer {
                 // state when the channel becomes inactive. Without this, a graceful
                 // client shutdown (GOAWAY) would leave the connection registered
                 // until the 90-second watchdog fires.
+                // Generate a unique connectionId for this TCP connection (parent channel)
+                // and store it as a channel attribute.  The wire layer reads this attribute
+                // and injects it into WireCallContext so that every handler on this
+                // connection can identify which physical connection a request arrived on.
+                // This fixes the bug where connectionIdByClientIp was overwritten when
+                // multiple processes from the same IP connected simultaneously.
+                io.netty.util.AttributeKey<String> key =
+                        io.netty.util.AttributeKey.valueOf(org.hongxi.jaws.wire.WireConstants.CONNECTION_ID);
+                String connectionId = pipeline.channel().attr(key).get();
+                if (connectionId == null) {
+                    connectionId = UUID.randomUUID().toString();
+                    pipeline.channel().attr(key).set(connectionId);
+                }
                 ConnectionCleanupHandler handler = new ConnectionCleanupHandler(HarborServer.this);
+                handler.setConnectionId(connectionId);
                 pipeline.addLast("conn_cleanup", handler);
-                pendingCleanupHandlers.add(handler);
             }
         };
     }
@@ -244,6 +242,9 @@ public class HarborServer {
      * Deregisters instances and removes subscribers.
      */
     void cleanupConnectionById(String connId) {
+        // Capture client data before removal for Distro DELETE sync
+        ClientSyncData syncData = serviceStorage.buildClientSyncData(connId);
+
         connectionManager.remove(connId);
         serviceStorage.removeAllSubscribersForConnection(connId);
         int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
@@ -251,8 +252,10 @@ public class HarborServer {
             log.info("[harbor] deregistered {} instance(s) on connection close: connId={}",
                     removed, connId);
         }
-        // Also clean up the clientIp mapping if it points to this connection
-        connectionIdByClientIp.values().removeIf(connId::equals);
+        // Notify peers that this client is gone
+        if (syncData != null && !syncData.getServiceKeys().isEmpty()) {
+            distroProtocol.syncChange(connId, DistroProtocol.OP_DELETE, new byte[0]);
+        }
     }
 
     // ========================================================================
@@ -358,23 +361,31 @@ public class HarborServer {
             String type = payload.getMetadata().getType();
             String clientIp = payload.getMetadata().getClientIp();
 
+            // Resolve the connectionId from the wire call context (injected by
+            // the wire layer from the parent channel attribute).  This is the
+            // per-TCP-connection unique ID, safe even when multiple processes
+            // from the same clientIp connect simultaneously.
+            String connectionId = context != null
+                    ? context.getAttachment(WireConstants.CONNECTION_ID)
+                    : null;
+
             // Update heartbeat for all instances from this client (Nacos connection-level model)
             serviceStorage.updateHeartbeatByClientIp(clientIp);
 
-            // Touch ALL connections from this client IP.  We cannot use
-            // connectionIdByClientIp here because the Nacos client opens
-            // multiple connections from the same IP (naming, config, etc.)
-            // and the map is overwritten by each new ServerCheck — touching
-            // the mapped connectionId would leave the REAL sender untouched,
-            // causing the watchdog to kill it after 90 s.
-            connectionManager.touchByClientIp(clientIp);
+            // Touch the specific connection if identified, otherwise fall back
+            // to touching ALL connections from this client IP.
+            if (connectionId != null) {
+                connectionManager.touch(connectionId);
+            } else {
+                connectionManager.touchByClientIp(clientIp);
+            }
 
             try {
                 return switch (type) {
                     // Naming
-                    case TYPE_SERVER_CHECK_REQUEST -> handleServerCheck(clientIp);
-                    case TYPE_INSTANCE_REQUEST -> handleInstanceRequest(payload, clientIp);
-                    case TYPE_SUBSCRIBE_SERVICE_REQUEST -> handleSubscribe(payload, clientIp);
+                    case TYPE_SERVER_CHECK_REQUEST -> handleServerCheck(clientIp, connectionId);
+                    case TYPE_INSTANCE_REQUEST -> handleInstanceRequest(payload, clientIp, connectionId);
+                    case TYPE_SUBSCRIBE_SERVICE_REQUEST -> handleSubscribe(payload, clientIp, connectionId);
                     case TYPE_SERVICE_QUERY_REQUEST -> handleServiceQuery(payload);
                     case TYPE_SERVICE_LIST_REQUEST -> handleServiceList(payload);
                     case TYPE_HEALTH_CHECK_REQUEST -> handleHealthCheck();
@@ -438,10 +449,15 @@ public class HarborServer {
             // Create a push subject for server→client notifications
             StreamSubject<Message> pushSubject = new StreamSubject<>();
 
+            // Resolve the connectionId from the parent channel attribute
+            // (propagated via WireCallContext by the wire layer).
+            String initialConnectionId = context != null
+                    ? context.getAttachment(WireConstants.CONNECTION_ID)
+                    : null;
+
             // Process incoming client messages (ConnectionSetupRequest, acks, etc.)
             requestStream.subscribe(new StreamObserver<>() {
-                private String connectionId;
-                private String clientIp;
+                private String connectionId = initialConnectionId;
 
                 @Override
                 public void onNext(Message item) {
@@ -454,12 +470,11 @@ public class HarborServer {
                     switch (type) {
                         case TYPE_CONNECTION_SETUP_REQUEST -> {
                             ConnectionSetupRequest setup = parseBody(payload, ConnectionSetupRequest.class);
-                            // Lookup the connectionId assigned during ServerCheck
-                            connectionId = connectionIdByClientIp.get(ip);
+                            // connectionId is already set from the parent channel attribute
+                            // (captured in the field initializer).  Fall back only if null.
                             if (connectionId == null) {
                                 connectionId = UUID.randomUUID().toString();
                             }
-                            this.clientIp = ip;
                             String version = setup.getClientVersion();
                             Map<String, String> labels = setup.getLabels();
                             if (labels == null) {
@@ -517,6 +532,9 @@ public class HarborServer {
                 }
 
                 private void cleanupConnection(String connId) {
+                    // Capture client data before removal for Distro DELETE sync
+                    ClientSyncData syncData = serviceStorage.buildClientSyncData(connId);
+
                     connectionManager.remove(connId);
                     serviceStorage.removeAllSubscribersForConnection(connId);
                     // Nacos 2.x connection-based health check model:
@@ -529,8 +547,9 @@ public class HarborServer {
                         log.info("[harbor] deregistered {} instance(s) on disconnect for connId={}",
                                 removed, connId);
                     }
-                    if (clientIp != null) {
-                        connectionIdByClientIp.remove(clientIp);
+                    // Notify peers that this client is gone
+                    if (syncData != null && !syncData.getServiceKeys().isEmpty()) {
+                        distroProtocol.syncChange(connId, DistroProtocol.OP_DELETE, new byte[0]);
                     }
                 }
             });
@@ -551,18 +570,13 @@ public class HarborServer {
     // Individual request handlers
     // ========================================================================
 
-    private Payload handleServerCheck(String clientIp) {
-        String connectionId = UUID.randomUUID().toString();
-        if (clientIp != null && !clientIp.isEmpty()) {
-            connectionIdByClientIp.put(clientIp, connectionId);
-        }
-        // Claim the cleanup handler for this connection and set the
-        // connectionId so that channelInactive can deregister instances
-        // using the exact connectionId (not the shared map, which may have
-        // been overwritten by another connection from the same clientIp).
-        ConnectionCleanupHandler handler = pendingCleanupHandlers.poll();
-        if (handler != null) {
-            handler.setConnectionId(connectionId);
+    private Payload handleServerCheck(String clientIp, String connectionId) {
+        // connectionId is generated in addOptionalChannelHandlers (per TCP
+        // connection) and propagated via the parent channel attribute →
+        // WireCallContext.  If not yet available (should not happen), fall
+        // back to generating one here.
+        if (connectionId == null) {
+            connectionId = UUID.randomUUID().toString();
         }
         ServerCheckResponse response = new ServerCheckResponse();
         response.setResultCode(200);
@@ -572,7 +586,7 @@ public class HarborServer {
         return buildPayload(TYPE_SERVER_CHECK_RESPONSE, response, clientIp);
     }
 
-    private Payload handleInstanceRequest(Payload payload, String clientIp) {
+    private Payload handleInstanceRequest(Payload payload, String clientIp, String connectionId) {
         InstanceRequest request = parseBody(payload, InstanceRequest.class);
         String namespace = request.getNamespace();
         String serviceName = request.getServiceName();
@@ -591,16 +605,14 @@ public class HarborServer {
         }
 
         if (REGISTER_INSTANCE.equals(type)) {
-            String connId = connectionIdByClientIp.get(clientIp);
-            serviceStorage.registerInstance(namespace, groupName, serviceName, instance, connId);
-            // Trigger distro sync to peers
-            String key = namespace + "@@" + groupName + "@@" + serviceName;
-            byte[] syncContent = JSON.toJSONBytes(instance);
-            distroProtocol.syncChange(key, DistroProtocol.OP_CHANGE, syncContent);
+            serviceStorage.registerInstance(namespace, groupName, serviceName, instance, connectionId);
+            // Sync full client state to peers (client-level granularity)
+            syncClientDataToPeers(connectionId);
         } else if (DEREGISTER_INSTANCE.equals(type)) {
-            serviceStorage.deregisterInstance(namespace, groupName, serviceName, instance);
-            String key = namespace + "@@" + groupName + "@@" + serviceName;
-            distroProtocol.syncChange(key, DistroProtocol.OP_DELETE, new byte[0]);
+            serviceStorage.deregisterInstance(namespace, groupName, serviceName, instance, connectionId);
+            // Deregister is also a CHANGE (full client state replacement), not DELETE.
+            // DELETE is only used when the entire connection goes away.
+            syncClientDataToPeers(connectionId);
         } else {
             return buildErrorResponse(TYPE_INSTANCE_RESPONSE,
                     "Unknown instance operation type: " + type);
@@ -613,15 +625,14 @@ public class HarborServer {
         return buildPayload(TYPE_INSTANCE_RESPONSE, response, clientIp);
     }
 
-    private Payload handleSubscribe(Payload payload, String clientIp) {
+    private Payload handleSubscribe(Payload payload, String clientIp, String connectionId) {
         SubscribeServiceRequest request = parseBody(payload, SubscribeServiceRequest.class);
         String namespace = request.getNamespace();
         String serviceName = request.getServiceName();
         String groupName = request.getGroupName();
         boolean subscribe = request.isSubscribe();
 
-        // Find the connectionId for this client
-        String connectionId = connectionIdByClientIp.get(clientIp);
+        // connectionId is propagated from the wire layer (parent channel attribute)
         if (connectionId != null && subscribe) {
             serviceStorage.addSubscriber(namespace, groupName, serviceName, connectionId);
         } else if (connectionId != null) {
@@ -693,7 +704,7 @@ public class HarborServer {
                 ? Base64.getDecoder().decode(contentStr)
                 : new byte[0];
 
-        boolean ok = distroProtocol.onReceive(resourceKey, operation, content);
+        boolean ok = distroProtocol.onSync(resourceKey, operation, content);
 
         DistroSyncResponse response = new DistroSyncResponse();
         response.setResultCode(ok ? 200 : 500);
@@ -703,16 +714,22 @@ public class HarborServer {
 
     private Payload handleDistroVerify(Payload payload) {
         DistroVerifyRequest request = parseBody(payload, DistroVerifyRequest.class);
-        Map<String, String> checksums = request.getChecksums();
-        if (checksums == null) {
-            checksums = Map.of();
+        List<ClientVerifyInfo> verifyInfos = request.getVerifyInfos();
+        if (verifyInfos == null) {
+            verifyInfos = List.of();
         }
 
-        boolean ok = distroProtocol.onVerify(checksums);
+        List<String> mismatched = distroProtocol.onVerify(verifyInfos);
 
         DistroVerifyResponse response = new DistroVerifyResponse();
-        response.setResultCode(ok ? 200 : 500);
-        response.setSuccess(ok);
+        if (mismatched.isEmpty()) {
+            response.setResultCode(200);
+            response.setSuccess(true);
+        } else {
+            response.setResultCode(500);
+            response.setSuccess(false);
+            response.setMismatchedClientIds(mismatched);
+        }
         return buildPayload(TYPE_DISTRO_VERIFY_RESPONSE, response);
     }
 
@@ -725,6 +742,20 @@ public class HarborServer {
         response.setContent(snapshot != null
                 ? Base64.getEncoder().encodeToString(snapshot) : "");
         return buildPayload(TYPE_DISTRO_SNAPSHOT_RESPONSE, response);
+    }
+
+    /**
+     * Build the full ClientSyncData for the given connection and sync to peers.
+     */
+    private void syncClientDataToPeers(String connId) {
+        if (connId == null) {
+            return;
+        }
+        ClientSyncData syncData = serviceStorage.buildClientSyncData(connId);
+        if (syncData != null) {
+            byte[] content = JSON.toJSONBytes(syncData);
+            distroProtocol.syncChange(connId, DistroProtocol.OP_CHANGE, content);
+        }
     }
 
     // ========================================================================

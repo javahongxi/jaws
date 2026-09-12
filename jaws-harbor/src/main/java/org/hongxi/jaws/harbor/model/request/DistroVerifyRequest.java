@@ -1,21 +1,24 @@
 package org.hongxi.jaws.harbor.model.request;
 
-import java.util.Map;
+import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
+
+import java.util.List;
 
 /**
- * Periodic verify request: send checksums to a peer for consistency checking.
+ * Periodic verify request: send per-client revision data to a peer for
+ * consistency checking.
  *
  * @author shenhongxi
  */
 public class DistroVerifyRequest extends DistroRequest {
 
-    private Map<String, String> checksums;
+    private List<ClientVerifyInfo> verifyInfos;
 
-    public Map<String, String> getChecksums() {
-        return checksums;
+    public List<ClientVerifyInfo> getVerifyInfos() {
+        return verifyInfos;
     }
 
-    public void setChecksums(Map<String, String> checksums) {
-        this.checksums = checksums;
+    public void setVerifyInfos(List<ClientVerifyInfo> verifyInfos) {
+        this.verifyInfos = verifyInfos;
     }
 }

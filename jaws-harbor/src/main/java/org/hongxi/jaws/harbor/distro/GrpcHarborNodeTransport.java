@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.request.DistroSnapshotRequest;
 import org.hongxi.jaws.harbor.model.request.DistroSyncRequest;
 import org.hongxi.jaws.harbor.model.request.DistroVerifyRequest;
@@ -21,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -62,8 +64,8 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
         request.setContent(content != null
                 ? java.util.Base64.getEncoder().encodeToString(content) : "");
 
-        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_SYNC_REQUEST,
-                JSON.toJSONBytes(request));
+        Payload responsePayload = sendRequest(targetAddress,
+                TYPE_DISTRO_SYNC_REQUEST, JSON.toJSONBytes(request));
         if (responsePayload == null) {
             return false;
         }
@@ -72,20 +74,23 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
     }
 
     @Override
-    public void syncVerify(String targetAddress, Map<String, String> checksums) {
+    public List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
         DistroVerifyRequest request = new DistroVerifyRequest();
-        request.setChecksums(checksums);
+        request.setVerifyInfos(verifyInfos);
 
         Payload responsePayload = sendRequest(targetAddress,
                 TYPE_DISTRO_VERIFY_REQUEST, JSON.toJSONBytes(request));
         if (responsePayload == null) {
             log.warn("[harbor] verify to {} failed: no response", targetAddress);
-            return;
+            return List.of();
         }
         DistroVerifyResponse response = parseBody(responsePayload, DistroVerifyResponse.class);
         if (response.getResultCode() != 200) {
             log.warn("[harbor] verify to {} returned code {}", targetAddress, response.getResultCode());
+            List<String> mismatched = response.getMismatchedClientIds();
+            return mismatched != null ? mismatched : List.of();
         }
+        return List.of();
     }
 
     @Override

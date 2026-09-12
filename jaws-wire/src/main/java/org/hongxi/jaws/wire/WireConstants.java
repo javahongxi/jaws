@@ -62,6 +62,18 @@ public final class WireConstants {
 
     /** HTTP/2 header required by the gRPC protocol to allow trailer-based status. */
     public static final CharSequence HEADER_TE = "te";
+
+    /**
+     * Key for the connection-level identifier propagated via parent-channel
+     * attribute ({@link io.netty.util.AttributeKey}).  When a parent channel
+     * carries this attribute, its value is merged into the
+     * {@link WireCallContext} attachments so that business handlers can
+     * identify which physical connection a request arrived on.
+     * <p>
+     * This is essential for protocols like Nacos 2.x where multiple TCP
+     * connections from the same client IP must be distinguished.
+     */
+    public static final String CONNECTION_ID = "x-wire-connection-id";
     public static final CharSequence TE_TRAILERS = "trailers";
     public static final CharSequence HEADER_USER_AGENT = "user-agent";
     public static final String USER_AGENT = userAgent();

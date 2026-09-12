@@ -1,9 +1,11 @@
 package org.hongxi.jaws.harbor;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http2.Http2GoAwayFrame;
 import io.netty.handler.codec.http2.Http2PingFrame;
+import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,13 +44,31 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
 
     private final HarborServer server;
     private volatile String connectionId;
+    /** The parent (TCP connection) channel, captured in handlerAdded. */
+    private Channel parentChannel;
 
     ConnectionCleanupHandler(HarborServer server) {
         this.server = server;
     }
 
+    @Override
+    public void handlerAdded(ChannelHandlerContext ctx) {
+        // This handler is installed on the parent (TCP connection) channel
+        // by AbstractHttp2Server.initChannel(). Capture it so that
+        // setConnectionId() can store the connectionId as a channel
+        // attribute, which the wire layer propagates to WireCallContext.
+        this.parentChannel = ctx.channel();
+    }
+
     void setConnectionId(String connectionId) {
         this.connectionId = connectionId;
+        // Store on the parent channel so the wire layer can read it
+        // and inject into WireCallContext for every subsequent request
+        // on this TCP connection.
+        if (parentChannel != null) {
+            parentChannel.attr(AttributeKey.<String>valueOf(
+                    org.hongxi.jaws.wire.WireConstants.CONNECTION_ID)).set(connectionId);
+        }
     }
 
     @Override

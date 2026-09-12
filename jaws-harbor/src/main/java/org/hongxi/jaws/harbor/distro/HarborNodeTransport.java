@@ -1,6 +1,8 @@
 package org.hongxi.jaws.harbor.distro;
 
-import java.util.Map;
+import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
+
+import java.util.List;
 
 /**
  * Transport abstraction for inter-node Distro protocol communication.
@@ -16,20 +18,22 @@ public interface HarborNodeTransport {
      * Send a sync message to a peer node.
      *
      * @param targetAddress peer address (host:port)
-     * @param resourceKey   the key of the resource
+     * @param resourceKey   the clientId (connectionId) of the sync
      * @param operation     the operation type (CHANGE, DELETE)
-     * @param content       the serialized data content
+     * @param content       the serialized {@link org.hongxi.jaws.harbor.model.ClientSyncData}
      * @return true if sync succeeded
      */
     boolean syncData(String targetAddress, String resourceKey, String operation, byte[] content);
 
     /**
-     * Send a verify message to a peer node.
+     * Send a verify message to a peer node with per-client revision data.
      *
      * @param targetAddress peer address
-     * @param checksums     map of resourceKey → checksum for verification
+     * @param verifyInfos   list of per-client (clientId, revision) for verification
+     * @return list of clientIds that are mismatched or missing on the peer;
+     *         empty if all matched
      */
-    void syncVerify(String targetAddress, Map<String, String> checksums);
+    List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos);
 
     /**
      * Request a full snapshot from a peer node.

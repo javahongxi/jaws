@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Manages client connections for the Nacos-compatible gRPC protocol.
@@ -35,6 +36,12 @@ public class ConnectionManager {
     private final Map<String, ConnectionRecord> connections = new ConcurrentHashMap<>();
 
     /**
+     * Per-connection client session (primary store for Distro sync).
+     * Keyed by connectionId, same key space as {@link #connections}.
+     */
+    private final Map<String, ClientSession> clientSessions = new ConcurrentHashMap<>();
+
+    /**
      * Tracks the last activity timestamp (epoch millis) per connection.
      * Updated on every inbound request from the client (unary or bi-stream).
      * The watchdog uses this to detect and close dead connections.
@@ -55,6 +62,9 @@ public class ConnectionManager {
                          Map<String, String> labels, StreamSubject<Message> pushSubject) {
         connections.put(connectionId,
                 new ConnectionRecord(connectionId, clientIp, clientVersion, labels, pushSubject));
+        ClientSession session = new ClientSession(connectionId);
+        session.setNativeClient(true);
+        clientSessions.put(connectionId, session);
         lastActiveTime.put(connectionId, System.currentTimeMillis());
         log.info("[harbor] connection registered: id={}, clientIp={}, version={}",
                 connectionId, clientIp, clientVersion);
@@ -65,6 +75,7 @@ public class ConnectionManager {
      */
     public void remove(String connectionId) {
         ConnectionRecord removed = connections.remove(connectionId);
+        clientSessions.remove(connectionId);
         lastActiveTime.remove(connectionId);
         if (removed != null) {
             removed.pushSubject.onCompleted();
@@ -155,6 +166,48 @@ public class ConnectionManager {
      */
     public Collection<ConnectionRecord> allConnections() {
         return connections.values();
+    }
+
+    /**
+     * Get the {@link ClientSession} for a specific connection.
+     *
+     * @param connectionId the connection ID
+     * @return the client session, or {@code null} if not found
+     */
+    public ClientSession getClientSession(String connectionId) {
+        return clientSessions.get(connectionId);
+    }
+
+    /**
+     * Put a {@link ClientSession} directly (used by Distro sync to install
+     * a synced client session on the receiving node).
+     */
+    public void putClientSession(String connectionId, ClientSession session) {
+        clientSessions.put(connectionId, session);
+    }
+
+    /**
+     * Remove a {@link ClientSession} without affecting the connection record.
+     * Used by Distro DELETE to clean up synced (non-native) client sessions.
+     */
+    public void removeClientSession(String connectionId) {
+        clientSessions.remove(connectionId);
+    }
+
+    /**
+     * @return all client sessions (read-only view)
+     */
+    public Collection<ClientSession> allClientSessions() {
+        return clientSessions.values();
+    }
+
+    /**
+     * @return all native (non-synced) client sessions for Distro verify/sync
+     */
+    public List<ClientSession> allNativeClientSessions() {
+        return clientSessions.values().stream()
+                .filter(ClientSession::isNativeClient)
+                .collect(Collectors.toList());
     }
 
     /**
