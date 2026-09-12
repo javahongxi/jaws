@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,7 +59,6 @@ public class DistroProtocol {
                 return t;
             });
 
-    private volatile boolean initialized;
     private volatile boolean running;
 
     public DistroProtocol(ClusterManager clusterManager,
@@ -85,8 +85,6 @@ public class DistroProtocol {
 
         // Schedule initial load task (runs once, retries on failure)
         scheduler.schedule(this::runLoadTask, 1, TimeUnit.SECONDS);
-
-        initialized = true;
     }
 
     /**
@@ -96,11 +94,11 @@ public class DistroProtocol {
         running = false;
         scheduler.shutdownNow();
         transport.shutdown();
-        log.info("[harbor] distro protocol shut down");
+        log.info("[harbor] distro protocol shutdown");
     }
 
     public boolean isInitialized() {
-        return initialized;
+        return running;
     }
 
     // ========================================================================
@@ -185,7 +183,7 @@ public class DistroProtocol {
                 return;
             }
             // Build naming checksums: serviceKey → instance count
-            Map<String, String> namingChecksums = new java.util.HashMap<>();
+            Map<String, String> namingChecksums = new HashMap<>();
             for (Map.Entry<String, Integer> e : serviceStorage.getVerifyChecksums().entrySet()) {
                 namingChecksums.put(e.getKey(), String.valueOf(e.getValue()));
             }

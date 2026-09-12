@@ -365,7 +365,7 @@ public class HarborServer {
                     // Distro inter-node
                     case TYPE_DISTRO_SYNC_REQUEST -> handleDistroSync(payload);
                     case TYPE_DISTRO_VERIFY_REQUEST -> handleDistroVerify(payload);
-                    case TYPE_DISTRO_SNAPSHOT_REQUEST -> handleDistroSnapshot(payload);
+                    case TYPE_DISTRO_SNAPSHOT_REQUEST -> handleDistroSnapshot();
                     // Config requests — Harbor does not support config center;
                     // return silent success to prevent nacos-client from retrying.
                     case TYPE_CONFIG_BATCH_LISTEN_REQUEST ->
@@ -674,7 +674,7 @@ public class HarborServer {
         String operation = request.getOperation();
         String contentStr = request.getContent();
         byte[] content = (contentStr != null && !contentStr.isEmpty())
-                ? java.util.Base64.getDecoder().decode(contentStr)
+                ? Base64.getDecoder().decode(contentStr)
                 : new byte[0];
 
         boolean ok = distroProtocol.onReceive(resourceKey, operation, content);
@@ -700,7 +700,7 @@ public class HarborServer {
         return buildPayload(TYPE_DISTRO_VERIFY_RESPONSE, response);
     }
 
-    private Payload handleDistroSnapshot(Payload payload) {
+    private Payload handleDistroSnapshot() {
         byte[] snapshot = distroProtocol.onSnapshot();
 
         DistroSnapshotResponse response = new DistroSnapshotResponse();
@@ -709,19 +709,6 @@ public class HarborServer {
         response.setContent(snapshot != null
                 ? Base64.getEncoder().encodeToString(snapshot) : "");
         return buildPayload(TYPE_DISTRO_SNAPSHOT_RESPONSE, response);
-    }
-
-    private Payload buildErrorResponse(String responseType, String message) {
-        record ErrorResponse(String message) {}
-        byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(responseType)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
     }
 
     // ========================================================================
@@ -741,5 +728,18 @@ public class HarborServer {
         if (!pushed) {
             log.debug("[harbor] failed to push to connection {}: not found", connectionId);
         }
+    }
+
+    private Payload buildErrorResponse(String responseType, String message) {
+        record ErrorResponse(String message) {}
+        byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
+        return Payload.newBuilder()
+                .setMetadata(Metadata.newBuilder()
+                        .setType(responseType)
+                        .build())
+                .setBody(Any.newBuilder()
+                        .setValue(ByteString.copyFrom(jsonBytes))
+                        .build())
+                .build();
     }
 }

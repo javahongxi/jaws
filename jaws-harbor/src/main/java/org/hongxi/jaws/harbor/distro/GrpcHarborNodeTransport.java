@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -75,8 +76,8 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
         DistroVerifyRequest request = new DistroVerifyRequest();
         request.setChecksums(checksums);
 
-        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_VERIFY_REQUEST,
-                JSON.toJSONBytes(request));
+        Payload responsePayload = sendRequest(targetAddress,
+                TYPE_DISTRO_VERIFY_REQUEST, JSON.toJSONBytes(request));
         if (responsePayload == null) {
             log.warn("[harbor] verify to {} failed: no response", targetAddress);
             return;
@@ -91,8 +92,8 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
     public byte[] getSnapshot(String targetAddress) {
         DistroSnapshotRequest request = new DistroSnapshotRequest();
 
-        Payload responsePayload = sendRequest(targetAddress, TYPE_DISTRO_SNAPSHOT_REQUEST,
-                JSON.toJSONBytes(request));
+        Payload responsePayload = sendRequest(targetAddress,
+                TYPE_DISTRO_SNAPSHOT_REQUEST, JSON.toJSONBytes(request));
         if (responsePayload == null) {
             return null;
         }
@@ -105,7 +106,7 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
         if (base64Content == null || base64Content.isEmpty()) {
             return new byte[0];
         }
-        return java.util.Base64.getDecoder().decode(base64Content);
+        return Base64.getDecoder().decode(base64Content);
     }
 
     @Override
@@ -167,7 +168,7 @@ public class GrpcHarborNodeTransport implements HarborNodeTransport {
         return peerClients.computeIfAbsent(targetAddress, addr -> {
             String[] parts = addr.split(":");
             String host = parts[0].trim();
-            int port = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 9848;
+            int port = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 19848;
 
             URL url = new URL("wire", host, port, SERVICE_NAME);
             url.addParameter(UrlParam.Transport.REQUEST_TIMEOUT.getName(),

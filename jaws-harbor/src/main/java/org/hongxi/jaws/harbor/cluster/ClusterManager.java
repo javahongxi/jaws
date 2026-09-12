@@ -4,10 +4,13 @@ import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Manages the set of cluster members (peer Harbor servers).
@@ -35,8 +38,8 @@ public class ClusterManager {
         String host = url.getHost();
         if ("0.0.0.0".equals(host) || "::".equals(host)) {
             try {
-                host = java.net.InetAddress.getLocalHost().getHostAddress();
-            } catch (java.net.UnknownHostException e) {
+                host = InetAddress.getLocalHost().getHostAddress();
+            } catch (UnknownHostException e) {
                 host = "127.0.0.1";
             }
         }
@@ -79,7 +82,7 @@ public class ClusterManager {
         }
         return members.stream()
                 .filter(m -> !m.address().equals(selfAddress))
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     public int size() {
