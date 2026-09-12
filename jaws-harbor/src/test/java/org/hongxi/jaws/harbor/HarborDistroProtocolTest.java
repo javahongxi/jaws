@@ -127,6 +127,70 @@ class HarborDistroProtocolTest {
         assertEquals(1, storage2.getInstances("public", "DEFAULT_GROUP", "svc2").size());
     }
 
+    @Test
+    void testClientSessionRevisionIsOrderIndependent() {
+        // recalculateRevision() iterates the outer Map<serviceKey,List<Instance>> plus
+        // its inner ArrayList.  The OUTER map iteration order is fixed by key hash and
+        // does NOT depend on insertion order, so it cannot expose an order-sensitive
+        // hash.  It is the INNER ArrayList order that follows insertion — a native
+        // session (incremental) and a synced session (bulk-applied) can hold the same
+        // instances in different inner order.  The XOR hash must be immune; the old
+        // rolling hash was not.  Hence: one service, instances added in opposite order.
+        String svc = "public@@DEFAULT_GROUP@@svc";
+        Instance a = createInstance("10.0.0.1", 8080, "iA");
+        Instance b = createInstance("10.0.0.2", 8081, "iB");
+        Instance c = createInstance("10.0.0.3", 8082, "iC");
+
+        ClientSession forward = new ClientSession("conn-x");
+        forward.addInstance(svc, a);
+        forward.addInstance(svc, b);
+        forward.addInstance(svc, c);
+
+        ClientSession reverse = new ClientSession("conn-x");
+        reverse.addInstance(svc, c);
+        reverse.addInstance(svc, b);
+        reverse.addInstance(svc, a);
+
+        assertEquals(forward.getRevision(), reverse.getRevision(),
+                "revision must be independent of instance insertion order");
+
+        // Different content must still diverge — guards against a degenerate
+        // hash that collapses every content to the same value.
+        ClientSession different = new ClientSession("conn-x");
+        different.addInstance(svc, createInstance("10.0.0.1", 9999, "iA"));
+        different.addInstance(svc, b);
+        different.addInstance(svc, c);
+        assertNotEquals(forward.getRevision(), different.getRevision(),
+                "changed port must produce a different revision");
+    }
+
+    @Test
+    void testApplyClientSyncDataTrustsSourceRevision() {
+        // applyClientSyncData() must set the source-authoritative revision AFTER the
+        // addInstance() loop; otherwise each addInstance() recalculation overwrites it.
+        // A spoofed revision that cannot equal any real content hash proves the source
+        // value survives — this locks the setRevision() repositioning independently of
+        // the order-independence fix above.
+        ConnectionManager connMgr = new ConnectionManager();
+        ServiceStorage storage = new ServiceStorage((a, b, c, d, e) -> {}, connMgr);
+
+        ClientSyncData spoofed = new ClientSyncData(
+                "conn-1",
+                List.of("public@@DEFAULT_GROUP@@svc1", "public@@DEFAULT_GROUP@@svc2"),
+                List.of(createInstance("10.0.0.1", 8080, "inst1"),
+                        createInstance("10.0.0.1", 8081, "inst2")),
+                List.of(),
+                1_234_567_890L);
+
+        storage.applyClientSyncData(spoofed);
+
+        ClientSession session = connMgr.getClientSession("conn-1");
+        assertNotNull(session);
+        assertEquals(1_234_567_890L, session.getRevision(),
+                "synced session must carry the source revision, not a local recalculation");
+        assertFalse(session.isNativeClient(), "synced session must not be marked native");
+    }
+
     // ========================================================================
     // DistroProtocol tests
     // ========================================================================
