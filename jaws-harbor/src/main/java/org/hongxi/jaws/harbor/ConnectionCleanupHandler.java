@@ -7,6 +7,7 @@ import io.netty.handler.codec.http2.Http2GoAwayFrame;
 import io.netty.handler.codec.http2.Http2PingFrame;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
+import org.hongxi.jaws.wire.WireConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,9 +21,11 @@ import org.slf4j.LoggerFactory;
  *   <li>Treats incoming HTTP/2 PING frames as proof-of-life: calls
  *       {@link ConnectionManager#touch} so the stale-connection watchdog
  *       does not mistake a PING-only connection for a dead one.  Nacos 3.x
- *       clients rely on gRPC keepalive PINGs rather than Payload-level
- *       heartbeats, so without this the watchdog fires after 90 s of idle
- *       and deregisters healthy provider instances.</li>
+ *       clients send both application-level {@code HealthCheckRequest} every
+ *       5 s (which already triggers {@code touch} in {@code RequestHandler})
+ *       and transport-level gRPC keepalive PINGs every 6 min.  The PING
+ *       handling here is a safety net for other gRPC clients that may not
+ *       send Payload-level heartbeats.</li>
  *   <li>On {@code channelInactive}, delegates to the {@link HarborServer} to
  *       deregister instances and clean up connection state.</li>
  * </ul>
@@ -67,7 +70,7 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
         // on this TCP connection.
         if (parentChannel != null) {
             parentChannel.attr(AttributeKey.<String>valueOf(
-                    org.hongxi.jaws.wire.WireConstants.CONNECTION_ID)).set(connectionId);
+                    WireConstants.CONNECTION_ID)).set(connectionId);
         }
     }
 
@@ -91,10 +94,12 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
             return;
         }
         if (msg instanceof Http2PingFrame ping && !ping.ack()) {
-            // Nacos 3.x clients keep connections alive via gRPC keepalive
-            // PINGs rather than Payload-level heartbeats.  Treat each
-            // incoming PING as proof-of-life so the stale-connection
-            // watchdog does not kill a healthy idle connection.
+            // Treat each incoming PING as proof-of-life so the stale-connection
+            // watchdog does not kill a healthy idle connection.  For Nacos 3.x
+            // clients this is redundant (they already send HealthCheckRequest
+            // every 5 s which triggers touch in RequestHandler), but it serves
+            // as a safety net for other gRPC clients that rely solely on
+            // transport-level keepalive PINGs.
             if (connectionId != null) {
                 server.getConnectionManager().touch(connectionId);
             }
