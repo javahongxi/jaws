@@ -6,6 +6,7 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 import io.netty.channel.ChannelPipeline;
+import io.netty.util.AttributeKey;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
@@ -144,8 +145,7 @@ public class HarborServer {
                 // connection can identify which physical connection a request arrived on.
                 // This fixes the bug where connectionIdByClientIp was overwritten when
                 // multiple processes from the same IP connected simultaneously.
-                io.netty.util.AttributeKey<String> key =
-                        io.netty.util.AttributeKey.valueOf(org.hongxi.jaws.wire.WireConstants.CONNECTION_ID);
+                AttributeKey<String> key = AttributeKey.valueOf(WireConstants.CONNECTION_ID);
                 String connectionId = pipeline.channel().attr(key).get();
                 if (connectionId == null) {
                     connectionId = UUID.randomUUID().toString();

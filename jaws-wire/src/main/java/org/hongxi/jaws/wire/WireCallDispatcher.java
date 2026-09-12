@@ -17,6 +17,7 @@ import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -276,8 +277,7 @@ sealed interface WireCallDispatcher
                 String connectionId = parent.attr(
                         AttributeKey.<String>valueOf(WireConstants.CONNECTION_ID)).get();
                 if (connectionId != null) {
-                    java.util.HashMap<String, String> merged =
-                            new java.util.HashMap<>(serverHandler.attachments);
+                    Map<String, String> merged = new HashMap<>(serverHandler.attachments);
                     merged.put(WireConstants.CONNECTION_ID, connectionId);
                     return WireCallContext.of(merged);
                 }
