@@ -35,9 +35,12 @@ import org.slf4j.LoggerFactory;
  * {@code channelInactive} callback is the definitive cleanup signal when
  * the TCP connection actually closes (client disconnect, watchdog, etc.).
  * <p>
- * The connectionId is set by {@code HarborServer.handleServerCheck()} via the
- * pending-queue mechanism (each new connection enqueues a handler; ServerCheck
- * polls and claims it).
+ * The connectionId is generated per TCP connection in {@code
+ * HarborServer.addOptionalChannelHandlers()} at channel setup, handed to {@link
+ * #setConnectionId(String)}, and stored as a parent-channel attribute that the
+ * wire layer propagates into {@code WireCallContext} for every request on that
+ * connection — so the id exists from the moment the connection opens, not only
+ * after ServerCheck.
  *
  * @see HarborServer
  */

@@ -376,12 +376,11 @@ public class HarborServer {
             // Update heartbeat for all instances from this connection (Nacos connection-based model)
             serviceStorage.updateHeartbeatByConnectionId(connectionId);
 
-            // Touch the specific connection if identified, otherwise fall back
-            // to touching ALL connections from this client IP.
+            // Touch the specific connection. connectionId is minted per TCP connection
+            // at setup (#5) and propagated via WireCallContext, so this is always the
+            // precise path; the old clientIp fallback has been removed.
             if (connectionId != null) {
                 connectionManager.touch(connectionId);
-            } else {
-                connectionManager.touchByClientIp(clientIp);
             }
 
             try {
