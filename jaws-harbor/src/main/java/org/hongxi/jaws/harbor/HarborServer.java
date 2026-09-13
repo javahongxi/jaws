@@ -207,10 +207,14 @@ public class HarborServer {
         if (httpApi != null) {
             httpApi.stop();
         }
-        pushEngine.shutdown();
+        // Stop ingress FIRST, the services it feeds LAST: tearing down connections
+        // still notifies subscribers and still deletes clients over Distro, so a push
+        // engine or a distro protocol closed underneath them throws back into a
+        // Netty worker thread (observed as RejectedExecutionException on close).
+        wireServer.close();
         healthCheckManager.shutdown();
         distroProtocol.shutdown();
-        wireServer.close();
+        pushEngine.shutdown();
         log.info("[harbor] server closed");
     }
 

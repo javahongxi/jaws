@@ -48,6 +48,30 @@ class PushDelayTaskEngineTest {
         }
     }
 
+    /**
+     * Inbound frames keep arriving while the server is closing, so a push can be
+     * requested after the engine shut down. It must be dropped quietly: letting
+     * RejectedExecutionException escape puts it on a Netty worker thread, where the
+     * transport can only log it as an unexpected channel error (measured twice per
+     * integration-test teardown before this was fixed).
+     */
+    @Test
+    void requestsAfterShutdownAreDroppedQuietly() {
+        ConnectionManager cm = new ConnectionManager();
+        ServiceStorage storage = new ServiceStorage((a, b, c) -> { }, cm);
+        Recording sub = new Recording();
+        cm.register("sub-1", "10.0.0.1", "3.0.0", Map.of(), sub.subject());
+        storage.addSubscriber("public", "DEFAULT_GROUP", "svc", "sub-1");
+        PushDelayTaskEngine engine = new PushDelayTaskEngine(storage, cm);
+
+        engine.shutdown();
+
+        assertDoesNotThrow(() -> engine.requestPush("public", "DEFAULT_GROUP", "svc"),
+                "a closed engine has nobody left to deliver to - dropping is correct, "
+                        + "throwing into the caller's channel is not");
+        assertTrue(sub.received.isEmpty(), "and nothing may be pushed after shutdown");
+    }
+
     @Test
     void coalescesMultipleChangesIntoOnePushCarryingLatestState() throws Exception {
         ConnectionManager cm = new ConnectionManager();

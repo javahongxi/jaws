@@ -46,6 +46,9 @@ public class PushDelayTaskEngine {
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
 
+    /** Set by {@link #shutdown()}; a closed engine drops pushes instead of throwing. */
+    private volatile boolean closed;
+
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "harbor-push-engine");
@@ -68,11 +71,35 @@ public class PushDelayTaskEngine {
      */
     public void requestPush(String namespace, String group, String serviceName) {
         String serviceKey = serviceKey(namespace, group, serviceName);
+        if (closed) {
+            log.debug("[harbor] push request dropped, engine closed: {}", serviceKey);
+            return;
+        }
         pending.computeIfAbsent(serviceKey, k -> {
             PendingPush task = new PendingPush(namespace, group, serviceName);
-            task.future = scheduler.schedule(() -> doPush(k), MERGE_DELAY_MS, TimeUnit.MILLISECONDS);
+            task.future = scheduleQuietly(k, () -> doPush(k), MERGE_DELAY_MS);
             return task;
         });
+    }
+
+    /**
+     * Arm a push, tolerating a concurrent {@link #shutdown()}. Inbound frames keep
+     * arriving while the server is closing, so a request can land after the engine is
+     * gone; a rejected schedule must not travel back out of the caller's hands — it
+     * reaches a Netty worker thread, where the transport can only report it as an
+     * unexpected channel error. If this loses the race, the entry left behind is inert
+     * and dies with the engine.
+     *
+     * @return the scheduled future, or {@code null} if the engine is shutting down
+     */
+    private java.util.concurrent.ScheduledFuture<?> scheduleQuietly(String serviceKey,
+                                                                    Runnable task, long delayMs) {
+        try {
+            return scheduler.schedule(task, delayMs, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            log.debug("[harbor] push scheduling rejected, engine closing: {}", serviceKey);
+            return null;
+        }
     }
 
     private void doPush(String serviceKey) {
@@ -107,13 +134,17 @@ public class PushDelayTaskEngine {
             // Unexpected error in the pass itself (not a "connection gone"): re-enqueue.
             log.warn("[harbor] push pass failed for {}, re-enqueue in {}ms",
                     serviceKey, RETRY_DELAY_MS, e);
-            task.future = scheduler.schedule(() -> doPush(serviceKey),
-                    RETRY_DELAY_MS, TimeUnit.MILLISECONDS);
-            pending.put(serviceKey, task);
+            task.future = scheduleQuietly(serviceKey, () -> doPush(serviceKey), RETRY_DELAY_MS);
+            if (task.future != null) {
+                pending.put(serviceKey, task);
+            }
         }
     }
 
     public void shutdown() {
+        // Announce before stopping the pool: requesters check this flag, and a push
+        // that slips past it is handled by scheduleQuietly.
+        closed = true;
         scheduler.shutdownNow();
         pending.clear();
     }
