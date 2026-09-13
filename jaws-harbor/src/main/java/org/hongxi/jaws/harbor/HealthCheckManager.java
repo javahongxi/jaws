@@ -22,6 +22,10 @@ import java.util.concurrent.TimeUnit;
  *   <li><b>Instance heartbeat</b>: any instance whose last heartbeat exceeds
  *       {@link #INSTANCE_TIMEOUT_MS} (default 3 min) is removed as a fallback
  *       for edge cases (e.g. half-open TCP that hasn't triggered watchdog yet)</li>
+ *   <li><b>Replica reclamation</b>: a synced (non-native) client that no peer has
+ *       confirmed for {@link #SYNCED_SESSION_TIMEOUT_MS} is dropped entirely, since
+ *       once the node owning its connection is gone nothing can announce its
+ *       departure — and only its instances are visible to the tiers above</li>
  * </ul>
  * Connection activity is tracked via {@link ConnectionManager#touch(String)}
  * on every inbound unary/bi-stream request.
@@ -60,6 +64,15 @@ public class HealthCheckManager {
      * {@link #INSTANCE_TIMEOUT_MS}. ~3× the 5s beat interval.
      */
     private static final long INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000;
+
+    /**
+     * How long a REPLICATED (synced) client may go unconfirmed by its owner before
+     * this node drops it. Deliberately the same window as {@link #INSTANCE_TIMEOUT_MS}:
+     * one full expiry window of silence means the owning node is gone rather than merely
+     * idle — while it lives, its 30s refresh pass and matching verify revisions keep
+     * every replica's confirmation clock moving.
+     */
+    private static final long SYNCED_SESSION_TIMEOUT_MS = 180_000;
 
     private final ConnectionManager connectionManager;
     private final ServiceStorage serviceStorage;
@@ -124,6 +137,18 @@ public class HealthCheckManager {
                 for (ServiceStorage.ExpiredInstance inst : expired) {
                     serviceStorage.removeInstanceByIpPort(inst.serviceKey(), inst.ip(), inst.port());
                 }
+            }
+
+            // Phase 2.5: reclaim replicated clients their owner no longer confirms.
+            // The beat tiers above only reach instances, so a subscriber-only replica —
+            // and any session shell left behind — would otherwise survive for the whole
+            // process lifetime once the node owning the connection is gone (nothing can
+            // announce that client again: no beat, no Distro DELETE, and the connection
+            // watchdog cannot see a synced session).
+            int reaped = serviceStorage.reapStaleSyncedClients(SYNCED_SESSION_TIMEOUT_MS);
+            if (reaped > 0) {
+                log.info("[harbor] reclaimed {} replicated client session(s) unconfirmed "
+                        + "by their owner for {}ms", reaped, SYNCED_SESSION_TIMEOUT_MS);
             }
 
             // Phase 3: empty service auto-cleanup — remove services with no publishers

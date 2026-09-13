@@ -669,9 +669,52 @@ public class ServiceStorage {
             }
         }
 
+        // Receiving the own-state of the owning node IS the confirmation.
+        session.markOwnerConfirmed();
         connectionManager.putClientSession(clientId, session);
         log.info("[harbor] applied client sync: {} (publishers={}, subscribers={})",
                 clientId, session.getTotalInstanceCount(), session.getAllSubscribedServices().size());
+    }
+
+    /**
+     * Reap replicated (non-native) client sessions that no peer has confirmed for a
+     * full expiry window, and return how many were reclaimed.
+     * <p>
+     * When the node owning a client's connection dies, that client can never be
+     * announced again: no beat reaches this node, no Distro DELETE arrives, and the
+     * connection watchdog cannot see the replica at all (a synced session has no
+     * {@code lastActiveTime} entry). Without this pass the {@link ClientSession} shell
+     * and its reverse-index entries survive for the process lifetime — a subscriber-only
+     * replica is invisible to every beat-based tier, so it leaks outright.
+     * <p>
+     * The predicate is {@link ClientSession#getLastOwnerConfirmedTime()}, advanced only
+     * when the owner vouches for the session (a sync applied, or a verify in which its
+     * revision matched ours) and NEVER by local bookkeeping such as the expiry tier
+     * dropping one of the replica instances. So an owner that keeps confirming holds its
+     * replicas, and one that goes silent loses them exactly one window after the
+     * silence - not one window after the last thing this node did to the copy.
+     * Native sessions are skipped — they are authoritative locally and their clients are judged by the
+     * beat tiers, so an idle local connection is never a dead one here.
+     *
+     * @param timeoutMs how long an unconfirmed replica is tolerated
+     * @return the number of reclaimed sessions
+     */
+    public int reapStaleSyncedClients(long timeoutMs) {
+        long now = System.currentTimeMillis();
+        List<String> stale = new ArrayList<>();
+        for (ClientSession session : connectionManager.allClientSessions()) {
+            if (session.isNativeClient()) {
+                continue;
+            }
+            if (now - session.getLastOwnerConfirmedTime() > timeoutMs) {
+                stale.add(session.getClientId());
+            }
+        }
+        for (String clientId : stale) {
+            log.info("[harbor] reaping replica of client unseen for {}ms: {}", timeoutMs, clientId);
+            removeSyncedClient(clientId);
+        }
+        return stale.size();
     }
 
     /**

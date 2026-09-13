@@ -41,12 +41,26 @@ public class ClientSession {
 
     private volatile long lastUpdatedTime;
 
+    /**
+     * When the client's OWNING node last vouched for this session — a sync applied
+     * or a verify in which the owner's revision matched ours. Kept separate from
+     * {@link #lastUpdatedTime} on purpose: local bookkeeping on a replica (the
+     * expiry tier removing one of its instances, say) also moves {@code lastUpdatedTime},
+     * so measuring an orphaned replica against that clock would let every such
+     * mutation re-tolerate another full window — and a replica with many instances
+     * could keep itself alive indefinitely. Silence here means silence from the owner.
+     */
+    private volatile long lastOwnerConfirmedTime;
+
     /** Whether this client is native (owned by this node) rather than synced from a peer. */
     private volatile boolean nativeClient;
 
     public ClientSession(String clientId) {
         this.clientId = clientId;
         this.lastUpdatedTime = System.currentTimeMillis();
+        // A session is either born from a sync (thus just confirmed by its owner) or
+        // registered natively, in which case this clock is never consulted.
+        this.lastOwnerConfirmedTime = this.lastUpdatedTime;
     }
 
     public String getClientId() {
@@ -190,6 +204,23 @@ public class ClientSession {
 
     public void setLastUpdatedTime(long time) {
         this.lastUpdatedTime = time;
+    }
+
+    public long getLastOwnerConfirmedTime() {
+        return lastOwnerConfirmedTime;
+    }
+
+    /**
+     * Record that the owning node vouched for this session now — called when a sync
+     * is applied and when the owner's revision matches during verify. Only this clock
+     * may rescue a replica from {@code ServiceStorage#reapStaleSyncedClients}.
+     */
+    public void markOwnerConfirmed() {
+        this.lastOwnerConfirmedTime = System.currentTimeMillis();
+    }
+
+    public void setLastOwnerConfirmedTime(long time) {
+        this.lastOwnerConfirmedTime = time;
     }
 
     public boolean isNativeClient() {

@@ -278,7 +278,7 @@ public class DistroProtocol {
             ClientSession localCache = connectionManager.getClientSession(info.getClientId());
             if (localCache != null) {
                 if (localCache.getRevision() == info.getRevision()) {
-                    localCache.setLastUpdatedTime(System.currentTimeMillis());
+                    localCache.markOwnerConfirmed();
                 } else {
                     log.info("[harbor] distro verify mismatch: clientId={} localRev={} remoteRev={}",
                             info.getClientId(), localCache.getRevision(), info.getRevision());
