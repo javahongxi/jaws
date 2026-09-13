@@ -161,8 +161,8 @@ public class HarborServer {
                     connectionId = UUID.randomUUID().toString();
                     pipeline.channel().attr(key).set(connectionId);
                 }
-                ConnectionCleanupHandler handler = new ConnectionCleanupHandler(connectionLifecycle);
-                handler.setConnectionId(connectionId);
+                ConnectionCleanupHandler handler =
+                        new ConnectionCleanupHandler(connectionLifecycle, connectionId);
                 pipeline.addLast("conn_cleanup", handler);
             }
         };

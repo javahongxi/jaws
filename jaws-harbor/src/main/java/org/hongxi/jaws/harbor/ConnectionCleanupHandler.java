@@ -40,8 +40,10 @@ import org.slf4j.LoggerFactory;
  * a parent-channel attribute that the wire layer propagates into {@code
  * WireCallContext} for every request on that connection — so the id exists
  * from the moment the connection opens, not only after ServerCheck.  The
- * same id is passed to this handler via {@link #setConnectionId(String)} so
- * that PING keep-alive and {@code channelInactive} cleanup can reference it.
+ * same id is handed to this handler through its CONSTRUCTOR, so it is final:
+ * the handler cannot exist without one, hence neither the PING keep-alive touch
+ * nor the {@code channelInactive} closure can ever observe a half-built handler
+ * with no connection to attribute the signal to.
  *
  * @see HarborServer
  */
@@ -50,14 +52,12 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(ConnectionCleanupHandler.class);
 
     private final ConnectionLifecycle lifecycle;
-    private volatile String connectionId;
+    private final String connectionId;
 
-    ConnectionCleanupHandler(ConnectionLifecycle lifecycle) {
+    ConnectionCleanupHandler(ConnectionLifecycle lifecycle, String connectionId) {
         this.lifecycle = lifecycle;
-    }
-
-    void setConnectionId(String connectionId) {
-        this.connectionId = connectionId;
+        this.connectionId = java.util.Objects.requireNonNull(connectionId,
+                "a connection handler without a connectionId could not attribute its own teardown");
     }
 
     @Override
@@ -87,9 +87,7 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
             // every 5 s which triggers touch in RequestHandler), but it serves
             // as a safety net for other gRPC clients that rely solely on
             // transport-level keepalive PINGs.
-            if (connectionId != null) {
-                lifecycle.connectionManager().touch(connectionId);
-            }
+            lifecycle.connectionManager().touch(connectionId);
         }
         super.channelRead(ctx, msg);
     }
@@ -99,9 +97,7 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
         // Use the connectionId directly (not the shared map) to ensure
         // we only remove THIS connection, not another connection from
         // the same clientIp (Nacos client creates multiple connections).
-        if (connectionId != null) {
-            lifecycle.cleanup(connectionId);
-        }
+        lifecycle.cleanup(connectionId);
         ctx.fireChannelInactive();
     }
 }
