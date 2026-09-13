@@ -138,8 +138,12 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
                     // Remove the HTTP/2 codec before closing so that
                     // Http2ConnectionHandler does not attempt to send GOAWAY
                     // on the broken socket (which would log "Sending GOAWAY
-                    // failed" with a noisy stack trace).
-                    ctx.pipeline().remove("http2_codec");
+                    // failed" with a noisy stack trace). Presence-checked:
+                    // another teardown path (e.g. a GOAWAY-handling handler)
+                    // may have removed it already, and throwing from here
+                    // would bury the actual disconnect in a Netty warning.
+                    Http2PipelineSupport.removeIfExists(ctx.pipeline(),
+                            Http2PipelineSupport.HTTP2_CODEC);
                     ctx.close();
                     return;
                 }

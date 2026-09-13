@@ -5,6 +5,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http2.Http2GoAwayFrame;
 import io.netty.handler.codec.http2.Http2PingFrame;
 import io.netty.util.ReferenceCountUtil;
+import org.hongxi.jaws.transport.http2.Http2PipelineSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,10 +70,11 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
                 // This prevents Http2ConnectionHandler from trying to send a
                 // GOAWAY frame back to the client (which would fail with
                 // Broken pipe and force-close the connection, triggering
-                // the nacos-client to reconnect immediately).
-                if (ctx.pipeline().get("http2_codec") != null) {
-                    ctx.pipeline().remove("http2_codec");
-                }
+                // the nacos-client to reconnect immediately).  Shared helper
+                // because AbstractHttp2Server's exception handler removes the
+                // same handler on the reset that follows this GOAWAY.
+                Http2PipelineSupport.removeIfExists(ctx.pipeline(),
+                        Http2PipelineSupport.HTTP2_CODEC);
             } finally {
                 ReferenceCountUtil.release(msg);
             }
