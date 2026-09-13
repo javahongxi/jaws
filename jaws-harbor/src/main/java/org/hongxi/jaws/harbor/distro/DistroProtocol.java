@@ -58,6 +58,18 @@ public class DistroProtocol {
     /** Coalescing window for outbound sync — mirrors PushDelayTaskEngine. */
     private static final long SYNC_MERGE_DELAY_MS = 200L;
 
+    /**
+     * How often the owner re-publishes each of its native clients, even with no
+     * logical change. A replica's copy of {@code lastBeat} is frozen at push time
+     * (beats arrive on the owner's connection and are not forwarded per beat,
+     * matching Nacos), so without this pass a long-lived client would age toward
+     * the 180s expiry window on every node that does not own its connection — and
+     * those nodes would delete live data. At 1/6 of that window a replica's copy
+     * is never stale enough to expire on its own, so expiry then means what it
+     * should mean: the owner stopped, the client or its node.
+     */
+    private static final long CLIENT_REFRESH_INTERVAL_MS = 30_000L;
+
     private final ClusterManager clusterManager;
     private final HarborNodeTransport transport;
     private final ServiceStorage serviceStorage;
@@ -86,8 +98,8 @@ public class DistroProtocol {
     }
 
     /**
-     * Start the Distro protocol: schedule the periodic verify task and the
-     * one-shot initial load from a peer.
+     * Start the Distro protocol: schedule the periodic verify task and client
+     * refresh, and the one-shot initial load from a peer.
      */
     public void start() {
         if (running) {
@@ -100,8 +112,31 @@ public class DistroProtocol {
         scheduler.scheduleAtFixedRate(this::runVerifyTask,
                 VERIFY_INTERVAL_MS, VERIFY_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
+        // Schedule periodic re-publish of owned clients.
+        scheduler.scheduleAtFixedRate(this::runRefreshTask,
+                CLIENT_REFRESH_INTERVAL_MS, CLIENT_REFRESH_INTERVAL_MS, TimeUnit.MILLISECONDS);
+
         // Schedule initial load task (runs once, retries on failure)
         scheduler.schedule(this::runLoadTask, 1, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Re-publish every native client's CURRENT full state. Bursts collapse through
+     * {@link #requestSyncChange(String)}, so a refresh racing a real change costs
+     * one push, not two.
+     */
+    public void refreshOwnedClients() {
+        for (ClientSession session : connectionManager.allNativeClientSessions()) {
+            requestSyncChange(session.getClientId());
+        }
+    }
+
+    private void runRefreshTask() {
+        try {
+            refreshOwnedClients();
+        } catch (Exception e) {
+            log.warn("[harbor] distro refresh task failed", e);
+        }
     }
 
     /**

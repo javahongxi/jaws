@@ -154,6 +154,13 @@ public class ClientSession {
      * physical bucket layout, which can differ between a native session
      * (evolved incrementally) and a synced session (bulk-applied in
      * array order).  Same logical data must always yield the same revision.
+     * <p>
+     * {@code healthy} participates because it IS replicated content: a verdict the
+     * owner flips without any instance change must still be detectable by verify,
+     * or a lost health push would leave two nodes disagreeing forever about a live
+     * service. {@code lastBeat} deliberately does NOT: it is a wall-clock reading
+     * only the owner can take, so folding it in would make native and synced
+     * copies disagree by construction and set verify resyncing every cycle.
      */
     public void recalculateRevision() {
         int hash = 0;
@@ -161,7 +168,8 @@ public class ClientSession {
             for (Instance inst : entry.getValue()) {
                 int entryHash = entry.getKey().hashCode() * 31
                         + inst.getIp().hashCode() * 31
-                        + inst.getPort();
+                        + inst.getPort() * 31
+                        + (inst.isHealthy() ? 1 : 0);
                 hash ^= entryHash;
             }
         }

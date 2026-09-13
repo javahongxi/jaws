@@ -119,7 +119,12 @@ public class HarborServer {
 
     public HarborServer(URL url, HarborNodeTransport transport) {
         this.connectionManager = new ConnectionManager();
-        this.serviceStorage = new ServiceStorage(this::notifySubscriber, this.connectionManager);
+        // Health verdicts are replicated data: the node that judges one must
+        // re-publish the client, so reuse the coalesced outbound sync path that
+        // registration changes already take. (distroProtocol is assigned below;
+        // the hook only fires once the server is serving.)
+        this.serviceStorage = new ServiceStorage(this::notifySubscriber, this.connectionManager,
+                this::syncClientDataToPeers);
         this.pushEngine = new PushDelayTaskEngine(this.serviceStorage, this.connectionManager);
 
         this.clusterManager = new ClusterManager(url);

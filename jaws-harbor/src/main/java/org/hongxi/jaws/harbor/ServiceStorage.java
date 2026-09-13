@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.Consumer;
 
 /**
  * In-memory service instance storage for the naming service.
@@ -62,9 +63,24 @@ public class ServiceStorage {
     private final SubscriberListener listener;
     private final ConnectionManager connectionManager;
 
+    /**
+     * Called with the clientId whose HEALTH flipped (unhealthy ↔ healthy), so the
+     * owner of that connection can re-publish it. Health is part of the data peers
+     * replicate, and only the node holding the connection may judge it — so a
+     * verdict has to travel, otherwise every replica keeps a stale answer.
+     * Defaults to a no-op for single-node use and tests.
+     */
+    private final Consumer<String> healthTransitionNotifier;
+
     public ServiceStorage(SubscriberListener listener, ConnectionManager connectionManager) {
+        this(listener, connectionManager, clientId -> { });
+    }
+
+    public ServiceStorage(SubscriberListener listener, ConnectionManager connectionManager,
+                          Consumer<String> healthTransitionNotifier) {
         this.listener = listener;
         this.connectionManager = connectionManager;
+        this.healthTransitionNotifier = healthTransitionNotifier;
     }
 
     // ========================================================================
@@ -339,6 +355,7 @@ public class ServiceStorage {
         }
         long now = System.currentTimeMillis();
         Set<String> recoveredServices = new HashSet<>();
+        boolean flipped = false;
         for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
             for (Instance inst : entry.getValue()) {
                 inst.setLastBeat(now);
@@ -348,6 +365,7 @@ public class ServiceStorage {
                     inst.setHealthy(true);
                     invalidateServiceCache(entry.getKey());
                     recoveredServices.add(entry.getKey());
+                    flipped = true;
                 }
             }
         }
@@ -356,6 +374,12 @@ public class ServiceStorage {
             if (parts != null) {
                 listener.onServiceChange(parts[0], parts[1], parts[2]);
             }
+        }
+        if (flipped) {
+            // Recovery must travel as hard as the outage: a replica left unhealthy
+            // keeps steering traffic away from a provider that is alive again.
+            session.recalculateRevision();
+            healthTransitionNotifier.accept(connectionId);
         }
     }
 
@@ -370,7 +394,17 @@ public class ServiceStorage {
     public void markUnhealthyStale(long timeoutMs) {
         long now = System.currentTimeMillis();
         Set<String> affectedServices = new HashSet<>();
+        Set<String> flippedClients = new HashSet<>();
         for (ClientSession session : connectionManager.allClientSessions()) {
+            // Only the node HOLDING the connection may judge health. A replica's
+            // copy of lastBeat is frozen at push time — beats are not forwarded per
+            // beat — so evaluating it locally invents an outage the owner never saw
+            // and pushes a notification that steers traffic away from a live
+            // provider. A replica learns the verdict as data instead.
+            if (!session.isNativeClient()) {
+                continue;
+            }
+            boolean flipped = false;
             for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
                 for (Instance inst : entry.getValue()) {
                     long lastBeat = inst.getLastBeat();
@@ -378,8 +412,16 @@ public class ServiceStorage {
                         inst.setHealthy(false);
                         invalidateServiceCache(entry.getKey());
                         affectedServices.add(entry.getKey());
+                        flipped = true;
                     }
                 }
+            }
+            if (flipped) {
+                // Health is part of the replicated content: without folding it into
+                // the revision, a lost push for a client whose instances did not
+                // change would never be noticed by verify.
+                session.recalculateRevision();
+                flippedClients.add(session.getClientId());
             }
         }
         for (String serviceKey : affectedServices) {
@@ -387,6 +429,9 @@ public class ServiceStorage {
             if (parts != null) {
                 listener.onServiceChange(parts[0], parts[1], parts[2]);
             }
+        }
+        for (String clientId : flippedClients) {
+            healthTransitionNotifier.accept(clientId);
         }
     }
 
