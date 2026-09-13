@@ -45,6 +45,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@link AbstractHttp2Client}; this class implements only the gRPC wire
  * semantics.
  * <p>
+ * Connection-loss policy: call paths must not pre-check {@link #isAvailable()}.
+ * Availability is judged per call by {@code activeChannel()}, which reconnects
+ * lazily and then fails with a named {@link JawsServiceException} if the peer is
+ * still unreachable. A pre-check would short-circuit exactly that recovery: a
+ * peer that dies without saying goodbye sends no GOAWAY, so nothing else would
+ * ever dial again and a revived peer would stay unusable until this process
+ * restarted. A deliberately {@code close()}d client still fails fast, because
+ * {@code reconnect()} honours the close state and {@code doClose()} drops the
+ * channel array.
+ * <p>
  * The request argument must be a protobuf {@link Message} (the first element
  * of {@link Request#getArguments()}). The response is decoded as a protobuf
  * {@link Message} and placed into a {@link DefaultResponse}; custom metadata
@@ -189,10 +199,6 @@ public class WireClient extends AbstractHttp2Client {
      * @return a pending response future completed asynchronously by the stream handler
      */
     public Response request(Request request, Parser<? extends Message> responseParser) {
-        if (!isAvailable()) {
-            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
-        }
-
         Object[] args = request.getArguments();
         if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
             throw new JawsServiceException(
@@ -433,10 +439,6 @@ public class WireClient extends AbstractHttp2Client {
      * @return a source emitting streamed response messages
      */
     public StreamSource<Object> requestStream(Request request, Parser<? extends Message> responseParser) {
-        if (!isAvailable()) {
-            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
-        }
-
         Object[] args = request.getArguments();
         if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
             throw new JawsServiceException(
@@ -515,10 +517,6 @@ public class WireClient extends AbstractHttp2Client {
      */
     public StreamSource<Object> requestStream(Request request, StreamSource<Object> requestStream,
                                                        Parser<? extends Message> responseParser) {
-        if (!isAvailable()) {
-            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
-        }
-
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
         int urlTimeout = url.getMethodParameter(
@@ -660,10 +658,6 @@ public class WireClient extends AbstractHttp2Client {
      */
     public StreamSource<Object> requestBidiStream(Request request, StreamSource<Object> requestStream,
                                                   Parser<? extends Message> responseParser) {
-        if (!isAvailable()) {
-            throw new JawsServiceException("Wire channel is not available: url=" + url.getUri());
-        }
-
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
         int urlTimeout = url.getMethodParameter(

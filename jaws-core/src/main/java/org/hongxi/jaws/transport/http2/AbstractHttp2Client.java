@@ -242,11 +242,11 @@ public abstract class AbstractHttp2Client extends AbstractClient {
      */
     protected io.netty.channel.Channel activeChannel() {
         io.netty.channel.Channel channel = selectChannel();
-        if (!channel.isActive()) {
+        if (channel == null || !channel.isActive()) {
             reconnect();
             channel = selectChannel();
         }
-        if (!channel.isActive()) {
+        if (channel == null || !channel.isActive()) {
             throw new JawsServiceException(clientName + " channel is not active: url=" + url.getUri());
         }
         return channel;
@@ -254,6 +254,10 @@ public abstract class AbstractHttp2Client extends AbstractClient {
 
     /**
      * Select a channel using round-robin for multi-connection setups.
+     *
+     * @return the selected channel, or {@code null} when the slot was vacated —
+     *         closed, or left empty by a failed reconnect. Callers decide what
+     *         that means: retry (reconnect) or fail by name.
      */
     private io.netty.channel.Channel selectChannel() {
         if (channels == null || channels.length == 0) {
