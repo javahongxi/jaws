@@ -258,7 +258,7 @@ public class HarborServer {
         }
         // Notify peers that this client is gone
         if (syncData != null && !syncData.getServiceKeys().isEmpty()) {
-            distroProtocol.syncChange(connId, DistroProtocol.OP_DELETE, new byte[0]);
+            distroProtocol.requestSyncDelete(connId);
         }
     }
 
@@ -554,7 +554,7 @@ public class HarborServer {
                     }
                     // Notify peers that this client is gone
                     if (syncData != null && !syncData.getServiceKeys().isEmpty()) {
-                        distroProtocol.syncChange(connId, DistroProtocol.OP_DELETE, new byte[0]);
+                        distroProtocol.requestSyncDelete(connId);
                     }
                 }
             });
@@ -783,14 +783,9 @@ public class HarborServer {
      * Build the full ClientSyncData for the given connection and sync to peers.
      */
     private void syncClientDataToPeers(String connId) {
-        if (connId == null) {
-            return;
-        }
-        ClientSyncData syncData = serviceStorage.buildClientSyncData(connId);
-        if (syncData != null) {
-            byte[] content = JSON.toJSONBytes(syncData);
-            distroProtocol.syncChange(connId, DistroProtocol.OP_CHANGE, content);
-        }
+        // Coalesced, latest-state outbound sync: bursts on this client merge into one
+        // push that re-reads the client's current full state at fire time.
+        distroProtocol.requestSyncChange(connId);
     }
 
     // ========================================================================

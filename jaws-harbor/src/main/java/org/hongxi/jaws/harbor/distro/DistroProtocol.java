@@ -15,9 +15,12 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -52,10 +55,16 @@ public class DistroProtocol {
     /** Load-data retry delay on failure. */
     private static final long LOAD_DATA_RETRY_DELAY_MS = 30_000L;
 
+    /** Coalescing window for outbound sync — mirrors PushDelayTaskEngine. */
+    private static final long SYNC_MERGE_DELAY_MS = 200L;
+
     private final ClusterManager clusterManager;
     private final HarborNodeTransport transport;
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
+
+    /** clientId → in-flight coalesced sync task; presence = merge lock. */
+    private final Map<String, ScheduledFuture<?>> pendingSync = new ConcurrentHashMap<>();
 
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(2, r -> {
@@ -137,6 +146,54 @@ public class DistroProtocol {
                         connectionId, peer.address(), e);
             }
         }
+    }
+
+    /**
+     * Register that a client's published data changed. Coalescing + reconcile:
+     * bursts for the same clientId collapse into one push, and at fire time we
+     * re-read the client's CURRENT full state (never a captured snapshot) and
+     * push it to all peers — the same shape as the harbor {@code PushDelayTaskEngine}
+     * and Nacos's {@code DistroDelayTaskExecuteEngine}. An emptied client
+     * propagates a DELETE. This removes the old "push full state on every change"
+     * amplification.
+     */
+    public void requestSyncChange(String clientId) {
+        if (clientId == null) {
+            return;
+        }
+        pendingSync.computeIfAbsent(clientId, k ->
+                scheduler.schedule(() -> doSyncChange(k), SYNC_MERGE_DELAY_MS, TimeUnit.MILLISECONDS));
+    }
+
+    private void doSyncChange(String clientId) {
+        pendingSync.remove(clientId);
+        if (!running) {
+            return;
+        }
+        ClientSyncData data = serviceStorage.buildClientSyncData(clientId);
+        if (data == null) {
+            return;
+        }
+        if (hasContent(data)) {
+            syncChange(clientId, OP_CHANGE, JSON.toJSONBytes(data));
+        } else {
+            syncChange(clientId, OP_DELETE, new byte[0]);
+        }
+    }
+
+    /**
+     * Immediately propagate a client's removal and cancel any coalesced CHANGE
+     * pending for it — a DELETE must not be swallowed by a queued window.
+     */
+    public void requestSyncDelete(String clientId) {
+        if (clientId == null) {
+            return;
+        }
+        ScheduledFuture<?> f = pendingSync.remove(clientId);
+        if (f != null) {
+            f.cancel(false);
+        }
+        syncChange(clientId, OP_DELETE, new byte[0]);
     }
 
     // ========================================================================
