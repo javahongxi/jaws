@@ -31,9 +31,9 @@ class HarborDistroProtocolTest {
     @Test
     void testClusterManagerBasics() {
         ClusterManager mgr = newClusterManager("10.0.0.1", 9848);
-        assertTrue(mgr.isEmpty());
+        // self is auto-registered in the constructor
+        assertEquals(1, mgr.size());
 
-        mgr.addMember(new ClusterMember("10.0.0.1:9848"));
         mgr.addMember(new ClusterMember("10.0.0.2:9848"));
         assertEquals(2, mgr.size());
 
@@ -51,12 +51,14 @@ class HarborDistroProtocolTest {
     @Test
     void testClusterManagerRemove() {
         ClusterManager mgr = newClusterManager("10.0.0.1", 9848);
-        ClusterMember m = new ClusterMember("10.0.0.1:9848");
-        mgr.addMember(m);
-        assertEquals(1, mgr.size());
+        ClusterMember peer = new ClusterMember("10.0.0.2:9848");
+        mgr.addMember(peer);
+        assertEquals(2, mgr.size());
 
-        mgr.removeMember(m);
-        assertEquals(0, mgr.size());
+        mgr.removeMember(peer);
+        assertEquals(1, mgr.size());
+        // self remains
+        assertFalse(mgr.isEmpty());
     }
 
     // ========================================================================

@@ -44,6 +44,9 @@ public class ClusterManager {
             }
         }
         this.selfAddress = host + ":" + url.getPort();
+        // Register self as a cluster member so that allMembers() includes
+        // the local node from the moment the manager is created.
+        members.add(new ClusterMember(selfAddress));
     }
 
     public String getSelfAddress() {

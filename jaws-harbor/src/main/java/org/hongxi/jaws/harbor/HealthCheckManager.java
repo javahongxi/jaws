@@ -60,13 +60,13 @@ public class HealthCheckManager {
      */
     private static final long INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000;
 
-    private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
+    private final ServiceStorage serviceStorage;
     private final ScheduledExecutorService scheduler;
 
-    public HealthCheckManager(ServiceStorage serviceStorage, ConnectionManager connectionManager) {
-        this.serviceStorage = serviceStorage;
+    public HealthCheckManager(ConnectionManager connectionManager, ServiceStorage serviceStorage) {
         this.connectionManager = connectionManager;
+        this.serviceStorage = serviceStorage;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "harbor-health-check");
             t.setDaemon(true);

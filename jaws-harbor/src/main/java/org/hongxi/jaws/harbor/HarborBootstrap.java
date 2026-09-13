@@ -58,7 +58,6 @@ public class HarborBootstrap {
         }
         System.out.println("  Nacos-compatible gRPC control plane");
         System.out.println("  Management API: http://localhost:" + (port + 10) + "/api/*");
-        System.out.println("  Use jaws-sample-admin for management UI: http://localhost:8088");
         System.out.println("========================================");
     }
 }

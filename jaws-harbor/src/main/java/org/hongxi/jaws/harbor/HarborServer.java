@@ -88,9 +88,6 @@ public class HarborServer {
     private static final String REGISTER_INSTANCE = "registerInstance";
     private static final String DEREGISTER_INSTANCE = "deregisterInstance";
 
-    // Config requests from nacos-client (not supported — return silent success)
-    private static final String TYPE_CONFIG_BATCH_LISTEN_REQUEST = "ConfigBatchListenRequest";
-
     // Distro inter-node request and response types
     private static final String TYPE_DISTRO_SYNC_REQUEST = "DistroSyncRequest";
     private static final String TYPE_DISTRO_SYNC_RESPONSE = "DistroSyncResponse";
@@ -123,7 +120,7 @@ public class HarborServer {
     public HarborServer(URL url, HarborNodeTransport transport) {
         this.connectionManager = new ConnectionManager();
         this.serviceStorage = new ServiceStorage(this::notifySubscriber, this.connectionManager);
-        this.healthCheckManager = new HealthCheckManager(this.serviceStorage, this.connectionManager);
+        this.healthCheckManager = new HealthCheckManager(this.connectionManager, this.serviceStorage);
         this.pushEngine = new PushDelayTaskEngine(this.serviceStorage, this.connectionManager);
 
         this.clusterManager = new ClusterManager(url);
@@ -146,8 +143,6 @@ public class HarborServer {
                 // and store it as a channel attribute.  The wire layer reads this attribute
                 // and injects it into WireCallContext so that every handler on this
                 // connection can identify which physical connection a request arrived on.
-                // This fixes the bug where connectionIdByClientIp was overwritten when
-                // multiple processes from the same IP connected simultaneously.
                 AttributeKey<String> key = AttributeKey.valueOf(WireConstants.CONNECTION_ID);
                 String connectionId = pipeline.channel().attr(key).get();
                 if (connectionId == null) {
@@ -162,10 +157,6 @@ public class HarborServer {
     }
 
     public void start() {
-        // Register self as a cluster member
-        String selfAddr = clusterManager.getSelfAddress();
-        clusterManager.addMember(new ClusterMember(selfAddr));
-
         // Auto-join cluster members from URL parameter
         String clusterMembersParam = wireServer.getUrl().getParameter(PARAM_CLUSTER_MEMBERS);
         if (clusterMembersParam != null && !clusterMembersParam.isEmpty()) {
@@ -399,7 +390,7 @@ public class HarborServer {
                     case TYPE_DISTRO_SNAPSHOT_REQUEST -> handleDistroSnapshot();
                     // Config requests — Harbor does not support config center;
                     // return silent success to prevent nacos-client from retrying.
-                    case TYPE_CONFIG_BATCH_LISTEN_REQUEST ->
+                    case "ConfigBatchListenRequest" ->
                             buildPayload("ConfigBatchListenResponse", ConfigBatchListenResponse.ok());
                     default -> {
                         log.warn("[harbor] unknown request type: {}", type);
@@ -575,13 +566,6 @@ public class HarborServer {
     // ========================================================================
 
     private Payload handleServerCheck(String clientIp, String connectionId) {
-        // connectionId is generated in addOptionalChannelHandlers (per TCP
-        // connection) and propagated via the parent channel attribute →
-        // WireCallContext.  If not yet available (should not happen), fall
-        // back to generating one here.
-        if (connectionId == null) {
-            connectionId = UUID.randomUUID().toString();
-        }
         ServerCheckResponse response = new ServerCheckResponse();
         response.setResultCode(200);
         response.setSuccess(true);
@@ -778,9 +762,6 @@ public class HarborServer {
         return buildPayload(TYPE_DISTRO_SNAPSHOT_RESPONSE, response);
     }
 
-    /**
-     * Build the full ClientSyncData for the given connection and sync to peers.
-     */
     private void syncClientDataToPeers(String connId) {
         // Coalesced, latest-state outbound sync: bursts on this client merge into one
         // push that re-reads the client's current full state at fire time.
