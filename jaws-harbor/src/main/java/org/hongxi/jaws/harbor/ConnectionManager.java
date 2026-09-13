@@ -62,8 +62,7 @@ public class ConnectionManager {
                          Map<String, String> labels, StreamSubject<Message> pushSubject) {
         connections.put(connectionId,
                 new ConnectionRecord(connectionId, clientIp, clientVersion, labels, pushSubject));
-        ClientSession session = new ClientSession(connectionId);
-        session.setNativeClient(true);
+        ClientSession session = new ClientSession(connectionId, true);
         clientSessions.put(connectionId, session);
         lastActiveTime.put(connectionId, System.currentTimeMillis());
         log.info("[harbor] connection registered: id={}, clientIp={}, version={}",

@@ -52,14 +52,24 @@ public class ClientSession {
      */
     private volatile long lastOwnerConfirmedTime;
 
-    /** Whether this client is native (owned by this node) rather than synced from a peer. */
-    private volatile boolean nativeClient;
+    /**
+     * Whether this session belongs to a connection terminating ON THIS NODE
+     * ({@code true}) or was replicated from a peer ({@code false}). Counterpart of
+     * Nacos {@code ConnectionBasedClient.isNative}, and final for the same reason:
+     * identity is decided at birth — {@code ConnectionManager.register} versus
+     * {@code ServiceStorage.applyClientSyncData}, mirroring Nacos's
+     * {@code newClient}/{@code newSyncedClient} split — and never changes afterwards.
+     * A replica that could promote itself to native would silently escape every
+     * judgement meant for replicas, including {@link #isReplicaOrphaned}.
+     */
+    private final boolean nativeClient;
 
-    public ClientSession(String clientId) {
+    public ClientSession(String clientId, boolean nativeClient) {
         this.clientId = clientId;
+        this.nativeClient = nativeClient;
         this.lastUpdatedTime = System.currentTimeMillis();
-        // A session is either born from a sync (thus just confirmed by its owner) or
-        // registered natively, in which case this clock is never consulted.
+        // A session born from a sync is confirmed by its owner right now; a native one
+        // never consults this clock at all.
         this.lastOwnerConfirmedTime = this.lastUpdatedTime;
     }
 
@@ -227,8 +237,20 @@ public class ClientSession {
         return nativeClient;
     }
 
-    public void setNativeClient(boolean nativeClient) {
-        this.nativeClient = nativeClient;
+    /**
+     * Whether this REPLICATED session has gone unconfirmed by its owning node for
+     * longer than {@code toleranceMs}. Mirrors Nacos
+     * {@code ConnectionBasedClient.isExpire(now)} — {@code !isNative() && now -
+     * lastRenewTime > clientExpiredTime} — including the ordering that matters:
+     * only {@link #markOwnerConfirmed()} can move the deadline, so local
+     * bookkeeping on a replica never buys it another window.
+     *
+     * @param nowMillis   caller-supplied clock, so a sweep judges every session
+     *                    against one instant
+     * @param toleranceMs how long owner silence is tolerated
+     */
+    public boolean isReplicaOrphaned(long nowMillis, long toleranceMs) {
+        return !nativeClient && nowMillis - lastOwnerConfirmedTime > toleranceMs;
     }
 
     /**

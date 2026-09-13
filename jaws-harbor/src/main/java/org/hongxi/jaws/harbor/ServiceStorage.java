@@ -636,8 +636,7 @@ public class ServiceStorage {
         removeClientFromIndexes(clientId);
 
         // Create or update the ClientSession
-        ClientSession session = new ClientSession(clientId);
-        session.setNativeClient(false);
+        ClientSession session = new ClientSession(clientId, false);
 
         // Apply publishers — write to ClientSession + add clientId to publisherIndexes
         List<String> serviceKeys = data.getServiceKeys();
@@ -693,8 +692,9 @@ public class ServiceStorage {
      * dropping one of the replica instances. So an owner that keeps confirming holds its
      * replicas, and one that goes silent loses them exactly one window after the
      * silence - not one window after the last thing this node did to the copy.
-     * Native sessions are skipped — they are authoritative locally and their clients are judged by the
-     * beat tiers, so an idle local connection is never a dead one here.
+     * Native sessions are excluded by {@link ClientSession#isReplicaOrphaned}: they are
+     * authoritative locally and their clients are judged by the beat tiers, so an idle
+     * local connection is never a dead one here.
      *
      * @param timeoutMs how long an unconfirmed replica is tolerated
      * @return the number of reclaimed sessions
@@ -703,10 +703,10 @@ public class ServiceStorage {
         long now = System.currentTimeMillis();
         List<String> stale = new ArrayList<>();
         for (ClientSession session : connectionManager.allClientSessions()) {
-            if (session.isNativeClient()) {
-                continue;
-            }
-            if (now - session.getLastOwnerConfirmedTime() > timeoutMs) {
+            // The predicate lives on the session (Nacos puts isExpire on the client for
+            // the same reason): whether a replica may be dropped is a fact about its own
+            // identity and confirmation clock, not about this sweep.
+            if (session.isReplicaOrphaned(now, timeoutMs)) {
                 stale.add(session.getClientId());
             }
         }

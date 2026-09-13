@@ -143,12 +143,12 @@ class HarborDistroProtocolTest {
         Instance b = createInstance("10.0.0.2", 8081, "iB");
         Instance c = createInstance("10.0.0.3", 8082, "iC");
 
-        ClientSession forward = new ClientSession("conn-x");
+        ClientSession forward = new ClientSession("conn-x", false);
         forward.addInstance(svc, a);
         forward.addInstance(svc, b);
         forward.addInstance(svc, c);
 
-        ClientSession reverse = new ClientSession("conn-x");
+        ClientSession reverse = new ClientSession("conn-x", false);
         reverse.addInstance(svc, c);
         reverse.addInstance(svc, b);
         reverse.addInstance(svc, a);
@@ -158,7 +158,7 @@ class HarborDistroProtocolTest {
 
         // Different content must still diverge — guards against a degenerate
         // hash that collapses every content to the same value.
-        ClientSession different = new ClientSession("conn-x");
+        ClientSession different = new ClientSession("conn-x", false);
         different.addInstance(svc, createInstance("10.0.0.1", 9999, "iA"));
         different.addInstance(svc, b);
         different.addInstance(svc, c);
