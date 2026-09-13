@@ -148,7 +148,7 @@ public class ServiceStorage {
                         }
                     }
                     log.info("[harbor] instance deregistered: {} -> {}:{}", key, ip, port);
-                    checkAndCleanEmptyService(key, namespace, group, serviceName);
+                    checkAndCleanEmptyService(key, namespace, group, serviceName, true);
                     return;
                 }
             }
@@ -224,7 +224,8 @@ public class ServiceStorage {
         if (session != null) {
             session.removeSubscriber(key);
         }
-        checkAndCleanEmptyService(key, namespace, group, serviceName);
+        // Unsubscribe only: nothing routable changed for the subscribers that stay.
+        checkAndCleanEmptyService(key, namespace, group, serviceName, false);
     }
 
     /**
@@ -254,11 +255,11 @@ public class ServiceStorage {
                 affectedServices.add(entry.getKey());
             }
         }
-        // Check affected services for emptiness
+        // Check affected services for emptiness — no instance was removed, so no re-push
         for (String serviceKey : affectedServices) {
             String[] parts = splitServiceKey(serviceKey);
             if (parts != null) {
-                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
+                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], false); // unsubscribe sweep: nothing routable changed
             }
         }
     }
@@ -485,7 +486,7 @@ public class ServiceStorage {
                     String[] parts = splitServiceKey(serviceKey);
                     if (parts != null) {
                         log.info("[harbor] expired instance removed: {} -> {}:{}", serviceKey, ip, port);
-                        checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
+                        checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], true);
                     }
                     return;
                 }
@@ -530,7 +531,7 @@ public class ServiceStorage {
             if (parts != null) {
                 log.info("[harbor] instance(s) deregistered on disconnect: {} -> connId={} ({} instance(s))",
                         serviceKey, connectionId, count);
-                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
+                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], true);
             }
         }
         return totalRemoved;
@@ -686,11 +687,11 @@ public class ServiceStorage {
         removeClientFromIndexes(clientId);
         session.release();
         connectionManager.removeClientSession(clientId);
-        // Check affected services for emptiness after removal
+        // Check affected services for emptiness after removing this client\u2019s instances
         for (String serviceKey : affectedServices) {
             String[] parts = splitServiceKey(serviceKey);
             if (parts != null) {
-                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
+                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], true); // dropping a synced client removes its instances
             }
         }
         log.info("[harbor] removed synced client: {}", clientId);
@@ -716,12 +717,23 @@ public class ServiceStorage {
     }
 
     /**
-     * Check if a service has no publishers and no subscribers.
-     * If so, remove it from all indexes and the service manager.
-     * Notifies subscribers before cleanup so they receive the final empty update.
+     * Retire a service that has neither publishers nor subscribers, announcing the
+     * final (empty) state first so subscribers drop it.
+     * <p>
+     * Whether the caller also announces a SURVIVING service is decided by
+     * {@code dataChanged}, because this check runs from places that changed nothing
+     * anyone routes by: the periodic sweep (every 5 s, for every service) and an
+     * unsubscribe (one receiver leaving, the list the others get is unchanged).
+     * Announcing there re-pushed every service in full every sweep — Nacos pushes on
+     * change, so a surviving service is announced only by callers that added or
+     * removed one of its instances.
+     *
+     * @param dataChanged {@code true} when the caller mutated this service's instance
+     *                    set, {@code false} for a pure index/lifetime cleanup pass
      */
     private void checkAndCleanEmptyService(String serviceKey, String namespace,
-                                            String group, String serviceName) {
+                                            String group, String serviceName,
+                                            boolean dataChanged) {
         Set<String> publishers = publisherIndexes.get(serviceKey);
         Set<String> subscribers = subscriberIndexes.get(serviceKey);
         boolean noPublishers = publishers == null || publishers.isEmpty();
@@ -735,8 +747,7 @@ public class ServiceStorage {
             subscriberIndexes.remove(serviceKey);
             invalidateServiceCache(serviceKey);
             log.info("[harbor] empty service cleaned: {}", serviceKey);
-        } else {
-            // Service still has publishers or subscribers, just notify
+        } else if (dataChanged) {
             listener.onServiceChange(namespace, group, serviceName);
         }
     }
@@ -752,7 +763,7 @@ public class ServiceStorage {
         for (String serviceKey : allKeys) {
             String[] parts = splitServiceKey(serviceKey);
             if (parts != null) {
-                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2]);
+                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], false); // idle sweep must not re-push every service every cycle
             }
         }
     }
