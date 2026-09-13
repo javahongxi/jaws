@@ -16,8 +16,9 @@ import java.util.concurrent.TimeUnit;
  *   <li>A scheduled task runs every {@link #CHECK_INTERVAL_MS} (default 5s)</li>
  *   <li><b>Connection watchdog</b>: connections whose last activity exceeds
  *       {@link #CONNECTION_TIMEOUT_MS} (default 90s) are considered dead —
- *       the bi-stream is completed and all instances from that client IP
- *       are deregistered immediately</li>
+ *       each one goes through the full closure transaction
+ *       ({@link ConnectionLifecycle#cleanup}), exactly the same side effects
+ *       a live {@code channelInactive} would produce</li>
  *   <li><b>Instance heartbeat</b>: any instance whose last heartbeat exceeds
  *       {@link #INSTANCE_TIMEOUT_MS} (default 3 min) is removed as a fallback
  *       for edge cases (e.g. half-open TCP that hasn't triggered watchdog yet)</li>
@@ -62,11 +63,14 @@ public class HealthCheckManager {
 
     private final ConnectionManager connectionManager;
     private final ServiceStorage serviceStorage;
+    private final ConnectionLifecycle connectionLifecycle;
     private final ScheduledExecutorService scheduler;
 
-    public HealthCheckManager(ConnectionManager connectionManager, ServiceStorage serviceStorage) {
+    public HealthCheckManager(ConnectionManager connectionManager, ServiceStorage serviceStorage,
+                              ConnectionLifecycle connectionLifecycle) {
         this.connectionManager = connectionManager;
         this.serviceStorage = serviceStorage;
+        this.connectionLifecycle = connectionLifecycle;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "harbor-health-check");
             t.setDaemon(true);
@@ -91,18 +95,21 @@ public class HealthCheckManager {
         scheduler.shutdown();
     }
 
-    private void checkHealth() {
+    /**
+     * One health-check sweep. Package-private so tests can drive a deterministic
+     * pass without waiting on the {@link #CHECK_INTERVAL_MS} scheduler.
+     */
+    void checkHealth() {
         try {
-            // Phase 1: connection watchdog — close dead connections first
+            // Phase 1: connection watchdog — detect dead connections, then run
+            // the SAME full closure transaction as channelInactive / bi-stream
+            // signals (snapshot → subscribers → instances → session → Distro DELETE).
             List<ConnectionManager.ConnectionRecord> staleConns =
                     connectionManager.removeStaleConnections(CONNECTION_TIMEOUT_MS);
             for (ConnectionManager.ConnectionRecord conn : staleConns) {
-                String connId = conn.connectionId();
-                int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
-                if (removed > 0) {
-                    log.info("[harbor] watchdog deregistered {} instance(s) for dead connection: "
-                            + "connId={}, clientIp={}", removed, connId, conn.clientIp());
-                }
+                connectionLifecycle.cleanup(conn.connectionId());
+                log.info("[harbor] watchdog closed dead connection: connId={}, clientIp={}",
+                        conn.connectionId(), conn.clientIp());
             }
 
             // Phase 1.5: Nacos first health tier — mark stale-but-not-yet-expired

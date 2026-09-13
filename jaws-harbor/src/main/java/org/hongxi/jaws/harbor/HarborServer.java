@@ -12,7 +12,6 @@ import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
 import org.hongxi.jaws.harbor.distro.GrpcHarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
-import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.Request;
@@ -105,9 +104,10 @@ public class HarborServer {
 
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
-    private final HealthCheckManager healthCheckManager;
     private final ClusterManager clusterManager;
     private final DistroProtocol distroProtocol;
+    private final ConnectionLifecycle connectionLifecycle;
+    private final HealthCheckManager healthCheckManager;
     private final PushDelayTaskEngine pushEngine;
     private final WireServer wireServer;
 
@@ -120,12 +120,19 @@ public class HarborServer {
     public HarborServer(URL url, HarborNodeTransport transport) {
         this.connectionManager = new ConnectionManager();
         this.serviceStorage = new ServiceStorage(this::notifySubscriber, this.connectionManager);
-        this.healthCheckManager = new HealthCheckManager(this.connectionManager, this.serviceStorage);
         this.pushEngine = new PushDelayTaskEngine(this.serviceStorage, this.connectionManager);
 
         this.clusterManager = new ClusterManager(url);
         this.distroProtocol = new DistroProtocol(
                 clusterManager, transport, serviceStorage, connectionManager);
+
+        // The single connection-closure transaction, shared by the three
+        // closure signals: ConnectionCleanupHandler (channelInactive), the
+        // bi-stream onError/onCompleted callbacks, and the watchdog sweep.
+        this.connectionLifecycle = new ConnectionLifecycle(
+                this.connectionManager, this.serviceStorage, this.distroProtocol);
+        this.healthCheckManager = new HealthCheckManager(
+                this.connectionManager, this.serviceStorage, this.connectionLifecycle);
 
         WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register(SERVICE_NAME_REQUEST, METHOD_REQUEST, new RequestHandler());
@@ -149,7 +156,7 @@ public class HarborServer {
                     connectionId = UUID.randomUUID().toString();
                     pipeline.channel().attr(key).set(connectionId);
                 }
-                ConnectionCleanupHandler handler = new ConnectionCleanupHandler(HarborServer.this);
+                ConnectionCleanupHandler handler = new ConnectionCleanupHandler(connectionLifecycle);
                 handler.setConnectionId(connectionId);
                 pipeline.addLast("conn_cleanup", handler);
             }
@@ -229,28 +236,6 @@ public class HarborServer {
         clusterManager.addMember(new ClusterMember(address));
         log.info("[harbor] cluster member added: {} (cluster size={})",
                 address, clusterManager.size());
-    }
-
-    /**
-     * Clean up connection state by connectionId. Called by {@link ConnectionCleanupHandler}
-     * when the connection channel becomes inactive (client GOAWAY, network failure, etc.).
-     * Deregisters instances and removes subscribers.
-     */
-    void cleanupConnectionById(String connId) {
-        // Capture client data before removal for Distro DELETE sync
-        ClientSyncData syncData = serviceStorage.buildClientSyncData(connId);
-
-        connectionManager.remove(connId);
-        serviceStorage.removeAllSubscribersForConnection(connId);
-        int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
-        if (removed > 0) {
-            log.info("[harbor] deregistered {} instance(s) on connection close: connId={}",
-                    removed, connId);
-        }
-        // Notify peers that this client is gone
-        if (syncData != null && !syncData.getServiceKeys().isEmpty()) {
-            distroProtocol.requestSyncDelete(connId);
-        }
     }
 
     // ========================================================================
@@ -504,48 +489,23 @@ public class HarborServer {
                 @Override
                 public void onError(Throwable throwable) {
                     log.info("[harbor] bi-stream error: {}", throwable.getMessage());
-                    if (connectionId != null) {
-                        cleanupConnection(connectionId);
-                    }
+                    // The stream died → run the full closure transaction now
+                    // (idempotent; the channelInactive that usually follows is a no-op).
+                    connectionLifecycle.cleanup(connectionId);
                     // Do NOT call pushSubject.onCompleted() here.
                     // The client already sent RST/GOAWAY — the stream is dead.
                     // Sending trailers on a reset stream confuses the Nacos
                     // client SDK and triggers an immediate reconnect cycle.
-                    // channelInactive will complete pushSubject when the TCP
-                    // connection actually closes.
+                    // (ConnectionLifecycle's connectionManager.remove completes
+                    // the push subject as part of the closure.)
                 }
 
                 @Override
                 public void onCompleted() {
                     log.info("[harbor] bi-stream completed for connId={}", connectionId);
-                    if (connectionId != null) {
-                        cleanupConnection(connectionId);
-                    }
-                    // Do NOT call pushSubject.onCompleted() — same reason as
-                    // onError: the client initiated the close, the stream is
-                    // already gone. channelInactive handles the final cleanup.
-                }
-
-                private void cleanupConnection(String connId) {
-                    // Capture client data before removal for Distro DELETE sync
-                    ClientSyncData syncData = serviceStorage.buildClientSyncData(connId);
-
-                    connectionManager.remove(connId);
-                    serviceStorage.removeAllSubscribersForConnection(connId);
-                    // Nacos 2.x connection-based health check model:
-                    // when the bi-stream closes, the client is gone — deregister
-                    // all instances registered by THIS connection (not by clientIp,
-                    // which would also remove instances from other connections on
-                    // the same machine, e.g. a co-located provider).
-                    int removed = serviceStorage.deregisterInstancesByConnectionId(connId);
-                    if (removed > 0) {
-                        log.info("[harbor] deregistered {} instance(s) on disconnect for connId={}",
-                                removed, connId);
-                    }
-                    // Notify peers that this client is gone
-                    if (syncData != null && !syncData.getServiceKeys().isEmpty()) {
-                        distroProtocol.requestSyncDelete(connId);
-                    }
+                    connectionLifecycle.cleanup(connectionId);
+                    // Same as onError: the client initiated the close; the closure
+                    // transaction owns push-subject completion.
                 }
             });
 

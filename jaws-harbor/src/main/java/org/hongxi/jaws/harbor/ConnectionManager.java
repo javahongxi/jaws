@@ -92,12 +92,20 @@ public class ConnectionManager {
     }
 
     /**
-     * Remove connections whose last activity exceeds the timeout.
-     * Called by the periodic watchdog to clean up dead connections
-     * (e.g. half-open TCP after client process killed).
+     * Remove the LIVENESS layer (connection record + activity entry) of
+     * connections whose last activity exceeds the timeout.  Called by the
+     * periodic watchdog to detect dead connections (e.g. half-open TCP after
+     * the client process was killed).
+     * <p>
+     * Deliberately does NOT evict the {@link ClientSession}: closing the
+     * connection is {@link ConnectionLifecycle#cleanup}'s job — it snapshots
+     * the session's data (which requires the session to still exist), removes
+     * subscribers/instances and propagates the Distro DELETE before evicting
+     * it.  Removing the session here would blind the closure transaction.
      *
      * @param timeoutMs the inactivity timeout in milliseconds
-     * @return list of removed connection records (caller should deregister instances)
+     * @return list of removed connection records (caller must run the full
+     *         closure for each)
      */
     public List<ConnectionRecord> removeStaleConnections(long timeoutMs) {
         long now = System.currentTimeMillis();

@@ -23,21 +23,24 @@ import org.slf4j.LoggerFactory;
  *       and transport-level gRPC keepalive PINGs every 6 min.  The PING
  *       handling here is a safety net for other gRPC clients that may not
  *       send Payload-level heartbeats.</li>
- *   <li>On {@code channelInactive}, delegates to the {@link HarborServer} to
- *       deregister instances and clean up connection state.</li>
+ *   <li>On {@code channelInactive}, runs the full connection closure
+ *       transaction via {@link ConnectionLifecycle#cleanup(String)}.</li>
  * </ul>
  * <p>
- * The bi-stream {@code onError}/{@code onCompleted} callbacks handle
- * connection-state cleanup when the client resets the stream. The
- * {@code channelInactive} callback is the definitive cleanup signal when
- * the TCP connection actually closes (client disconnect, watchdog, etc.).
+ * The bi-stream {@code onError}/{@code onCompleted} callbacks trigger the
+ * same {@link ConnectionLifecycle} closure when the client resets the stream.
+ * That transaction is idempotent, so the {@code channelInactive} that usually
+ * follows a stream error is a no-op; it remains the definitive closure signal
+ * when the TCP connection actually closes without a stream event (client
+ * disconnect, watchdog, etc.).
  * <p>
  * The connectionId is generated per TCP connection in {@code
- * HarborServer.addOptionalChannelHandlers()} at channel setup, handed to {@link
- * #setConnectionId(String)}, and stored as a parent-channel attribute that the
- * wire layer propagates into {@code WireCallContext} for every request on that
- * connection — so the id exists from the moment the connection opens, not only
- * after ServerCheck.
+ * HarborServer.addOptionalChannelHandlers()} at channel setup and stored as
+ * a parent-channel attribute that the wire layer propagates into {@code
+ * WireCallContext} for every request on that connection — so the id exists
+ * from the moment the connection opens, not only after ServerCheck.  The
+ * same id is passed to this handler via {@link #setConnectionId(String)} so
+ * that PING keep-alive and {@code channelInactive} cleanup can reference it.
  *
  * @see HarborServer
  */
@@ -45,11 +48,11 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(ConnectionCleanupHandler.class);
 
-    private final HarborServer server;
+    private final ConnectionLifecycle lifecycle;
     private volatile String connectionId;
 
-    ConnectionCleanupHandler(HarborServer server) {
-        this.server = server;
+    ConnectionCleanupHandler(ConnectionLifecycle lifecycle) {
+        this.lifecycle = lifecycle;
     }
 
     void setConnectionId(String connectionId) {
@@ -83,7 +86,7 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
             // as a safety net for other gRPC clients that rely solely on
             // transport-level keepalive PINGs.
             if (connectionId != null) {
-                server.getConnectionManager().touch(connectionId);
+                lifecycle.connectionManager().touch(connectionId);
             }
         }
         super.channelRead(ctx, msg);
@@ -95,7 +98,7 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
         // we only remove THIS connection, not another connection from
         // the same clientIp (Nacos client creates multiple connections).
         if (connectionId != null) {
-            server.cleanupConnectionById(connectionId);
+            lifecycle.cleanup(connectionId);
         }
         ctx.fireChannelInactive();
     }
