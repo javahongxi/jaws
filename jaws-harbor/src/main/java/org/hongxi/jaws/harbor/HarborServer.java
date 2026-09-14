@@ -572,7 +572,7 @@ public class HarborServer {
             groupName = "DEFAULT_GROUP";
         }
 
-        java.util.List<String> services = serviceStorage.listServices(namespace, groupName);
+        List<String> services = serviceStorage.listServices(namespace, groupName);
 
         ServiceListResponse response = new ServiceListResponse();
         response.setResultCode(200);

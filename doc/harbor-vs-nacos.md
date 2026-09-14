@@ -63,12 +63,12 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | `ServiceStorage.subscriberIndexes`（`:59`） | 分片 | `addSubscriber`（`:208`，写入在 `:211`） | 订阅只在本地；副本永不进这里（§3.8 收回的就是这一条） |
 | `clientSessions` 的 **native** 部分（`:43`） | **本体** | `register`（`:55`） | 既非备份也非分片：我这个 shard 的权威写侧就在这里发生 |
 | `clientSessions` 的 **synced** 部分 | 备份 | `putClientSession`（`:168`） | 别人 shard 的只读副本，供本地答路由查询 |
-| `ServiceStorage.publisherIndexes`（`:52`） | 全集群 | `:127`（本地注册）+ `:648`（副本落地） | 任何节点都要能回答任意服务的查询 |
+| `ServiceStorage.publisherIndexes`（`:52`） | 全集群 | `:127`（本地注册）+ `:655`（副本落地） | 任何节点都要能回答任意服务的查询 |
 | `ServiceStorage.serviceDataIndexes`（`:68`） | 全集群（派生缓存） | 随写路径失效重建 | 由全集群数据算出，自然也是全量域 |
 
 于是基数关系是确定的：`|connections| = 我的 shard 大小`，而 `|clientSessions| = 全集群连接数 ≥ 前者`——两张表共用 `connectionId` 键空间，**域却不同**。
 
-结构上有一条可点开的铁证，也是这两类的分界：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `touch` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage:691`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager:75`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
+结构上有一条可点开的铁证，也是这两类的分界：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `touch` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage:698`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager:75`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
 
 两条边界值得钉住，免得「备份型」被误读成多主可写：**写只发生在 owner**，同步方向永远是 owner 外推，副本只读；**分片键是 TCP 落点而不是 `hash(clientId) % members`**，所以没有 rebalance——客户端重连即自然迁移 shard，其账单由上面那档收尸机制偿还。
 

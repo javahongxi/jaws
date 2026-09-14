@@ -130,6 +130,38 @@ class HarborDistroProtocolTest {
     }
 
     @Test
+    void reSyncWithFewerServicesInvalidatesTheDroppedServiceCache() {
+        ConnectionManager connMgr = new ConnectionManager();
+        ServiceStorage storage = new ServiceStorage(connMgr, key -> {});
+        connMgr.register("conn-1", "10.0.0.1", "3.0.0", Map.of(), noopPushSubject());
+        storage.registerInstance("public", "DEFAULT_GROUP", "svc1",
+                createInstance("10.0.0.1", 8080, "inst1"), "conn-1");
+        storage.registerInstance("public", "DEFAULT_GROUP", "svc2",
+                createInstance("10.0.0.1", 8081, "inst2"), "conn-1");
+
+        ConnectionManager replicaMgr = new ConnectionManager();
+        ServiceStorage replica = new ServiceStorage(replicaMgr, key -> {});
+        replica.applyClientSyncData(storage.buildClientSyncData("conn-1"));
+
+        // Warm the read cache for both services on the replica.
+        assertEquals(1, replica.buildServiceInfo("public", "DEFAULT_GROUP", "svc1").getHosts().size());
+        assertEquals(1, replica.buildServiceInfo("public", "DEFAULT_GROUP", "svc2").getHosts().size());
+
+        // Owner now publishes only svc2: a re-sync of the same client with fewer services.
+        ClientSyncData shrunk = new ClientSyncData("conn-1",
+                List.of("public@@DEFAULT_GROUP@@svc2"),
+                List.of(createInstance("10.0.0.1", 8081, "inst2")), 7L);
+        replica.applyClientSyncData(shrunk);
+
+        assertTrue(replica.getInstances("public", "DEFAULT_GROUP", "svc1").isEmpty(),
+                "the dropped service must stop aggregating this replica's instance");
+        assertTrue(replica.buildServiceInfo("public", "DEFAULT_GROUP", "svc1").getHosts().isEmpty(),
+                "and its cached ServiceInfo must not keep serving the stale host: the services "
+                        + "held only by the previous copy are exactly the ones a payload-driven "
+                        + "invalidation would miss");
+    }
+
+    @Test
     void testClientSessionRevisionIsOrderIndependent() {
         // recalculateRevision() iterates the outer Map<serviceKey,List<Instance>> plus
         // its inner ArrayList.  The OUTER map iteration order is fixed by key hash and

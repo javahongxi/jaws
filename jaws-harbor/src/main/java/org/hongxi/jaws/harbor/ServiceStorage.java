@@ -627,8 +627,15 @@ public class ServiceStorage {
             return;
         }
 
-        // Remove old index entries for this client
-        removeClientFromIndexes(clientId);
+        // A re-sync replaces the previous copy: drop this client from exactly the
+        // services the old replica held (existing is non-null and, per the check
+        // above, non-native). First-time syncs have nothing to undo.
+        if (existing != null) {
+            for (ServiceKey previous : existing.getAllPublishedServices()) {
+                removeFromPublisherIndex(previous, clientId);
+                invalidateServiceCache(previous);
+            }
+        }
 
         // Create or update the ClientSession
         ClientSession session = new ClientSession(clientId, false);
@@ -715,12 +722,15 @@ public class ServiceStorage {
         if (session == null) {
             return;
         }
+        // Snapshot before release(): afterwards the session no longer knows what it held.
         Set<ServiceKey> affectedServices = new HashSet<>(session.getAllPublishedServices());
-        removeClientFromIndexes(clientId);
         session.release();
         connectionManager.removeClientSession(clientId);
-        // Check affected services for emptiness after removing this client\u2019s instances
+        // Per-service cleanup of the publisher index, then the emptiness check that
+        // also retires the service itself: the caller knows exactly which services
+        // this client published, so no index-wide scan is needed.
         for (ServiceKey serviceKey : affectedServices) {
+            removeFromPublisherIndex(serviceKey, clientId);
             // dropping a synced client removes its instances
             checkAndCleanEmptyService(serviceKey, true);
         }
@@ -728,21 +738,22 @@ public class ServiceStorage {
     }
 
     /**
-     * Remove a clientId from both publisher and subscriber indexes.
-     * Cleans up empty entries.
+     * Remove one client from the publisher index of one service, dropping the entry
+     * when no publisher is left.
+     * <p>
+     * There is deliberately no counterpart for {@code subscriberIndexes}: a
+     * subscription is connection-local, so a client replicated from a peer never
+     * enters that index, and the connections that do are cleared by
+     * {@link #removeAllSubscribersForConnection(String)} when the connection closes.
      */
-    private void removeClientFromIndexes(String clientId) {
-        for (Map.Entry<ServiceKey, Set<String>> entry : publisherIndexes.entrySet()) {
-            entry.getValue().remove(clientId);
-            if (entry.getValue().isEmpty()) {
-                publisherIndexes.remove(entry.getKey());
-            }
+    private void removeFromPublisherIndex(ServiceKey serviceKey, String clientId) {
+        Set<String> clientIds = publisherIndexes.get(serviceKey);
+        if (clientIds == null) {
+            return;
         }
-        for (Map.Entry<ServiceKey, Set<String>> entry : subscriberIndexes.entrySet()) {
-            entry.getValue().remove(clientId);
-            if (entry.getValue().isEmpty()) {
-                subscriberIndexes.remove(entry.getKey());
-            }
+        clientIds.remove(clientId);
+        if (clientIds.isEmpty()) {
+            publisherIndexes.remove(serviceKey);
         }
     }
 
