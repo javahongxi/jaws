@@ -29,7 +29,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | `ClientSyncData` | `ClientSyncData`（**同名同职责**） | `naming/.../core/v2/client/ClientSyncData.java:30` | 复制单元是 client 级；Nacos 字段为 `clientId + attributes + namespaces/groupNames/serviceNames + instancePublishInfos + batchInstanceData`（`:34-46`），harbor 把三段式服务名并成一个 `serviceKey`；订阅关系两侧都**不出网**（见 §3.8） |
 | `ClientVerifyInfo` | `DistroClientVerifyInfo` | `naming/.../consistency/ephemeral/distro/v2/DistroClientVerifyInfo.java` | 对账只带 `(clientId, revision)` 两个字段 |
 | `onSnapshot()` 返回 `List<ClientSyncData>` | `getDatumSnapshot()` → `ClientSyncDatumSnapshot` | `DistroClientDataProcessor.java:282-294` | 启动加载 = 一次性全量快照，逐 client 构造 |
-| `GrpcHarborNodeTransport` | `DistroClientTransportAgent` | 同上目录 `DistroClientTransportAgent.java:67/91/115/141` | 节点间传输是一个可替换的 agent 薄层 |
+| `WireHarborNodeTransport` | `DistroClientTransportAgent` | 同上目录 `DistroClientTransportAgent.java:67/91/115/141` | 节点间传输是一个可替换的 agent 薄层 |
 | wire 的 `Request.request` 一元 + bidi 推送 | `nacos_grpc_service.proto`：`service Request{rpc request(Payload) returns(Payload)}`、`service BiRequestStream{rpc requestBiStream(stream…) returns(stream…)}` | `api/src/main/proto/nacos_grpc_service.proto:39`、`:45` | 注册中心 RPC 面只有这两种形态，见 §5 |
 | `conn_cleanup` 写入父通道属性 → 调用上下文 | `Connection.getMetaInfo().getConnectionId()` | `ConnectionBasedClientManager.java:101` | 连接 ID 要能在每一次调用中被业务侧拿到 |
 

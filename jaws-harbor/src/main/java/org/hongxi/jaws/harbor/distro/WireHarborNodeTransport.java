@@ -40,9 +40,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author shenhongxi
  */
-public class GrpcHarborNodeTransport implements HarborNodeTransport {
+public class WireHarborNodeTransport implements HarborNodeTransport {
 
-    private static final Logger log = LoggerFactory.getLogger(GrpcHarborNodeTransport.class);
+    private static final Logger log = LoggerFactory.getLogger(WireHarborNodeTransport.class);
 
     private static final String SERVICE_NAME = "Request";
     private static final String METHOD_NAME = "request";

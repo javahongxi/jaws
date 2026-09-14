@@ -10,7 +10,7 @@ import io.netty.util.AttributeKey;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
-import org.hongxi.jaws.harbor.distro.GrpcHarborNodeTransport;
+import org.hongxi.jaws.harbor.distro.WireHarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
@@ -115,7 +115,7 @@ public class HarborServer {
     private HarborHttpApi httpApi;
 
     public HarborServer(URL url) {
-        this(url, new GrpcHarborNodeTransport());
+        this(url, new WireHarborNodeTransport());
     }
 
     public HarborServer(URL url, HarborNodeTransport transport) {
