@@ -121,6 +121,13 @@ public class WireServer extends AbstractHttp2Server {
      * call context.  The wire layer will read
      * {@code parentChannel.attr(AttributeKey.valueOf(key))} and merge the
      * value into the per-call attachments.
+     * <p>
+     * <b>Must be called before {@link #open()}.</b>  The key set is read
+     * without synchronization by Netty worker threads when a stream channel
+     * is initialized; registrations made before {@code start()} become visible
+     * to those threads via the thread-start happens-before edge.  Calling this
+     * method after the server has started is not thread-safe and may leave
+     * later registrations invisible (or worse) to in-flight stream setup.
      *
      * @param key the attribute key name (e.g. {@link WireConstants#CONNECTION_ID})
      */
