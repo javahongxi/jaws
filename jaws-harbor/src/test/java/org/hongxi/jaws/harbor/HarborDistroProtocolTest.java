@@ -91,7 +91,6 @@ class HarborDistroProtocolTest {
                 "remote-conn-snap",
                 List.of("public@@DEFAULT_GROUP@@svc1"),
                 List.of(inst),
-                List.of(),
                 0L
         );
         storage.applySnapshot(List.of(syncData));
@@ -181,7 +180,6 @@ class HarborDistroProtocolTest {
                 List.of("public@@DEFAULT_GROUP@@svc1", "public@@DEFAULT_GROUP@@svc2"),
                 List.of(createInstance("10.0.0.1", 8080, "inst1"),
                         createInstance("10.0.0.1", 8081, "inst2")),
-                List.of(),
                 1_234_567_890L);
 
         storage.applyClientSyncData(spoofed);
@@ -226,7 +224,6 @@ class HarborDistroProtocolTest {
                 "remote-conn-1",
                 List.of("public@@DEFAULT_GROUP@@remote-svc"),
                 List.of(instance),
-                List.of(),
                 12345L
         );
 
@@ -254,7 +251,6 @@ class HarborDistroProtocolTest {
                 "remote-conn-1",
                 List.of("public@@DEFAULT_GROUP@@remote-svc"),
                 List.of(instance),
-                List.of(),
                 12345L
         );
         protocol.onSync("remote-conn-1", "CHANGE", JSON.toJSONBytes(syncData));

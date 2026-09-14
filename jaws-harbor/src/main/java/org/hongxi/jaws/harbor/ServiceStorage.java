@@ -581,7 +581,8 @@ public class ServiceStorage {
 
     /**
      * Build a {@link ClientSyncData} from the given connection's ClientSession.
-     * Used by Distro CHANGE sync to send the full client state to peers.
+     * Used by Distro CHANGE sync to send the client's full <em>published</em>
+     * state to peers; subscriptions stay local (see {@link ClientSyncData}).
      *
      * @param connectionId the connection whose data to export
      * @return the sync data, or {@code null} if the client session is not found
@@ -603,7 +604,6 @@ public class ServiceStorage {
                 connectionId,
                 serviceKeys,
                 instances,
-                new ArrayList<>(session.getAllSubscribedServices()),
                 session.getRevision()
         );
     }
@@ -611,7 +611,7 @@ public class ServiceStorage {
     /**
      * Apply a {@link ClientSyncData} received from a peer via Distro sync.
      * Creates or replaces a local ClientSession (marked as non-native) and
-     * updates the publisher/subscriber indexes with the clientId.
+     * updates the publisher index with the clientId.
      * <p>
      * Uses full-replacement semantics: the old client data is removed and
      * replaced with the incoming, matching Nacos's
@@ -658,21 +658,11 @@ public class ServiceStorage {
         // would otherwise overwrite the source revision we just received.
         session.setRevision(data.getRevision());
 
-        // Apply subscribers — write to ClientSession + add clientId to subscriberIndexes
-        List<String> subscriberKeys = data.getSubscriberKeys();
-        if (subscriberKeys != null) {
-            for (String serviceKey : subscriberKeys) {
-                session.addSubscriber(serviceKey);
-                subscriberIndexes.computeIfAbsent(serviceKey, k -> new CopyOnWriteArraySet<>())
-                        .add(clientId);
-            }
-        }
-
         // Receiving the own-state of the owning node IS the confirmation.
         session.markOwnerConfirmed();
         connectionManager.putClientSession(clientId, session);
-        log.info("[harbor] applied client sync: {} (publishers={}, subscribers={})",
-                clientId, session.getTotalInstanceCount(), session.getAllSubscribedServices().size());
+        log.info("[harbor] applied client sync: {} (publishers={})",
+                clientId, session.getTotalInstanceCount());
     }
 
     /**

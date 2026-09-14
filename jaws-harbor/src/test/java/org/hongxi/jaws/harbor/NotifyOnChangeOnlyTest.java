@@ -178,7 +178,7 @@ class NotifyOnChangeOnlyTest {
         // and applyClientSyncData would rightly refuse to overwrite the owner's copy).
         Instance inst = instance("10.0.0.9", 9090);
         storage.applyClientSyncData(new ClientSyncData("remote",
-                List.of(KEY), List.of(inst), List.of(), 1L));
+                List.of(KEY), List.of(inst), 1L));
         assertEquals(1, storage.getInstances(NS, GROUP, SVC).size(), "precondition");
         events.clear();
 

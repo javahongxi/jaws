@@ -442,12 +442,12 @@ public class DistroProtocol {
     }
 
     /**
-     * Check whether a ClientSyncData carries any publisher or subscriber data.
-     * Entries with both empty are zombie sessions (all instances expired) and
-     * should not be persisted or synced.
+     * Check whether a ClientSyncData carries anything worth replicating. A payload
+     * with no instances is a zombie session — its instances all expired, or it only
+     * subscribed (and subscriptions stay local) — so it must not be synced or
+     * snapshot-loaded.
      */
     private static boolean hasContent(ClientSyncData data) {
-        return (data.getInstances() != null && !data.getInstances().isEmpty())
-                || (data.getSubscriberKeys() != null && !data.getSubscriberKeys().isEmpty());
+        return data.getInstances() != null && !data.getInstances().isEmpty();
     }
 }

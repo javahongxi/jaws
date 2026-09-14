@@ -32,11 +32,15 @@ import static org.junit.jupiter.api.Assertions.*;
  * shell, and its reverse-index entries, stayed behind for the process lifetime.
  * <p>
  * The predicate is therefore "no peer has confirmed this replica for a full expiry
- * window", using {@code lastUpdatedTime}, which is refreshed both when a sync is
- * applied and when the owner's revision matches during verify. A replica that IS
+ * window", using {@code lastOwnerConfirmedTime}, which is refreshed only when a sync
+ * is applied and when the owner's revision matches during verify. A replica that IS
  * confirmed is live by construction; one that is not means the owner stopped — the
  * client or its node. Native sessions must never be touched by this tier: they are
  * authoritative locally and judge their own clients through the beat tiers.
+ * <p>
+ * A subscription-only replica shell — a shape this tier used to have to reap — can no
+ * longer exist at all: subscriptions are not replicated, so such a client never
+ * produces a payload worth syncing (see {@code SubscriptionStaysLocalTest}).
  */
 class SyncedSessionReclamationTest {
 
@@ -80,10 +84,8 @@ class SyncedSessionReclamationTest {
     }
 
     /** Install a replica exactly as an inbound Distro sync would. */
-    private void givenReplicaOf(String clientId, List<String> serviceKeys, List<Instance> instances,
-                                List<String> subscriberKeys) {
-        storage.applyClientSyncData(new ClientSyncData(clientId, serviceKeys, instances,
-                subscriberKeys, 7L));
+    private void givenReplicaOf(String clientId, List<String> serviceKeys, List<Instance> instances) {
+        storage.applyClientSyncData(new ClientSyncData(clientId, serviceKeys, instances, 7L));
         assertNotNull(cm.getClientSession(clientId), "precondition: replica session installed");
         assertFalse(cm.getClientSession(clientId).isNativeClient(),
                 "precondition: the replica must not look native here");
@@ -98,7 +100,7 @@ class SyncedSessionReclamationTest {
 
     @Test
     void replicaUnconfirmedByItsOwnerIsReaped() {
-        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)), List.of());
+        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
         assertEquals(1, storage.getInstances(NS, GROUP, SVC).size(), "precondition: instance visible");
         ageReplica("remote", WINDOW_MS + 1_000);
 
@@ -114,24 +116,8 @@ class SyncedSessionReclamationTest {
     }
 
     @Test
-    void subscriberOnlyReplicaShellIsReaped() {
-        // The shape the beat tiers can never reach: a subscriber has no instances,
-        // so nothing about it is beat-stale — the shell simply accumulates.
-        givenReplicaOf("watcher", List.of(), List.of(), List.of(KEY));
-        assertTrue(storage.getSubscriberConnections(KEY).contains("watcher"), "precondition");
-        ageReplica("watcher", WINDOW_MS + 1_000);
-
-        assertEquals(1, storage.reapStaleSyncedClients(WINDOW_MS));
-
-        assertNull(cm.getClientSession("watcher"),
-                "a subscription replica nobody confirms must be released too");
-        assertFalse(storage.getSubscriberConnections(KEY).contains("watcher"),
-                "and its reverse-index entry must go with it");
-    }
-
-    @Test
     void confirmedReplicaSurvives() {
-        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)), List.of());
+        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
         ageReplica("remote", WINDOW_MS - 30_000); // one refresh cycle ago
 
         assertEquals(0, storage.reapStaleSyncedClients(WINDOW_MS));
@@ -165,7 +151,7 @@ class SyncedSessionReclamationTest {
         // confirmed copy and waited another full window. A replica must be reaped one
         // window after the OWNER went silent, not after the last thing this node did
         // to it.
-        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)), List.of());
+        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
         ageReplica("remote", WINDOW_MS + 1_000);
         cm.getClientSession("remote").setLastUpdatedTime(System.currentTimeMillis());
 
@@ -181,7 +167,7 @@ class SyncedSessionReclamationTest {
         HealthCheckManager health = new HealthCheckManager(cm, storage,
                 new ConnectionLifecycle(cm, storage, distro));
 
-        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)), List.of());
+        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
         ageReplica("remote", WINDOW_MS + 1_000);
         events.clear();
 
