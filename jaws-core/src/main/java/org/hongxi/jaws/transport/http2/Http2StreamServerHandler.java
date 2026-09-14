@@ -355,6 +355,11 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                                     .status(Http2Constants.STATUS_OK)
                                     .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE);
                             ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
+                            // Release the in-flight counter and RpcContext only after
+                            // the response frame has been committed to the wire, so
+                            // that graceful-shutdown drain observes the true
+                            // in-flight count and the client has actually received
+                            // the response before the server counts it as done.
                             ctx.writeAndFlush(new DefaultHttp2DataFrame(
                                     Unpooled.wrappedBuffer(responseBytes), true))
                                     .addListener(f -> {
@@ -362,10 +367,17 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                                             log.error("Failed to write unary response: requestId={}",
                                                     request.getRequestId(), f.cause());
                                         }
+                                        RpcContext.destroy();
+                                        inflightRequests.decrementAndGet();
                                     });
                         } catch (Exception e) {
                             throw new CompletionException(e);
                         }
+                    } else {
+                        // Channel already closed — no write will happen, so
+                        // release the counter and context synchronously.
+                        RpcContext.destroy();
+                        inflightRequests.decrementAndGet();
                     }
                 })
                 .exceptionally(e -> {
@@ -373,11 +385,11 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                             request.getRequestId(), e);
                     sendError(ctx, Http2Constants.STATUS_INTERNAL_ERROR,
                             "Failed to encode response: " + e.getMessage());
-                    return null;
-                })
-                .whenComplete((v, e) -> {
+                    // Encoding failed before any response write; release here
+                    // since the thenAccept listener will not fire.
                     RpcContext.destroy();
                     inflightRequests.decrementAndGet();
+                    return null;
                 });
     }
 
