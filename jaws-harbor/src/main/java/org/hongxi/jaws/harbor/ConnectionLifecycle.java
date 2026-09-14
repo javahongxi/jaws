@@ -7,9 +7,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * The single authoritative client-connection closure transaction, the harbor
- * counterpart of Nacos's {@code ConnectionManager} handling a
- * {@code ClientConnectionUnregisterEvent}: ONE place that performs every
- * side effect of a client connection going away, in the one correct order.
+ * counterpart of Nacos's
+ * {@code ConnectionBasedClientManager.clientDisconnected(String)}
+ * (naming/core/v2/client/manager/impl/ConnectionBasedClientManager.java):
+ * ONE place that performs every side effect of a client connection going away,
+ * in the one correct order. Nacos reaches that same single entry from both its
+ * disconnect listener and its {@code ExpiredClientCleaner} watchdog — which is
+ * precisely the property this class encodes.
  * <p>
  * Three independent signals observe a closure — the bi-stream {@code onError}/
  * {@code onCompleted} (stream dies first), {@code channelInactive} from
