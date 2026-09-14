@@ -123,7 +123,7 @@ public class HarborServer {
         // re-publish the client, so reuse the coalesced outbound sync path that
         // registration changes already take. (distroProtocol is assigned below;
         // the hook only fires once the server is serving.)
-        this.serviceStorage = new ServiceStorage(this::notifySubscriber, this.connectionManager,
+        this.serviceStorage = new ServiceStorage(this.connectionManager, this::onServiceChange,
                 this::syncClientDataToPeers);
         this.pushEngine = new PushDelayTaskEngine(this.serviceStorage, this.connectionManager);
 
@@ -250,87 +250,6 @@ public class HarborServer {
         clusterManager.addMember(new ClusterMember(address));
         log.info("[harbor] cluster member added: {} (cluster size={})",
                 address, clusterManager.size());
-    }
-
-    // ========================================================================
-    // Payload helpers
-    // ========================================================================
-
-    /**
-     * Deserialize the Payload body into a typed request object.
-     */
-    static <T extends Request> T parseBody(Payload payload, Class<T> clazz) {
-        byte[] bytes = payload.getBody().getValue().toByteArray();
-        if (bytes.length == 0) {
-            try {
-                return clazz.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to create empty " + clazz.getSimpleName(), e);
-            }
-        }
-        return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), clazz);
-    }
-
-    /**
-     * Build a Payload envelope wrapping a typed response object.
-     */
-    static Payload buildPayload(String type, Response response) {
-        byte[] jsonBytes = JSON.toJSONBytes(response);
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(type)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
-    }
-
-    /**
-     * Build a Payload envelope wrapping a typed response object with clientIp.
-     */
-    static Payload buildPayload(String type, Response response, String clientIp) {
-        byte[] jsonBytes = JSON.toJSONBytes(response);
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(type)
-                        .setClientIp(clientIp)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
-    }
-
-    /**
-     * Build a Payload envelope wrapping a typed push request object.
-     */
-    static Payload buildPushPayload(String type, Request pushRequest) {
-        byte[] jsonBytes = JSON.toJSONBytes(pushRequest);
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(type)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
-    }
-
-    /**
-     * Build an error response
-     */
-    static Payload buildErrorResponse(String responseType, String message) {
-        record ErrorResponse(String message) {}
-        byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(responseType)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
     }
 
     // ========================================================================
@@ -723,22 +642,103 @@ public class HarborServer {
         return buildPayload(TYPE_DISTRO_SNAPSHOT_RESPONSE, response);
     }
 
+    // ========================================================================
+    // Consumers or Listeners
+    // ========================================================================
+
     private void syncClientDataToPeers(String connId) {
         // Coalesced, latest-state outbound sync: bursts on this client merge into one
         // push that re-reads the client's current full state at fire time.
         distroProtocol.requestSyncChange(connId);
     }
 
-    // ========================================================================
-    // Subscriber notification (server push via BiStream)
-    // ========================================================================
-
-    private void notifySubscriber(String namespace, String group, String serviceName) {
+    private void onServiceChange(String namespace, String group, String serviceName) {
         // Register that this service changed. The PushDelayTaskEngine coalesces every
         // per-subscriber callback into ONE service-level task and, at fire time,
         // re-reads the CURRENT ServiceInfo and the live subscriber set. No per-connection
         // snapshot is cached: caching and resending a snapshot is exactly what risked
         // regressing a client to stale state when retries arrived out of order.
         pushEngine.requestPush(namespace, group, serviceName);
+    }
+
+    // ========================================================================
+    // Payload helpers
+    // ========================================================================
+
+    /**
+     * Deserialize the Payload body into a typed request object.
+     */
+    static <T extends Request> T parseBody(Payload payload, Class<T> clazz) {
+        byte[] bytes = payload.getBody().getValue().toByteArray();
+        if (bytes.length == 0) {
+            try {
+                return clazz.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to create empty " + clazz.getSimpleName(), e);
+            }
+        }
+        return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), clazz);
+    }
+
+    /**
+     * Build a Payload envelope wrapping a typed response object.
+     */
+    static Payload buildPayload(String type, Response response) {
+        byte[] jsonBytes = JSON.toJSONBytes(response);
+        return Payload.newBuilder()
+                .setMetadata(Metadata.newBuilder()
+                        .setType(type)
+                        .build())
+                .setBody(Any.newBuilder()
+                        .setValue(ByteString.copyFrom(jsonBytes))
+                        .build())
+                .build();
+    }
+
+    /**
+     * Build a Payload envelope wrapping a typed response object with clientIp.
+     */
+    static Payload buildPayload(String type, Response response, String clientIp) {
+        byte[] jsonBytes = JSON.toJSONBytes(response);
+        return Payload.newBuilder()
+                .setMetadata(Metadata.newBuilder()
+                        .setType(type)
+                        .setClientIp(clientIp)
+                        .build())
+                .setBody(Any.newBuilder()
+                        .setValue(ByteString.copyFrom(jsonBytes))
+                        .build())
+                .build();
+    }
+
+    /**
+     * Build a Payload envelope wrapping a typed push request object.
+     */
+    static Payload buildPushPayload(String type, Request pushRequest) {
+        byte[] jsonBytes = JSON.toJSONBytes(pushRequest);
+        return Payload.newBuilder()
+                .setMetadata(Metadata.newBuilder()
+                        .setType(type)
+                        .build())
+                .setBody(Any.newBuilder()
+                        .setValue(ByteString.copyFrom(jsonBytes))
+                        .build())
+                .build();
+    }
+
+    /**
+     * Build an error response
+     */
+    static Payload buildErrorResponse(String responseType, String message) {
+        record ErrorResponse(String message) {}
+        byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
+        return Payload.newBuilder()
+                .setMetadata(Metadata.newBuilder()
+                        .setType(responseType)
+                        .build())
+                .setBody(Any.newBuilder()
+                        .setValue(ByteString.copyFrom(jsonBytes))
+                        .build())
+                .build();
     }
 }

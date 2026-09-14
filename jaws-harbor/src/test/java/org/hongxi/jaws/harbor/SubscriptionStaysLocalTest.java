@@ -68,7 +68,7 @@ class SubscriptionStaysLocalTest {
     @BeforeEach
     void setUp() {
         cm = new ConnectionManager();
-        storage = new ServiceStorage((ns, g, svc) -> { }, cm);
+        storage = new ServiceStorage(cm, (ns, g, svc) -> { });
         ClusterManager cluster = new ClusterManager(new URL("grpc", "10.0.0.1", 9848, ""));
         cluster.addMember(new ClusterMember("10.0.0.1:9848"));   // self
         cluster.addMember(new ClusterMember("10.0.0.2:9848"));   // one peer to replicate to

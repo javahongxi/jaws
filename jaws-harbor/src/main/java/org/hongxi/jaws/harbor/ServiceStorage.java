@@ -60,8 +60,9 @@ public class ServiceStorage {
      */
     private final Map<String, ServiceInfo> serviceDataIndexes = new ConcurrentHashMap<>();
 
-    private final SubscriberListener listener;
     private final ConnectionManager connectionManager;
+
+    private final ServiceChangeListener changeListener;
 
     /**
      * Called with the clientId whose HEALTH flipped (unhealthy ↔ healthy), so the
@@ -72,14 +73,16 @@ public class ServiceStorage {
      */
     private final Consumer<String> healthTransitionNotifier;
 
-    public ServiceStorage(SubscriberListener listener, ConnectionManager connectionManager) {
-        this(listener, connectionManager, clientId -> { });
+    public ServiceStorage(ConnectionManager connectionManager,
+                          ServiceChangeListener changeListener) {
+        this(connectionManager, changeListener, clientId -> { });
     }
 
-    public ServiceStorage(SubscriberListener listener, ConnectionManager connectionManager,
+    public ServiceStorage(ConnectionManager connectionManager,
+                          ServiceChangeListener changeListener,
                           Consumer<String> healthTransitionNotifier) {
-        this.listener = listener;
         this.connectionManager = connectionManager;
+        this.changeListener = changeListener;
         this.healthTransitionNotifier = healthTransitionNotifier;
     }
 
@@ -120,7 +123,7 @@ public class ServiceStorage {
         invalidateServiceCache(key);
         log.info("[harbor] instance registered: {} -> {}:{}",
                 key, instance.getIp(), instance.getPort());
-        listener.onServiceChange(namespace, group, serviceName);
+        changeListener.onServiceChange(namespace, group, serviceName);
     }
 
     /**
@@ -373,7 +376,7 @@ public class ServiceStorage {
         for (String serviceKey : recoveredServices) {
             String[] parts = splitServiceKey(serviceKey);
             if (parts != null) {
-                listener.onServiceChange(parts[0], parts[1], parts[2]);
+                changeListener.onServiceChange(parts[0], parts[1], parts[2]);
             }
         }
         if (flipped) {
@@ -428,7 +431,7 @@ public class ServiceStorage {
         for (String serviceKey : affectedServices) {
             String[] parts = splitServiceKey(serviceKey);
             if (parts != null) {
-                listener.onServiceChange(parts[0], parts[1], parts[2]);
+                changeListener.onServiceChange(parts[0], parts[1], parts[2]);
             }
         }
         for (String clientId : flippedClients) {
@@ -774,14 +777,14 @@ public class ServiceStorage {
 
         if (noPublishers && noSubscribers) {
             // Notify subscribers with empty service info before cleaning up
-            listener.onServiceChange(namespace, group, serviceName);
+            changeListener.onServiceChange(namespace, group, serviceName);
             // Remove from all indexes
             publisherIndexes.remove(serviceKey);
             subscriberIndexes.remove(serviceKey);
             invalidateServiceCache(serviceKey);
             log.info("[harbor] empty service cleaned: {}", serviceKey);
         } else if (dataChanged) {
-            listener.onServiceChange(namespace, group, serviceName);
+            changeListener.onServiceChange(namespace, group, serviceName);
         }
     }
 
@@ -818,7 +821,7 @@ public class ServiceStorage {
      * Callback for notifying subscribers of service changes.
      */
     @FunctionalInterface
-    public interface SubscriberListener {
+    public interface ServiceChangeListener {
         void onServiceChange(String namespace, String group, String serviceName);
     }
 }

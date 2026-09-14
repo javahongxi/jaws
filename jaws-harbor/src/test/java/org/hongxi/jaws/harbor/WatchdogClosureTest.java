@@ -93,7 +93,7 @@ class WatchdogClosureTest {
     @BeforeEach
     void setUp() {
         cm = new ConnectionManager();
-        storage = new ServiceStorage((ns, g, svc) -> { }, cm);
+        storage = new ServiceStorage(cm, (ns, g, svc) -> { });
         ClusterManager cluster = new ClusterManager(new URL("harbor", "127.0.0.1", 19848, ""));
         cluster.addMember(newClusterMember(ADDR2));
         transport = new Recording();

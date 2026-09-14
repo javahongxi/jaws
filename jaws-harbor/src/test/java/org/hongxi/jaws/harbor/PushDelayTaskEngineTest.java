@@ -58,7 +58,7 @@ class PushDelayTaskEngineTest {
     @Test
     void requestsAfterShutdownAreDroppedQuietly() {
         ConnectionManager cm = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage((a, b, c) -> { }, cm);
+        ServiceStorage storage = new ServiceStorage(cm, (a, b, c) -> { });
         Recording sub = new Recording();
         cm.register("sub-1", "10.0.0.1", "3.0.0", Map.of(), sub.subject());
         storage.addSubscriber("public", "DEFAULT_GROUP", "svc", "sub-1");
@@ -75,7 +75,7 @@ class PushDelayTaskEngineTest {
     @Test
     void coalescesMultipleChangesIntoOnePushCarryingLatestState() throws Exception {
         ConnectionManager cm = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage((a, b, c) -> { }, cm);
+        ServiceStorage storage = new ServiceStorage(cm, (a, b, c) -> { });
 
         // A publisher connection that owns the instances, and a subscriber whose
         // push subject we record.
@@ -113,7 +113,7 @@ class PushDelayTaskEngineTest {
     @Test
     void readsLatestStateAtFireTimeEvenIfRegisteredAfterRequest() throws Exception {
         ConnectionManager cm = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage((a, b, c) -> { }, cm);
+        ServiceStorage storage = new ServiceStorage(cm, (a, b, c) -> { });
         cm.register("pub-1", "10.0.0.9", "3.0.0", Map.of(), noopSubject());
         Recording sub = new Recording();
         cm.register("sub-1", "10.0.0.1", "3.0.0", Map.of(), sub.subject());

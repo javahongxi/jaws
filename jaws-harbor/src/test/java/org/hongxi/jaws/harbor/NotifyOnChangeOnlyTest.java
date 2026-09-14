@@ -43,7 +43,7 @@ class NotifyOnChangeOnlyTest {
     @BeforeEach
     void setUp() {
         cm = new ConnectionManager();
-        storage = new ServiceStorage((ns, g, svc) -> events.add(ns + "@@" + g + "@@" + svc), cm);
+        storage = new ServiceStorage(cm, (ns, g, svc) -> events.add(ns + "@@" + g + "@@" + svc));
     }
 
     private static Instance instance(String ip, int port) {
