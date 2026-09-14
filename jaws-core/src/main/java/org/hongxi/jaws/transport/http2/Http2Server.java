@@ -15,9 +15,9 @@ import org.hongxi.jaws.transport.MessageHandler;
  * serialized response back on the same stream.
  * <p>
  * Unlike {@code NettyServer}, this server does not use the Jaws binary protocol
- * or its {@link org.hongxi.jaws.transport.Codec}: HTTP/2 framing and flow control
- * are provided by Netty, while business payloads keep using the Jaws
- * {@link org.hongxi.jaws.serialization.Serialization} SPI.
+ * or its {@link org.hongxi.jaws.transport.netty.JawsCodec}: HTTP/2 framing and
+ * flow control are provided by Netty, while business payloads keep using the
+ * Jaws {@link org.hongxi.jaws.serialization.Serialization} SPI.
  * <p>
  * Supports both unary and server-streaming invocations. Server streaming is
  * detected via the {@code x-jaws-streaming} header and dispatched to the
@@ -55,5 +55,14 @@ public class Http2Server extends AbstractHttp2Server {
         streamChannel.pipeline().addLast(new Http2StreamServerHandler(
                 messageHandler, serverExecutor,
                 serializationName, inflightRequests, maxContentLength));
+    }
+
+    /**
+     * Package-private: lets same-package tests submit probe tasks onto the
+     * business executor (e.g. to verify per-thread lifecycle pairing of
+     * RpcContext init/destroy around a unary call).
+     */
+    java.util.concurrent.ExecutorService serverExecutor() {
+        return serverExecutor;
     }
 }

@@ -355,11 +355,11 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                                     .status(Http2Constants.STATUS_OK)
                                     .set(Http2Constants.HEADER_CONTENT_TYPE, Http2Constants.CONTENT_TYPE);
                             ctx.write(new DefaultHttp2HeadersFrame(respHeaders));
-                            // Release the in-flight counter and RpcContext only after
-                            // the response frame has been committed to the wire, so
-                            // that graceful-shutdown drain observes the true
-                            // in-flight count and the client has actually received
-                            // the response before the server counts it as done.
+                            // Release the in-flight counter only after the response
+                            // frame has been committed to the wire, so that
+                            // graceful-shutdown drain observes the true in-flight
+                            // count and the client has actually received the
+                            // response before the server counts it as done.
                             ctx.writeAndFlush(new DefaultHttp2DataFrame(
                                     Unpooled.wrappedBuffer(responseBytes), true))
                                     .addListener(f -> {
@@ -367,9 +367,16 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                                             log.error("Failed to write unary response: requestId={}",
                                                     request.getRequestId(), f.cause());
                                         }
-                                        RpcContext.destroy();
                                         inflightRequests.decrementAndGet();
                                     });
+                            // The RpcContext ThreadLocal was created by init() on
+                            // this (completing) thread when dispatch() ran on the
+                            // business executor; the write listener above fires on
+                            // the event-loop thread, so destroy() must happen here
+                            // rather than in the listener — removing a ThreadLocal
+                            // from the wrong thread would leave the stale context
+                            // pinned on this pooled business thread.
+                            RpcContext.destroy();
                         } catch (Exception e) {
                             throw new CompletionException(e);
                         }
