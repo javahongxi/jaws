@@ -1,6 +1,7 @@
 package org.hongxi.jaws.harbor;
 
 import org.hongxi.jaws.harbor.model.ServiceInfo;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.slf4j.Logger;
@@ -56,8 +57,8 @@ public class PushDelayTaskEngine {
                 return t;
             });
 
-    /** serviceKey -> the single in-flight task for it; presence = coalescing lock. */
-    private final Map<String, PendingPush> pending = new ConcurrentHashMap<>();
+    /** service → the single in-flight task for it; presence = coalescing lock. */
+    private final Map<ServiceKey, PendingPush> pending = new ConcurrentHashMap<>();
 
     public PushDelayTaskEngine(ServiceStorage serviceStorage, ConnectionManager connectionManager) {
         this.serviceStorage = serviceStorage;
@@ -69,14 +70,13 @@ public class PushDelayTaskEngine {
      * this service is already scheduled, this is a no-op — that pending push will
      * re-read the latest state when it fires, so it already covers this change.
      */
-    public void requestPush(String namespace, String group, String serviceName) {
-        String serviceKey = serviceKey(namespace, group, serviceName);
+    public void requestPush(ServiceKey service) {
         if (closed) {
-            log.debug("[harbor] push request dropped, engine closed: {}", serviceKey);
+            log.debug("[harbor] push request dropped, engine closed: {}", service);
             return;
         }
-        pending.computeIfAbsent(serviceKey, k -> {
-            PendingPush task = new PendingPush(namespace, group, serviceName);
+        pending.computeIfAbsent(service, k -> {
+            PendingPush task = new PendingPush(k);
             task.future = scheduleQuietly(k, () -> doPush(k), MERGE_DELAY_MS);
             return task;
         });
@@ -92,51 +92,51 @@ public class PushDelayTaskEngine {
      *
      * @return the scheduled future, or {@code null} if the engine is shutting down
      */
-    private java.util.concurrent.ScheduledFuture<?> scheduleQuietly(String serviceKey,
+    private java.util.concurrent.ScheduledFuture<?> scheduleQuietly(ServiceKey service,
                                                                     Runnable task, long delayMs) {
         try {
             return scheduler.schedule(task, delayMs, TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.RejectedExecutionException e) {
-            log.debug("[harbor] push scheduling rejected, engine closing: {}", serviceKey);
+            log.debug("[harbor] push scheduling rejected, engine closing: {}", service);
             return null;
         }
     }
 
-    private void doPush(String serviceKey) {
-        PendingPush task = pending.remove(serviceKey);
+    private void doPush(ServiceKey service) {
+        PendingPush task = pending.remove(service);
         if (task == null) {
             return;
         }
         try {
             // Re-read the CURRENT state at fire time — the whole point of reconcile.
             ServiceInfo latest = serviceStorage.buildServiceInfo(
-                    task.namespace, task.group, task.serviceName);
+                    service.namespace(), service.group(), service.name());
 
             NotifySubscriberRequest push = new NotifySubscriberRequest();
-            push.setNamespace(task.namespace);
-            push.setServiceName(task.serviceName);
-            push.setGroupName(task.group);
+            push.setNamespace(service.namespace());
+            push.setServiceName(service.name());
+            push.setGroupName(service.group());
             push.setServiceInfo(latest);
 
             Payload payload = HarborServer.buildPushPayload(
                     TYPE_NOTIFY_SUBSCRIBER_REQUEST, push);
 
-            for (String connId : serviceStorage.getSubscriberConnections(serviceKey)) {
+            for (String connId : serviceStorage.getSubscriberConnections(service)) {
                 // pushToConnection returns false only when the connection is gone;
                 // a gone client re-subscribes on reconnect, so skip — do not retry.
                 boolean connected = connectionManager.pushToConnection(connId, payload);
                 if (!connected) {
                     log.debug("[harbor] push skipped, connection gone: connId={}, service={}",
-                            connId, serviceKey);
+                            connId, service);
                 }
             }
         } catch (Exception e) {
             // Unexpected error in the pass itself (not a "connection gone"): re-enqueue.
             log.warn("[harbor] push pass failed for {}, re-enqueue in {}ms",
-                    serviceKey, RETRY_DELAY_MS, e);
-            task.future = scheduleQuietly(serviceKey, () -> doPush(serviceKey), RETRY_DELAY_MS);
+                    service, RETRY_DELAY_MS, e);
+            task.future = scheduleQuietly(service, () -> doPush(service), RETRY_DELAY_MS);
             if (task.future != null) {
-                pending.put(serviceKey, task);
+                pending.put(service, task);
             }
         }
     }
@@ -149,21 +149,13 @@ public class PushDelayTaskEngine {
         pending.clear();
     }
 
-    private static String serviceKey(String namespace, String group, String serviceName) {
-        return namespace + "@@" + group + "@@" + serviceName;
-    }
-
     /** A coalesced, in-flight push for one service. */
     private static final class PendingPush {
-        final String namespace;
-        final String group;
-        final String serviceName;
+        final ServiceKey service;
         volatile ScheduledFuture<?> future;
 
-        PendingPush(String namespace, String group, String serviceName) {
-            this.namespace = namespace;
-            this.group = group;
-            this.serviceName = serviceName;
+        PendingPush(ServiceKey service) {
+            this.service = service;
         }
     }
 }

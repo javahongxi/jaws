@@ -2,6 +2,7 @@ package org.hongxi.jaws.harbor;
 
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,10 +25,13 @@ import java.util.function.Consumer;
  *   <li><b>Layer 1 — ClientSession</b> (source of truth): each client connection
  *       owns its published instances and subscriptions.  Instance data lives
  *       exclusively here.</li>
- *   <li><b>Layer 2 — lightweight indexes</b>: {@code publisherIndexes} maps
- *       serviceKey → Set&lt;clientId&gt; and {@code subscriberIndexes} maps
- *       serviceKey → Set&lt;clientId&gt;.  These are ID-only reverse indexes
- *       used to locate which clients are involved in a service.</li>
+ *   <li><b>Layer 2 — lightweight indexes</b>: {@code publisherIndexes} and
+ *       {@code subscriberIndexes} both map {@link ServiceKey} → Set&lt;clientId&gt;.
+ *       They are ID-only reverse indexes, but they differ in scope: the publisher
+ *       index covers clients this node holds <em>and</em> replicas replicated from
+ *       peers (any node must be able to answer a routing query), while the subscriber
+ *       index holds only connections terminating here — see
+ *       {@code doc/harbor-vs-nacos.md} §2.5.</li>
  * </ul>
  * Reading service instances aggregates from ClientSession publishers via the
  * publisher index — matching Nacos's {@code ServiceStorage.getAllInstancesFromIndex()}.
@@ -41,24 +45,27 @@ public class ServiceStorage {
     private static final Logger log = LoggerFactory.getLogger(ServiceStorage.class);
 
     /**
-     * Publisher reverse index: serviceKey → Set&lt;clientId&gt;.
+     * Publisher reverse index: service → Set&lt;clientId&gt;.
      * Only stores client IDs, not Instance data — matching Nacos's
      * {@code ClientServiceIndexesManager.publisherIndexes}.
      */
-    private final Map<String, Set<String>> publisherIndexes = new ConcurrentHashMap<>();
+    private final Map<ServiceKey, Set<String>> publisherIndexes = new ConcurrentHashMap<>();
 
     /**
-     * Subscriber reverse index: serviceKey → Set&lt;clientId&gt;.
+     * Subscriber reverse index: service → Set&lt;clientId&gt;. Shard-local by
+     * construction: only connections this node holds are ever added (see
+     * {@code doc/harbor-vs-nacos.md} §2.5).
      */
-    private final Map<String, Set<String>> subscriberIndexes = new ConcurrentHashMap<>();
+    private final Map<ServiceKey, Set<String>> subscriberIndexes = new ConcurrentHashMap<>();
 
     /**
-     * Read cache: serviceKey → aggregated {@link ServiceInfo}.
-     * Matches Nacos {@code ServiceStorage.serviceDataIndexes}.
+     * Read cache: service → aggregated {@link ServiceInfo}.
+     * Matches Nacos {@code ServiceStorage.serviceDataIndexes}, which is likewise
+     * keyed by the service object rather than a joined string.
      * Invalidated on every mutation; populated on read via
      * {@link #buildServiceInfo}.
      */
-    private final Map<String, ServiceInfo> serviceDataIndexes = new ConcurrentHashMap<>();
+    private final Map<ServiceKey, ServiceInfo> serviceDataIndexes = new ConcurrentHashMap<>();
 
     private final ConnectionManager connectionManager;
 
@@ -102,7 +109,7 @@ public class ServiceStorage {
      */
     public void registerInstance(String namespace, String group, String serviceName,
                                  Instance instance, String connectionId) {
-        String key = buildKey(namespace, group, serviceName);
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
 
         // Set heartbeat timestamps
         long currentTime = System.currentTimeMillis();
@@ -123,7 +130,7 @@ public class ServiceStorage {
         invalidateServiceCache(key);
         log.info("[harbor] instance registered: {} -> {}:{}",
                 key, instance.getIp(), instance.getPort());
-        changeListener.onServiceChange(namespace, group, serviceName);
+        changeListener.onServiceChange(key);
     }
 
     /**
@@ -131,7 +138,7 @@ public class ServiceStorage {
      */
     public void deregisterInstance(String namespace, String group, String serviceName,
                                    Instance instance, String connectionId) {
-        String key = buildKey(namespace, group, serviceName);
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
         String ip = instance.getIp();
         int port = instance.getPort();
 
@@ -151,7 +158,7 @@ public class ServiceStorage {
                         }
                     }
                     log.info("[harbor] instance deregistered: {} -> {}:{}", key, ip, port);
-                    checkAndCleanEmptyService(key, namespace, group, serviceName, true);
+                    checkAndCleanEmptyService(key, true);
                     return;
                 }
             }
@@ -170,13 +177,13 @@ public class ServiceStorage {
      * matching Nacos's {@code ServiceStorage.getAllInstancesFromIndex()}.
      */
     public List<Instance> getInstances(String namespace, String group, String serviceName) {
-        return aggregateInstances(buildKey(namespace, group, serviceName));
+        return aggregateInstances(ServiceKey.of(namespace, group, serviceName));
     }
 
     /**
-     * Aggregate instances for a serviceKey from all ClientSession publishers.
+     * Aggregate instances for a service from all ClientSession publishers.
      */
-    private List<Instance> aggregateInstances(String serviceKey) {
+    private List<Instance> aggregateInstances(ServiceKey serviceKey) {
         Set<String> clientIds = publisherIndexes.get(serviceKey);
         if (clientIds == null || clientIds.isEmpty()) {
             return List.of();
@@ -200,7 +207,7 @@ public class ServiceStorage {
      */
     public void addSubscriber(String namespace, String group, String serviceName,
                               String connectionId) {
-        String key = buildKey(namespace, group, serviceName);
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
         subscriberIndexes.computeIfAbsent(key, k -> new CopyOnWriteArraySet<>())
                 .add(connectionId);
         ClientSession session = connectionManager.getClientSession(connectionId);
@@ -215,7 +222,7 @@ public class ServiceStorage {
      */
     public void removeSubscriber(String namespace, String group, String serviceName,
                                  String connectionId) {
-        String key = buildKey(namespace, group, serviceName);
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
         Set<String> subscribers = subscriberIndexes.get(key);
         if (subscribers != null) {
             subscribers.remove(connectionId);
@@ -228,17 +235,17 @@ public class ServiceStorage {
             session.removeSubscriber(key);
         }
         // Unsubscribe only: nothing routable changed for the subscribers that stay.
-        checkAndCleanEmptyService(key, namespace, group, serviceName, false);
+        checkAndCleanEmptyService(key, false);
     }
 
     /**
      * Remove all subscriber entries for a given connection (on disconnect).
      */
     public void removeAllSubscribersForConnection(String connectionId) {
-        Set<String> affectedServices = new HashSet<>();
+        Set<ServiceKey> affectedServices = new HashSet<>();
         ClientSession session = connectionManager.getClientSession(connectionId);
         if (session != null) {
-            for (String serviceKey : session.getAllSubscribedServices()) {
+            for (ServiceKey serviceKey : session.getAllSubscribedServices()) {
                 Set<String> subscribers = subscriberIndexes.get(serviceKey);
                 if (subscribers != null) {
                     subscribers.remove(connectionId);
@@ -250,7 +257,7 @@ public class ServiceStorage {
             }
         } else {
             // Fallback: scan all subscriber entries
-            for (Map.Entry<String, Set<String>> entry : subscriberIndexes.entrySet()) {
+            for (Map.Entry<ServiceKey, Set<String>> entry : subscriberIndexes.entrySet()) {
                 entry.getValue().remove(connectionId);
                 if (entry.getValue().isEmpty()) {
                     subscriberIndexes.remove(entry.getKey());
@@ -259,11 +266,9 @@ public class ServiceStorage {
             }
         }
         // Check affected services for emptiness — no instance was removed, so no re-push
-        for (String serviceKey : affectedServices) {
-            String[] parts = splitServiceKey(serviceKey);
-            if (parts != null) {
-                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], false); // unsubscribe sweep: nothing routable changed
-            }
+        for (ServiceKey serviceKey : affectedServices) {
+            // unsubscribe sweep: nothing routable changed
+            checkAndCleanEmptyService(serviceKey, false);
         }
     }
 
@@ -272,15 +277,13 @@ public class ServiceStorage {
     // ========================================================================
 
     /**
-     * List all registered service names.
+     * List all registered service names in a tenant/group pair.
      */
     public List<String> listServices(String namespace, String group) {
-        String prefix = namespace + "@@" + group + "@@";
         List<String> result = new ArrayList<>();
-        for (String key : publisherIndexes.keySet()) {
-            if (key.startsWith(prefix)) {
-                String serviceName = key.substring(prefix.length());
-                result.add(serviceName);
+        for (ServiceKey key : publisherIndexes.keySet()) {
+            if (key.namespace().equals(namespace) && key.group().equals(group)) {
+                result.add(key.name());
             }
         }
         return result;
@@ -290,14 +293,14 @@ public class ServiceStorage {
      * Build a {@link ServiceInfo} for the given service, including all instances.
      */
     public ServiceInfo buildServiceInfo(String namespace, String group, String serviceName) {
-        String key = buildKey(namespace, group, serviceName);
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
         ServiceInfo cached = serviceDataIndexes.get(key);
         if (cached != null) {
             return cached;
         }
 
         List<Instance> instances = aggregateInstances(key);
-        String groupedName = group + "@@" + serviceName;
+        String groupedName = key.groupedName();
 
         ServiceInfo info = new ServiceInfo();
         info.setName(groupedName);
@@ -329,11 +332,12 @@ public class ServiceStorage {
     }
 
     /**
-     * Read-only view of the connections currently subscribed to a service, keyed by
-     * {@code "namespace@@group@@serviceName"}. The push engine re-reads this at fire
-     * time so it always targets the live subscriber set, not a stale one.
+     * Read-only view of the connections currently subscribed to a service. The push
+     * engine re-reads this at fire time so it always targets the live subscriber set,
+     * not a stale one — and only ever this node's connections (shard-local, see
+     * {@code doc/harbor-vs-nacos.md} §2.5).
      */
-    public Set<String> getSubscriberConnections(String serviceKey) {
+    public Set<String> getSubscriberConnections(ServiceKey serviceKey) {
         Set<String> subscribers = subscriberIndexes.get(serviceKey);
         return subscribers == null ? Set.of() : Set.copyOf(subscribers);
     }
@@ -358,9 +362,9 @@ public class ServiceStorage {
             return;
         }
         long now = System.currentTimeMillis();
-        Set<String> recoveredServices = new HashSet<>();
+        Set<ServiceKey> recoveredServices = new HashSet<>();
         boolean flipped = false;
-        for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
+        for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
             for (Instance inst : entry.getValue()) {
                 inst.setLastBeat(now);
                 // Beat recovered: clear a prior unhealthy mark and re-announce,
@@ -373,11 +377,8 @@ public class ServiceStorage {
                 }
             }
         }
-        for (String serviceKey : recoveredServices) {
-            String[] parts = splitServiceKey(serviceKey);
-            if (parts != null) {
-                changeListener.onServiceChange(parts[0], parts[1], parts[2]);
-            }
+        for (ServiceKey serviceKey : recoveredServices) {
+            changeListener.onServiceChange(serviceKey);
         }
         if (flipped) {
             // Recovery must travel as hard as the outage: a replica left unhealthy
@@ -397,7 +398,7 @@ public class ServiceStorage {
      */
     public void markUnhealthyStale(long timeoutMs) {
         long now = System.currentTimeMillis();
-        Set<String> affectedServices = new HashSet<>();
+        Set<ServiceKey> affectedServices = new HashSet<>();
         Set<String> flippedClients = new HashSet<>();
         for (ClientSession session : connectionManager.allClientSessions()) {
             // Only the node HOLDING the connection may judge health. A replica's
@@ -409,7 +410,7 @@ public class ServiceStorage {
                 continue;
             }
             boolean flipped = false;
-            for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
+            for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
                 for (Instance inst : entry.getValue()) {
                     long lastBeat = inst.getLastBeat();
                     if (inst.isHealthy() && lastBeat > 0 && now - lastBeat > timeoutMs) {
@@ -428,11 +429,8 @@ public class ServiceStorage {
                 flippedClients.add(session.getClientId());
             }
         }
-        for (String serviceKey : affectedServices) {
-            String[] parts = splitServiceKey(serviceKey);
-            if (parts != null) {
-                changeListener.onServiceChange(parts[0], parts[1], parts[2]);
-            }
+        for (ServiceKey serviceKey : affectedServices) {
+            changeListener.onServiceChange(serviceKey);
         }
         for (String clientId : flippedClients) {
             healthTransitionNotifier.accept(clientId);
@@ -443,14 +441,14 @@ public class ServiceStorage {
      * Find all ephemeral instances whose last heartbeat exceeds the timeout.
      *
      * @param timeoutMs the heartbeat timeout in milliseconds
-     * @return list of expired instance descriptors (serviceKey + ip + port)
+     * @return list of expired instance descriptors (service + ip + port)
      */
     public List<ExpiredInstance> getExpiredInstances(long timeoutMs) {
         long now = System.currentTimeMillis();
         List<ExpiredInstance> expired = new ArrayList<>();
         for (ClientSession session : connectionManager.allClientSessions()) {
-            for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
-                String serviceKey = entry.getKey();
+            for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
+                ServiceKey serviceKey = entry.getKey();
                 for (Instance inst : entry.getValue()) {
                     long lastBeat = inst.getLastBeat();
                     if (lastBeat > 0 && now - lastBeat > timeoutMs) {
@@ -466,7 +464,7 @@ public class ServiceStorage {
      * Remove a specific instance identified by ip:port from the given service.
      * Notifies subscribers if the instance was actually removed.
      */
-    public void removeInstanceByIpPort(String serviceKey, String ip, int port) {
+    public void removeInstanceByIpPort(ServiceKey serviceKey, String ip, int port) {
         Set<String> clientIds = publisherIndexes.get(serviceKey);
         if (clientIds == null) {
             return;
@@ -486,11 +484,8 @@ public class ServiceStorage {
                         }
                     }
                     invalidateServiceCache(serviceKey);
-                    String[] parts = splitServiceKey(serviceKey);
-                    if (parts != null) {
-                        log.info("[harbor] expired instance removed: {} -> {}:{}", serviceKey, ip, port);
-                        checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], true);
-                    }
+                    log.info("[harbor] expired instance removed: {} -> {}:{}", serviceKey, ip, port);
+                    checkAndCleanEmptyService(serviceKey, true);
                     return;
                 }
             }
@@ -516,8 +511,8 @@ public class ServiceStorage {
             return 0;
         }
         int totalRemoved = 0;
-        for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
-            String serviceKey = entry.getKey();
+        for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
+            ServiceKey serviceKey = entry.getKey();
             int count = entry.getValue().size();
             totalRemoved += count;
             session.removeAllInstances(serviceKey);
@@ -530,12 +525,9 @@ public class ServiceStorage {
                 }
             }
             invalidateServiceCache(serviceKey);
-            String[] parts = splitServiceKey(serviceKey);
-            if (parts != null) {
-                log.info("[harbor] instance(s) deregistered on disconnect: {} -> connId={} ({} instance(s))",
-                        serviceKey, connectionId, count);
-                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], true);
-            }
+            log.info("[harbor] instance(s) deregistered on disconnect: {} -> connId={} ({} instance(s))",
+                    serviceKey, connectionId, count);
+            checkAndCleanEmptyService(serviceKey, true);
         }
         return totalRemoved;
     }
@@ -543,22 +535,22 @@ public class ServiceStorage {
     /**
      * Descriptor for an expired instance returned by {@link #getExpiredInstances}.
      */
-    public record ExpiredInstance(String serviceKey, String ip, int port) {}
+    public record ExpiredInstance(ServiceKey serviceKey, String ip, int port) {}
 
     // ========================================================================
     // Distro protocol support
     // ========================================================================
 
     /**
-     * Get all instance data aggregated from ClientSessions, grouped by serviceKey.
-     * Used by the HTTP management API.
+     * Get all instance data aggregated from ClientSessions, grouped by service key.
+     * Used by the HTTP management API, which speaks the joined string form.
      */
     public Map<String, List<Instance>> getAllInstanceData() {
         Map<String, List<Instance>> result = new HashMap<>();
-        for (String serviceKey : publisherIndexes.keySet()) {
+        for (ServiceKey serviceKey : publisherIndexes.keySet()) {
             List<Instance> instances = aggregateInstances(serviceKey);
             if (!instances.isEmpty()) {
-                result.put(serviceKey, instances);
+                result.put(serviceKey.toKeyString(), instances);
             }
         }
         return result;
@@ -597,9 +589,9 @@ public class ServiceStorage {
         }
         List<String> serviceKeys = new ArrayList<>();
         List<Instance> instances = new ArrayList<>();
-        for (Map.Entry<String, List<Instance>> entry : session.getAllPublishers().entrySet()) {
+        for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
             for (Instance inst : entry.getValue()) {
-                serviceKeys.add(entry.getKey());
+                serviceKeys.add(entry.getKey().toKeyString());
                 instances.add(inst);
             }
         }
@@ -646,7 +638,10 @@ public class ServiceStorage {
         List<Instance> instances = data.getInstances();
         if (serviceKeys != null && instances != null) {
             for (int i = 0; i < serviceKeys.size() && i < instances.size(); i++) {
-                String serviceKey = serviceKeys.get(i);
+                // Wire form is the joined string; parse it once here. A malformed key
+                // throws, which onSync reports as a failed apply rather than indexing
+                // data under a wrong service.
+                ServiceKey serviceKey = ServiceKey.parse(serviceKeys.get(i));
                 Instance instance = instances.get(i);
                 instance.setConnectionId(clientId);
                 session.addInstance(serviceKey, instance);
@@ -675,7 +670,8 @@ public class ServiceStorage {
      * When the node owning a client's connection dies, that client can never be
      * announced again: no beat reaches this node, no Distro DELETE arrives, and the
      * connection watchdog cannot see the replica at all (a synced session has no
-     * {@code lastActiveTime} entry). Without this pass the {@link ClientSession} shell
+     * {@code ConnectionRecord}, and liveness rides on that record's own clock).
+     * Without this pass the {@link ClientSession} shell
      * and its reverse-index entries survive for the process lifetime — a subscriber-only
      * replica is invisible to every beat-based tier, so it leaks outright.
      * <p>
@@ -719,16 +715,14 @@ public class ServiceStorage {
         if (session == null) {
             return;
         }
-        Set<String> affectedServices = new HashSet<>(session.getAllPublishedServices());
+        Set<ServiceKey> affectedServices = new HashSet<>(session.getAllPublishedServices());
         removeClientFromIndexes(clientId);
         session.release();
         connectionManager.removeClientSession(clientId);
         // Check affected services for emptiness after removing this client\u2019s instances
-        for (String serviceKey : affectedServices) {
-            String[] parts = splitServiceKey(serviceKey);
-            if (parts != null) {
-                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], true); // dropping a synced client removes its instances
-            }
+        for (ServiceKey serviceKey : affectedServices) {
+            // dropping a synced client removes its instances
+            checkAndCleanEmptyService(serviceKey, true);
         }
         log.info("[harbor] removed synced client: {}", clientId);
     }
@@ -738,13 +732,13 @@ public class ServiceStorage {
      * Cleans up empty entries.
      */
     private void removeClientFromIndexes(String clientId) {
-        for (Map.Entry<String, Set<String>> entry : publisherIndexes.entrySet()) {
+        for (Map.Entry<ServiceKey, Set<String>> entry : publisherIndexes.entrySet()) {
             entry.getValue().remove(clientId);
             if (entry.getValue().isEmpty()) {
                 publisherIndexes.remove(entry.getKey());
             }
         }
-        for (Map.Entry<String, Set<String>> entry : subscriberIndexes.entrySet()) {
+        for (Map.Entry<ServiceKey, Set<String>> entry : subscriberIndexes.entrySet()) {
             entry.getValue().remove(clientId);
             if (entry.getValue().isEmpty()) {
                 subscriberIndexes.remove(entry.getKey());
@@ -767,9 +761,7 @@ public class ServiceStorage {
      * @param dataChanged {@code true} when the caller mutated this service's instance
      *                    set, {@code false} for a pure index/lifetime cleanup pass
      */
-    private void checkAndCleanEmptyService(String serviceKey, String namespace,
-                                            String group, String serviceName,
-                                            boolean dataChanged) {
+    private void checkAndCleanEmptyService(ServiceKey serviceKey, boolean dataChanged) {
         Set<String> publishers = publisherIndexes.get(serviceKey);
         Set<String> subscribers = subscriberIndexes.get(serviceKey);
         boolean noPublishers = publishers == null || publishers.isEmpty();
@@ -777,14 +769,14 @@ public class ServiceStorage {
 
         if (noPublishers && noSubscribers) {
             // Notify subscribers with empty service info before cleaning up
-            changeListener.onServiceChange(namespace, group, serviceName);
+            changeListener.onServiceChange(serviceKey);
             // Remove from all indexes
             publisherIndexes.remove(serviceKey);
             subscriberIndexes.remove(serviceKey);
             invalidateServiceCache(serviceKey);
             log.info("[harbor] empty service cleaned: {}", serviceKey);
         } else if (dataChanged) {
-            changeListener.onServiceChange(namespace, group, serviceName);
+            changeListener.onServiceChange(serviceKey);
         }
     }
 
@@ -793,28 +785,17 @@ public class ServiceStorage {
      * Called by {@link HealthCheckManager} after instance/connection cleanup.
      */
     public void cleanEmptyServices() {
-        Set<String> allKeys = new HashSet<>();
+        Set<ServiceKey> allKeys = new HashSet<>();
         allKeys.addAll(publisherIndexes.keySet());
         allKeys.addAll(subscriberIndexes.keySet());
-        for (String serviceKey : allKeys) {
-            String[] parts = splitServiceKey(serviceKey);
-            if (parts != null) {
-                checkAndCleanEmptyService(serviceKey, parts[0], parts[1], parts[2], false); // idle sweep must not re-push every service every cycle
-            }
+        for (ServiceKey serviceKey : allKeys) {
+            // idle sweep must not re-push every service every cycle
+            checkAndCleanEmptyService(serviceKey, false);
         }
     }
 
-    private static String[] splitServiceKey(String serviceKey) {
-        String[] parts = serviceKey.split("@@", 3);
-        return parts.length == 3 ? parts : null;
-    }
-
-    private void invalidateServiceCache(String serviceKey) {
+    private void invalidateServiceCache(ServiceKey serviceKey) {
         serviceDataIndexes.remove(serviceKey);
-    }
-
-    private static String buildKey(String namespace, String group, String serviceName) {
-        return namespace + "@@" + group + "@@" + serviceName;
     }
 
     /**
@@ -822,6 +803,6 @@ public class ServiceStorage {
      */
     @FunctionalInterface
     public interface ServiceChangeListener {
-        void onServiceChange(String namespace, String group, String serviceName);
+        void onServiceChange(ServiceKey service);
     }
 }

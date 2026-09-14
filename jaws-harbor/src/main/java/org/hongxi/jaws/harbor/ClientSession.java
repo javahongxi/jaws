@@ -1,6 +1,7 @@
 package org.hongxi.jaws.harbor;
 
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,10 +21,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>
  * Each client may publish multiple instances per service (matching Nacos's
  * {@code BatchInstancePublishInfo}), so publishers is
- * {@code Map<serviceKey, List<Instance>>}.
+ * {@code Map<ServiceKey, List<Instance>>}.
  * <p>
- * Each mutation increments the {@link #revision} so that the Distro verify
- * protocol can detect divergence between peers.
+ * {@link #revision} is recomputed from the published content on every mutation, so
+ * that the Distro verify protocol can detect divergence between peers.
  *
  * @author shenhongxi
  */
@@ -31,24 +32,25 @@ public class ClientSession {
 
     private final String clientId;
 
-    /** serviceKey → list of instances published by this client. */
-    private final Map<String, List<Instance>> publishers = new ConcurrentHashMap<>();
+    /** service → list of instances published by this client. */
+    private final Map<ServiceKey, List<Instance>> publishers = new ConcurrentHashMap<>();
 
-    /** serviceKeys this client subscribes to. */
-    private final Set<String> subscribers = ConcurrentHashMap.newKeySet();
+    /** services this client subscribes to. */
+    private final Set<ServiceKey> subscribers = ConcurrentHashMap.newKeySet();
 
     private final AtomicLong revision = new AtomicLong(0);
 
-    private volatile long lastUpdatedTime;
-
     /**
      * When the client's OWNING node last vouched for this session — a sync applied
-     * or a verify in which the owner's revision matched ours. Kept separate from
-     * {@link #lastUpdatedTime} on purpose: local bookkeeping on a replica (the
-     * expiry tier removing one of its instances, say) also moves {@code lastUpdatedTime},
-     * so measuring an orphaned replica against that clock would let every such
-     * mutation re-tolerate another full window — and a replica with many instances
-     * could keep itself alive indefinitely. Silence here means silence from the owner.
+     * or a verify in which the owner's revision matched ours. This is deliberately
+     * NOT "when this session was last mutated locally": local bookkeeping on a
+     * replica (the expiry tier removing one of its instances, say) would then move
+     * the clock, letting every such mutation re-tolerate another full window, and a
+     * replica holding many instances could keep itself alive indefinitely.
+     * Silence here means silence from the owner.
+     * <p>
+     * There is no separate "last updated" stamp on this object: it had no reader,
+     * and a clock nobody consults only invites being consulted by mistake.
      */
     private volatile long lastOwnerConfirmedTime;
 
@@ -67,10 +69,9 @@ public class ClientSession {
     public ClientSession(String clientId, boolean nativeClient) {
         this.clientId = clientId;
         this.nativeClient = nativeClient;
-        this.lastUpdatedTime = System.currentTimeMillis();
         // A session born from a sync is confirmed by its owner right now; a native one
         // never consults this clock at all.
-        this.lastOwnerConfirmedTime = this.lastUpdatedTime;
+        this.lastOwnerConfirmedTime = System.currentTimeMillis();
     }
 
     public String getClientId() {
@@ -86,10 +87,10 @@ public class ClientSession {
      * If an instance with the same ip#port already exists for the service,
      * it is replaced; otherwise the instance is appended.
      *
-     * @param serviceKey "namespace@@group@@serviceName"
+     * @param serviceKey the service identity
      * @param instance   the instance data
      */
-    public void addInstance(String serviceKey, Instance instance) {
+    public void addInstance(ServiceKey serviceKey, Instance instance) {
         publishers.compute(serviceKey, (k, existing) -> {
             if (existing == null) {
                 existing = new ArrayList<>();
@@ -101,45 +102,42 @@ public class ClientSession {
             return existing;
         });
         recalculateRevision();
-        lastUpdatedTime = System.currentTimeMillis();
     }
 
     /**
      * Remove a specific instance (by ip#port) for the given service.
      */
-    public void removeInstance(String serviceKey, String ip, int port) {
+    public void removeInstance(ServiceKey serviceKey, String ip, int port) {
         publishers.computeIfPresent(serviceKey, (k, existing) -> {
             existing.removeIf(inst -> ip.equals(inst.getIp()) && port == inst.getPort());
             return existing.isEmpty() ? null : existing;
         });
         recalculateRevision();
-        lastUpdatedTime = System.currentTimeMillis();
     }
 
     /**
      * Remove all instances for the given service.
      */
-    public void removeAllInstances(String serviceKey) {
+    public void removeAllInstances(ServiceKey serviceKey) {
         List<Instance> removed = publishers.remove(serviceKey);
         if (removed != null) {
             recalculateRevision();
-            lastUpdatedTime = System.currentTimeMillis();
         }
     }
 
     /**
      * Get all instances for the given service.
      */
-    public List<Instance> getInstances(String serviceKey) {
+    public List<Instance> getInstances(ServiceKey serviceKey) {
         List<Instance> list = publishers.get(serviceKey);
         return list != null ? List.copyOf(list) : List.of();
     }
 
-    public Collection<String> getAllPublishedServices() {
+    public Collection<ServiceKey> getAllPublishedServices() {
         return publishers.keySet();
     }
 
-    public Map<String, List<Instance>> getAllPublishers() {
+    public Map<ServiceKey, List<Instance>> getAllPublishers() {
         return publishers;
     }
 
@@ -154,16 +152,15 @@ public class ClientSession {
     // Subscribers
     // ========================================================================
 
-    public void addSubscriber(String serviceKey) {
+    public void addSubscriber(ServiceKey serviceKey) {
         subscribers.add(serviceKey);
-        lastUpdatedTime = System.currentTimeMillis();
     }
 
-    public void removeSubscriber(String serviceKey) {
+    public void removeSubscriber(ServiceKey serviceKey) {
         subscribers.remove(serviceKey);
     }
 
-    public Set<String> getAllSubscribedServices() {
+    public Set<ServiceKey> getAllSubscribedServices() {
         return subscribers;
     }
 
@@ -188,7 +185,7 @@ public class ClientSession {
      */
     public void recalculateRevision() {
         int hash = 0;
-        for (Map.Entry<String, List<Instance>> entry : publishers.entrySet()) {
+        for (Map.Entry<ServiceKey, List<Instance>> entry : publishers.entrySet()) {
             for (Instance inst : entry.getValue()) {
                 int entryHash = entry.getKey().hashCode() * 31
                         + inst.getIp().hashCode() * 31
@@ -206,14 +203,6 @@ public class ClientSession {
 
     public void setRevision(long revision) {
         this.revision.set(revision);
-    }
-
-    public long getLastUpdatedTime() {
-        return lastUpdatedTime;
-    }
-
-    public void setLastUpdatedTime(long time) {
-        this.lastUpdatedTime = time;
     }
 
     public long getLastOwnerConfirmedTime() {

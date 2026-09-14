@@ -75,11 +75,11 @@ class DistroVerifyResyncTest {
 
     private void nodes() {
         cm1 = new ConnectionManager();
-        st1 = new ServiceStorage(cm1, (a, b, c) -> { });
+        st1 = new ServiceStorage(cm1, key -> { });
         d1 = new DistroProtocol(new ClusterManager(new URL("harbor", "127.0.0.1", 19848, "")),
                 transport, st1, cm1);
         cm2 = new ConnectionManager();
-        st2 = new ServiceStorage(cm2, (a, b, c) -> { });
+        st2 = new ServiceStorage(cm2, key -> { });
         d2 = new DistroProtocol(new ClusterManager(new URL("harbor", "127.0.0.1", 19849, "")),
                 transport, st2, cm2);
         transport.nodes.put(ADDR1, d1);

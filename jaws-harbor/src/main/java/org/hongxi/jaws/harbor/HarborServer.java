@@ -17,6 +17,7 @@ import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.Request;
 import org.hongxi.jaws.harbor.model.Response;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.harbor.proto.Metadata;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.harbor.model.request.*;
@@ -643,7 +644,7 @@ public class HarborServer {
     }
 
     // ========================================================================
-    // Consumers or Listeners
+    // Listener hooks
     // ========================================================================
 
     private void syncClientDataToPeers(String connId) {
@@ -652,13 +653,13 @@ public class HarborServer {
         distroProtocol.requestSyncChange(connId);
     }
 
-    private void onServiceChange(String namespace, String group, String serviceName) {
+    private void onServiceChange(ServiceKey service) {
         // Register that this service changed. The PushDelayTaskEngine coalesces every
         // per-subscriber callback into ONE service-level task and, at fire time,
         // re-reads the CURRENT ServiceInfo and the live subscriber set. No per-connection
         // snapshot is cached: caching and resending a snapshot is exactly what risked
         // regressing a client to stale state when retries arrived out of order.
-        pushEngine.requestPush(namespace, group, serviceName);
+        pushEngine.requestPush(service);
     }
 
     // ========================================================================

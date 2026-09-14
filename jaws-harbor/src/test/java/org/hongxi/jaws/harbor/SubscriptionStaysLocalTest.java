@@ -8,6 +8,7 @@ import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.StreamSubject;
 import org.junit.jupiter.api.AfterEach;
@@ -42,7 +43,7 @@ class SubscriptionStaysLocalTest {
     private static final String NS = "public";
     private static final String GROUP = "DEFAULT_GROUP";
     private static final String SVC = "svc";
-    private static final String KEY = NS + "@@" + GROUP + "@@" + SVC;
+    private static final ServiceKey KEY = ServiceKey.of(NS, GROUP, SVC);
 
     private ConnectionManager cm;
     private ServiceStorage storage;
@@ -68,7 +69,7 @@ class SubscriptionStaysLocalTest {
     @BeforeEach
     void setUp() {
         cm = new ConnectionManager();
-        storage = new ServiceStorage(cm, (ns, g, svc) -> { });
+        storage = new ServiceStorage(cm, key -> { });
         ClusterManager cluster = new ClusterManager(new URL("grpc", "10.0.0.1", 9848, ""));
         cluster.addMember(new ClusterMember("10.0.0.1:9848"));   // self
         cluster.addMember(new ClusterMember("10.0.0.2:9848"));   // one peer to replicate to
@@ -125,7 +126,7 @@ class SubscriptionStaysLocalTest {
 
         // A publisher client from another node arrives as a replica.
         storage.applyClientSyncData(new ClientSyncData("remote-pub",
-                List.of(KEY), List.of(instance("10.0.0.8", 8080)), 3L));
+                List.of(KEY.toKeyString()), List.of(instance("10.0.0.8", 8080)), 3L));
 
         assertEquals(1, storage.getInstances(NS, GROUP, SVC).size(), "precondition: routable");
         assertFalse(storage.getSubscriberConnections(KEY).contains("remote-pub"),

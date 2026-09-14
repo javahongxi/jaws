@@ -99,9 +99,9 @@ class SyncedHealthAuthorityTest {
         cm1 = new ConnectionManager();
         // Same wiring HarborServer uses: a health verdict judged locally must go
         // out through the coalesced Distro sync path.
-        st1 = new ServiceStorage(cm1, (ns, g, svc) -> { }, clientId -> d1.requestSyncChange(clientId));
+        st1 = new ServiceStorage(cm1, key -> { }, clientId -> d1.requestSyncChange(clientId));
         cm2 = new ConnectionManager();
-        st2 = new ServiceStorage(cm2, (ns, g, svc) -> notified2.add(ns + "@@" + g + "@@" + svc));
+        st2 = new ServiceStorage(cm2, service -> notified2.add(service.toKeyString()));
 
         ClusterManager c1 = new ClusterManager(new URL("harbor", "127.0.0.1", 19848, ""));
         c1.addMember(new ClusterMember(ADDR2));

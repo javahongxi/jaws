@@ -29,7 +29,7 @@ class EphemeralHealthTierTest {
     @BeforeEach
     void setUp() {
         cm = new ConnectionManager();
-        storage = new ServiceStorage(cm, (ns, g, svc) -> notified.add(ns + "@@" + g + "@@" + svc));
+        storage = new ServiceStorage(cm, service -> notified.add(service.toKeyString()));
         cm.register("pub", "10.0.0.1", "3.0.0", Map.of(), noop());
         inst = instance("10.0.0.1", 8080, "i1");
         storage.registerInstance("public", "DEFAULT_GROUP", "svc", inst, "pub");

@@ -3,6 +3,7 @@ package org.hongxi.jaws.harbor;
 import com.alibaba.fastjson2.JSON;
 import com.google.protobuf.Message;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.transport.StreamSubject;
@@ -26,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ol>
  */
 class PushDelayTaskEngineTest {
+
+    private static final ServiceKey SVC = ServiceKey.of("public", "DEFAULT_GROUP", "svc");
 
     /** A subscriber connection whose pushed payloads we can inspect. */
     private static final class Recording {
@@ -58,7 +61,7 @@ class PushDelayTaskEngineTest {
     @Test
     void requestsAfterShutdownAreDroppedQuietly() {
         ConnectionManager cm = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage(cm, (a, b, c) -> { });
+        ServiceStorage storage = new ServiceStorage(cm, key -> { });
         Recording sub = new Recording();
         cm.register("sub-1", "10.0.0.1", "3.0.0", Map.of(), sub.subject());
         storage.addSubscriber("public", "DEFAULT_GROUP", "svc", "sub-1");
@@ -66,7 +69,7 @@ class PushDelayTaskEngineTest {
 
         engine.shutdown();
 
-        assertDoesNotThrow(() -> engine.requestPush("public", "DEFAULT_GROUP", "svc"),
+        assertDoesNotThrow(() -> engine.requestPush(SVC),
                 "a closed engine has nobody left to deliver to - dropping is correct, "
                         + "throwing into the caller's channel is not");
         assertTrue(sub.received.isEmpty(), "and nothing may be pushed after shutdown");
@@ -75,7 +78,7 @@ class PushDelayTaskEngineTest {
     @Test
     void coalescesMultipleChangesIntoOnePushCarryingLatestState() throws Exception {
         ConnectionManager cm = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage(cm, (a, b, c) -> { });
+        ServiceStorage storage = new ServiceStorage(cm, key -> { });
 
         // A publisher connection that owns the instances, and a subscriber whose
         // push subject we record.
@@ -89,12 +92,12 @@ class PushDelayTaskEngineTest {
         // Change #1, then register it and ask to push.
         storage.registerInstance("public", "DEFAULT_GROUP", "svc",
                 instance("10.0.0.9", 8081, "iA"), "pub-1");
-        engine.requestPush("public", "DEFAULT_GROUP", "svc");
+        engine.requestPush(SVC);
 
         // Change #2 within the coalescing window, then ask to push again.
         storage.registerInstance("public", "DEFAULT_GROUP", "svc",
                 instance("10.0.0.9", 8082, "iB"), "pub-1");
-        engine.requestPush("public", "DEFAULT_GROUP", "svc");
+        engine.requestPush(SVC);
 
         // Wait past the merge window so the single coalesced task fires once.
         Thread.sleep(600);
@@ -113,7 +116,7 @@ class PushDelayTaskEngineTest {
     @Test
     void readsLatestStateAtFireTimeEvenIfRegisteredAfterRequest() throws Exception {
         ConnectionManager cm = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage(cm, (a, b, c) -> { });
+        ServiceStorage storage = new ServiceStorage(cm, key -> { });
         cm.register("pub-1", "10.0.0.9", "3.0.0", Map.of(), noopSubject());
         Recording sub = new Recording();
         cm.register("sub-1", "10.0.0.1", "3.0.0", Map.of(), sub.subject());
@@ -122,7 +125,7 @@ class PushDelayTaskEngineTest {
         PushDelayTaskEngine engine = new PushDelayTaskEngine(storage, cm);
 
         // Ask to push while the service is still EMPTY …
-        engine.requestPush("public", "DEFAULT_GROUP", "svc");
+        engine.requestPush(SVC);
         // … then register an instance during the delay window (before it fires).
         storage.registerInstance("public", "DEFAULT_GROUP", "svc",
                 instance("10.0.0.9", 8081, "iA"), "pub-1");

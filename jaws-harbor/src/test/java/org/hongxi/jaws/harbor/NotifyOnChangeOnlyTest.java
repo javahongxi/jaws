@@ -3,6 +3,7 @@ package org.hongxi.jaws.harbor;
 import com.google.protobuf.Message;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.transport.StreamSubject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ class NotifyOnChangeOnlyTest {
     private static final String NS = "public";
     private static final String GROUP = "DEFAULT_GROUP";
     private static final String SVC = "svc";
-    private static final String KEY = "public@@DEFAULT_GROUP@@svc";
+    private static final ServiceKey KEY = ServiceKey.of(NS, GROUP, SVC);
 
     private ConnectionManager cm;
     private ServiceStorage storage;
@@ -43,7 +44,7 @@ class NotifyOnChangeOnlyTest {
     @BeforeEach
     void setUp() {
         cm = new ConnectionManager();
-        storage = new ServiceStorage(cm, (ns, g, svc) -> events.add(ns + "@@" + g + "@@" + svc));
+        storage = new ServiceStorage(cm, service -> events.add(service.toKeyString()));
     }
 
     private static Instance instance(String ip, int port) {
@@ -83,7 +84,7 @@ class NotifyOnChangeOnlyTest {
         givenLivePublisher();
 
         assertEquals(1, events.size(), "registering an instance is a change: " + events);
-        assertEquals(KEY, events.get(0));
+        assertEquals(KEY.toKeyString(), events.get(0));
     }
 
     @Test
@@ -178,7 +179,7 @@ class NotifyOnChangeOnlyTest {
         // and applyClientSyncData would rightly refuse to overwrite the owner's copy).
         Instance inst = instance("10.0.0.9", 9090);
         storage.applyClientSyncData(new ClientSyncData("remote",
-                List.of(KEY), List.of(inst), 1L));
+                List.of(KEY.toKeyString()), List.of(inst), 1L));
         assertEquals(1, storage.getInstances(NS, GROUP, SVC).size(), "precondition");
         events.clear();
 

@@ -78,12 +78,12 @@ class DistroSyncCoalesceTest {
     void setUp() {
         transport = new Recording();
         cm1 = new ConnectionManager();
-        st1 = new ServiceStorage(cm1, (a, b, c) -> { });
+        st1 = new ServiceStorage(cm1, key -> { });
         ClusterManager cluster1 = new ClusterManager(url(19848));
         cluster1.addMember(new ClusterMember(ADDR2));
         d1 = new DistroProtocol(cluster1, transport, st1, cm1);
         cm2 = new ConnectionManager();
-        st2 = new ServiceStorage(cm2, (a, b, c) -> { });
+        st2 = new ServiceStorage(cm2, key -> { });
         ClusterManager cluster2 = new ClusterManager(url(19849));
         cluster2.addMember(new ClusterMember(ADDR1));
         d2 = new DistroProtocol(cluster2, transport, st2, cm2);

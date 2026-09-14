@@ -7,6 +7,7 @@ import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.StreamSubject;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,8 +26,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * When the node owning a client's connection dies, nothing can any longer announce
  * that client's departure: no beat arrives (the beats went to the dead node), no
  * Distro DELETE arrives (its owner is gone), and the connection watchdog cannot see
- * the replica at all because {@code putClientSession} never writes a
- * {@code lastActiveTime} entry. Live evidence: after killing the owning node, the
+ * the replica at all because {@code putClientSession} never creates a
+ * {@code ConnectionRecord} — liveness rides on that record's own clock. Live
+ * evidence: after killing the owning node, the
  * replica's instances were eventually dropped by the beat-expiry tier while
  * {@code removed synced client} was logged zero times — the {@link ClientSession}
  * shell, and its reverse-index entries, stayed behind for the process lifetime.
@@ -64,7 +66,7 @@ class SyncedSessionReclamationTest {
     @BeforeEach
     void setUp() {
         cm = new ConnectionManager();
-        storage = new ServiceStorage(cm, (ns, g, svc) -> events.add(ns + "@@" + g + "@@" + svc));
+        storage = new ServiceStorage(cm, service -> events.add(service.toKeyString()));
     }
 
     private static Instance instance(String ip, int port) {
@@ -133,8 +135,7 @@ class SyncedSessionReclamationTest {
         // Nothing here may evict it — an idle native session is not a dead one.
         cm.register("mine", "10.0.0.1", "3.0.0", Map.of(), noop());
         storage.registerInstance(NS, GROUP, SVC, instance("10.0.0.1", 8080), "mine");
-        cm.getClientSession("mine").setLastUpdatedTime(1L);
-        cm.getClientSession("mine").setLastOwnerConfirmedTime(1L); // both clocks look dead
+        cm.getClientSession("mine").setLastOwnerConfirmedTime(1L); // the confirmation clock looks dead
         events.clear(); // registerInstance announces once, legitimately
 
         assertEquals(0, storage.reapStaleSyncedClients(WINDOW_MS));
@@ -153,7 +154,9 @@ class SyncedSessionReclamationTest {
         // to it.
         givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
         ageReplica("remote", WINDOW_MS + 1_000);
-        cm.getClientSession("remote").setLastUpdatedTime(System.currentTimeMillis());
+        // The real local mutation, not a synthetic stamp: the expiry tier shedding
+        // one of this replica's instances is exactly what used to re-tolerate it.
+        storage.removeInstanceByIpPort(ServiceKey.parse(KEY), "10.0.0.9", 9090);
 
         assertEquals(1, storage.reapStaleSyncedClients(WINDOW_MS),
                 "a local stamp must not extend the tolerance the owner's silence earned");

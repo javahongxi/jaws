@@ -8,6 +8,7 @@ import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.Test;
 
@@ -68,7 +69,7 @@ class HarborDistroProtocolTest {
     @Test
     void testServiceStorageSnapshot() {
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage storage = new ServiceStorage(connMgr, key -> {});
 
         // Simulate a registered connection
         connMgr.register("test-conn", "10.0.0.1", "3.0.0", Map.of(), noopPushSubject());
@@ -84,7 +85,7 @@ class HarborDistroProtocolTest {
     @Test
     void testServiceStorageApplySnapshot() {
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage storage = new ServiceStorage(connMgr, key -> {});
 
         Instance inst = createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
         ClientSyncData syncData = new ClientSyncData(
@@ -103,7 +104,7 @@ class HarborDistroProtocolTest {
     @Test
     void testClientSyncDataBuildAndApply() {
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage storage = new ServiceStorage(connMgr, key -> {});
 
         connMgr.register("conn-1", "10.0.0.1", "3.0.0", Map.of(), noopPushSubject());
 
@@ -120,7 +121,7 @@ class HarborDistroProtocolTest {
 
         // Apply to another storage
         ConnectionManager connMgr2 = new ConnectionManager();
-        ServiceStorage storage2 = new ServiceStorage(connMgr2, (a, b, c) -> {});
+        ServiceStorage storage2 = new ServiceStorage(connMgr2, key -> {});
         storage2.applyClientSyncData(syncData);
 
         // Verify data was synced
@@ -137,7 +138,7 @@ class HarborDistroProtocolTest {
         // session (incremental) and a synced session (bulk-applied) can hold the same
         // instances in different inner order.  The XOR hash must be immune; the old
         // rolling hash was not.  Hence: one service, instances added in opposite order.
-        String svc = "public@@DEFAULT_GROUP@@svc";
+        ServiceKey svc = ServiceKey.of("public", "DEFAULT_GROUP", "svc");
         Instance a = createInstance("10.0.0.1", 8080, "iA");
         Instance b = createInstance("10.0.0.2", 8081, "iB");
         Instance c = createInstance("10.0.0.3", 8082, "iC");
@@ -173,7 +174,7 @@ class HarborDistroProtocolTest {
         // value survives — this locks the setRevision() repositioning independently of
         // the order-independence fix above.
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage storage = new ServiceStorage(connMgr, key -> {});
 
         ClientSyncData spoofed = new ClientSyncData(
                 "conn-1",
@@ -200,7 +201,7 @@ class HarborDistroProtocolTest {
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage svcStorage = new ServiceStorage(connMgr, key -> {});
 
         DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage, connMgr);
         protocol.start();
@@ -214,7 +215,7 @@ class HarborDistroProtocolTest {
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage svcStorage = new ServiceStorage(connMgr, key -> {});
 
         DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage, connMgr);
 
@@ -241,7 +242,7 @@ class HarborDistroProtocolTest {
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage svcStorage = new ServiceStorage(connMgr, key -> {});
 
         DistroProtocol protocol = new DistroProtocol(cluster, transport, svcStorage, connMgr);
 
@@ -267,7 +268,7 @@ class HarborDistroProtocolTest {
         ClusterManager cluster = newClusterManager("10.0.0.1", 9848);
         HarborNodeTransport transport = noopTransport();
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage svcStorage = new ServiceStorage(connMgr, key -> {});
 
         connMgr.register("test-conn", "10.0.0.1", "3.0.0", Map.of(), noopPushSubject());
         svcStorage.registerInstance("public", "DEFAULT_GROUP", "svc1",
@@ -310,7 +311,7 @@ class HarborDistroProtocolTest {
         };
 
         ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage svcStorage = new ServiceStorage(connMgr, (a, b, c) -> {});
+        ServiceStorage svcStorage = new ServiceStorage(connMgr, key -> {});
         DistroProtocol protocol = new DistroProtocol(cluster, mockTransport, svcStorage, connMgr);
 
         // Sync with connectionId as resourceKey (client-level granularity)
