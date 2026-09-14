@@ -14,6 +14,7 @@ import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -96,7 +97,7 @@ class WireMetadataSizeLimitTest {
         // Very tight metadata limit: 20 bytes
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, 1024 * 1024, 20, null));
 
         // Build headers that exceed 20 bytes
@@ -134,7 +135,7 @@ class WireMetadataSizeLimitTest {
         // Generous metadata limit: 64KB
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, 1024 * 1024, 64 * 1024, null));
 
         Http2Headers headers = new DefaultHttp2Headers()

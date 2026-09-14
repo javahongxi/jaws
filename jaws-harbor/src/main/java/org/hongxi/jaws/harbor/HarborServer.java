@@ -152,9 +152,9 @@ public class HarborServer {
                 // client shutdown (GOAWAY) would leave the connection registered
                 // until the 90-second watchdog fires.
                 // Generate a unique connectionId for this TCP connection (parent channel)
-                // and store it as a channel attribute.  The wire layer reads this attribute
-                // and injects it into WireCallContext so that every handler on this
-                // connection can identify which physical connection a request arrived on.
+                // and store it as a channel attribute.  The wire layer propagates this
+                // attribute into every call context so that handlers on this connection
+                // can identify which physical connection a request arrived on.
                 AttributeKey<String> key = AttributeKey.valueOf(WireConstants.CONNECTION_ID);
                 String connectionId = pipeline.channel().attr(key).get();
                 if (connectionId == null) {
@@ -166,6 +166,11 @@ public class HarborServer {
                 pipeline.addLast("conn_cleanup", handler);
             }
         };
+        // Tell the wire layer to propagate the CONNECTION_ID attribute from the
+        // parent (TCP) channel into every call context (WireCallContext / request
+        // attachments), so that business handlers can access it without reaching
+        // into the Netty pipeline.
+        this.wireServer.addConnectionAttributeKey(WireConstants.CONNECTION_ID);
     }
 
     public void start() {
@@ -354,9 +359,7 @@ public class HarborServer {
             // the wire layer from the parent channel attribute).  This is the
             // per-TCP-connection unique ID, safe even when multiple processes
             // from the same clientIp connect simultaneously.
-            String connectionId = context != null
-                    ? context.getAttachment(WireConstants.CONNECTION_ID)
-                    : null;
+            String connectionId = context.getAttachment(WireConstants.CONNECTION_ID);
 
             // Update heartbeat for all instances from this connection (Nacos connection-based model)
             serviceStorage.updateHeartbeatByConnectionId(connectionId);
@@ -364,9 +367,7 @@ public class HarborServer {
             // Touch the specific connection. connectionId is minted per TCP connection
             // at setup (#5) and propagated via WireCallContext, so this is always the
             // precise path; the old clientIp fallback has been removed.
-            if (connectionId != null) {
-                connectionManager.touch(connectionId);
-            }
+            connectionManager.touch(connectionId);
 
             try {
                 return switch (type) {
@@ -440,13 +441,11 @@ public class HarborServer {
 
             // Resolve the connectionId from the parent channel attribute
             // (propagated via WireCallContext by the wire layer).
-            String initialConnectionId = context != null
-                    ? context.getAttachment(WireConstants.CONNECTION_ID)
-                    : null;
+            String initialConnectionId = context.getAttachment(WireConstants.CONNECTION_ID);
 
             // Process incoming client messages (ConnectionSetupRequest, acks, etc.)
             requestStream.subscribe(new StreamObserver<>() {
-                private String connectionId = initialConnectionId;
+                private final String connectionId = initialConnectionId;
 
                 @Override
                 public void onNext(Message item) {
@@ -459,11 +458,6 @@ public class HarborServer {
                     switch (type) {
                         case TYPE_CONNECTION_SETUP_REQUEST -> {
                             ConnectionSetupRequest setup = parseBody(payload, ConnectionSetupRequest.class);
-                            // connectionId is already set from the parent channel attribute
-                            // (captured in the field initializer).  Fall back only if null.
-                            if (connectionId == null) {
-                                connectionId = UUID.randomUUID().toString();
-                            }
                             String version = setup.getClientVersion();
                             Map<String, String> labels = setup.getLabels();
                             if (labels == null) {
@@ -490,9 +484,7 @@ public class HarborServer {
                         default -> log.debug("[harbor] bi-stream received type={}", type);
                     }
                     // Touch the connection on every inbound bi-stream message
-                    if (connectionId != null) {
-                        connectionManager.touch(connectionId);
-                    }
+                    connectionManager.touch(connectionId);
                 }
 
                 @Override

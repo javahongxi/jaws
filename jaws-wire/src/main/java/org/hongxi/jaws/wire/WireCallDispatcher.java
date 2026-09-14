@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
@@ -45,6 +46,46 @@ import java.util.concurrent.TimeUnit;
 sealed interface WireCallDispatcher
         permits WireCallDispatcher.HandlerCallDispatcher,
                 WireCallDispatcher.ProviderCallDispatcher {
+
+    /**
+     * Merge connection-level attributes from the parent (TCP) channel into
+     * the per-call attachments map.
+     * <p>
+     * The set of keys to propagate is configured on the {@link WireServer}
+     * via {@link WireServer#addConnectionAttributeKey(String)}; this method
+     * simply reads them.  The wire layer does not interpret any specific key
+     * — it is the application's responsibility to register the keys it needs
+     * (e.g. {@link WireConstants#CONNECTION_ID}).
+     *
+     * @param ctx                    the stream channel context
+     * @param baseAttachments        the base attachments (from gRPC headers)
+     * @param connectionAttributeKeys the configured keys to propagate
+     * @return a merged map (may be the same instance as baseAttachments when
+     *         no connection attributes are found)
+     */
+    static Map<String, String> mergeConnectionAttributes(
+            ChannelHandlerContext ctx,
+            Map<String, String> baseAttachments,
+            Set<String> connectionAttributeKeys) {
+        if (connectionAttributeKeys.isEmpty()) {
+            return baseAttachments;
+        }
+        io.netty.channel.Channel parent = ctx.channel().parent();
+        if (parent == null) {
+            return baseAttachments;
+        }
+        Map<String, String> merged = null;
+        for (String key : connectionAttributeKeys) {
+            String value = parent.attr(AttributeKey.<String>valueOf(key)).get();
+            if (value != null) {
+                if (merged == null) {
+                    merged = new HashMap<>(baseAttachments);
+                }
+                merged.put(key, value);
+            }
+        }
+        return merged != null ? merged : baseAttachments;
+    }
 
     /**
      * Resolve the request path after protocol headers have been parsed.
@@ -136,10 +177,12 @@ sealed interface WireCallDispatcher
         private static final Logger log = LoggerFactory.getLogger(HandlerCallDispatcher.class);
 
         private final WireHandlerRegistry registry;
+        private final Set<String> connectionAttributeKeys;
         private WireMethodHandler handler;
 
-        HandlerCallDispatcher(WireHandlerRegistry registry) {
+        HandlerCallDispatcher(WireHandlerRegistry registry, Set<String> connectionAttributeKeys) {
             this.registry = registry;
+            this.connectionAttributeKeys = connectionAttributeKeys;
         }
 
         @Override
@@ -168,7 +211,7 @@ sealed interface WireCallDispatcher
                                        WireStreamServerHandler serverHandler,
                                        StreamSource<Object> requestStream) {
             final WireMethodHandler methodHandler = this.handler;
-            final WireCallContext callContext = buildContextWithConnectionId(ctx, serverHandler);
+            final WireCallContext callContext = buildCallContext(ctx, serverHandler);
             try {
                 // The transport carries items as Object; a wire handler declares
                 // them as protobuf Message, so narrowing the type argument here
@@ -191,7 +234,7 @@ sealed interface WireCallDispatcher
                                          WireStreamServerHandler serverHandler,
                                          StreamSource<Object> requestStream) {
             final WireMethodHandler methodHandler = this.handler;
-            final WireCallContext callContext = WireCallContext.of(serverHandler.attachments);
+            final WireCallContext callContext = buildCallContext(ctx, serverHandler);
             try {
                 // noinspection unchecked
                 StreamSource<Message> requestItems = (StreamSource<Message>) (StreamSource<?>) requestStream;
@@ -212,7 +255,7 @@ sealed interface WireCallDispatcher
                 serverHandler.sendError(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + serverHandler.path);
                 return;
             }
-            final WireCallContext callContext = buildContextWithConnectionId(ctx, serverHandler);
+            final WireCallContext callContext = buildCallContext(ctx, serverHandler);
 
             ByteBuf frame = null;
             try {
@@ -263,26 +306,15 @@ sealed interface WireCallDispatcher
         }
 
         /**
-         * Build a {@link WireCallContext} that includes the connection-level ID
-         * (if available) from the parent channel attribute.  The parent channel
-         * (TCP connection) may carry a {@code CONNECTION_ID} attribute set by a
-         * connection-level handler; this method merges it into the per-call
-         * attachments so business handlers can distinguish connections from the
-         * same client IP.
+         * Build a {@link WireCallContext} that includes connection-level
+         * attributes (if configured and available) merged into the per-call
+         * attachments.
          */
-        private WireCallContext buildContextWithConnectionId(
+        private WireCallContext buildCallContext(
                 ChannelHandlerContext ctx, WireStreamServerHandler serverHandler) {
-            io.netty.channel.Channel parent = ctx.channel().parent();
-            if (parent != null) {
-                String connectionId = parent.attr(
-                        AttributeKey.<String>valueOf(WireConstants.CONNECTION_ID)).get();
-                if (connectionId != null) {
-                    Map<String, String> merged = new HashMap<>(serverHandler.attachments);
-                    merged.put(WireConstants.CONNECTION_ID, connectionId);
-                    return WireCallContext.of(merged);
-                }
-            }
-            return WireCallContext.of(serverHandler.attachments);
+            Map<String, String> merged = mergeConnectionAttributes(
+                    ctx, serverHandler.attachments, connectionAttributeKeys);
+            return WireCallContext.of(merged);
         }
     }
 
@@ -306,15 +338,18 @@ sealed interface WireCallDispatcher
 
         private final MessageHandler messageHandler;
         private final WireHealthService healthService;
+        private final Set<String> connectionAttributeKeys;
 
         private String serviceName;
         private String methodName;
         private boolean bidiStream;
         private boolean clientStream;
 
-        ProviderCallDispatcher(MessageHandler messageHandler, WireHealthService healthService) {
+        ProviderCallDispatcher(MessageHandler messageHandler, WireHealthService healthService,
+                               Set<String> connectionAttributeKeys) {
             this.messageHandler = messageHandler;
             this.healthService = healthService;
+            this.connectionAttributeKeys = connectionAttributeKeys;
         }
 
         @Override
@@ -353,7 +388,8 @@ sealed interface WireCallDispatcher
                                        StreamSource<Object> requestStream) {
             final String svcName = this.serviceName;
             final String mName = this.methodName;
-            final Map<String, String> callAttachments = serverHandler.attachments;
+            final Map<String, String> callAttachments =
+                    mergeConnectionAttributes(ctx, serverHandler.attachments, connectionAttributeKeys);
             try {
                 // Build Jaws request without arguments — all request items
                 // flow through the requestStream publisher (firstFrame is null
@@ -406,7 +442,8 @@ sealed interface WireCallDispatcher
         public void dispatch(ChannelHandlerContext ctx, ByteBuf frameData, WireStreamServerHandler serverHandler) {
             final String svcName = this.serviceName;
             final String mName = this.methodName;
-            final Map<String, String> callAttachments = serverHandler.attachments;
+            final Map<String, String> callAttachments =
+                    mergeConnectionAttributes(ctx, serverHandler.attachments, connectionAttributeKeys);
 
             ByteBuf frame = null;
             try {

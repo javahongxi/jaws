@@ -9,6 +9,8 @@ import org.hongxi.jaws.transport.http2.Http2PipelineSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
+
 /**
  * Connection-level handler installed in each HarborServer connection pipeline.
  * <ul>
@@ -56,7 +58,7 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
 
     ConnectionCleanupHandler(ConnectionLifecycle lifecycle, String connectionId) {
         this.lifecycle = lifecycle;
-        this.connectionId = java.util.Objects.requireNonNull(connectionId,
+        this.connectionId = Objects.requireNonNull(connectionId,
                 "a connection handler without a connectionId could not attribute its own teardown");
     }
 

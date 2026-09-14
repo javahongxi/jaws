@@ -7,7 +7,9 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.http2.AbstractHttp2Server;
 
+import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -54,6 +56,17 @@ public class WireServer extends AbstractHttp2Server {
     private final int maxInboundMetadataSize;
     /** Configured response compression encoding (identity or gzip). */
     private final String compression;
+
+    /**
+     * Parent-channel attribute keys that should be propagated into every
+     * call's {@link WireCallContext} (or Provider-pipeline request attachments).
+     * <p>
+     * The wire layer does not interpret these keys — it merely copies the
+     * values from the parent (TCP) channel attribute into the per-call context
+     * so that application handlers can access connection-level metadata
+     * (e.g. a connectionId) without reaching into the Netty pipeline.
+     */
+    private final Set<String> connectionAttributeKeys = new LinkedHashSet<>();
 
     /** Scheduler for connection lifecycle checks (idle/age). */
     private static final ScheduledExecutorService LIFECYCLE_SCHEDULER =
@@ -104,6 +117,25 @@ public class WireServer extends AbstractHttp2Server {
     }
 
     /**
+     * Register a parent-channel attribute key for propagation into every
+     * call context.  The wire layer will read
+     * {@code parentChannel.attr(AttributeKey.valueOf(key))} and merge the
+     * value into the per-call attachments.
+     *
+     * @param key the attribute key name (e.g. {@link WireConstants#CONNECTION_ID})
+     */
+    public void addConnectionAttributeKey(String key) {
+        connectionAttributeKeys.add(Objects.requireNonNull(key, "key"));
+    }
+
+    /**
+     * @return an unmodifiable view of the configured connection attribute keys
+     */
+    Set<String> getConnectionAttributeKeys() {
+        return Collections.unmodifiableSet(connectionAttributeKeys);
+    }
+
+    /**
      * @return the auto-registered health service, for managing per-service
      *         statuses (e.g. {@code setStatus("", ServingStatus.NOT_SERVING)}
      *         during graceful shutdown)
@@ -141,9 +173,11 @@ public class WireServer extends AbstractHttp2Server {
     protected void initStreamChannel(io.netty.channel.Channel streamChannel) {
         WireCallDispatcher dispatcher;
         if (registry != null) {
-            dispatcher = new WireCallDispatcher.HandlerCallDispatcher(registry);
+            dispatcher = new WireCallDispatcher.HandlerCallDispatcher(
+                    registry, connectionAttributeKeys);
         } else {
-            dispatcher = new WireCallDispatcher.ProviderCallDispatcher(messageHandler, healthService);
+            dispatcher = new WireCallDispatcher.ProviderCallDispatcher(
+                    messageHandler, healthService, connectionAttributeKeys);
         }
         streamChannel.pipeline().addLast(
                 new WireStreamServerHandler(dispatcher, reflectionService,

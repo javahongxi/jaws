@@ -19,6 +19,7 @@ import org.hongxi.jaws.wire.health.HealthCheckResponse.ServingStatus;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -168,7 +169,7 @@ class WireServerStreamHandlerTest {
         registry.register("test.Health", "Echo", echoHandler());
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
@@ -197,7 +198,7 @@ class WireServerStreamHandlerTest {
         WireHandlerRegistry registry = new WireHandlerRegistry();
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         ch.writeInbound(requestHeaders("/no.Such/Method"));
@@ -220,7 +221,7 @@ class WireServerStreamHandlerTest {
         // Tiny limit: 10 bytes
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, 10, 0, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
@@ -251,7 +252,7 @@ class WireServerStreamHandlerTest {
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         Http2Headers extra = new DefaultHttp2Headers()
@@ -276,7 +277,7 @@ class WireServerStreamHandlerTest {
         registry.register("test.Health", "Echo", echoHandler());
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         Http2Headers extra = new DefaultHttp2Headers().set(WireConstants.GRPC_ENCODING, "zstd");
@@ -312,7 +313,7 @@ class WireServerStreamHandlerTest {
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         Http2Headers extra = new DefaultHttp2Headers()
@@ -350,7 +351,7 @@ class WireServerStreamHandlerTest {
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         Http2Headers extra = new DefaultHttp2Headers().set(WireStatus.GRPC_TIMEOUT, "5m");
@@ -411,7 +412,7 @@ class WireServerStreamHandlerTest {
         });
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Watch"));
@@ -438,7 +439,7 @@ class WireServerStreamHandlerTest {
         registry.register("test.Health", "Echo", echoHandler());
         EmbeddedChannel ch = new EmbeddedChannel(
                 new WireStreamServerHandler(
-                        new WireCallDispatcher.HandlerCallDispatcher(registry),
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
                         null, REJECTING_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
 
         ch.writeInbound(requestHeaders("/test.Health/Echo"));
