@@ -8,12 +8,12 @@ import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.StreamSubject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,7 +42,7 @@ class WatchdogClosureTest {
 
     private static final String ADDR1 = "127.0.0.1:19848";
     private static final String ADDR2 = "127.0.0.1:19849";
-    private static final String SVC_KEY = "public@@DEFAULT_GROUP@@svc";
+    private static final ServiceKey SVC_KEY = ServiceKey.of("public", "DEFAULT_GROUP", "svc");
 
     private ConnectionManager cm;
     private ServiceStorage storage;
@@ -93,7 +93,7 @@ class WatchdogClosureTest {
     @BeforeEach
     void setUp() {
         cm = new ConnectionManager();
-        storage = new ServiceStorage(cm, (ns, g, svc) -> { });
+        storage = new ServiceStorage(cm, key -> { });
         ClusterManager cluster = new ClusterManager(new URL("harbor", "127.0.0.1", 19848, ""));
         cluster.addMember(newClusterMember(ADDR2));
         transport = new Recording();
@@ -122,12 +122,12 @@ class WatchdogClosureTest {
     }
 
     /** Backdate a connection's last-activity so the next watchdog sweep treats it as dead. */
-    @SuppressWarnings("unchecked")
-    private void makeStale(String connId) throws Exception {
-        Field f = ConnectionManager.class.getDeclaredField("lastActiveTime");
-        f.setAccessible(true);
-        Map<String, Long> lastActive = (Map<String, Long>) f.get(cm);
-        lastActive.put(connId, System.currentTimeMillis() - 91_000);
+    private void makeStale(String connId) {
+        ConnectionManager.ConnectionRecord record = cm.allConnections().stream()
+                .filter(r -> r.connectionId().equals(connId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no such connection: " + connId));
+        record.lastActiveTime().addAndGet(-91_000);
     }
 
     @Test

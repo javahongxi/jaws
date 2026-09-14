@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -42,13 +43,6 @@ public class ConnectionManager {
     private final Map<String, ClientSession> clientSessions = new ConcurrentHashMap<>();
 
     /**
-     * Tracks the last activity timestamp (epoch millis) per connection.
-     * Updated on every inbound request from the client (unary or bi-stream).
-     * The watchdog uses this to detect and close dead connections.
-     */
-    private final Map<String, Long> lastActiveTime = new ConcurrentHashMap<>();
-
-    /**
      * Register a connection after the client sends ConnectionSetupRequest
      * via the BiRequestStream.
      *
@@ -60,11 +54,10 @@ public class ConnectionManager {
      */
     public void register(String connectionId, String clientIp, String clientVersion,
                          Map<String, String> labels, StreamSubject<Message> pushSubject) {
-        connections.put(connectionId,
-                new ConnectionRecord(connectionId, clientIp, clientVersion, labels, pushSubject));
+        connections.put(connectionId, new ConnectionRecord(connectionId, clientIp, clientVersion,
+                labels, pushSubject, new AtomicLong(System.currentTimeMillis())));
         ClientSession session = new ClientSession(connectionId, true);
         clientSessions.put(connectionId, session);
-        lastActiveTime.put(connectionId, System.currentTimeMillis());
         log.info("[harbor] connection registered: id={}, clientIp={}, version={}",
                 connectionId, clientIp, clientVersion);
     }
@@ -75,7 +68,6 @@ public class ConnectionManager {
     public void remove(String connectionId) {
         ConnectionRecord removed = connections.remove(connectionId);
         clientSessions.remove(connectionId);
-        lastActiveTime.remove(connectionId);
         if (removed != null) {
             removed.pushSubject.onCompleted();
             log.info("[harbor] connection removed: id={}", connectionId);
@@ -83,18 +75,25 @@ public class ConnectionManager {
     }
 
     /**
-     * Update the last activity timestamp for a connection.
-     * Called on every inbound request from the client.
+     * Stamp a connection as just active. Called on every inbound request from the
+     * client (unary or bi-stream).
+     * <p>
+     * An id this node does not hold — notably the id of a {@code synced} client,
+     * whose TCP connection lives on another node — is ignored: liveness is a
+     * shard-local fact, so the clock rides on the connection record and is only
+     * ever set here, never inferred from replicated data.
      */
     public void touch(String connectionId) {
-        lastActiveTime.put(connectionId, System.currentTimeMillis());
+        ConnectionRecord record = connections.get(connectionId);
+        if (record != null) {
+            record.touch();
+        }
     }
 
     /**
-     * Remove the LIVENESS layer (connection record + activity entry) of
-     * connections whose last activity exceeds the timeout.  Called by the
-     * periodic watchdog to detect dead connections (e.g. half-open TCP after
-     * the client process was killed).
+     * Remove the LIVENESS layer (connection record) of connections whose last
+     * activity exceeds the timeout.  Called by the periodic watchdog to detect
+     * dead connections (e.g. half-open TCP after the client process was killed).
      * <p>
      * Deliberately does NOT evict the {@link ClientSession}: closing the
      * connection is {@link ConnectionLifecycle#cleanup}'s job — it snapshots
@@ -109,17 +108,16 @@ public class ConnectionManager {
     public List<ConnectionRecord> removeStaleConnections(long timeoutMs) {
         long now = System.currentTimeMillis();
         List<ConnectionRecord> stale = new ArrayList<>();
-        for (Map.Entry<String, Long> entry : lastActiveTime.entrySet()) {
-            if (now - entry.getValue() > timeoutMs) {
-                String connId = entry.getKey();
-                ConnectionRecord removed = connections.remove(connId);
-                lastActiveTime.remove(connId);
-                if (removed != null) {
-                    removed.pushSubject.onCompleted();
-                    stale.add(removed);
-                    log.info("[harbor] stale connection removed: id={}, clientIp={}, inactive={}ms",
-                            connId, removed.clientIp(), now - entry.getValue());
-                }
+        for (ConnectionRecord record : connections.values()) {
+            if (!record.isStale(now, timeoutMs)) {
+                continue;
+            }
+            ConnectionRecord removed = connections.remove(record.connectionId());
+            if (removed != null) {
+                removed.pushSubject.onCompleted();
+                stale.add(removed);
+                log.info("[harbor] stale connection removed: id={}, clientIp={}, inactive={}ms",
+                        removed.connectionId(), removed.clientIp(), now - removed.lastActive());
             }
         }
         return stale;
@@ -196,13 +194,36 @@ public class ConnectionManager {
     }
 
     /**
-     * A single client connection record.
+     * A single client connection record — including its own activity clock.
+     * <p>
+     * The clock lives here (as a mutable carrier inside an immutable record)
+     * rather than in a parallel map so that the liveness layer cannot drift out
+     * of step with the connection registry: there is exactly one place to add
+     * and one to remove.  This mirrors Nacos, where the timestamp is a field of
+     * {@code Connection} and {@code ConnectionManager.refreshActiveTime()} just
+     * delegates to {@code connection.freshActiveTime()}.
      */
     public record ConnectionRecord(
             String connectionId,
             String clientIp,
             String clientVersion,
             Map<String, String> labels,
-            StreamSubject<Message> pushSubject
-    ) {}
+            StreamSubject<Message> pushSubject,
+            AtomicLong lastActiveTime
+    ) {
+        /** Stamp as active now; called from the transport thread serving the request. */
+        void touch() {
+            lastActiveTime.set(System.currentTimeMillis());
+        }
+
+        /** @return the epoch millis of the last observed activity. */
+        long lastActive() {
+            return lastActiveTime.get();
+        }
+
+        /** @return true when nothing has been seen on this connection for {@code timeoutMs}. */
+        boolean isStale(long nowMillis, long timeoutMs) {
+            return nowMillis - lastActiveTime.get() > timeoutMs;
+        }
+    }
 }
