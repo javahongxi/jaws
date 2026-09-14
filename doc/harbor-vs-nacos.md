@@ -1,6 +1,6 @@
 # harbor ↔ Nacos：一份对照字帖
 
-> 本文基于两侧源码逐行核对撰写。核对基线：Nacos `1a66d61b1`（本地 `~/github/nacos`）、jaws `917febc0`（`jaws-harbor` 主源码 49 个 Java 文件 / 6671 行，单测 56 个）。所有 Nacos 出处的形式为 `路径:行号`，所有常量值均读自源码而非文档。核对日期 2026-09-14。
+> 本文基于两侧源码逐行核对撰写。核对基线：Nacos `1a66d61b1`（本地 `~/github/nacos`）、jaws `9b79105e`（`jaws-harbor` 主源码 50 个 Java 文件 / 6727 行，单测 57 个）。所有 Nacos 出处的形式为 `路径:行号`，所有常量值均读自源码而非文档。核对日期 2026-09-14。
 
 ## 0. 这份文档要解决什么
 
@@ -16,9 +16,9 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 |---|---|---|---|
 | `ClientSession` | `ConnectionBasedClient` | `naming/.../core/v2/client/impl/ConnectionBasedClient.java:29` | 一条连接即一个客户端实体，不是「实例列表的容器」 |
 | `ClientSession.nativeClient`（`final`） | `isNative`（`final`） | 同上 `:37`、`:61` | 原生/副本身份出生定死，永不在生命周期中翻转 |
-| `lastOwnerConfirmedTime` | `lastRenewTime` | 同上 `:42`（注释：仅 `isNative=false` 有意义） | 副本的「owner 最近一次确认我」时钟，与任何本地变更时间都分开 |
+| `lastRenewTime` | `lastRenewTime`（**同名**） | 同上 `:42`（注释：仅 `isNative=false` 有意义） | 曾名 `lastOwnerConfirmedTime`，为消除与 Nacos 的读差而改用对方名字；推进它的动作仍叫 `markOwnerConfirmed()`，因为 renew 不含主语，会让副本以为自己给自己续期 |
 | `isReplicaOrphaned(now, tol)` | `isExpire(now)` | 同上 `:74-76`；接口声明在 `naming/.../core/v2/client/Client.java:138` | 过期判据挂在 Client 上，且只判副本 |
-| `clientId`（= 连接 ID） | `getClientId()` 返回 `connectionId` | 同上 `:52` | 键是连接而非 IP，同 IP 多进程不互相覆盖 |
+| `ClientSession.connectionId`、两张反向索引的 `Set<String> connectionIds`、`ClientSyncData`/`ClientVerifyInfo` 的 `connectionId` 字段 | `getClientId()` 返回 `connectionId`；载荷里叫 `clientId` | 同上 `:52`；Nacos `core/v2/client/ClientSyncData.java:34` | 值就是一个 TCP 连接的 id，"client" 正是让 harbor 早期退回按 IP 匹配的那个词；载荷只在 harbor 节点之间流转，故一并改名，见 §3.10 |
 | `recalculateRevision()` | `recalculateRevision()` | `AbstractClient.java:203-207`、`ConnectionBasedClient.java:80-82` | 同名；语义有偏离，见 §3.1 |
 | `PushDelayTaskEngine` | `PushDelayTaskExecuteEngine` | `naming/.../push/v2/task/PushDelayTaskExecuteEngine.java` | 服务级合并的推送延迟引擎 |
 | `ConnectionLifecycle.cleanup()` | `clientDisconnected(clientId)` | `naming/.../core/v2/client/manager/impl/ConnectionBasedClientManager.java:96`、`:105-118` | 关闭动作的唯一事务入口 |
@@ -141,9 +141,19 @@ harbor 把四样东西装进一个类：连接记录（`ConnectionManager.java:3
 
 **重评触发条件**：一旦要做连接治理（按 label 限流、负载迁移、主动踢连重平衡），或者要让多协议共用同一张连接注册表，把传输层拆出来才有真实收益——那时再拆。
 
+### 3.10 全仓改叫 connectionId，包括 Distro 载荷
+
+Nacos 在 `ClientSyncData` 与 `DistroClientVerifyInfo` 里把主键字段叫 `clientId`（`ConnectionBasedClient.getClientId()` 返回的其实也是 `connectionId`，`:52`），harbor 连同自己的载荷模型一起改叫 `connectionId`：`ClientSession.connectionId`、两张反向索引的 `Set<String> connectionIds`、`ClientSyncData.connectionId`、`ClientVerifyInfo.connectionId`、`DistroVerifyResponse.mismatchedConnectionIds`。
+
+改名没有兼容代价，因为这两个类是**节点之间**的 Distro 载荷（JSON 装进 `Payload.body`，类型名 `DistroSyncRequest`/`DistroVerifyRequest` 都是 harbor 自己的），nacos-client 既不发也不读；harbor 集群两端同步演进即可。与 nacos-client 互通的那一面是 `NotifySubscriberRequest`/`InstanceRequest` 那批，字段名一律照旧。
+
+值得这个名字的理由是硬的：`client` 一词在读者心里默认指进程或主机，harbor 早期就因此留过 `connectionIdByClientIp` 之类的按 IP 兜底，而同一台机器起多个进程时那会互相覆盖（§1 的第一条不变式）。值是一个 TCP 连接的 id，就叫它 connectionId。
+
+同类的名字取舍还有两处：副本背书时钟采用 Nacos 的 `lastRenewTime`（消除读差），但推进它的动作保留 `markOwnerConfirmed()` —— `renew` 不带主语，容易被读成「副本自己续期」，而那正是这条不变式要防的误判；字段与访问器的注释只留在使用的当下有用的事实，命名史与 Nacos 对照一律收在这里。
+
 ## 4. 测试即语义注解
 
-`jaws-harbor` 的 56 个用例里，主干测试类各自钉住一条 Nacos 语义，类名就是命题：
+`jaws-harbor` 的 57 个用例里，主干测试类各自钉住一条 Nacos 语义，类名就是命题：
 
 | 测试 | 钉住的语义 |
 |---|---|
