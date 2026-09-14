@@ -7,21 +7,21 @@ import java.util.List;
 /**
  * Response to {@link org.hongxi.jaws.harbor.model.request.DistroVerifyRequest}.
  * <p>
- * When verification detects mismatches, {@code mismatchedClientIds} carries
- * the list of clientIds that are missing or have revision mismatches on the
+ * When verification detects mismatches, {@code mismatchedConnectionIds} carries
+ * the list of connectionIds that are missing or have revision mismatches on the
  * receiving side. The sender uses this for targeted snapshot repair.
  *
  * @author shenhongxi
  */
 public class DistroVerifyResponse extends Response {
 
-    private List<String> mismatchedClientIds;
+    private List<String> mismatchedConnectionIds;
 
     public List<String> getMismatchedClientIds() {
-        return mismatchedClientIds;
+        return mismatchedConnectionIds;
     }
 
-    public void setMismatchedClientIds(List<String> mismatchedClientIds) {
-        this.mismatchedClientIds = mismatchedClientIds;
+    public void setMismatchedClientIds(List<String> mismatchedConnectionIds) {
+        this.mismatchedConnectionIds = mismatchedConnectionIds;
     }
 }

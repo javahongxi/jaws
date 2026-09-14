@@ -99,7 +99,7 @@ class SyncedHealthAuthorityTest {
         cm1 = new ConnectionManager();
         // Same wiring HarborServer uses: a health verdict judged locally must go
         // out through the coalesced Distro sync path.
-        st1 = new ServiceStorage(cm1, key -> { }, clientId -> d1.requestSyncChange(clientId));
+        st1 = new ServiceStorage(cm1, key -> { }, connectionId -> d1.requestSyncChange(connectionId));
         cm2 = new ConnectionManager();
         st2 = new ServiceStorage(cm2, service -> notified2.add(service.toKeyString()));
 

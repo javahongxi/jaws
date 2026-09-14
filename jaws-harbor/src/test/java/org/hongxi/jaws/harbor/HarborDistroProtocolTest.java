@@ -116,7 +116,7 @@ class HarborDistroProtocolTest {
         // Build ClientSyncData
         ClientSyncData syncData = storage.buildClientSyncData("conn-1");
         assertNotNull(syncData);
-        assertEquals("conn-1", syncData.getClientId());
+        assertEquals("conn-1", syncData.getConnectionId());
         assertEquals(2, syncData.getServiceKeys().size());
 
         // Apply to another storage

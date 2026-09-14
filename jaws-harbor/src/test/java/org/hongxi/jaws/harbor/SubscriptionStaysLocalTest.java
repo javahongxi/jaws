@@ -49,7 +49,7 @@ class SubscriptionStaysLocalTest {
     private ServiceStorage storage;
 
     private static class RecordingTransport implements HarborNodeTransport {
-        record Send(String target, String clientId, String op, byte[] content) { }
+        record Send(String target, String connectionId, String op, byte[] content) { }
         final List<Send> sends = new CopyOnWriteArrayList<>();
 
         @Override

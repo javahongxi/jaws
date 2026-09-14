@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class ClientSession {
 
-    private final String clientId;
+    private final String connectionId;
 
     /** service → list of instances published by this client. */
     private final Map<ServiceKey, List<Instance>> publishers = new ConcurrentHashMap<>();
@@ -41,41 +41,30 @@ public class ClientSession {
     private final AtomicLong revision = new AtomicLong(0);
 
     /**
-     * When the client's OWNING node last vouched for this session — a sync applied
-     * or a verify in which the owner's revision matched ours. This is deliberately
-     * NOT "when this session was last mutated locally": local bookkeeping on a
-     * replica (the expiry tier removing one of its instances, say) would then move
-     * the clock, letting every such mutation re-tolerate another full window, and a
-     * replica holding many instances could keep itself alive indefinitely.
-     * Silence here means silence from the owner.
-     * <p>
-     * There is no separate "last updated" stamp on this object: it had no reader,
-     * and a clock nobody consults only invites being consulted by mistake.
+     * When the owning node last vouched for this session: a sync applied, or a verify
+     * in which its revision matched ours. Never advanced by local mutation, or a
+     * replica could keep itself alive. Only replicas are judged against it.
      */
-    private volatile long lastOwnerConfirmedTime;
+    private volatile long lastRenewTime;
 
     /**
-     * Whether this session belongs to a connection terminating ON THIS NODE
-     * ({@code true}) or was replicated from a peer ({@code false}). Counterpart of
-     * Nacos {@code ConnectionBasedClient.isNative}, and final for the same reason:
-     * identity is decided at birth — {@code ConnectionManager.register} versus
-     * {@code ServiceStorage.applyClientSyncData}, mirroring Nacos's
-     * {@code newClient}/{@code newSyncedClient} split — and never changes afterwards.
-     * A replica that could promote itself to native would silently escape every
-     * judgement meant for replicas, including {@link #isReplicaOrphaned}.
+     * Whether the connection terminates on this node ({@code true}) or the session was
+     * replicated from a peer ({@code false}). Decided at birth and immutable: a replica
+     * that could promote itself would escape every replica-only rule, including
+     * {@link #isReplicaOrphaned}.
      */
     private final boolean nativeClient;
 
-    public ClientSession(String clientId, boolean nativeClient) {
-        this.clientId = clientId;
+    public ClientSession(String connectionId, boolean nativeClient) {
+        this.connectionId = connectionId;
         this.nativeClient = nativeClient;
         // A session born from a sync is confirmed by its owner right now; a native one
         // never consults this clock at all.
-        this.lastOwnerConfirmedTime = System.currentTimeMillis();
+        this.lastRenewTime = System.currentTimeMillis();
     }
 
-    public String getClientId() {
-        return clientId;
+    public String getConnectionId() {
+        return connectionId;
     }
 
     // ========================================================================
@@ -205,8 +194,8 @@ public class ClientSession {
         this.revision.set(revision);
     }
 
-    public long getLastOwnerConfirmedTime() {
-        return lastOwnerConfirmedTime;
+    public long getLastRenewTime() {
+        return lastRenewTime;
     }
 
     /**
@@ -215,11 +204,11 @@ public class ClientSession {
      * may rescue a replica from {@code ServiceStorage#reapStaleSyncedClients}.
      */
     public void markOwnerConfirmed() {
-        this.lastOwnerConfirmedTime = System.currentTimeMillis();
+        this.lastRenewTime = System.currentTimeMillis();
     }
 
-    public void setLastOwnerConfirmedTime(long time) {
-        this.lastOwnerConfirmedTime = time;
+    public void setLastRenewTime(long time) {
+        this.lastRenewTime = time;
     }
 
     public boolean isNativeClient() {
@@ -239,7 +228,7 @@ public class ClientSession {
      * @param toleranceMs how long owner silence is tolerated
      */
     public boolean isReplicaOrphaned(long nowMillis, long toleranceMs) {
-        return !nativeClient && nowMillis - lastOwnerConfirmedTime > toleranceMs;
+        return !nativeClient && nowMillis - lastRenewTime > toleranceMs;
     }
 
     /**
@@ -252,7 +241,7 @@ public class ClientSession {
 
     @Override
     public String toString() {
-        return "ClientSession{clientId='" + clientId + "', publishers=" + getTotalInstanceCount()
+        return "ClientSession{connectionId='" + connectionId + "', publishers=" + getTotalInstanceCount()
                 + ", subscribers=" + subscribers.size() + ", revision=" + revision.get() + "}";
     }
 }

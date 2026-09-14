@@ -26,7 +26,7 @@ import java.util.function.Consumer;
  *       owns its published instances and subscriptions.  Instance data lives
  *       exclusively here.</li>
  *   <li><b>Layer 2 — lightweight indexes</b>: {@code publisherIndexes} and
- *       {@code subscriberIndexes} both map {@link ServiceKey} → Set&lt;clientId&gt;.
+ *       {@code subscriberIndexes} both map {@link ServiceKey} → Set&lt;connectionId&gt;.
  *       They are ID-only reverse indexes, but they differ in scope: the publisher
  *       index covers clients this node holds <em>and</em> replicas replicated from
  *       peers (any node must be able to answer a routing query), while the subscriber
@@ -45,14 +45,14 @@ public class ServiceStorage {
     private static final Logger log = LoggerFactory.getLogger(ServiceStorage.class);
 
     /**
-     * Publisher reverse index: service → Set&lt;clientId&gt;.
+     * Publisher reverse index: service → Set&lt;connectionId&gt;.
      * Only stores client IDs, not Instance data — matching Nacos's
      * {@code ClientServiceIndexesManager.publisherIndexes}.
      */
     private final Map<ServiceKey, Set<String>> publisherIndexes = new ConcurrentHashMap<>();
 
     /**
-     * Subscriber reverse index: service → Set&lt;clientId&gt;. Shard-local by
+     * Subscriber reverse index: service → Set&lt;connectionId&gt;. Shard-local by
      * construction: only connections this node holds are ever added (see
      * {@code doc/harbor-vs-nacos.md} §2.5).
      */
@@ -72,7 +72,7 @@ public class ServiceStorage {
     private final ServiceChangeListener changeListener;
 
     /**
-     * Called with the clientId whose HEALTH flipped (unhealthy ↔ healthy), so the
+     * Called with the connectionId whose HEALTH flipped (unhealthy ↔ healthy), so the
      * owner of that connection can re-publish it. Health is part of the data peers
      * replicate, and only the node holding the connection may judge it — so a
      * verdict has to travel, otherwise every replica keeps a stale answer.
@@ -82,7 +82,7 @@ public class ServiceStorage {
 
     public ServiceStorage(ConnectionManager connectionManager,
                           ServiceChangeListener changeListener) {
-        this(connectionManager, changeListener, clientId -> { });
+        this(connectionManager, changeListener, connectionId -> { });
     }
 
     public ServiceStorage(ConnectionManager connectionManager,
@@ -101,7 +101,7 @@ public class ServiceStorage {
      * Register an instance for the given service.
      * <p>
      * Instance data is written to the {@link ClientSession} (source of truth);
-     * only the clientId is added to the publisher index.
+     * only the connectionId is added to the publisher index.
      *
      * @param connectionId the gRPC connectionId that registered this instance;
      *                     used to scope deregistration to the owning connection
@@ -123,7 +123,7 @@ public class ServiceStorage {
             session.addInstance(key, instance);
         }
 
-        // Add clientId to publisher index
+        // Add connectionId to publisher index
         publisherIndexes.computeIfAbsent(key, k -> new CopyOnWriteArraySet<>())
                 .add(connectionId);
 
@@ -150,10 +150,10 @@ public class ServiceStorage {
                     session.removeInstance(key, ip, port);
                     invalidateServiceCache(key);
                     // Update publisher index
-                    Set<String> clientIds = publisherIndexes.get(key);
-                    if (clientIds != null) {
-                        clientIds.remove(connectionId);
-                        if (clientIds.isEmpty()) {
+                    Set<String> connectionIds = publisherIndexes.get(key);
+                    if (connectionIds != null) {
+                        connectionIds.remove(connectionId);
+                        if (connectionIds.isEmpty()) {
                             publisherIndexes.remove(key);
                         }
                     }
@@ -184,13 +184,13 @@ public class ServiceStorage {
      * Aggregate instances for a service from all ClientSession publishers.
      */
     private List<Instance> aggregateInstances(ServiceKey serviceKey) {
-        Set<String> clientIds = publisherIndexes.get(serviceKey);
-        if (clientIds == null || clientIds.isEmpty()) {
+        Set<String> connectionIds = publisherIndexes.get(serviceKey);
+        if (connectionIds == null || connectionIds.isEmpty()) {
             return List.of();
         }
         List<Instance> result = new ArrayList<>();
-        for (String clientId : clientIds) {
-            ClientSession session = connectionManager.getClientSession(clientId);
+        for (String connectionId : connectionIds) {
+            ClientSession session = connectionManager.getClientSession(connectionId);
             if (session != null) {
                 result.addAll(session.getInstances(serviceKey));
             }
@@ -426,14 +426,14 @@ public class ServiceStorage {
                 // the revision, a lost push for a client whose instances did not
                 // change would never be noticed by verify.
                 session.recalculateRevision();
-                flippedClients.add(session.getClientId());
+                flippedClients.add(session.getConnectionId());
             }
         }
         for (ServiceKey serviceKey : affectedServices) {
             changeListener.onServiceChange(serviceKey);
         }
-        for (String clientId : flippedClients) {
-            healthTransitionNotifier.accept(clientId);
+        for (String connectionId : flippedClients) {
+            healthTransitionNotifier.accept(connectionId);
         }
     }
 
@@ -465,12 +465,12 @@ public class ServiceStorage {
      * Notifies subscribers if the instance was actually removed.
      */
     public void removeInstanceByIpPort(ServiceKey serviceKey, String ip, int port) {
-        Set<String> clientIds = publisherIndexes.get(serviceKey);
-        if (clientIds == null) {
+        Set<String> connectionIds = publisherIndexes.get(serviceKey);
+        if (connectionIds == null) {
             return;
         }
-        for (String clientId : clientIds) {
-            ClientSession session = connectionManager.getClientSession(clientId);
+        for (String connectionId : connectionIds) {
+            ClientSession session = connectionManager.getClientSession(connectionId);
             if (session == null) {
                 continue;
             }
@@ -478,8 +478,8 @@ public class ServiceStorage {
                 if (ip.equals(inst.getIp()) && port == inst.getPort()) {
                     session.removeInstance(serviceKey, ip, port);
                     if (session.getInstances(serviceKey).isEmpty()) {
-                        clientIds.remove(clientId);
-                        if (clientIds.isEmpty()) {
+                        connectionIds.remove(connectionId);
+                        if (connectionIds.isEmpty()) {
                             publisherIndexes.remove(serviceKey);
                         }
                     }
@@ -516,11 +516,11 @@ public class ServiceStorage {
             int count = entry.getValue().size();
             totalRemoved += count;
             session.removeAllInstances(serviceKey);
-            // Remove clientId from publisher index
-            Set<String> clientIds = publisherIndexes.get(serviceKey);
-            if (clientIds != null) {
-                clientIds.remove(connectionId);
-                if (clientIds.isEmpty()) {
+            // Remove connectionId from publisher index
+            Set<String> connectionIds = publisherIndexes.get(serviceKey);
+            if (connectionIds != null) {
+                connectionIds.remove(connectionId);
+                if (connectionIds.isEmpty()) {
                     publisherIndexes.remove(serviceKey);
                 }
             }
@@ -606,24 +606,24 @@ public class ServiceStorage {
     /**
      * Apply a {@link ClientSyncData} received from a peer via Distro sync.
      * Creates or replaces a local ClientSession (marked as non-native) and
-     * updates the publisher index with the clientId.
+     * updates the publisher index with the connectionId.
      * <p>
      * Uses full-replacement semantics: the old client data is removed and
      * replaced with the incoming, matching Nacos's
      * {@code upgradeClient()} behaviour.
      */
     public void applyClientSyncData(ClientSyncData data) {
-        if (data == null || data.getClientId() == null) {
+        if (data == null || data.getConnectionId() == null) {
             return;
         }
-        String clientId = data.getClientId();
+        String connectionId = data.getConnectionId();
 
         // Skip if this client is a native client (the node's own connection).
         // Native clients are authoritative locally and must never be overwritten
         // by a peer's potentially stale copy.
-        ClientSession existing = connectionManager.getClientSession(clientId);
+        ClientSession existing = connectionManager.getClientSession(connectionId);
         if (existing != null && existing.isNativeClient()) {
-            log.debug("[harbor] skipping client sync for native client: {}", clientId);
+            log.debug("[harbor] skipping client sync for native client: {}", connectionId);
             return;
         }
 
@@ -632,15 +632,15 @@ public class ServiceStorage {
         // above, non-native). First-time syncs have nothing to undo.
         if (existing != null) {
             for (ServiceKey previous : existing.getAllPublishedServices()) {
-                removeFromPublisherIndex(previous, clientId);
+                removeFromPublisherIndex(previous, connectionId);
                 invalidateServiceCache(previous);
             }
         }
 
         // Create or update the ClientSession
-        ClientSession session = new ClientSession(clientId, false);
+        ClientSession session = new ClientSession(connectionId, false);
 
-        // Apply publishers — write to ClientSession + add clientId to publisherIndexes
+        // Apply publishers — write to ClientSession + add connectionId to publisherIndexes
         List<String> serviceKeys = data.getServiceKeys();
         List<Instance> instances = data.getInstances();
         if (serviceKeys != null && instances != null) {
@@ -650,10 +650,10 @@ public class ServiceStorage {
                 // data under a wrong service.
                 ServiceKey serviceKey = ServiceKey.parse(serviceKeys.get(i));
                 Instance instance = instances.get(i);
-                instance.setConnectionId(clientId);
+                instance.setConnectionId(connectionId);
                 session.addInstance(serviceKey, instance);
                 publisherIndexes.computeIfAbsent(serviceKey, k -> new CopyOnWriteArraySet<>())
-                        .add(clientId);
+                        .add(connectionId);
                 invalidateServiceCache(serviceKey);
             }
         }
@@ -665,9 +665,9 @@ public class ServiceStorage {
 
         // Receiving the own-state of the owning node IS the confirmation.
         session.markOwnerConfirmed();
-        connectionManager.putClientSession(clientId, session);
+        connectionManager.putClientSession(connectionId, session);
         log.info("[harbor] applied client sync: {} (publishers={})",
-                clientId, session.getTotalInstanceCount());
+                connectionId, session.getTotalInstanceCount());
     }
 
     /**
@@ -682,7 +682,7 @@ public class ServiceStorage {
      * and its reverse-index entries survive for the process lifetime — a subscriber-only
      * replica is invisible to every beat-based tier, so it leaks outright.
      * <p>
-     * The predicate is {@link ClientSession#getLastOwnerConfirmedTime()}, advanced only
+     * The predicate is {@link ClientSession#getLastRenewTime()}, advanced only
      * when the owner vouches for the session (a sync applied, or a verify in which its
      * revision matched ours) and NEVER by local bookkeeping such as the expiry tier
      * dropping one of the replica instances. So an owner that keeps confirming holds its
@@ -703,12 +703,12 @@ public class ServiceStorage {
             // the same reason): whether a replica may be dropped is a fact about its own
             // identity and confirmation clock, not about this sweep.
             if (session.isReplicaOrphaned(now, timeoutMs)) {
-                stale.add(session.getClientId());
+                stale.add(session.getConnectionId());
             }
         }
-        for (String clientId : stale) {
-            log.info("[harbor] reaping replica of client unseen for {}ms: {}", timeoutMs, clientId);
-            removeSyncedClient(clientId);
+        for (String connectionId : stale) {
+            log.info("[harbor] reaping replica of client unseen for {}ms: {}", timeoutMs, connectionId);
+            removeSyncedClient(connectionId);
         }
         return stale.size();
     }
@@ -717,24 +717,24 @@ public class ServiceStorage {
      * Remove a synced (non-native) client and all its index entries.
      * Called when a Distro DELETE is received for a connection.
      */
-    public void removeSyncedClient(String clientId) {
-        ClientSession session = connectionManager.getClientSession(clientId);
+    public void removeSyncedClient(String connectionId) {
+        ClientSession session = connectionManager.getClientSession(connectionId);
         if (session == null) {
             return;
         }
         // Snapshot before release(): afterwards the session no longer knows what it held.
         Set<ServiceKey> affectedServices = new HashSet<>(session.getAllPublishedServices());
         session.release();
-        connectionManager.removeClientSession(clientId);
+        connectionManager.removeClientSession(connectionId);
         // Per-service cleanup of the publisher index, then the emptiness check that
         // also retires the service itself: the caller knows exactly which services
         // this client published, so no index-wide scan is needed.
         for (ServiceKey serviceKey : affectedServices) {
-            removeFromPublisherIndex(serviceKey, clientId);
+            removeFromPublisherIndex(serviceKey, connectionId);
             // dropping a synced client removes its instances
             checkAndCleanEmptyService(serviceKey, true);
         }
-        log.info("[harbor] removed synced client: {}", clientId);
+        log.info("[harbor] removed synced client: {}", connectionId);
     }
 
     /**
@@ -746,13 +746,13 @@ public class ServiceStorage {
      * enters that index, and the connections that do are cleared by
      * {@link #removeAllSubscribersForConnection(String)} when the connection closes.
      */
-    private void removeFromPublisherIndex(ServiceKey serviceKey, String clientId) {
-        Set<String> clientIds = publisherIndexes.get(serviceKey);
-        if (clientIds == null) {
+    private void removeFromPublisherIndex(ServiceKey serviceKey, String connectionId) {
+        Set<String> connectionIds = publisherIndexes.get(serviceKey);
+        if (connectionIds == null) {
             return;
         }
-        clientIds.remove(clientId);
-        if (clientIds.isEmpty()) {
+        connectionIds.remove(connectionId);
+        if (connectionIds.isEmpty()) {
             publisherIndexes.remove(serviceKey);
         }
     }

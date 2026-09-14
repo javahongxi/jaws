@@ -75,7 +75,7 @@ public class DistroProtocol {
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
 
-    /** clientId → in-flight coalesced sync task; presence = merge lock. */
+    /** connectionId → in-flight coalesced sync task; presence = merge lock. */
     private final Map<String, ScheduledFuture<?>> pendingSync = new ConcurrentHashMap<>();
 
     private final ScheduledExecutorService scheduler =
@@ -127,7 +127,7 @@ public class DistroProtocol {
      */
     public void refreshOwnedClients() {
         for (ClientSession session : connectionManager.allNativeClientSessions()) {
-            requestSyncChange(session.getClientId());
+            requestSyncChange(session.getConnectionId());
         }
     }
 
@@ -160,7 +160,7 @@ public class DistroProtocol {
     /**
      * Sync a client-level change to all peer nodes.
      *
-     * @param connectionId the clientId (connectionId) whose data changed
+     * @param connectionId the connectionId (connectionId) whose data changed
      * @param operation    {@link #OP_CHANGE} or {@link #OP_DELETE}
      * @param content      serialized {@link ClientSyncData} for CHANGE; empty for DELETE
      */
@@ -185,34 +185,34 @@ public class DistroProtocol {
 
     /**
      * Register that a client's published data changed. Coalescing + reconcile:
-     * bursts for the same clientId collapse into one push, and at fire time we
+     * bursts for the same connectionId collapse into one push, and at fire time we
      * re-read the client's CURRENT full state (never a captured snapshot) and
      * push it to all peers — the same shape as the harbor {@code PushDelayTaskEngine}
      * and Nacos's {@code DistroDelayTaskExecuteEngine}. An emptied client
      * propagates a DELETE. This removes the old "push full state on every change"
      * amplification.
      */
-    public void requestSyncChange(String clientId) {
-        if (clientId == null) {
+    public void requestSyncChange(String connectionId) {
+        if (connectionId == null) {
             return;
         }
-        pendingSync.computeIfAbsent(clientId, k ->
+        pendingSync.computeIfAbsent(connectionId, k ->
                 scheduler.schedule(() -> doSyncChange(k), SYNC_MERGE_DELAY_MS, TimeUnit.MILLISECONDS));
     }
 
-    private void doSyncChange(String clientId) {
-        pendingSync.remove(clientId);
+    private void doSyncChange(String connectionId) {
+        pendingSync.remove(connectionId);
         if (!running) {
             return;
         }
-        ClientSyncData data = serviceStorage.buildClientSyncData(clientId);
+        ClientSyncData data = serviceStorage.buildClientSyncData(connectionId);
         if (data == null) {
             return;
         }
         if (hasContent(data)) {
-            syncChange(clientId, OP_CHANGE, JSON.toJSONBytes(data));
+            syncChange(connectionId, OP_CHANGE, JSON.toJSONBytes(data));
         } else {
-            syncChange(clientId, OP_DELETE, new byte[0]);
+            syncChange(connectionId, OP_DELETE, new byte[0]);
         }
     }
 
@@ -220,15 +220,15 @@ public class DistroProtocol {
      * Immediately propagate a client's removal and cancel any coalesced CHANGE
      * pending for it — a DELETE must not be swallowed by a queued window.
      */
-    public void requestSyncDelete(String clientId) {
-        if (clientId == null) {
+    public void requestSyncDelete(String connectionId) {
+        if (connectionId == null) {
             return;
         }
-        ScheduledFuture<?> f = pendingSync.remove(clientId);
+        ScheduledFuture<?> f = pendingSync.remove(connectionId);
         if (f != null) {
             f.cancel(false);
         }
-        syncChange(clientId, OP_DELETE, new byte[0]);
+        syncChange(connectionId, OP_DELETE, new byte[0]);
     }
 
     // ========================================================================
@@ -238,16 +238,16 @@ public class DistroProtocol {
     /**
      * Handle a sync request from a peer node — apply the received client data locally.
      *
-     * @param clientId  the connectionId of the client (resourceKey)
+     * @param connectionId  the connectionId of the client (resourceKey)
      * @param operation CHANGE or DELETE
      * @param content   serialized ClientSyncData (CHANGE) or empty (DELETE)
      */
-    public boolean onSync(String clientId, String operation, byte[] content) {
-        log.debug("[harbor] distro receive: clientId={} op={}", clientId, operation);
+    public boolean onSync(String connectionId, String operation, byte[] content) {
+        log.debug("[harbor] distro receive: connectionId={} op={}", connectionId, operation);
         try {
             if (OP_DELETE.equals(operation)) {
-                log.info("[harbor] distro delete client: {}", clientId);
-                serviceStorage.removeSyncedClient(clientId);
+                log.info("[harbor] distro delete client: {}", connectionId);
+                serviceStorage.removeSyncedClient(connectionId);
             } else {
                 if (content != null && content.length != 0) {
                     ClientSyncData data = JSON.parseObject(
@@ -259,7 +259,7 @@ public class DistroProtocol {
             }
             return true;
         } catch (Exception e) {
-            log.error("[harbor] error processing distro receive: clientId={}", clientId, e);
+            log.error("[harbor] error processing distro receive: connectionId={}", connectionId, e);
             return false;
         }
     }
@@ -267,26 +267,26 @@ public class DistroProtocol {
     /**
      * Handle a verify request from a peer — compare per-client revisions.
      *
-     * @param verifyInfos list of (clientId, revision) from the peer
-     * @return list of clientIds that are missing or have mismatched revisions;
+     * @param verifyInfos list of (connectionId, revision) from the peer
+     * @return list of connectionIds that are missing or have mismatched revisions;
      *         empty if all matched
      */
     public List<String> onVerify(List<ClientVerifyInfo> verifyInfos) {
         log.debug("[harbor] distro verify: {} clients", verifyInfos.size());
         List<String> mismatched = new ArrayList<>();
         for (ClientVerifyInfo info : verifyInfos) {
-            ClientSession localCache = connectionManager.getClientSession(info.getClientId());
+            ClientSession localCache = connectionManager.getClientSession(info.getConnectionId());
             if (localCache != null) {
                 if (localCache.getRevision() == info.getRevision()) {
                     localCache.markOwnerConfirmed();
                 } else {
-                    log.info("[harbor] distro verify mismatch: clientId={} localRev={} remoteRev={}",
-                            info.getClientId(), localCache.getRevision(), info.getRevision());
-                    mismatched.add(info.getClientId());
+                    log.info("[harbor] distro verify mismatch: connectionId={} localRev={} remoteRev={}",
+                            info.getConnectionId(), localCache.getRevision(), info.getRevision());
+                    mismatched.add(info.getConnectionId());
                 }
             } else {
-                log.debug("[harbor] distro verify: unknown clientId={}", info.getClientId());
-                mismatched.add(info.getClientId());
+                log.debug("[harbor] distro verify: unknown connectionId={}", info.getConnectionId());
+                mismatched.add(info.getConnectionId());
             }
         }
         return mismatched;
@@ -300,7 +300,7 @@ public class DistroProtocol {
         try {
             List<ClientSyncData> allClientData = new ArrayList<>();
             for (ClientSession session : connectionManager.allClientSessions()) {
-                ClientSyncData data = serviceStorage.buildClientSyncData(session.getClientId());
+                ClientSyncData data = serviceStorage.buildClientSyncData(session.getConnectionId());
                 if (data != null && hasContent(data)) {
                     allClientData.add(data);
                 }
@@ -326,7 +326,7 @@ public class DistroProtocol {
                 // Build per-client verify data from native clients only
                 List<ClientVerifyInfo> verifyInfos = new ArrayList<>();
                 for (ClientSession session : connectionManager.allNativeClientSessions()) {
-                    verifyInfos.add(new ClientVerifyInfo(session.getClientId(), session.getRevision()));
+                    verifyInfos.add(new ClientVerifyInfo(session.getConnectionId(), session.getRevision()));
                 }
                 if (!verifyInfos.isEmpty()) {
                     for (ClusterMember peer : peers) {
@@ -395,7 +395,7 @@ public class DistroProtocol {
         }
         int applied = 0;
         for (ClientSyncData data : clientDataList) {
-            String cid = data.getClientId();
+            String cid = data.getConnectionId();
             if (connectionManager.getClientSession(cid) != null) {
                 continue;   // already hold this client (native or newer) — don't clobber
             }
@@ -419,8 +419,8 @@ public class DistroProtocol {
      */
     // Package-private (not private) so a same-package unit test can drive the
     // verify-repair directly instead of waiting on the 5s verify scheduler.
-    void resyncToPeer(ClusterMember peer, List<String> clientIds) {
-        for (String cid : clientIds) {
+    void resyncToPeer(ClusterMember peer, List<String> connectionIds) {
+        for (String cid : connectionIds) {
             ClientSession session = connectionManager.getClientSession(cid);
             if (session == null || !session.isNativeClient()) {
                 continue;   // not ours to repair — skip

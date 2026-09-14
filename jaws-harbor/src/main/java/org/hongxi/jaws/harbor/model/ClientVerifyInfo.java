@@ -11,24 +11,24 @@ package org.hongxi.jaws.harbor.model;
  */
 public class ClientVerifyInfo {
 
-    private String clientId;
+    private String connectionId;
 
     private long revision;
 
     public ClientVerifyInfo() {
     }
 
-    public ClientVerifyInfo(String clientId, long revision) {
-        this.clientId = clientId;
+    public ClientVerifyInfo(String connectionId, long revision) {
+        this.connectionId = connectionId;
         this.revision = revision;
     }
 
-    public String getClientId() {
-        return clientId;
+    public String getConnectionId() {
+        return connectionId;
     }
 
-    public void setClientId(String clientId) {
-        this.clientId = clientId;
+    public void setConnectionId(String connectionId) {
+        this.connectionId = connectionId;
     }
 
     public long getRevision() {

@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * shell, and its reverse-index entries, stayed behind for the process lifetime.
  * <p>
  * The predicate is therefore "no peer has confirmed this replica for a full expiry
- * window", using {@code lastOwnerConfirmedTime}, which is refreshed only when a sync
+ * window", using {@code lastRenewTime}, which is refreshed only when a sync
  * is applied and when the owner's revision matches during verify. A replica that IS
  * confirmed is live by construction; one that is not means the owner stopped — the
  * client or its node. Native sessions must never be touched by this tier: they are
@@ -86,16 +86,16 @@ class SyncedSessionReclamationTest {
     }
 
     /** Install a replica exactly as an inbound Distro sync would. */
-    private void givenReplicaOf(String clientId, List<String> serviceKeys, List<Instance> instances) {
-        storage.applyClientSyncData(new ClientSyncData(clientId, serviceKeys, instances, 7L));
-        assertNotNull(cm.getClientSession(clientId), "precondition: replica session installed");
-        assertFalse(cm.getClientSession(clientId).isNativeClient(),
+    private void givenReplicaOf(String connectionId, List<String> serviceKeys, List<Instance> instances) {
+        storage.applyClientSyncData(new ClientSyncData(connectionId, serviceKeys, instances, 7L));
+        assertNotNull(cm.getClientSession(connectionId), "precondition: replica session installed");
+        assertFalse(cm.getClientSession(connectionId).isNativeClient(),
                 "precondition: the replica must not look native here");
     }
 
-    private void ageReplica(String clientId, long millis) {
+    private void ageReplica(String connectionId, long millis) {
         // The reaper measures silence FROM THE OWNER; local mutations must not count.
-        cm.getClientSession(clientId).setLastOwnerConfirmedTime(System.currentTimeMillis() - millis);
+        cm.getClientSession(connectionId).setLastRenewTime(System.currentTimeMillis() - millis);
     }
 
     // ========================================================================
@@ -135,7 +135,7 @@ class SyncedSessionReclamationTest {
         // Nothing here may evict it — an idle native session is not a dead one.
         cm.register("mine", "10.0.0.1", "3.0.0", Map.of(), noop());
         storage.registerInstance(NS, GROUP, SVC, instance("10.0.0.1", 8080), "mine");
-        cm.getClientSession("mine").setLastOwnerConfirmedTime(1L); // the confirmation clock looks dead
+        cm.getClientSession("mine").setLastRenewTime(1L); // the confirmation clock looks dead
         events.clear(); // registerInstance announces once, legitimately
 
         assertEquals(0, storage.reapStaleSyncedClients(WINDOW_MS));

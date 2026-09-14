@@ -18,7 +18,7 @@ public interface HarborNodeTransport {
      * Send a sync message to a peer node.
      *
      * @param targetAddress peer address (host:port)
-     * @param resourceKey   the clientId (connectionId) of the sync
+     * @param resourceKey   the connectionId (connectionId) of the sync
      * @param operation     the operation type (CHANGE, DELETE)
      * @param content       the serialized {@link org.hongxi.jaws.harbor.model.ClientSyncData}
      * @return true if sync succeeded
@@ -29,8 +29,8 @@ public interface HarborNodeTransport {
      * Send a verify message to a peer node with per-client revision data.
      *
      * @param targetAddress peer address
-     * @param verifyInfos   list of per-client (clientId, revision) for verification
-     * @return list of clientIds that are mismatched or missing on the peer;
+     * @param verifyInfos   list of per-client (connectionId, revision) for verification
+     * @return list of connectionIds that are mismatched or missing on the peer;
      *         empty if all matched
      */
     List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos);
