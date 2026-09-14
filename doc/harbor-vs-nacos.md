@@ -80,13 +80,13 @@ Nacos 是同一个形状，但拆在两个模块：一张 `clients` 表同时装
 
 Nacos 的**基类**是内容哈希：`AbstractClient.recalculateRevision()` → `revision.set(DistroUtils.hash(this))`（`AbstractClient.java:203-207`），`DistroUtils.hash` 逐实例取 `Objects.hash`（`naming/.../utils/DistroUtils.java:71-97`）。但**连接型客户端把它覆盖了**：`ConnectionBasedClient.recalculateRevision()` → `revision.addAndGet(1)`（`ConnectionBasedClient.java:80-82`）——对连接模型而言 revision 是**每次变更 +1 的计数器**；内容哈希路线只保留给 `IpPortBasedClient`（`DistroUtils.java:72-74` 对其余类型直接返回 0）。
 
-harbor 反其道：把 Nacos 用在另一类客户端上的内容指纹思路搬到连接模型（`ClientSession.java:186-198`，XOR 逐条目哈希）。
+harbor 反其道：把 Nacos 用在另一类客户端上的内容指纹思路搬到连接模型（`ClientSession.java:175-187`，XOR 逐条目哈希）。
 
-理由：verify 的语义是「两节点的数据是否一致」，计数器回答的是「变更发生过几次」。实例增了又删回原样，计数器已前进，peer 会报 mismatch 并触发一次内容完全相同的重推——correctness 不受损，但白耗一轮同步。内容指纹对这种情况判一致。**代价**：32 位哈希理论存在碰撞漏检；XOR 对「同服务两个实例互换」不敏感（同 key 同端口同权重会被抵消），因此条目哈希里带 `ip/port/healthy`，且副本与原生两条路径必须用同一套 XOR 规则（这正是 `:171-185` 注释强调顺序无关的原因）。
+理由：verify 的语义是「两节点的数据是否一致」，计数器回答的是「变更发生过几次」。实例增了又删回原样，计数器已前进，peer 会报 mismatch 并触发一次内容完全相同的重推——correctness 不受损，但白耗一轮同步。内容指纹对这种情况判一致。**代价**：32 位哈希理论存在碰撞漏检；XOR 对「同服务两个实例互换」不敏感（同 key 同端口同权重会被抵消），因此条目哈希里带 `ip/port/healthy`，且副本与原生两条路径必须用同一套 XOR 规则（这正是 `:162-166` 注释强调顺序无关的原因）。
 
 ### 3.2 `lastBeat` 不进 revision，`healthy` 进
 
-`lastBeat` 是只有 owner 能读的墙钟；副本上的值是推送时被冻结的（Nacos 同样不逐心跳转发）。若折进哈希，native 与 synced 副本天然不等 → verify 每轮都误报并启动无意义重推。反之 `healthy` 是**被复制的内容**：owner 无实例变更地翻转判定时，必须可被 verify 检出，否则丢一次推送就让两节点永久分歧。见 `ClientSession.java:178-185`。
+`lastBeat` 是只有 owner 能读的墙钟；副本上的值是推送时被冻结的（Nacos 同样不逐心跳转发）。若折进哈希，native 与 synced 副本天然不等 → verify 每轮都误报并启动无意义重推。反之 `healthy` 是**被复制的内容**：owner 无实例变更地翻转判定时，必须可被 verify 检出，否则丢一次推送就让两节点永久分歧。见 `ClientSession.java:168-173`。
 
 ### 3.3 合并窗口比 Nacos 更激进：200ms vs 1000ms / 500ms
 
