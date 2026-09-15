@@ -7,7 +7,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -17,26 +16,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * DNS-based service discovery for the gRPC wire client. Resolves a hostname
- * to multiple A/AAAA records and periodically refreshes the resolution to
- * detect address changes (similar to grpc-java's {@code DnsNameResolver}).
- * <p>
- * When enabled, the client connects to all resolved addresses and
- * round-robins requests across them. This provides a basic form of
- * client-side load balancing without requiring an external registry.
- * <p>
- * Configuration via URL parameters:
- * <ul>
- *   <li>{@code dnsEnabled} — whether DNS service discovery is active</li>
- *   <li>{@code dnsRefreshIntervalMs} — how often to re-resolve (default 30s)</li>
- *   <li>{@code dnsDefaultPort} — port to use for resolved addresses</li>
- * </ul>
+ * DNS-based {@link NameResolver}. Resolves a hostname to its A/AAAA records
+ * (e.g. the pod IPs behind a Kubernetes headless Service) and periodically
+ * re-resolves to detect address changes, delivering the full set to the
+ * listener each time it changes. Mirrors grpc-java's {@code DnsNameResolver}.
  *
  * @author shenhongxi
  * @see <a href="https://github.com/grpc/proposal/blob/master/A2.md">gRFC A2: DNS Name Resolution</a>
  */
-public class WireDnsResolver {
-    private static final Logger log = LoggerFactory.getLogger(WireDnsResolver.class);
+public class DnsNameResolver implements NameResolver {
+    private static final Logger log = LoggerFactory.getLogger(DnsNameResolver.class);
 
     private static final ScheduledExecutorService RESOLVER_SCHEDULER =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -55,41 +44,17 @@ public class WireDnsResolver {
     private volatile Listener listener;
 
     /**
-     * Callback interface for address list changes.
-     */
-    public interface Listener {
-        /**
-         * Called when the resolved address list changes.
-         *
-         * @param addresses the new list of resolved addresses
-         */
-        void onAddresses(List<InetSocketAddress> addresses);
-
-        /**
-         * Called when DNS resolution fails.
-         *
-         * @param error the resolution error
-         */
-        void onError(Throwable error);
-    }
-
-    /**
      * @param hostname          the hostname to resolve
      * @param defaultPort       the port for resolved addresses
-     * @param refreshIntervalMs how often to re-resolve (0 = resolve once)
+     * @param refreshIntervalMs how often to re-resolve (0 = resolve once, no refresh)
      */
-    public WireDnsResolver(String hostname, int defaultPort, long refreshIntervalMs) {
+    public DnsNameResolver(String hostname, int defaultPort, long refreshIntervalMs) {
         this.hostname = hostname;
         this.defaultPort = defaultPort;
         this.refreshIntervalMs = refreshIntervalMs;
     }
 
-    /**
-     * Start the resolver. Performs an initial resolution and schedules
-     * periodic refreshes if {@code refreshIntervalMs > 0}.
-     *
-     * @param listener callback for address changes
-     */
+    @Override
     public void start(Listener listener) {
         this.listener = listener;
         // Initial resolution
@@ -102,10 +67,13 @@ public class WireDnsResolver {
         }
     }
 
-    /**
-     * Stop the resolver and cancel periodic refreshes.
-     */
-    public void stop() {
+    @Override
+    public void refresh() {
+        resolve();
+    }
+
+    @Override
+    public void shutdown() {
         if (refreshFuture != null) {
             refreshFuture.cancel(false);
             refreshFuture = null;

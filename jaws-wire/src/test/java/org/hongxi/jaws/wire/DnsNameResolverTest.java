@@ -12,16 +12,16 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for {@link WireDnsResolver}: synchronous resolution,
+ * Unit tests for {@link DnsNameResolver}: synchronous resolution,
  * periodic refresh, and listener notification.
  *
  * @author shenhongxi
  */
-class WireDnsResolverTest {
+class DnsNameResolverTest {
 
     @Test
     void resolveNowReturnsLoopback() throws Exception {
-        List<InetSocketAddress> addresses = WireDnsResolver.resolveNow("localhost", 8080);
+        List<InetSocketAddress> addresses = DnsNameResolver.resolveNow("localhost", 8080);
         assertFalse(addresses.isEmpty());
         for (InetSocketAddress addr : addresses) {
             assertEquals(8080, addr.getPort());
@@ -31,16 +31,16 @@ class WireDnsResolverTest {
     @Test
     void resolveNowThrowsForUnknownHost() {
         assertThrows(UnknownHostException.class,
-                () -> WireDnsResolver.resolveNow("nonexistent.invalid.host.xyz", 8080));
+                () -> DnsNameResolver.resolveNow("nonexistent.invalid.host.xyz", 8080));
     }
 
     @Test
     void resolverNotifiesListenerOnStart() throws Exception {
-        WireDnsResolver resolver = new WireDnsResolver("localhost", 9090, 0);
+        DnsNameResolver resolver = new DnsNameResolver("localhost", 9090, 0);
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<List<InetSocketAddress>> captured = new AtomicReference<>();
 
-        resolver.start(new WireDnsResolver.Listener() {
+        resolver.start(new NameResolver.Listener() {
             @Override
             public void onAddresses(List<InetSocketAddress> addresses) {
                 captured.set(addresses);
@@ -57,13 +57,13 @@ class WireDnsResolverTest {
         assertFalse(captured.get().isEmpty());
         assertEquals(9090, captured.get().get(0).getPort());
 
-        resolver.stop();
+        resolver.shutdown();
     }
 
     @Test
-    void resolverStopCancelsRefresh() {
-        WireDnsResolver resolver = new WireDnsResolver("localhost", 9090, 100);
-        resolver.start(new WireDnsResolver.Listener() {
+    void resolverShutdownIsSafe() {
+        DnsNameResolver resolver = new DnsNameResolver("localhost", 9090, 100);
+        resolver.start(new NameResolver.Listener() {
             @Override
             public void onAddresses(List<InetSocketAddress> addresses) {
             }
@@ -73,13 +73,14 @@ class WireDnsResolverTest {
             }
         });
 
-        // Stop should not throw
-        assertDoesNotThrow(resolver::stop);
+        // shutdown should not throw, and be idempotent
+        assertDoesNotThrow(resolver::shutdown);
+        assertDoesNotThrow(resolver::shutdown);
     }
 
     @Test
     void resolverGetHostnameAndPort() {
-        WireDnsResolver resolver = new WireDnsResolver("example.com", 443, 5000);
+        DnsNameResolver resolver = new DnsNameResolver("example.com", 443, 5000);
         assertEquals("example.com", resolver.getHostname());
         assertEquals(443, resolver.getDefaultPort());
     }

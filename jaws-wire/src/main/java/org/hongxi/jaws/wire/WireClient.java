@@ -31,8 +31,6 @@ import org.hongxi.jaws.transport.http2.StreamType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetSocketAddress;
-import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -92,8 +90,6 @@ public class WireClient extends AbstractHttp2Client {
     private final long keepaliveTimeoutMs;
     /** Retry policy; null when retries are disabled (maxAttempts ≤ 1). */
     private final WireRetryPolicy retryPolicy;
-    /** DNS service discovery resolver; null when DNS is disabled. */
-    private volatile WireDnsResolver dnsResolver;
     /** gRPC connectivity state tracker. */
     private final WireConnectivityTracker connectivityTracker = new WireConnectivityTracker();
     /** Shared scheduler for keepalive PINGs and retry backoff across connections. */
@@ -125,13 +121,6 @@ public class WireClient extends AbstractHttp2Client {
         this.keepaliveTimeMs = url.getLongParameter(UrlParam.Transport.KEEPALIVE_TIME_MS);
         this.keepaliveTimeoutMs = url.getLongParameter(UrlParam.Transport.KEEPALIVE_TIMEOUT_MS);
         this.retryPolicy = WireRetryPolicy.fromUrl(url);
-
-        // DNS service discovery: resolve hostname to multiple addresses
-        boolean dnsEnabled = url.getBoolParameter(UrlParam.Transport.DNS_ENABLED);
-        if (dnsEnabled) {
-            long refreshInterval = url.getLongParameter(UrlParam.Transport.DNS_REFRESH_INTERVAL_MS);
-            dnsResolver = new WireDnsResolver(url.getHost(), url.getPort(), refreshInterval);
-        }
     }
 
     @Override
@@ -145,9 +134,8 @@ public class WireClient extends AbstractHttp2Client {
     }
 
     /**
-     * Start the DNS resolver (if enabled) after the base class opens
-     * the connection. The resolver periodically re-resolves the hostname
-     * and logs address changes.
+     * Open the connection and drive the gRPC connectivity state machine
+     * (CONNECTING → READY, or TRANSIENT_FAILURE on error).
      */
     @Override
     public synchronized boolean open() {
@@ -161,21 +149,6 @@ public class WireClient extends AbstractHttp2Client {
         }
         if (opened) {
             connectivityTracker.transitionTo(WireConnectivityState.READY);
-            if (dnsResolver != null) {
-                dnsResolver.start(new WireDnsResolver.Listener() {
-                    @Override
-                    public void onAddresses(List<InetSocketAddress> addresses) {
-                        log.info("DNS update for WireClient({}): {} resolved addresses",
-                                url.getHost(), addresses.size());
-                    }
-
-                    @Override
-                    public void onError(Throwable error) {
-                        log.warn("DNS resolution error for WireClient({}): {}",
-                                url.getHost(), error.getMessage());
-                    }
-                });
-            }
         } else {
             connectivityTracker.transitionTo(WireConnectivityState.TRANSIENT_FAILURE);
         }
@@ -897,27 +870,16 @@ public class WireClient extends AbstractHttp2Client {
     }
 
     /**
-     * @return the DNS resolver, or null if DNS service discovery is not enabled
+     * @return the connectivity state tracker for this client
      */
-    public WireDnsResolver getDnsResolver() {
-        return dnsResolver;
+    public WireConnectivityTracker getConnectivityTracker() {
+        return connectivityTracker;
     }
 
     @Override
     protected void doClose() {
         connectivityTracker.shutdown();
-        if (dnsResolver != null) {
-            dnsResolver.stop();
-            dnsResolver = null;
-        }
         super.doClose();
-    }
-
-    /**
-     * @return the connectivity state tracker for this client
-     */
-    public WireConnectivityTracker getConnectivityTracker() {
-        return connectivityTracker;
     }
 
     /**
