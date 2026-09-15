@@ -78,7 +78,7 @@ public class ServiceStorage {
      * verdict has to travel, otherwise every replica keeps a stale answer.
      * Defaults to a no-op for single-node use and tests.
      */
-    private final Consumer<String> healthTransitionNotifier;
+    private final Consumer<String> healthFlipHandler;
 
     public ServiceStorage(ConnectionManager connectionManager,
                           ServiceChangeListener changeListener) {
@@ -87,10 +87,10 @@ public class ServiceStorage {
 
     public ServiceStorage(ConnectionManager connectionManager,
                           ServiceChangeListener changeListener,
-                          Consumer<String> healthTransitionNotifier) {
+                          Consumer<String> healthFlipHandler) {
         this.connectionManager = connectionManager;
         this.changeListener = changeListener;
-        this.healthTransitionNotifier = healthTransitionNotifier;
+        this.healthFlipHandler = healthFlipHandler;
     }
 
     // ========================================================================
@@ -384,7 +384,7 @@ public class ServiceStorage {
             // Recovery must travel as hard as the outage: a replica left unhealthy
             // keeps steering traffic away from a provider that is alive again.
             session.recalculateRevision();
-            healthTransitionNotifier.accept(connectionId);
+            healthFlipHandler.accept(connectionId);
         }
     }
 
@@ -399,7 +399,7 @@ public class ServiceStorage {
     public void markUnhealthyStale(long timeoutMs) {
         long now = System.currentTimeMillis();
         Set<ServiceKey> affectedServices = new HashSet<>();
-        Set<String> flippedClients = new HashSet<>();
+        Set<String> flippedConnections = new HashSet<>();
         for (ClientSession session : connectionManager.allClientSessions()) {
             // Only the node HOLDING the connection may judge health. A replica's
             // copy of lastBeat is frozen at push time — beats are not forwarded per
@@ -426,14 +426,14 @@ public class ServiceStorage {
                 // the revision, a lost push for a client whose instances did not
                 // change would never be noticed by verify.
                 session.recalculateRevision();
-                flippedClients.add(session.getConnectionId());
+                flippedConnections.add(session.getConnectionId());
             }
         }
         for (ServiceKey serviceKey : affectedServices) {
             changeListener.onServiceChange(serviceKey);
         }
-        for (String connectionId : flippedClients) {
-            healthTransitionNotifier.accept(connectionId);
+        for (String connectionId : flippedConnections) {
+            healthFlipHandler.accept(connectionId);
         }
     }
 
