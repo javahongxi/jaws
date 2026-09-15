@@ -373,6 +373,11 @@ public class HarborServer {
                     String type = payload.getMetadata().getType();
                     String ip = payload.getMetadata().getClientIp();
 
+                    // Liveness = a message arrived on this connection. Record it
+                    // before dispatch, so a handler that throws can't silently drop
+                    // the beat (lastActiveTime is the sole health/watchdog clock).
+                    connectionManager.touch(connectionId);
+
                     switch (type) {
                         case TYPE_CONNECTION_SETUP_REQUEST -> {
                             ConnectionSetupRequest setup = parseBody(payload, ConnectionSetupRequest.class);
@@ -401,8 +406,6 @@ public class HarborServer {
                                 log.debug("[harbor] received NotifySubscriberResponse ack");
                         default -> log.debug("[harbor] bi-stream received type={}", type);
                     }
-                    // Touch the connection on every inbound bi-stream message
-                    connectionManager.touch(connectionId);
                 }
 
                 @Override
