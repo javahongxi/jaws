@@ -140,6 +140,7 @@ class Http2TransportTest {
         url.addParameter("serialization", "hessian2");
         url.addParameter("minWorkerThreads", "1");
         url.addParameter("maxWorkerThreads", "1");
+        url.addParameter("workerQueueSize", "1");
 
         DefaultProvider<EchoService> provider =
                 new DefaultProvider<>(EchoService.class, url, new EchoServiceImpl());
