@@ -87,6 +87,7 @@ public class HarborServer {
     // Nacos naming instance request types
     private static final String REGISTER_INSTANCE = "registerInstance";
     private static final String DEREGISTER_INSTANCE = "deregisterInstance";
+    private static final String BATCH_REGISTER_INSTANCE = "batchRegisterInstance";
 
     // Distro inter-node request and response types
     private static final String TYPE_DISTRO_SYNC_REQUEST = "DistroSyncRequest";
@@ -458,8 +459,8 @@ public class HarborServer {
     private Payload handleInstanceRequest(Payload payload, String clientIp, String connectionId) {
         InstanceRequest request = parseBody(payload, InstanceRequest.class);
         String namespace = request.getNamespace();
-        String serviceName = request.getServiceName();
         String groupName = request.getGroupName();
+        String serviceName = request.getServiceName();
         String type = request.getType();
 
         Instance instance = request.getInstance();
@@ -496,9 +497,14 @@ public class HarborServer {
 
     private Payload handleBatchInstanceRequest(Payload payload, String clientIp, String connectionId) {
         BatchInstanceRequest request = parseBody(payload, BatchInstanceRequest.class);
+        if (!BATCH_REGISTER_INSTANCE.equals(request.getType())) {
+            return buildErrorResponse(TYPE_INSTANCE_RESPONSE,
+                    "Unsupported request type: " + request.getType());
+        }
+
         String namespace = request.getNamespace();
-        String serviceName = request.getServiceName();
         String groupName = request.getGroupName();
+        String serviceName = request.getServiceName();
 
         List<Instance> instances = request.getInstances();
         if (instances == null || instances.isEmpty()) {
@@ -527,14 +533,13 @@ public class HarborServer {
     private Payload handleSubscribe(Payload payload, String clientIp, String connectionId) {
         SubscribeServiceRequest request = parseBody(payload, SubscribeServiceRequest.class);
         String namespace = request.getNamespace();
-        String serviceName = request.getServiceName();
         String groupName = request.getGroupName();
+        String serviceName = request.getServiceName();
         boolean subscribe = request.isSubscribe();
 
-        // connectionId is propagated from the wire layer (parent channel attribute)
-        if (connectionId != null && subscribe) {
+        if (subscribe) {
             serviceStorage.addSubscriber(namespace, groupName, serviceName, connectionId);
-        } else if (connectionId != null) {
+        } else {
             serviceStorage.removeSubscriber(namespace, groupName, serviceName, connectionId);
         }
 
@@ -551,8 +556,8 @@ public class HarborServer {
     private Payload handleServiceQuery(Payload payload) {
         ServiceQueryRequest request = parseBody(payload, ServiceQueryRequest.class);
         String namespace = request.getNamespace();
-        String serviceName = request.getServiceName();
         String groupName = request.getGroupName();
+        String serviceName = request.getServiceName();
 
         ServiceInfo serviceInfo = serviceStorage.buildServiceInfo(
                 namespace, groupName, serviceName);

@@ -41,19 +41,19 @@ public class ClientSession {
     private final AtomicLong revision = new AtomicLong(0);
 
     /**
-     * When the owning node last vouched for this session: a sync applied, or a verify
-     * in which its revision matched ours. Never advanced by local mutation, or a
-     * replica could keep itself alive. Only replicas are judged against it.
-     */
-    private volatile long lastRenewTime;
-
-    /**
      * Whether the connection terminates on this node ({@code true}) or the session was
      * replicated from a peer ({@code false}). Decided at birth and immutable: a replica
      * that could promote itself would escape every replica-only rule, including
      * {@link #isReplicaOrphaned}.
      */
     private final boolean nativeClient;
+
+    /**
+     * When the owning node last vouched for this session: a sync applied, or a verify
+     * in which its revision matched ours. Never advanced by local mutation, or a
+     * replica could keep itself alive. Only replicas are judged against it.
+     */
+    private volatile long lastRenewTime;
 
     public ClientSession(String connectionId, boolean nativeClient) {
         this.connectionId = connectionId;
@@ -176,11 +176,11 @@ public class ClientSession {
         int hash = 0;
         for (Map.Entry<ServiceKey, List<Instance>> entry : publishers.entrySet()) {
             for (Instance inst : entry.getValue()) {
-                int entryHash = entry.getKey().hashCode() * 31
+                int instHash = entry.getKey().hashCode() * 31
                         + inst.getIp().hashCode() * 31
                         + inst.getPort() * 31
                         + (inst.isHealthy() ? 1 : 0);
-                hash ^= entryHash;
+                hash ^= instHash;
             }
         }
         revision.set(hash);

@@ -7,7 +7,7 @@ import org.hongxi.jaws.harbor.proto.Payload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 
 /**
@@ -47,9 +47,6 @@ public class PushDelayTaskEngine {
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
 
-    /** Set by {@link #shutdown()}; a closed engine drops pushes instead of throwing. */
-    private volatile boolean closed;
-
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "harbor-push-engine");
@@ -57,8 +54,8 @@ public class PushDelayTaskEngine {
                 return t;
             });
 
-    /** service → the single in-flight task for it; presence = coalescing lock. */
-    private final Map<ServiceKey, PendingPush> pending = new ConcurrentHashMap<>();
+    /** service keys with a scheduled but not-yet-fired push; presence = coalescing lock. */
+    private final Set<ServiceKey> pending = ConcurrentHashMap.newKeySet();
 
     public PushDelayTaskEngine(ServiceStorage serviceStorage, ConnectionManager connectionManager) {
         this.serviceStorage = serviceStorage;
@@ -71,43 +68,37 @@ public class PushDelayTaskEngine {
      * re-read the latest state when it fires, so it already covers this change.
      */
     public void requestPush(ServiceKey service) {
-        if (closed) {
+        if (scheduler.isShutdown()) {
             log.debug("[harbor] push request dropped, engine closed: {}", service);
             return;
         }
-        pending.computeIfAbsent(service, k -> {
-            PendingPush task = new PendingPush(k);
-            task.future = scheduleQuietly(k, () -> doPush(k), MERGE_DELAY_MS);
-            return task;
-        });
+        // add() returns true only on first insertion — coalescing guarantee.
+        if (pending.add(service)) {
+            scheduleQuietly(service, () -> doPush(service), MERGE_DELAY_MS);
+        }
     }
 
     /**
-     * Arm a push, tolerating a concurrent {@link #shutdown()}. Inbound frames keep
-     * arriving while the server is closing, so a request can land after the engine is
-     * gone; a rejected schedule must not travel back out of the caller's hands — it
-     * reaches a Netty worker thread, where the transport can only report it as an
-     * unexpected channel error. If this loses the race, the entry left behind is inert
-     * and dies with the engine.
-     *
-     * @return the scheduled future, or {@code null} if the engine is shutting down
+     * Schedule a delayed task, returning {@code null} if the scheduler has been
+     * shut down. Callers use the return value to decide whether to roll back
+     * or record the pending entry.
      */
-    private java.util.concurrent.ScheduledFuture<?> scheduleQuietly(ServiceKey service,
-                                                                    Runnable task, long delayMs) {
+    private ScheduledFuture<?> scheduleQuietly(ServiceKey service, Runnable task, long delayMs) {
         try {
             return scheduler.schedule(task, delayMs, TimeUnit.MILLISECONDS);
-        } catch (java.util.concurrent.RejectedExecutionException e) {
+        } catch (RejectedExecutionException e) {
             log.debug("[harbor] push scheduling rejected, engine closing: {}", service);
             return null;
         }
     }
 
     private void doPush(ServiceKey service) {
-        PendingPush task = pending.remove(service);
-        if (task == null) {
-            return;
-        }
         try {
+            // remove returns false when the entry was already consumed
+            // (e.g. by shutdown → pending.clear).
+            if (!pending.remove(service)) {
+                return;
+            }
             // Re-read the CURRENT state at fire time — the whole point of reconcile.
             ServiceInfo latest = serviceStorage.buildServiceInfo(
                     service.namespace(), service.group(), service.name());
@@ -134,28 +125,14 @@ public class PushDelayTaskEngine {
             // Unexpected error in the pass itself (not a "connection gone"): re-enqueue.
             log.warn("[harbor] push pass failed for {}, re-enqueue in {}ms",
                     service, RETRY_DELAY_MS, e);
-            task.future = scheduleQuietly(service, () -> doPush(service), RETRY_DELAY_MS);
-            if (task.future != null) {
-                pending.put(service, task);
+            if (scheduleQuietly(service, () -> doPush(service), RETRY_DELAY_MS) != null) {
+                pending.add(service);
             }
         }
     }
 
     public void shutdown() {
-        // Announce before stopping the pool: requesters check this flag, and a push
-        // that slips past it is handled by scheduleQuietly.
-        closed = true;
-        scheduler.shutdownNow();
         pending.clear();
-    }
-
-    /** A coalesced, in-flight push for one service. */
-    private static final class PendingPush {
-        final ServiceKey service;
-        volatile ScheduledFuture<?> future;
-
-        PendingPush(ServiceKey service) {
-            this.service = service;
-        }
+        scheduler.shutdownNow();
     }
 }

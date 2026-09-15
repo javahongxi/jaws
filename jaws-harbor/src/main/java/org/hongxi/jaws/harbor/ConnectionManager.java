@@ -34,6 +34,11 @@ public class ConnectionManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConnectionManager.class);
 
+    /**
+     * Liveness layer of native client connections. Keyed by connectionId,
+     * same key space as {@link #clientSessions}. Synced sessions have no
+     * TCP connection on this node and therefore no record here.
+     */
     private final Map<String, ConnectionRecord> connections = new ConcurrentHashMap<>();
 
     /**
