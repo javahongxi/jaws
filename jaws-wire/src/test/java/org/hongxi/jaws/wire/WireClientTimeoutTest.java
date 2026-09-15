@@ -195,4 +195,34 @@ class WireClientTimeoutTest {
 
         client.close();
     }
+
+    @Test
+    void perCallDeadlineOverridesStaticTimeout() throws Exception {
+        AtomicLong receivedBytes = new AtomicLong();
+        // Static requestTimeout is 3000ms; a per-call deadline of 300ms must win.
+        WireClient client = openClient(startPeer(new byte[0], 6000, receivedBytes), 3000);
+
+        long start = System.currentTimeMillis();
+        JawsAbstractException failure = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            try {
+                Response response = client.request(helloRequest(), HealthCheckResponse.parser(),
+                        WireCallOptions.DEFAULT.withDeadlineMs(300));
+                response.getValue();
+                throw new AssertionError("expected the call to fail on the per-call deadline");
+            } catch (JawsAbstractException e) {
+                return e;
+            }
+        });
+        long elapsed = System.currentTimeMillis() - start;
+
+        String message = String.valueOf(failure.getMessage());
+        assertTrue(receivedBytes.get() > 0, "the call must have reached the peer");
+        assertTrue(message.contains("timed out"), "the cause must be a timeout, got: " + message);
+        assertTrue(message.contains("300ms"),
+                "the per-call deadline budget must be shown, not the 3000ms static value, got: " + message);
+        assertTrue(elapsed < 2000,
+                "per-call 300ms deadline was not honoured (static was 3000ms): " + elapsed + "ms");
+
+        client.close();
+    }
 }

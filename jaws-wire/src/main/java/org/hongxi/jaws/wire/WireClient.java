@@ -199,6 +199,19 @@ public class WireClient extends AbstractHttp2Client {
      * @return a pending response future completed asynchronously by the stream handler
      */
     public Response request(Request request, Parser<? extends Message> responseParser) {
+        return request(request, responseParser, WireCallOptions.DEFAULT);
+    }
+
+    /**
+     * Send a gRPC request with per-call options (deadline / compressor override).
+     *
+     * @param request        the RPC request; {@code arguments[0]} must be a protobuf {@link Message}
+     * @param responseParser the parser for the expected response message type
+     * @param options        per-call options; {@link WireCallOptions#DEFAULT} inherits configured settings
+     * @return a pending response future completed asynchronously by the stream handler
+     */
+    public Response request(Request request, Parser<? extends Message> responseParser,
+                            WireCallOptions options) {
         Object[] args = request.getArguments();
         if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
             throw new JawsServiceException(
@@ -209,11 +222,8 @@ public class WireClient extends AbstractHttp2Client {
         // Build gRPC path: /{interfaceName}/{methodName}
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
-        int urlTimeout = url.getMethodParameter(
-                request.getMethodName(), request.getParamDesc(),
-                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
-                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
-        int timeout = resolveTimeout(request, urlTimeout);
+        int timeout = resolveDeadline(request, options);
+        String compressor = resolveCompressor(options);
 
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
 
@@ -221,11 +231,11 @@ public class WireClient extends AbstractHttp2Client {
             // Retry-enabled path: the callback stays in the map across attempts
             // and is only removed on success or final failure
             registerCallback(request.getRequestId(), responseFuture);
-            attemptRequest(request, responseParser, requestMessage, grpcPath, timeout,
+            attemptRequest(request, responseParser, requestMessage, grpcPath, timeout, compressor,
                     responseFuture, new AtomicInteger(0));
         } else {
             // Non-retry path: original behaviour
-            doSingleAttempt(request, responseParser, requestMessage, grpcPath, timeout,
+            doSingleAttempt(request, responseParser, requestMessage, grpcPath, timeout, compressor,
                     responseFuture);
         }
 
@@ -246,7 +256,7 @@ public class WireClient extends AbstractHttp2Client {
      * stale value and no-op.
      */
     private void attemptRequest(Request request, Parser<? extends Message> responseParser,
-                                Message requestMessage, String grpcPath, int timeout,
+                                Message requestMessage, String grpcPath, int timeout, String compressor,
                                 DefaultResponseFuture responseFuture, AtomicInteger attemptCounter) {
         int attempt = attemptCounter.get();
         io.netty.channel.Channel streamChannel = null;
@@ -288,7 +298,7 @@ public class WireClient extends AbstractHttp2Client {
                             attempt + 1, retryPolicy.maxAttempts(), delay, grpcPath);
                     RETRY_SCHEDULER.schedule(() ->
                             attemptRequest(request, responseParser, requestMessage,
-                                    grpcPath, timeout, responseFuture, attemptCounter),
+                                    grpcPath, timeout, compressor, responseFuture, attemptCounter),
                             delay, TimeUnit.MILLISECONDS);
                 } else if (!retryPolicy.hasAnotherAttempt(attempt)
                         || !WireRetryPolicy.isRetryableFailure(t)) {
@@ -298,8 +308,8 @@ public class WireClient extends AbstractHttp2Client {
                 // else: another callback already claimed the retry
             });
 
-            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compression);
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compressor);
             streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
             streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
@@ -323,7 +333,7 @@ public class WireClient extends AbstractHttp2Client {
                         attempt + 1, retryPolicy.maxAttempts(), delay, grpcPath);
                 RETRY_SCHEDULER.schedule(() ->
                         attemptRequest(request, responseParser, requestMessage,
-                                grpcPath, timeout, responseFuture, attemptCounter),
+                                grpcPath, timeout, compressor, responseFuture, attemptCounter),
                         delay, TimeUnit.MILLISECONDS);
             } else {
                 removeCallback(request.getRequestId());
@@ -344,7 +354,7 @@ public class WireClient extends AbstractHttp2Client {
      * Execute a single request attempt without retry logic (original path).
      */
     private void doSingleAttempt(Request request, Parser<? extends Message> responseParser,
-                                  Message requestMessage, String grpcPath, int timeout,
+                                  Message requestMessage, String grpcPath, int timeout, String compressor,
                                   DefaultResponseFuture responseFuture) {
         io.netty.channel.Channel streamChannel = null;
         try {
@@ -370,8 +380,8 @@ public class WireClient extends AbstractHttp2Client {
                 }
             });
 
-            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compression);
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compressor);
             streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
             streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
@@ -439,6 +449,19 @@ public class WireClient extends AbstractHttp2Client {
      * @return a source emitting streamed response messages
      */
     public StreamSource<Object> requestStream(Request request, Parser<? extends Message> responseParser) {
+        return requestStream(request, responseParser, WireCallOptions.DEFAULT);
+    }
+
+    /**
+     * Send a server-streaming gRPC request with per-call options.
+     *
+     * @param request        the RPC request; {@code arguments[0]} must be a protobuf {@link Message}
+     * @param responseParser the parser for the expected response message type
+     * @param options        per-call options; {@link WireCallOptions#DEFAULT} inherits configured settings
+     * @return a source emitting streamed response messages
+     */
+    public StreamSource<Object> requestStream(Request request, Parser<? extends Message> responseParser,
+                                              WireCallOptions options) {
         Object[] args = request.getArguments();
         if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {
             throw new JawsServiceException(
@@ -448,11 +471,8 @@ public class WireClient extends AbstractHttp2Client {
 
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
-        int urlTimeout = url.getMethodParameter(
-                request.getMethodName(), request.getParamDesc(),
-                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
-                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
-        int timeout = resolveTimeout(request, urlTimeout);
+        int timeout = resolveDeadline(request, options);
+        String compressor = resolveCompressor(options);
 
         StreamSubject<Object> observer = new StreamSubject<>();
         io.netty.channel.Channel streamChannel = null;
@@ -470,8 +490,8 @@ public class WireClient extends AbstractHttp2Client {
             // reset and stops producing (gRPC cancellation semantics)
             observer.setOnCancel(() -> cancelStream(streamChannel0));
 
-            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
-            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compression);
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
+            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compressor);
             streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
             streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(content, true))
                     .addListener(f -> {
@@ -517,13 +537,25 @@ public class WireClient extends AbstractHttp2Client {
      */
     public StreamSource<Object> requestStream(Request request, StreamSource<Object> requestStream,
                                                        Parser<? extends Message> responseParser) {
+        return requestStream(request, requestStream, responseParser, WireCallOptions.DEFAULT);
+    }
+
+    /**
+     * Open a client-streaming call with per-call options.
+     *
+     * @param request        the RPC request (carries metadata/attachments)
+     * @param requestStream  a source of client request {@link Message} items
+     * @param responseParser the parser for the expected response message type
+     * @param options        per-call options; {@link WireCallOptions#DEFAULT} inherits configured settings
+     * @return a source emitting the single response message
+     */
+    public StreamSource<Object> requestStream(Request request, StreamSource<Object> requestStream,
+                                                       Parser<? extends Message> responseParser,
+                                                       WireCallOptions options) {
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
-        int urlTimeout = url.getMethodParameter(
-                request.getMethodName(), request.getParamDesc(),
-                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
-                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
-        int timeout = resolveTimeout(request, urlTimeout);
+        int timeout = resolveDeadline(request, options);
+        String compressor = resolveCompressor(options);
 
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
         // Use StreamSubject (synchronous delivery) to guarantee onNext fires
@@ -562,7 +594,7 @@ public class WireClient extends AbstractHttp2Client {
             });
 
             // Send HEADERS without END_STREAM (client-streaming: request items follow)
-            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
             streamChannel0.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
@@ -588,7 +620,7 @@ public class WireClient extends AbstractHttp2Client {
                         return;
                     }
                     if (item instanceof Message msg) {
-                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel0.alloc(), compression);
+                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel0.alloc(), compressor);
                         streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
@@ -658,13 +690,25 @@ public class WireClient extends AbstractHttp2Client {
      */
     public StreamSource<Object> requestBidiStream(Request request, StreamSource<Object> requestStream,
                                                   Parser<? extends Message> responseParser) {
+        return requestBidiStream(request, requestStream, responseParser, WireCallOptions.DEFAULT);
+    }
+
+    /**
+     * Open a bidirectional streaming call with per-call options.
+     *
+     * @param request        the RPC request (carries metadata/attachments)
+     * @param requestStream  a source of client request {@link Message} items
+     * @param responseParser the parser for the expected response message type
+     * @param options        per-call options; {@link WireCallOptions#DEFAULT} inherits configured settings
+     * @return a source emitting streamed response messages
+     */
+    public StreamSource<Object> requestBidiStream(Request request, StreamSource<Object> requestStream,
+                                                  Parser<? extends Message> responseParser,
+                                                  WireCallOptions options) {
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
-        int urlTimeout = url.getMethodParameter(
-                request.getMethodName(), request.getParamDesc(),
-                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
-                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
-        int timeout = resolveTimeout(request, urlTimeout);
+        int timeout = resolveDeadline(request, options);
+        String compressor = resolveCompressor(options);
 
         StreamSubject<Object> observer = new StreamSubject<>();
         io.netty.channel.Channel streamChannel = null;
@@ -682,7 +726,7 @@ public class WireClient extends AbstractHttp2Client {
             observer.setOnCancel(() -> cancelStream(streamChannel0));
 
             // Send HEADERS without END_STREAM (bidi: request stream follows)
-            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout);
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
             streamChannel0.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
@@ -703,7 +747,7 @@ public class WireClient extends AbstractHttp2Client {
                         return;
                     }
                     if (item instanceof Message msg) {
-                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel0.alloc(), compression);
+                        ByteBuf frame = WireFrameCodec.encode(msg, streamChannel0.alloc(), compressor);
                         streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(frame, false))
                                 .addListener(f -> {
                                     if (!f.isSuccess()) {
@@ -762,7 +806,8 @@ public class WireClient extends AbstractHttp2Client {
      * mandatory {@code te: trailers}, user-agent, encoding advertisement, the
      * caller's deadline, and the request attachments as custom metadata.
      */
-    private Http2Headers buildRequestHeaders(Request request, String grpcPath, int timeout) {
+    private Http2Headers buildRequestHeaders(Request request, String grpcPath, int timeout,
+                                             String compressor) {
         Http2Headers headers = new DefaultHttp2Headers()
                 .method("POST")
                 .scheme(getSslContext() != null ? "https" : "http")
@@ -776,8 +821,8 @@ public class WireClient extends AbstractHttp2Client {
                 // Propagate the caller's deadline so the server can honor it
                 // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
                 .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
-        if (compression != null && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
-            headers.set(WireConstants.GRPC_ENCODING, compression);
+        if (compressor != null && !WireConstants.ENCODING_IDENTITY.equals(compressor)) {
+            headers.set(WireConstants.GRPC_ENCODING, compressor);
         }
         // Request attachments → gRPC metadata (custom headers)
         WireMetadata.writeToHeaders(headers, request.getAttachments());
@@ -807,6 +852,48 @@ public class WireClient extends AbstractHttp2Client {
                 DynamicConfigurationKeys.requestTimeout(interfaceName, methodName),
                 DynamicConfigurationKeys.requestTimeout(interfaceName),
                 DynamicConfigurationKeys.GLOBAL_REQUEST_TIMEOUT);
+    }
+
+    /**
+     * Resolve the deadline for a call: an explicit {@link WireCallOptions#deadlineMs()}
+     * override wins; otherwise fall back to the method / service / global / URL
+     * timeout resolution chain.
+     *
+     * @param request the RPC request (for method/service keys)
+     * @param options per-call options (may be {@code null} or {@link WireCallOptions#DEFAULT})
+     * @return the effective deadline in milliseconds
+     */
+    int resolveDeadline(Request request, WireCallOptions options) {
+        if (options != null && options.deadlineMs() != null) {
+            return options.deadlineMs();
+        }
+        int urlTimeout = url.getMethodParameter(
+                request.getMethodName(), request.getParamDesc(),
+                UrlParam.Transport.REQUEST_TIMEOUT.getName(),
+                UrlParam.Transport.REQUEST_TIMEOUT.intValue());
+        return resolveTimeout(request, urlTimeout);
+    }
+
+    /**
+     * Resolve the request compressor for a call: an explicit
+     * {@link WireCallOptions#compressor()} override wins (validated against the
+     * supported set, falling back to the client default when unsupported);
+     * otherwise use the client's configured {@code compression}.
+     *
+     * @param options per-call options (may be {@code null} or {@link WireCallOptions#DEFAULT})
+     * @return the effective compressor ("identity" or a supported encoding)
+     */
+    String resolveCompressor(WireCallOptions options) {
+        if (options == null || options.compressor() == null) {
+            return compression;
+        }
+        String c = options.compressor();
+        if (WireConstants.ENCODING_IDENTITY.equals(c) || WireCompression.isSupported(c)) {
+            return c;
+        }
+        log.warn("Unsupported wire call compressor '{}', falling back to client default '{}'",
+                c, compression);
+        return compression;
     }
 
     /**
