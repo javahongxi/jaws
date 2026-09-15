@@ -111,11 +111,6 @@ public class ServiceStorage {
                                  Instance instance, String connectionId) {
         ServiceKey key = ServiceKey.of(namespace, group, serviceName);
 
-        // Set registration timestamp
-        long currentTime = System.currentTimeMillis();
-        instance.setRegisterTime(currentTime);
-        instance.setConnectionId(connectionId);
-
         // Write to ClientSession (source of truth)
         ClientSession session = connectionManager.getClientSession(connectionId);
         if (session != null) {
@@ -581,7 +576,6 @@ public class ServiceStorage {
                 // data under a wrong service.
                 ServiceKey serviceKey = ServiceKey.parse(serviceKeys.get(i));
                 Instance instance = instances.get(i);
-                instance.setConnectionId(connectionId);
                 session.addInstance(serviceKey, instance);
                 publisherIndexes.computeIfAbsent(serviceKey, k -> new CopyOnWriteArraySet<>())
                         .add(connectionId);

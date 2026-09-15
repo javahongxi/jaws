@@ -7,9 +7,6 @@ import java.util.Map;
  * <p>
  * Field names match the nacos-client {@code com.alibaba.nacos.api.naming.pojo.Instance}
  * JSON wire format exactly, ensuring full compatibility.
- * <p>
- * The {@code registerTime} field is a server-side internal. Instance health is
- * derived from the owning connection's liveness, not a per-instance beat.
  *
  * @author shenhongxi
  */
@@ -24,11 +21,6 @@ public class Instance {
     private boolean ephemeral = true;
     private String serviceName;
     private Map<String, String> metadata;
-
-    // server-side internal
-    private long registerTime;
-    /** The gRPC connectionId that registered this instance (server-side internal). */
-    private String connectionId;
 
     public Instance() {
     }
@@ -103,21 +95,5 @@ public class Instance {
 
     public void setMetadata(Map<String, String> metadata) {
         this.metadata = metadata;
-    }
-
-    public long getRegisterTime() {
-        return registerTime;
-    }
-
-    public void setRegisterTime(long registerTime) {
-        this.registerTime = registerTime;
-    }
-
-    public String getConnectionId() {
-        return connectionId;
-    }
-
-    public void setConnectionId(String connectionId) {
-        this.connectionId = connectionId;
     }
 }
