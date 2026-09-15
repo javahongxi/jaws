@@ -16,10 +16,9 @@ import java.io.Closeable;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -204,9 +203,16 @@ public class ManagedChannel implements Closeable {
      * skipped (best-effort) and retried on the next update.
      */
     private synchronized void syncAddresses(List<InetSocketAddress> addresses) {
-        Set<String> wanted = new LinkedHashSet<>();
+        // Key by the NUMERIC endpoint, not the hostname: a resolved DNS name can
+        // map to several IPs (e.g. localhost -> 127.0.0.1 and ::1) whose
+        // InetSocketAddress.getHostString() all report the same hostname, which
+        // would otherwise collapse them into a single backend.
+        Map<String, InetSocketAddress> desired = new LinkedHashMap<>();
         for (InetSocketAddress a : addresses) {
-            wanted.add(a.getHostString() + ":" + a.getPort());
+            desired.putIfAbsent(endpointKey(a),
+                    InetSocketAddress.createUnresolved(
+                            a.getAddress() != null ? a.getAddress().getHostAddress() : a.getHostString(),
+                            a.getPort()));
         }
 
         Map<String, WireClient> currentByKey = new HashMap<>();
@@ -215,31 +221,41 @@ public class ManagedChannel implements Closeable {
         }
         // Close backends no longer in the resolved set
         for (Map.Entry<String, WireClient> e : currentByKey.entrySet()) {
-            if (!wanted.contains(e.getKey())) {
+            if (!desired.containsKey(e.getKey())) {
                 log.info("ManagedChannel: backend {} removed, closing", e.getKey());
                 closeQuietly(e.getValue());
             }
         }
         // Build the next snapshot: reuse persisting clients, open new ones
-        List<WireClient> next = new ArrayList<>(wanted.size());
-        for (String key : wanted) {
-            WireClient existing = currentByKey.get(key);
+        List<WireClient> next = new ArrayList<>(desired.size());
+        for (Map.Entry<String, InetSocketAddress> e : desired.entrySet()) {
+            WireClient existing = currentByKey.get(e.getKey());
             if (existing != null) {
                 next.add(existing);
                 continue;
             }
-            int idx = key.lastIndexOf(':');
-            String host = key.substring(0, idx);
-            int port = Integer.parseInt(key.substring(idx + 1));
+            InetSocketAddress a = e.getValue();
             try {
-                next.add(openClient(host, port));
-                log.info("ManagedChannel: backend {}:{} added", host, port);
-            } catch (Exception e) {
-                log.warn("ManagedChannel: backend {}:{} unreachable, skipping: {}",
-                        host, port, e.getMessage());
+                next.add(openClient(a.getHostString(), a.getPort()));
+                log.info("ManagedChannel: backend {} added", e.getKey());
+            } catch (Exception ex) {
+                log.warn("ManagedChannel: backend {} unreachable, skipping: {}",
+                        e.getKey(), ex.getMessage());
             }
         }
         this.clients = List.copyOf(next);
+    }
+
+    /**
+     * Identity key for a backend endpoint. Uses the NUMERIC address when the
+     * {@link InetSocketAddress} carries a resolved {@link java.net.InetAddress}
+     * (so two IPs behind the same hostname — e.g. {@code localhost} → 127.0.0.1
+     * and {@code ::1} — stay distinct), falling back to the host string for
+     * unresolved (passthrough) endpoints.
+     */
+    static String endpointKey(InetSocketAddress a) {
+        String host = a.getAddress() != null ? a.getAddress().getHostAddress() : a.getHostString();
+        return host + ":" + a.getPort();
     }
 
     private WireClient openClient(String host, int port) {

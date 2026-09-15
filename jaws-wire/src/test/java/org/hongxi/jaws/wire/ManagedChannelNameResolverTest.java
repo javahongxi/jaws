@@ -114,4 +114,24 @@ class ManagedChannelNameResolverTest {
         assertThrows(JawsServiceException.class, () -> ManagedChannel.builder()
                 .nameResolver(resolver).connectTimeout(500).build());
     }
+
+    @Test
+    void endpointKeyDistinguishesSameHostnameDifferentIps() throws Exception {
+        // Regression: a DNS name can resolve to several IPs whose
+        // InetSocketAddress.getHostString() all report the same hostname. Keying by
+        // hostname would collapse them into one backend (the bug the real-DNS run
+        // caught); endpointKey must key by the NUMERIC address instead.
+        java.net.InetAddress a = java.net.InetAddress.getByAddress("dup.local",
+                new byte[]{127, 0, 0, 1});
+        java.net.InetAddress b = java.net.InetAddress.getByAddress("dup.local",
+                new byte[]{127, 0, 0, 2});
+        assertEquals("dup.local", a.getHostName());
+        assertEquals("dup.local", b.getHostName()); // same hostname …
+
+        String ka = ManagedChannel.endpointKey(new InetSocketAddress(a, 8080));
+        String kb = ManagedChannel.endpointKey(new InetSocketAddress(b, 8080));
+        assertNotEquals(ka, kb, "same hostname, different IP must yield distinct keys");
+        assertEquals("127.0.0.1:8080", ka);
+        assertEquals("127.0.0.2:8080", kb);
+    }
 }
