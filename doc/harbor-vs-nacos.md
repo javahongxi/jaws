@@ -38,14 +38,14 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | 机制 | Nacos 值与出处 | harbor 值与出处 |
 |---|---|---|
 | 巡检节拍 | `DEFAULT_HEART_BEAT_INTERVAL = 5s`（`api/.../common/Constants.java:189`；`SwitchDomain.java:47`） | `CHECK_INTERVAL_MS = 5_000`（`HealthCheckManager.java:43`） |
-| 不健康阈值（保留但标记） | `DEFAULT_HEART_BEAT_TIMEOUT = 15s`（`Constants.java:185`；`UnhealthyInstanceChecker.java:60-65`） | `INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000`（`HealthCheckManager.java:66`） |
-| 过期删除阈值 | `DEFAULT_CLIENT_EXPIRED_TIME = 3min`（`naming/.../constants/ClientConstants.java:57`） | `INSTANCE_TIMEOUT_MS = 180_000`、`SYNCED_SESSION_TIMEOUT_MS = 180_000`（`:59`、`:75`） |
+| 不健康阈值（保留但标记） | `DEFAULT_HEART_BEAT_TIMEOUT = 15s`（`Constants.java:185`；`UnhealthyInstanceChecker.java:60-65`） | `INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000`（`HealthCheckManager.java:59`） |
+| 副本回收阈值（owner 静默） | `DEFAULT_CLIENT_EXPIRED_TIME = 3min`（`naming/.../constants/ClientConstants.java:57`） | `SYNCED_SESSION_TIMEOUT_MS = 180_000`（`HealthCheckManager.java:68`；A1 已移除 per-instance 180s 过期档，死连接由 90s 看门狗注销） |
 | verify 周期 | `DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5000`（`core/.../distro/DistroConstants.java:54`） | `VERIFY_INTERVAL_MS = 5000`（`DistroProtocol.java:53`） |
 | 启动加载重试 | `DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30000`（`DistroConstants.java:68`） | `LOAD_DATA_RETRY_DELAY_MS = 30_000`（`:56`） |
 | 推送失败重试固定延迟（非指数） | `DEFAULT_PUSH_TASK_RETRY_DELAY = 1000`（`naming/.../constants/PushConstants.java:45`） | `RETRY_DELAY_MS = 1000`（`PushDelayTaskEngine.java:44`） |
 | 延迟合并的「同键合一任务 + 到点重读」 | `NacosDelayTaskExecuteEngine.addTask` → `newTask.merge(existTask)`（`common/.../task/engine/NacosDelayTaskExecuteEngine.java:119-124`）；`DistroDelayTask.merge` 保旧动作（`core/.../distro/task/delay/DistroDelayTask.java:61-69`） | `pending.computeIfAbsent` + 到点 `buildClientSyncData` 重读当前全量幂等推（`DistroProtocol.java:195-217`） |
 | verify 不一致 → **owner 定向重推**（不是去 peer 拉） | `syncToTarget(distroKey, ADD, targetServer, 0L)`（`naming/.../distro/v2/DistroClientDataProcessor.java:120`） | `resyncToPeer(peer, clientIds)`（`DistroProtocol.java:422-442`） |
-| 健康判定权只属于持有连接的节点，副本只显示不判定 | `isResponsibleClient(client)` 随两个事件外发（`ConnectionBasedClientManager.java:113-116`） | `healthTransitionNotifier` + 15s 档仅对 native 生效（`ServiceStorage.java:383`、`:435`） |
+| 健康判定权只属于持有连接的节点，副本只显示不判定 | `isResponsibleClient(client)` 随两个事件外发（`ConnectionBasedClientManager.java:113-116`） | `reconcileHealth` 只遍历本节点持有的 `ConnectionRecord`（副本无记录 → 天然不判定），翻转经 `healthFlipHandler` 外发（`ServiceStorage.java:362`、`:395`） |
 | 广播「当前全量 + 幂等收敛」，无应用层 ack | `NotifySubscriberResponse extends Response`，**无任何字段**（`api/.../naming/remote/response/NotifySubscriberResponse.java:26`） | 每次重读当前全量，不缓存旧 payload（`PushDelayTaskEngine` 类注释） |
 | 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`common/.../grpc/DefaultGrpcClientConfig.java:224`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`common/.../remote/client/RpcClient.java:353-359`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckManager.java:43/51`） |
 | HTTP/2 PING 只是「无应用层心跳时」的兜底 | `channelKeepAlive = 6*60*1000`（`DefaultGrpcClientConfig.java:238`，用于 `GrpcClient.java:220-221`） | 不依赖 PING 做活性判定，PING strike 语义归 core |
@@ -84,9 +84,9 @@ harbor 反其道：把 Nacos 用在另一类客户端上的内容指纹思路搬
 
 理由：verify 的语义是「两节点的数据是否一致」，计数器回答的是「变更发生过几次」。实例增了又删回原样，计数器已前进，peer 会报 mismatch 并触发一次内容完全相同的重推——correctness 不受损，但白耗一轮同步。内容指纹对这种情况判一致。**代价**：32 位哈希理论存在碰撞漏检；XOR 对「同服务两个实例互换」不敏感（同 key 同端口同权重会被抵消），因此条目哈希里带 `ip/port/healthy`，且副本与原生两条路径必须用同一套 XOR 规则（这正是 `:162-166` 注释强调顺序无关的原因）。
 
-### 3.2 `lastBeat` 不进 revision，`healthy` 进
+### 3.2 `healthy` 进 revision；活性不落成 per-instance 字段
 
-`lastBeat` 是只有 owner 能读的墙钟；副本上的值是推送时被冻结的（Nacos 同样不逐心跳转发）。若折进哈希，native 与 synced 副本天然不等 → verify 每轮都误报并启动无意义重推。反之 `healthy` 是**被复制的内容**：owner 无实例变更地翻转判定时，必须可被 verify 检出，否则丢一次推送就让两节点永久分歧。见 `ClientSession.java:168-173`。
+A1 起 harbor 不再有 `Instance.lastBeat`：ephemeral 健康**派生自持有连接之节点的 `ConnectionRecord.lastActiveTime`**（`ServiceStorage.reconcileHealth`），与 Nacos 2.x 的 `Client.lastRefreshTime` 同构。于是没有"墙钟要不要进哈希"的两难——活性根本不是被复制的数据，副本没有 `ConnectionRecord`、`reconcileHealth` 只遍历本节点持有的连接，天然对它不判定（比原来显式 `isNativeClient` 跳过更干净）。剩下的 `healthy` 仍是**被复制的内容**：owner 无实例变更地翻转判定时，必须可被 verify 检出，否则丢一次推送就让两节点永久分歧。见 `ClientSession.java:168-173`。
 
 ### 3.3 合并窗口比 Nacos 更激进：200ms vs 1000ms / 500ms
 
@@ -117,7 +117,7 @@ Nacos 的复制载荷由 `AbstractClient.generateSyncData()` 生成（`AbstractC
 harbor 早期版本在载荷里多带了一个 `subscriberKeys`，并计入 `hasContent`。核对本表时把它删掉了，因为两条害处都是实打实的：
 
 1. **污染本节点的推送目标索引**。副本落地时会把自己的 clientId 写进 `subscriberIndexes`（`ServiceStorage.getSubscriberConnections` 的语义因此变成谎话——「本节点当前订阅者」里混进了写不到的连接，`PushDelayTaskEngine` 每一轮推送都要空查一次并记一条 "connection gone"）。
-2. **造出没有删除路径的副本壳**。纯订阅副本没有实例，beat 两档永远看不见它；而连接关闭时的 DELETE 判据只看 `serviceKeys`（`ConnectionLifecycle.java:92`），于是这种壳只能等 180s 孤儿回收兜底。
+2. **造出没有删除路径的副本壳**。纯订阅副本没有实例、也没有 `ConnectionRecord`，`reconcileHealth` 只遍历本节点持有的连接故永远看不见它；而连接关闭时的 DELETE 判据只看 `serviceKeys`（`ConnectionLifecycle.java:92`），于是这种壳只能等 180s 孤儿回收兜底。
 
 **实测证据**（3 节点集群 19848/19849/19850 + provider/consumer 各起一次）：provider 连到 19848 注册 2 个服务，另两节各自日志出现一条 `applied client sync: <connId> (publishers=2)`（跨节点发现不受影响）；consumer 只订阅，其连接在另两节点上**零**条同步记录，全集群 `publishers=0` 出现 **0** 次、`distro delete client` **0** 次——即「无内容的壳」这一形态在集群里已不存在。
 
@@ -153,11 +153,11 @@ Nacos 在 `ClientSyncData` 与 `DistroClientVerifyInfo` 里把主键字段叫 `c
 
 ## 4. 测试即语义注解
 
-`jaws-harbor` 的 57 个用例里，主干测试类各自钉住一条 Nacos 语义，类名就是命题：
+`jaws-harbor` 的 55 个用例里，主干测试类各自钉住一条 Nacos 语义，类名就是命题：
 
 | 测试 | 钉住的语义 |
 |---|---|
-| `EphemeralHealthTierTest` | 15s 标不健康且保留、180s 才删的两档结构 |
+| `EphemeralHealthTierTest` | 连接静默 15s 标不健康且保留、连接恢复活动则 reconcile 回健康（活性驱动，双向） |
 | `SyncedHealthAuthorityTest` | 健康只由持有连接的节点判定，副本只显示（§2/§3.2） |
 | `SyncedSessionReclamationTest` | 孤儿副本回收判据是 owner 沉默，不被本地改动赦免 |
 | `SubscriptionStaysLocalTest` | 订阅不出网：载荷不含订阅、副本永不进推送索引（§3.8） |

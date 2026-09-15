@@ -111,10 +111,9 @@ public class ServiceStorage {
                                  Instance instance, String connectionId) {
         ServiceKey key = ServiceKey.of(namespace, group, serviceName);
 
-        // Set heartbeat timestamps
+        // Set registration timestamp
         long currentTime = System.currentTimeMillis();
         instance.setRegisterTime(currentTime);
-        instance.setLastBeat(currentTime);
         instance.setConnectionId(connectionId);
 
         // Write to ClientSession (source of truth)
@@ -347,74 +346,34 @@ public class ServiceStorage {
     // ========================================================================
 
     /**
-     * Update the last heartbeat for all instances registered by the given connection.
-     * Follows Nacos's connection-based health check model: any request from a
-     * connection refreshes the heartbeat for all its registered instances.
+     * Reconcile ephemeral instance health against connection liveness — the
+     * Nacos 2.x model where health is a property of the client connection, not a
+     * per-instance beat. Only connections this node holds are considered: a native
+     * connection has a {@link ConnectionManager.ConnectionRecord} (replicas do not,
+     * so they are never judged here — they learn the verdict as replicated data).
+     * A connection idle past {@code timeoutMs} flips its instances
+     * {@code healthy=false}; activity flips them back to {@code healthy=true}. Every
+     * flip invalidates the service cache, folds into the session revision (so a lost
+     * push is caught by verify), and notifies — so an outage steers traffic away and
+     * a recovered provider starts receiving it again.
      *
-     * @param connectionId the gRPC connectionId from the wire call context
+     * @param timeoutMs idle window after which a connection's instances go unhealthy
      */
-    public void updateHeartbeatByConnectionId(String connectionId) {
-        if (connectionId == null || connectionId.isEmpty()) {
-            return;
-        }
-        ClientSession session = connectionManager.getClientSession(connectionId);
-        if (session == null) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        Set<ServiceKey> recoveredServices = new HashSet<>();
-        boolean flipped = false;
-        for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
-            for (Instance inst : entry.getValue()) {
-                inst.setLastBeat(now);
-                // Beat recovered: clear a prior unhealthy mark and re-announce,
-                // so subscribers stop steering traffic away from it.
-                if (!inst.isHealthy()) {
-                    inst.setHealthy(true);
-                    invalidateServiceCache(entry.getKey());
-                    recoveredServices.add(entry.getKey());
-                    flipped = true;
-                }
-            }
-        }
-        for (ServiceKey serviceKey : recoveredServices) {
-            changeListener.onServiceChange(serviceKey);
-        }
-        if (flipped) {
-            // Recovery must travel as hard as the outage: a replica left unhealthy
-            // keeps steering traffic away from a provider that is alive again.
-            session.recalculateRevision();
-            healthFlipHandler.accept(connectionId);
-        }
-    }
-
-    /**
-     * First health tier (Nacos {@code HEART_BEAT_TIMEOUT}): an instance whose beat
-     * stopped for longer than {@code timeoutMs} — but which hasn't yet hit the delete
-     * window — is marked {@code healthy=false}, its service cache invalidated, and
-     * subscribers notified so they stop routing to it. Deletion stays a later tier
-     * via {@link #getExpiredInstances}; the next beat restores health via
-     * {@link #updateHeartbeatByConnectionId}.
-     */
-    public void markUnhealthyStale(long timeoutMs) {
+    public void reconcileHealth(long timeoutMs) {
         long now = System.currentTimeMillis();
         Set<ServiceKey> affectedServices = new HashSet<>();
         Set<String> flippedConnections = new HashSet<>();
-        for (ClientSession session : connectionManager.allClientSessions()) {
-            // Only the node HOLDING the connection may judge health. A replica's
-            // copy of lastBeat is frozen at push time — beats are not forwarded per
-            // beat — so evaluating it locally invents an outage the owner never saw
-            // and pushes a notification that steers traffic away from a live
-            // provider. A replica learns the verdict as data instead.
-            if (!session.isNativeClient()) {
+        for (ConnectionManager.ConnectionRecord record : connectionManager.allConnections()) {
+            ClientSession session = connectionManager.getClientSession(record.connectionId());
+            if (session == null) {
                 continue;
             }
+            boolean wantHealthy = !record.isStale(now, timeoutMs);
             boolean flipped = false;
             for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
                 for (Instance inst : entry.getValue()) {
-                    long lastBeat = inst.getLastBeat();
-                    if (inst.isHealthy() && lastBeat > 0 && now - lastBeat > timeoutMs) {
-                        inst.setHealthy(false);
+                    if (inst.isHealthy() != wantHealthy) {
+                        inst.setHealthy(wantHealthy);
                         invalidateServiceCache(entry.getKey());
                         affectedServices.add(entry.getKey());
                         flipped = true;
@@ -424,7 +383,7 @@ public class ServiceStorage {
             if (flipped) {
                 // Health is part of the replicated content: without folding it into
                 // the revision, a lost push for a client whose instances did not
-                // change would never be noticed by verify.
+                // otherwise change would never be noticed by verify.
                 session.recalculateRevision();
                 flippedConnections.add(session.getConnectionId());
             }
@@ -435,29 +394,6 @@ public class ServiceStorage {
         for (String connectionId : flippedConnections) {
             healthFlipHandler.accept(connectionId);
         }
-    }
-
-    /**
-     * Find all ephemeral instances whose last heartbeat exceeds the timeout.
-     *
-     * @param timeoutMs the heartbeat timeout in milliseconds
-     * @return list of expired instance descriptors (service + ip + port)
-     */
-    public List<ExpiredInstance> getExpiredInstances(long timeoutMs) {
-        long now = System.currentTimeMillis();
-        List<ExpiredInstance> expired = new ArrayList<>();
-        for (ClientSession session : connectionManager.allClientSessions()) {
-            for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
-                ServiceKey serviceKey = entry.getKey();
-                for (Instance inst : entry.getValue()) {
-                    long lastBeat = inst.getLastBeat();
-                    if (lastBeat > 0 && now - lastBeat > timeoutMs) {
-                        expired.add(new ExpiredInstance(serviceKey, inst.getIp(), inst.getPort()));
-                    }
-                }
-            }
-        }
-        return expired;
     }
 
     /**
@@ -531,11 +467,6 @@ public class ServiceStorage {
         }
         return totalRemoved;
     }
-
-    /**
-     * Descriptor for an expired instance returned by {@link #getExpiredInstances}.
-     */
-    public record ExpiredInstance(ServiceKey serviceKey, String ip, int port) {}
 
     // ========================================================================
     // Distro protocol support

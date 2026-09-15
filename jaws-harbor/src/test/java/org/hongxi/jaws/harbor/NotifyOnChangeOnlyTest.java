@@ -71,7 +71,7 @@ class NotifyOnChangeOnlyTest {
 
     /** One health-sweep pass, exactly what HealthCheckManager does every 5 s. */
     private void sweep() {
-        storage.markUnhealthyStale(15_000);
+        storage.reconcileHealth(15_000);
         storage.cleanEmptyServices();
     }
 
@@ -105,7 +105,9 @@ class NotifyOnChangeOnlyTest {
     void anUnhealthyInstanceIsAnnouncedOnceAndNotAgainOnLaterSweeps() {
         givenLivePublisher();
         events.clear(); // the registration announced once already; measure only what follows
-        storage.getInstances(NS, GROUP, SVC).get(0).setLastBeat(System.currentTimeMillis() - 20_000);
+        cm.allConnections().stream()
+                .filter(r -> r.connectionId().equals("pub"))
+                .findFirst().orElseThrow().lastActiveTime().addAndGet(-20_000);
 
         sweep();
         assertEquals(1, events.size(), "the transition to unhealthy is a change: " + events);

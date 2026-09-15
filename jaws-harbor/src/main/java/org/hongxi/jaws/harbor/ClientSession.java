@@ -168,9 +168,7 @@ public class ClientSession {
      * {@code healthy} participates because it IS replicated content: a verdict the
      * owner flips without any instance change must still be detectable by verify,
      * or a lost health push would leave two nodes disagreeing forever about a live
-     * service. {@code lastBeat} deliberately does NOT: it is a wall-clock reading
-     * only the owner can take, so folding it in would make native and synced
-     * copies disagree by construction and set verify resyncing every cycle.
+     * service.
      */
     public void recalculateRevision() {
         int hash = 0;

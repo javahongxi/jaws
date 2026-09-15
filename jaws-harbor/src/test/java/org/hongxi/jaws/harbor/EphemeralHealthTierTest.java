@@ -13,11 +13,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Locks Nacos's two-tier ephemeral health model in harbor: a stale beat first marks
- * an instance UNHEALTHY (kept, subscribers told to steer away) at
- * {@code INSTANCE_UNHEALTHY_TIMEOUT}, and only later is it deleted at the expiry
- * window. A returning beat restores health. These test {@link ServiceStorage}'s
- * public health APIs directly (no scheduler involved).
+ * Locks harbor's connection-based ephemeral health model (Nacos 2.x): an instance
+ * is healthy iff its owning connection is active. A connection idle past
+ * {@code INSTANCE_UNHEALTHY_TIMEOUT} has its instances marked UNHEALTHY (kept,
+ * subscribers told to steer away); activity restores them. Health is reconciled by
+ * {@link ServiceStorage#reconcileHealth(long)} against the connection's liveness
+ * clock — there is no per-instance beat. Tests drive the clock directly (no scheduler).
  */
 class EphemeralHealthTierTest {
 
@@ -36,32 +37,39 @@ class EphemeralHealthTierTest {
         notified.clear(); // discard the notify from the initial registration
     }
 
+    private ConnectionManager.ConnectionRecord record() {
+        return cm.allConnections().stream()
+                .filter(r -> r.connectionId().equals("pub"))
+                .findFirst().orElseThrow();
+    }
+
     @Test
-    void staleBeatMarksUnhealthyAndNotifies() {
-        inst.setLastBeat(System.currentTimeMillis() - 20_000);
-        storage.markUnhealthyStale(15_000);
-        assertFalse(inst.isHealthy(), "an instance whose beat stopped beyond the threshold must be flagged unhealthy");
+    void idleConnectionMarksUnhealthyAndNotifies() {
+        record().lastActiveTime().addAndGet(-20_000);
+        storage.reconcileHealth(15_000);
+        assertFalse(inst.isHealthy(), "an instance whose connection idled past the threshold must be flagged unhealthy");
         assertTrue(notified.contains("public@@DEFAULT_GROUP@@svc"),
                 "marking unhealthy must re-notify so subscribers stop routing to it");
     }
 
     @Test
-    void freshBeatIsNotFlagged() {
-        storage.markUnhealthyStale(15_000);
-        assertTrue(inst.isHealthy(), "a fresh beat must remain healthy");
+    void activeConnectionIsNotFlagged() {
+        storage.reconcileHealth(15_000);
+        assertTrue(inst.isHealthy(), "an active connection keeps its instances healthy");
         assertTrue(notified.isEmpty(), "no spurious notify when nothing went unhealthy");
     }
 
     @Test
-    void returningBeatRestoresHealthAndNotifies() {
-        inst.setLastBeat(System.currentTimeMillis() - 20_000);
-        storage.markUnhealthyStale(15_000);
+    void activityRestoresHealthAndNotifies() {
+        record().lastActiveTime().addAndGet(-20_000);
+        storage.reconcileHealth(15_000);
         assertFalse(inst.isHealthy());
         notified.clear();
 
-        storage.updateHeartbeatByConnectionId("pub");
+        cm.touch("pub");            // the connection becomes active again
+        storage.reconcileHealth(15_000);
 
-        assertTrue(inst.isHealthy(), "a returning beat must restore a previously-unhealthy instance");
+        assertTrue(inst.isHealthy(), "connection activity must restore a previously-unhealthy instance");
         assertTrue(notified.contains("public@@DEFAULT_GROUP@@svc"),
                 "restoring health must re-announce so subscribers route back");
     }

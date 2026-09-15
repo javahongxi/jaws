@@ -8,8 +8,8 @@ import java.util.Map;
  * Field names match the nacos-client {@code com.alibaba.nacos.api.naming.pojo.Instance}
  * JSON wire format exactly, ensuring full compatibility.
  * <p>
- * The {@code registerTime} and {@code lastBeat} fields are server-side internals
- * used by {@link org.hongxi.jaws.harbor.HealthCheckManager} for heartbeat tracking.
+ * The {@code registerTime} field is a server-side internal. Instance health is
+ * derived from the owning connection's liveness, not a per-instance beat.
  *
  * @author shenhongxi
  */
@@ -25,9 +25,8 @@ public class Instance {
     private String serviceName;
     private Map<String, String> metadata;
 
-    // server-side heartbeat tracking
+    // server-side internal
     private long registerTime;
-    private long lastBeat;
     /** The gRPC connectionId that registered this instance (server-side internal). */
     private String connectionId;
 
@@ -112,14 +111,6 @@ public class Instance {
 
     public void setRegisterTime(long registerTime) {
         this.registerTime = registerTime;
-    }
-
-    public long getLastBeat() {
-        return lastBeat;
-    }
-
-    public void setLastBeat(long lastBeat) {
-        this.lastBeat = lastBeat;
     }
 
     public String getConnectionId() {

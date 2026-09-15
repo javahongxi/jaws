@@ -282,9 +282,6 @@ public class HarborServer {
             // from the same clientIp connect simultaneously.
             String connectionId = context.getAttachment(WireConstants.CONNECTION_ID);
 
-            // Update heartbeat for all instances from this connection (Nacos connection-based model)
-            serviceStorage.updateHeartbeatByConnectionId(connectionId);
-
             // Touch the specific connection. connectionId is minted per TCP connection
             // at setup (#5) and propagated via WireCallContext, so this is always the
             // precise path; the old clientIp fallback has been removed.

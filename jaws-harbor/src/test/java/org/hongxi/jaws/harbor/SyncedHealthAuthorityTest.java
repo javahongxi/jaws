@@ -25,32 +25,23 @@ import static org.junit.jupiter.api.Assertions.*;
  * Locks who may JUDGE an ephemeral instance's health once its data is replicated:
  * only the node holding the client's connection.
  * <p>
- * A Distro replica receives a snapshot whose {@code lastBeat} is frozen at push
- * time, because beats arrive on the owner's connection and are not forwarded per
- * beat. Judging that frozen beat against a local clock invents an outage the owner
- * never saw. Measured live: with a provider beating every 5 s, a non-owner node
- * marked its replica unhealthy 15 s after the last data sync — so every node that
- * does not own a connection shows a healthy provider as dead.
+ * Health is reconciled against connection liveness (Nacos 2.x model): a node judges
+ * health only for connections it holds ({@code ConnectionRecord}s exist only for
+ * native clients). A Distro replica holds no connection, so {@code reconcileHealth}
+ * never touches its copy — it learns the owner's verdict as replicated data instead.
+ * Judging a replica locally would invent an outage the owner never saw.
  * <p>
- * The two health tiers therefore split by authority, not by threshold:
- * <ul>
- *   <li>the {@code unhealthy} tier is judged by the owner ALONE and reaches a
- *       replica as data — which means a transition must bump the session revision
- *       (so anti-entropy can repair a lost push) and trigger a coalesced sync (so
- *       subscribers converge without waiting for a verify cycle);</li>
- *   <li>the {@code expired} tier is still evaluated on a replica, because it is
- *       the only reaper left when the OWNER node itself dies — nobody is left to
- *       push anything. That is sound only while the owner keeps re-publishing its
- *       clients ({@link DistroProtocol#refreshOwnedClients()}), which is what
- *       stops a long-lived client with no data changes from rotting on replicas.</li>
- * </ul>
+ * Consequently a health transition is REPLICATED CONTENT: it must bump the session
+ * revision (so anti-entropy repairs a lost push) and trigger a coalesced sync (so
+ * subscribers converge without waiting for a verify cycle). Reclaiming a replica whose
+ * owner went fully silent is a separate concern ({@code reapStaleSyncedClients},
+ * covered by {@link SyncedSessionReclamationTest}).
  */
 class SyncedHealthAuthorityTest {
 
     private static final String ADDR1 = "127.0.0.1:19848";
     private static final String ADDR2 = "127.0.0.1:19849";
     private static final long UNHEALTHY_MS = 15_000;
-    private static final long EXPIRE_MS = 180_000;
 
     private Recording transport;
     private ConnectionManager cm1, cm2;
@@ -202,42 +193,27 @@ class SyncedHealthAuthorityTest {
         return found.get(0);
     }
 
-    /**
-     * Put node2's replica in the state time alone produces: the owner pushed this
-     * state a while ago and has been quietly beating since (no data change, hence
-     * no new push). The owner's own copy is left untouched and healthy.
-     */
-    private void ageOnlyTheReplica(long millis) {
-        long ownerBeat = System.currentTimeMillis();
-        ownerInstance().setLastBeat(ownerBeat);
-        ownerInstance().setHealthy(true);
-        // Push a state whose beat is already old, then let the owner's clock move on
-        // — what a replica of a live client looks like once its last push ages.
-        ownerInstance().setLastBeat(ownerBeat - millis);
-        pushOwnerStateToPeer();
-        ownerInstance().setLastBeat(ownerBeat);
-        notified2.clear(); // the fixture's own push re-notified; measure only what comes next
-        assertTrue(ownerInstance().isHealthy(), "precondition: the owner sees itself healthy");
+    /** Age node1's owning connection so the owner (and only the owner) judges it stale. */
+    private void ageOwnerConnection(long millis) {
+        cm1.allConnections().stream()
+                .filter(r -> r.connectionId().equals("pub"))
+                .findFirst().orElseThrow().lastActiveTime().addAndGet(-millis);
     }
 
     // ========================================================================
-    // The unhealthy tier: judged by the owner alone.
+    // The unhealthy tier: judged by the owner alone (only natives have a record).
     // ========================================================================
 
     @Test
     void replicaMustNotInventAnOutageTheOwnerNeverSaw() {
-        ageOnlyTheReplica(UNHEALTHY_MS + 5_000);
+        // node2 holds no connection for "pub" → its sweep must not judge the replica.
         assertTrue(replicaInstance().isHealthy(), "precondition: the replica arrives healthy");
 
         health2.checkHealth();
 
         assertTrue(replicaInstance().isHealthy(),
-                "a node that never received this client's beats must not judge health from a "
-                        + "frozen copy — the owner is alive and beating every 5 s");
-        // Deliberately NOT asserting on notified2: the sweep notifies for every
-        // service regardless of change (ServiceStorage.checkAndCleanEmptyService's
-        // else branch), so a notification proves nothing here. That push churn is
-        // a separate defect from who may judge health, and is filed as such.
+                "a node that holds no connection for this client must not judge its health — "
+                        + "the owner is alive and its connection active");
     }
 
     // ========================================================================
@@ -250,8 +226,8 @@ class SyncedHealthAuthorityTest {
         long revisionWhileHealthy = session1.getRevision();
         int before = transport.changes.get();
 
-        // The owner's OWN beat really did stop — this is the node allowed to judge.
-        ownerInstance().setLastBeat(System.currentTimeMillis() - UNHEALTHY_MS - 5_000);
+        // The owner's OWN connection really did go idle — this is the node allowed to judge.
+        ageOwnerConnection(UNHEALTHY_MS + 5_000);
         health1.checkHealth();
 
         assertFalse(ownerInstance().isHealthy(), "the owner must mark its own stale instance unhealthy");
@@ -268,15 +244,16 @@ class SyncedHealthAuthorityTest {
 
     @Test
     void ownerRecoveryIsPushedToo() {
-        ownerInstance().setLastBeat(System.currentTimeMillis() - UNHEALTHY_MS - 5_000);
+        ageOwnerConnection(UNHEALTHY_MS + 5_000);
         health1.checkHealth();
         awaitChanges(2);
         assertFalse(ownerInstance().isHealthy(), "precondition: owner marked it unhealthy");
         assertFalse(replicaInstance().isHealthy(), "precondition: replica converged to unhealthy");
 
         int before = transport.changes.get();
-        // A beat arrives on the owner's connection: health is restored and must travel.
-        st1.updateHeartbeatByConnectionId("pub");
+        // Traffic resumes on the owner's connection: health is restored and must travel.
+        cm1.touch("pub");
+        health1.checkHealth();
 
         assertTrue(ownerInstance().isHealthy(), "precondition: the owner recovered its instance");
         awaitChanges(before + 1);
@@ -284,38 +261,5 @@ class SyncedHealthAuthorityTest {
                 assertTrue(replicaInstance().isHealthy(), "node2 must see the restored health"),
                 "recovery never reached node2 — a replica left unhealthy steers traffic away "
                         + "from a live provider forever, which is worse than the outage itself");
-    }
-
-    // ========================================================================
-    // The expired tier: still evaluated on a replica, and only sound because the
-    // owner keeps re-publishing.
-    // ========================================================================
-
-    @Test
-    void ownerRepublishesOwnedClientsSoReplicasDoNotRot() {
-        long fresh = System.currentTimeMillis();
-        ownerInstance().setLastBeat(fresh);
-        int before = transport.changes.get();
-
-        d1.refreshOwnedClients();
-        awaitChanges(before + 1);
-
-        assertEquals(fresh, replicaInstance().getLastBeat(),
-                "the refresh pass must re-publish owned clients even with no logical change, "
-                        + "otherwise a long-lived client's replica ages toward expiry on every "
-                        + "node that does not own its connection");
-    }
-
-    @Test
-    void replicaReapsAClientWhoseOwnerWentSilent() {
-        // Nobody left to push: the owner died. Local expiry is the last resort and
-        // must still fire on the replica, coarse as it is.
-        ageOnlyTheReplica(EXPIRE_MS + 10_000);
-
-        health2.checkHealth();
-
-        assertTrue(st2.getInstances("public", "DEFAULT_GROUP", "svc").isEmpty(),
-                "a replica whose owner stopped refreshing entirely must eventually be reaped "
-                        + "locally — otherwise a dead client lingers in the cluster view forever");
     }
 }

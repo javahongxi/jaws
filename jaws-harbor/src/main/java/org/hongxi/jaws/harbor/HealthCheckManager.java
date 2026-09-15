@@ -19,9 +19,9 @@ import java.util.concurrent.TimeUnit;
  *       each one goes through the full closure transaction
  *       ({@link ConnectionLifecycle#cleanup}), exactly the same side effects
  *       a live {@code channelInactive} would produce</li>
- *   <li><b>Instance heartbeat</b>: any instance whose last heartbeat exceeds
- *       {@link #INSTANCE_TIMEOUT_MS} (default 3 min) is removed as a fallback
- *       for edge cases (e.g. half-open TCP that hasn't triggered watchdog yet)</li>
+ *   <li><b>Instance health</b>: reconciled against connection liveness (Nacos 2.x
+ *       model) — a connection idle past {@link #INSTANCE_UNHEALTHY_TIMEOUT_MS} marks
+ *       its instances {@code unhealthy}; activity restores them</li>
  *   <li><b>Replica reclamation</b>: a synced (non-native) client that no peer has
  *       confirmed for {@link #SYNCED_SESSION_TIMEOUT_MS} is dropped entirely, since
  *       once the node owning its connection is gone nothing can announce its
@@ -51,23 +51,16 @@ public class HealthCheckManager {
     private static final long CONNECTION_TIMEOUT_MS = 90_000;
 
     /**
-     * Instance heartbeat timeout (milliseconds).
-     * Matches Nacos {@code DEFAULT_CLIENT_EXPIRED_TIME = 3min}.
-     * Serves as a fallback for edge cases where the connection watchdog
-     * hasn't fired yet (e.g. half-open TCP).
-     */
-    private static final long INSTANCE_TIMEOUT_MS = 180_000;
-
-    /**
-     * First health tier (Nacos {@code HEART_BEAT_TIMEOUT}): stale-for-longer-than-this
-     * instances are marked unhealthy (kept, but flagged) before the delete window at
-     * {@link #INSTANCE_TIMEOUT_MS}. ~3× the 5s beat interval.
+     * First health tier (Nacos {@code HEART_BEAT_TIMEOUT}): a connection idle for
+     * longer than this has its instances marked unhealthy (kept, but flagged) well
+     * before the watchdog judges the connection dead at {@link #CONNECTION_TIMEOUT_MS}.
+     * ~3× the 5s beat interval.
      */
     private static final long INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000;
 
     /**
      * How long a REPLICATED (synced) client may go unconfirmed by its owner before
-     * this node drops it. Deliberately the same window as {@link #INSTANCE_TIMEOUT_MS}:
+     * this node drops it. Set to Nacos's {@code DEFAULT_CLIENT_EXPIRED_TIME} (3 min):
      * one full expiry window of silence means the owning node is gone rather than merely
      * idle — while it lives, its 30s refresh pass and matching verify revisions keep
      * every replica's confirmation clock moving.
@@ -97,8 +90,8 @@ public class HealthCheckManager {
     public void start() {
         scheduler.scheduleAtFixedRate(this::checkHealth,
                 CHECK_INTERVAL_MS, CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
-        log.info("[harbor] health check started, interval={}ms, connTimeout={}ms, instanceTimeout={}ms",
-                CHECK_INTERVAL_MS, CONNECTION_TIMEOUT_MS, INSTANCE_TIMEOUT_MS);
+        log.info("[harbor] health check started, interval={}ms, connTimeout={}ms",
+                CHECK_INTERVAL_MS, CONNECTION_TIMEOUT_MS);
     }
 
     /**
@@ -125,19 +118,11 @@ public class HealthCheckManager {
                         conn.connectionId(), conn.clientIp());
             }
 
-            // Phase 1.5: Nacos first health tier — mark stale-but-not-yet-expired
-            // instances unhealthy (kept) and notify, before deletion in Phase 2.
-            serviceStorage.markUnhealthyStale(INSTANCE_UNHEALTHY_TIMEOUT_MS);
-
-            // Phase 2: instance heartbeat fallback — clean up any remaining expired instances
-            List<ServiceStorage.ExpiredInstance> expired =
-                    serviceStorage.getExpiredInstances(INSTANCE_TIMEOUT_MS);
-            if (!expired.isEmpty()) {
-                log.info("[harbor] health check found {} expired instance(s)", expired.size());
-                for (ServiceStorage.ExpiredInstance inst : expired) {
-                    serviceStorage.removeInstanceByIpPort(inst.serviceKey(), inst.ip(), inst.port());
-                }
-            }
+            // Reconcile instance health against connection liveness (Nacos 2.x model):
+            // a connection idle past the unhealthy window marks its instances unhealthy;
+            // activity restores them. Connection death is handled by the watchdog above,
+            // so there is no separate per-instance expiry tier.
+            serviceStorage.reconcileHealth(INSTANCE_UNHEALTHY_TIMEOUT_MS);
 
             // Phase 2.5: reclaim replicated clients their owner no longer confirms.
             // The beat tiers above only reach instances, so a subscriber-only replica —

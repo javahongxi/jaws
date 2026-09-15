@@ -60,13 +60,13 @@ public class DistroProtocol {
 
     /**
      * How often the owner re-publishes each of its native clients, even with no
-     * logical change. A replica's copy of {@code lastBeat} is frozen at push time
-     * (beats arrive on the owner's connection and are not forwarded per beat,
-     * matching Nacos), so without this pass a long-lived client would age toward
-     * the 180s expiry window on every node that does not own its connection — and
-     * those nodes would delete live data. At 1/6 of that window a replica's copy
-     * is never stale enough to expire on its own, so expiry then means what it
-     * should mean: the owner stopped, the client or its node.
+     * logical change. A replica holds no connection and never judges liveness itself;
+     * it learns a client is alive only through these pushes, each of which advances
+     * the replica's confirmation clock ({@code lastRenewTime}). Without this pass a
+     * long-lived but unchanged client would let that clock age on every non-owner
+     * node, and {@code reapStaleSyncedClients} would drop the replica as if its owner
+     * had gone silent. At 1/6 of the 180s reclaim window a live owner keeps its
+     * replicas confirmed, so a reclamation means what it should: the owner stopped.
      */
     private static final long CLIENT_REFRESH_INTERVAL_MS = 30_000L;
 
