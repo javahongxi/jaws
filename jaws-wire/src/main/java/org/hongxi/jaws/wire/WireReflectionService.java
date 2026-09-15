@@ -105,11 +105,11 @@ public class WireReflectionService {
     private void handleListServices(ServerReflectionResponse.Builder responseBuilder) {
         Set<String> names = serviceNamesSupplier.get();
         ListServiceResponse.Builder listBuilder = ListServiceResponse.newBuilder();
+        // List every registered service, including the grpc.* built-ins
+        // (health / reflection), matching grpc-java's ProtoReflectionService so
+        // that tools like grpcurl see the full set the server actually exposes.
         for (String name : names) {
-            // Skip internal protocol services from the listing
-            if (!name.startsWith("grpc.")) {
-                listBuilder.addService(ServiceResponse.newBuilder().setName(name).build());
-            }
+            listBuilder.addService(ServiceResponse.newBuilder().setName(name).build());
         }
         responseBuilder.setListServicesResponse(listBuilder.build());
     }
