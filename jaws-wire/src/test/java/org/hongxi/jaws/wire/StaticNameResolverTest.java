@@ -9,19 +9,19 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for {@link PassthroughNameResolver}: delivers its fixed set once on
+ * Unit tests for {@link StaticNameResolver}: delivers its fixed set once on
  * start, never refreshes, and rejects an empty set.
  *
  * @author shenhongxi
  */
-class PassthroughNameResolverTest {
+class StaticNameResolverTest {
 
     @Test
     void startDeliversFixedListOnce() {
         List<InetSocketAddress> addrs = List.of(
                 InetSocketAddress.createUnresolved("10.0.0.1", 50051),
                 InetSocketAddress.createUnresolved("10.0.0.2", 50051));
-        PassthroughNameResolver resolver = new PassthroughNameResolver(addrs);
+        StaticNameResolver resolver = new StaticNameResolver(addrs);
 
         AtomicReference<List<InetSocketAddress>> got = new AtomicReference<>();
         resolver.start(new NameResolver.Listener() {
@@ -32,7 +32,7 @@ class PassthroughNameResolverTest {
 
             @Override
             public void onError(Throwable error) {
-                fail("passthrough must not error");
+                fail("static resolver must not error");
             }
         });
 
@@ -43,8 +43,8 @@ class PassthroughNameResolverTest {
     @Test
     void emptyAddressSetRejected() {
         assertThrows(IllegalArgumentException.class,
-                () -> new PassthroughNameResolver(List.of()));
+                () -> new StaticNameResolver(List.of()));
         assertThrows(IllegalArgumentException.class,
-                () -> new PassthroughNameResolver(null));
+                () -> new StaticNameResolver(null));
     }
 }

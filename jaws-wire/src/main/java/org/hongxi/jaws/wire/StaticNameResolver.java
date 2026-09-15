@@ -11,13 +11,13 @@ import java.util.List;
  *
  * @author shenhongxi
  */
-public final class PassthroughNameResolver implements NameResolver {
+public final class StaticNameResolver implements NameResolver {
 
     private final List<InetSocketAddress> addresses;
 
-    public PassthroughNameResolver(List<InetSocketAddress> addresses) {
+    public StaticNameResolver(List<InetSocketAddress> addresses) {
         if (addresses == null || addresses.isEmpty()) {
-            throw new IllegalArgumentException("PassthroughNameResolver requires at least one address");
+            throw new IllegalArgumentException("StaticNameResolver requires at least one address");
         }
         this.addresses = List.copyOf(addresses);
     }

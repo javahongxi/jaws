@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * The backend set is driven by a {@link NameResolver}: one {@link WireClient}
  * per resolved address, reconciled live. {@link DnsNameResolver} resolves a
  * DNS name (e.g. a Kubernetes headless Service) to its current pod IPs and
- * re-resolves to track scale in/out; {@link PassthroughNameResolver} serves a
+ * re-resolves to track scale in/out; {@link StaticNameResolver} serves a
  * fixed set (what {@link Builder#addAddress} produces). On every address update
  * the channel opens clients for new addresses and closes ones that disappeared,
  * so calls always balance across the live set.
@@ -501,7 +501,7 @@ public class ManagedChannel implements Closeable {
                 for (String a : addresses) {
                     addrs.add(parseHostPort(a));
                 }
-                return new PassthroughNameResolver(addrs);
+                return new StaticNameResolver(addrs);
             }
             throw new IllegalArgumentException(
                     "ManagedChannel requires addAddress(...), target(...), or nameResolver(...)");
@@ -520,7 +520,7 @@ public class ManagedChannel implements Closeable {
             }
             InetSocketAddress addr = parseHostPort(authority);
             if ("passthrough".equalsIgnoreCase(scheme)) {
-                return new PassthroughNameResolver(List.of(addr));
+                return new StaticNameResolver(List.of(addr));
             }
             if (!"dns".equalsIgnoreCase(scheme)) {
                 throw new IllegalArgumentException("unsupported target scheme: " + scheme);
