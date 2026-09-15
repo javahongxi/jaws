@@ -47,12 +47,18 @@ public interface WireMethodHandler {
     }
 
     /**
-     * Handle a unary gRPC call.
+     * Handle a unary gRPC call. The default implementation throws
+     * {@link UnsupportedOperationException}; override this (or the context-aware
+     * {@link #handle(Message, WireCallContext)}) for unary methods — mirroring the
+     * streaming methods, which are likewise defaulted so a handler overrides only
+     * the shape it actually serves.
      *
      * @param request the decoded protobuf request message
      * @return the protobuf response message
      */
-    Message handle(Message request);
+    default Message handle(Message request) {
+        throw new UnsupportedOperationException("Not a unary method");
+    }
 
     /**
      * Handle a unary gRPC call with the per-call context (inbound metadata).

@@ -266,11 +266,6 @@ public class HarborServer {
     private class RequestHandler implements WireMethodHandler {
 
         @Override
-        public Message handle(Message request) {
-            return handle(request, null);
-        }
-
-        @Override
         public Message handle(Message request, WireCallContext context) {
             Payload payload = (Payload) request;
             String type = payload.getMetadata().getType();
@@ -339,16 +334,6 @@ public class HarborServer {
         @Override
         public MethodType methodType() {
             return MethodType.BIDIRECTIONAL;
-        }
-
-        @Override
-        public Message handle(Message request) {
-            throw new UnsupportedOperationException("bidi stream");
-        }
-
-        @Override
-        public StreamSource<Message> handleBidiStream(StreamSource<Message> requestStream) {
-            return handleBidiStream(requestStream, null);
         }
 
         @Override

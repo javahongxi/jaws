@@ -151,11 +151,6 @@ public class WireHealthService {
         }
 
         @Override
-        public Message handle(Message request) {
-            throw new UnsupportedOperationException("Watch is a streaming method");
-        }
-
-        @Override
         public StreamSource<Message> handleStream(Message request) {
             String service = ((HealthCheckRequest) request).getService();
             WatchPublisher publisher = new WatchPublisher(normalize(service));

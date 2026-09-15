@@ -66,11 +66,6 @@ public class GrpcCallWireDemo {
         WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("interop.Greeter", "SayHello", new WireMethodHandler() {
             @Override
-            public Message handle(Message request) {
-                return handle(request, WireCallContext.EMPTY);
-            }
-
-            @Override
             public Message handle(Message request, WireCallContext context) {
                 HelloRequest req = (HelloRequest) request;
                 String traceId = context.getAttachment("x-trace-id");
@@ -94,11 +89,6 @@ public class GrpcCallWireDemo {
             @Override
             public MethodType methodType() {
                 return MethodType.SERVER_STREAM;
-            }
-
-            @Override
-            public Message handle(Message request) {
-                throw new UnsupportedOperationException("streaming method");
             }
 
             @Override
@@ -128,11 +118,6 @@ public class GrpcCallWireDemo {
             @Override
             public MethodType methodType() {
                 return MethodType.CLIENT_STREAM;
-            }
-
-            @Override
-            public Message handle(Message request) {
-                throw new UnsupportedOperationException("client-streaming method");
             }
 
             @Override
@@ -186,11 +171,6 @@ public class GrpcCallWireDemo {
             @Override
             public MethodType methodType() {
                 return MethodType.BIDIRECTIONAL;
-            }
-
-            @Override
-            public Message handle(Message request) {
-                throw new UnsupportedOperationException("bidi streaming method");
             }
 
             @Override
