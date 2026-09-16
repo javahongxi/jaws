@@ -16,7 +16,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 |---|---|---|---|
 | `ClientSession` | `ConnectionBasedClient` | `naming/.../core/v2/client/impl/ConnectionBasedClient.java:29` | 一条连接即一个客户端实体，不是「实例列表的容器」 |
 | `ClientSession.nativeClient`（`final`） | `isNative`（`final`） | 同上 `:37`、`:61` | 原生/副本身份出生定死，永不在生命周期中翻转 |
-| `lastRenewTime` | `lastRenewTime`（**同名**） | 同上 `:42`（注释：仅 `isNative=false` 有意义） | 曾名 `lastOwnerConfirmedTime`，为消除与 Nacos 的读差而改用对方名字；推进它的动作仍叫 `markOwnerConfirmed()`，因为 renew 不含主语，会让副本以为自己给自己续期 |
+| `lastRenewTime` | `lastRenewTime`（**同名**） | 同上 `:42`（注释：仅 `isNative=false` 有意义） | 曾名 `lastOwnerConfirmedTime`，为消除与 Nacos 的读差改用对方名字；推进它的动作现叫 `onRenew()`——`renew` 是否成立只看「重建这份备份是否合理」，与信号源自 owner 还是本节点无关，故方法名不再背 owner/confirmed 主语，不变式改由调用点与回归测试守 |
 | `isReplicaOrphaned(now, tol)` | `isExpire(now)` | 同上 `:74-76`；接口声明在 `naming/.../core/v2/client/Client.java:138` | 过期判据挂在 Client 上，且只判副本 |
 | `ClientSession.connectionId`、两张反向索引的 `Set<String> connectionIds`、`ClientSyncData`/`ClientVerifyInfo` 的 `connectionId` 字段 | `getClientId()` 返回 `connectionId`；载荷里叫 `clientId` | 同上 `:52`；Nacos `core/v2/client/ClientSyncData.java:34` | 值就是一个 TCP 连接的 id，"client" 正是让 harbor 早期退回按 IP 匹配的那个词；载荷只在 harbor 节点之间流转，故一并改名，见 §3.10 |
 | `recalculateRevision()` | `recalculateRevision()` | `AbstractClient.java:203-207`、`ConnectionBasedClient.java:80-82` | 同名；语义有偏离，见 §3.1 |
@@ -40,16 +40,16 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | 巡检节拍 | `DEFAULT_HEART_BEAT_INTERVAL = 5s`（`api/.../common/Constants.java:189`；`SwitchDomain.java:47`） | `CHECK_INTERVAL_MS = 5_000`（`HealthCheckManager.java:47`） |
 | 不健康阈值（保留但标记） | `DEFAULT_HEART_BEAT_TIMEOUT = 15s`（`Constants.java:185`；`UnhealthyInstanceChecker.java:60-65`） | `INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000`（`HealthCheckManager.java:63`） |
 | 副本回收阈值（owner 静默） | `DEFAULT_CLIENT_EXPIRED_TIME = 3min`（`naming/.../constants/ClientConstants.java:57`） | `SYNCED_SESSION_TIMEOUT_MS = 180_000`（`HealthCheckManager.java:72`；A1 已移除 per-instance 180s 过期档，死连接由 90s 看门狗注销） |
-| verify 周期 | `DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5000`（`core/.../distro/DistroConstants.java:54`） | `VERIFY_INTERVAL_MS = 5000`（`DistroProtocol.java:56`） |
-| 启动加载重试 | `DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30000`（`DistroConstants.java:68`） | `LOAD_DATA_RETRY_DELAY_MS = 30_000`（`:56`） |
+| verify 周期 | `DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5000`（`core/.../distro/DistroConstants.java:54`） | `VERIFY_INTERVAL_MS = 5000`（`DistroProtocol.java:59`） |
+| 启动加载重试 | `DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30000`（`DistroConstants.java:68`） | `LOAD_RETRY_DELAY_MS = 30_000`（`DistroProtocol.java:53`） |
 | 推送失败重试固定延迟（非指数） | `DEFAULT_PUSH_TASK_RETRY_DELAY = 1000`（`naming/.../constants/PushConstants.java:45`） | `RETRY_DELAY_MS = 1000`（`PushDelayTaskEngine.java:48`） |
-| 延迟合并的「同键合一任务 + 到点重读」 | `NacosDelayTaskExecuteEngine.addTask` → `newTask.merge(existTask)`（`common/.../task/engine/NacosDelayTaskExecuteEngine.java:119-124`）；`DistroDelayTask.merge` 保旧动作（`core/.../distro/task/delay/DistroDelayTask.java:61-69`） | `pending.computeIfAbsent` + 到点 `buildClientSyncData` 重读当前全量幂等推（`DistroProtocol.java:170-192`） |
-| verify 不一致 → **owner 定向重推**（不是去 peer 拉） | `syncToTarget(distroKey, ADD, targetServer, 0L)`（`naming/.../distro/v2/DistroClientDataProcessor.java:120`） | `resyncToPeer(peer, clientIds)`（`DistroProtocol.java:397-417`） |
+| 延迟合并的「同键合一任务 + 到点重读」 | `NacosDelayTaskExecuteEngine.addTask` → `newTask.merge(existTask)`（`common/.../task/engine/NacosDelayTaskExecuteEngine.java:119-124`）；`DistroDelayTask.merge` 保旧动作（`core/.../distro/task/delay/DistroDelayTask.java:61-69`） | `pending.computeIfAbsent` + 到点 `buildClientSyncData` 重读当前全量幂等推（`DistroProtocol.java:134-158`） |
+| verify 不一致 → **owner 定向重推**（不是去 peer 拉） | `syncToTarget(distroKey, ADD, targetServer, 0L)`（`naming/.../distro/v2/DistroClientDataProcessor.java:120`） | `resyncToPeer(peer, clientIds)`（`DistroProtocol.java:383-402`） |
 | 健康判定权只属于持有连接的节点，副本只显示不判定 | `isResponsibleClient(client)` 随两个事件外发（`ConnectionBasedClientManager.java:113-116`） | `reconcileHealth` 只遍历本节点持有的 `ConnectionRecord`（副本无记录 → 天然不判定），翻转经 `healthFlipHandler` 外发（`ServiceStorage.java:367`、`:396`） |
 | 广播「当前全量 + 幂等收敛」，无应用层 ack | `NotifySubscriberResponse extends Response`，**无任何字段**（`api/.../naming/remote/response/NotifySubscriberResponse.java:26`） | 每次重读当前全量，不缓存旧 payload（`PushDelayTaskEngine` 类注释） |
 | 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`common/.../grpc/DefaultGrpcClientConfig.java:224`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`common/.../remote/client/RpcClient.java:353-359`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckManager.java:47/55`） |
 | HTTP/2 PING 只是「无应用层心跳时」的兜底 | `channelKeepAlive = 6*60*1000`（`DefaultGrpcClientConfig.java:238`，用于 `GrpcClient.java:220-221`） | 不依赖 PING 做活性判定，PING strike 语义归 core |
-| 只有 owner 才对外 advertise 对账数据 | `getVerifyData()` 内 `if (clientManager.isResponsibleClient(client))` 才入列（`DistroClientDataProcessor.java:296-310`） | `runVerifyTask` 只遍历 `allNativeClientSessions()`（`DistroProtocol.java:303`） |
+| 只有 owner 才对外 advertise 对账数据 | `getVerifyData()` 内 `if (clientManager.isResponsibleClient(client))` 才入列（`DistroClientDataProcessor.java:296-310`） | `runVerifyTask` 只遍历 `allNativeClientSessions()`（`DistroProtocol.java:320`） |
 | 只有 ephemeral，不做持久实例 | 持久实例走 Raft CP（`consistency` 模块），naming v2 的 `ConnectionBasedClient.isEphemeral()` 恒 true（`ConnectionBasedClient.java:57-59`）；快照与对账构造时 `!client.isEphemeral()` 直接跳过（`DistroClientDataProcessor.java:286`、`:302`） | 只实现 AP 线，见 §5 |
 
 ## 2.5 节点内的两种拓扑角色：分片层与全集群层
@@ -68,7 +68,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 
 于是基数关系是确定的：`|connections| = 我的 shard 大小`，而 `|clientSessions| = 全集群连接数 ≥ 前者`——两张表共用 `connectionId` 键空间，**域却不同**。
 
-结构上有一条可点开的铁证，也是这两类的分界：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `refreshActiveTime` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage:629`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager:72`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
+结构上有一条可点开的铁证，也是这两类的分界：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `refreshActiveTime` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage:602`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager:72`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
 
 两条边界值得钉住，免得「备份型」被误读成多主可写：**写只发生在 owner**，同步方向永远是 owner 外推，副本只读；**分片键是 TCP 落点而不是 `hash(clientId) % members`**，所以没有 rebalance——客户端重连即自然迁移 shard，其账单由上面那档收尸机制偿还。
 
@@ -90,9 +90,9 @@ A1 起 harbor 不再有 `Instance.lastBeat`：ephemeral 健康**派生自持有�
 
 ### 3.3 合并窗口与 owner 续期：曾偏离 Nacos，现已回归其默认
 
-Distro 同步延迟 Nacos 默认 `1000ms`（`DistroConstants.java:33`）、推送延迟 `500ms`（`PushConstants.java:31`）。harbor 起初两处都取 `200ms` 抢收敛（注册中心 SLA 是「变更多快被看到」、client 级全量载荷小），属刻意偏离；后按口径回归 Nacos 默认——现 `SYNC_MERGE_DELAY_MS = 1000`（`DistroProtocol.java:69`）、`PushDelayTaskEngine.MERGE_DELAY_MS = 500`（`PushDelayTaskEngine.java:45`），与对端一致。
+Distro 同步延迟 Nacos 默认 `1000ms`（`DistroConstants.java:33`）、推送延迟 `500ms`（`PushConstants.java:31`）。harbor 起初两处都取 `200ms` 抢收敛（注册中心 SLA 是「变更多快被看到」、client 级全量载荷小），属刻意偏离；后按口径回归 Nacos 默认——现 `SYNC_DELAY_MS = 1000`（`DistroProtocol.java:56`）、`PushDelayTaskEngine.MERGE_DELAY_MS = 500`（`PushDelayTaskEngine.java:45`），与对端一致。
 
-同一条「回归」还带走了一个 Nacos 本就没有的机制：早期 harbor 另设 owner 每 30s 全量重推自有 client（曾名 `CLIENT_REFRESH`）来给副本续背书时钟。核对后确认副本的 `lastRenewTime` 由 5s verify 在 revision 匹配时推进即已足够，正对应 Nacos `ConnectionBasedClientManager.verifyClient` 命中即 `setLastRenewTime`（`ConnectionBasedClientManager.java:147`）——owner 沉默即 verify 停摆、副本时钟自然老化、由 `reapStaleSyncedClients`（`ServiceStorage.java:629`）配 `SYNCED_SESSION_TIMEOUT_MS = 180s`（`HealthCheckManager.java:72`）那档兜底，无需额外重推，故删。回归测试见 `SyncedSessionReclamationTest`（零变更副本仅靠 verify 续期即跨窗存活）。
+同一条「回归」还带走了一个 Nacos 本就没有的机制：早期 harbor 另设 owner 每 30s 全量重推自有 client（曾名 `CLIENT_REFRESH`）来给副本续背书时钟。核对后确认副本的 `lastRenewTime` 由 5s verify 在 revision 匹配时推进即已足够，正对应 Nacos `ConnectionBasedClientManager.verifyClient` 命中即 `setLastRenewTime`（`ConnectionBasedClientManager.java:147`）——owner 沉默即 verify 停摆、副本时钟自然老化、由 `reapStaleSyncedClients`（`ServiceStorage.java:602`）配 `SYNCED_SESSION_TIMEOUT_MS = 180s`（`HealthCheckManager.java:72`）那档兜底，无需额外重推，故删。回归测试见 `SyncedSessionReclamationTest`（零变更副本仅靠 verify 续期即跨窗存活）。
 
 此条保留以记录「偏离→回归」的来龙，免得读者以为 200ms 或那条周期重推仍是现状；编号不动以免打断 §3.9/§3.10 的交叉引用。
 
@@ -153,17 +153,38 @@ Nacos 在 `ClientSyncData` 与 `DistroClientVerifyInfo` 里把主键字段叫 `c
 
 值得这个名字的理由是硬的：`client` 一词在读者心里默认指进程或主机，harbor 早期就因此留过 `connectionIdByClientIp` 之类的按 IP 兜底，而同一台机器起多个进程时那会互相覆盖（§1 的第一条不变式）。值是一个 TCP 连接的 id，就叫它 connectionId。
 
-同类的名字取舍还有两处：副本背书时钟采用 Nacos 的 `lastRenewTime`（消除读差），但推进它的动作保留 `markOwnerConfirmed()` —— `renew` 不带主语，容易被读成「副本自己续期」，而那正是这条不变式要防的误判；字段与访问器的注释只留在使用的当下有用的事实，命名史与 Nacos 对照一律收在这里。
+同类的名字取舍还有两处：副本背书时钟采用 Nacos 的 `lastRenewTime`（消除读差）；推进它的动作也从曾起的 `markOwnerConfirmed()` 改回中性的 `onRenew()` —— 早先带 owner/confirmed 三个词是为防「副本自我续期」的误读，但那道不变式其实该由调用点与回归测试兜，压在方法名上反而抬高阅读成本；`renew` 只要「重建这份备份合理」即成立，无论源自 owner 还是本节点。字段与访问器的注释承载语义，方法名从简；命名史与 Nacos 对照一律收在这里。
+
+### 3.11 verify 的补偿重推：Nacos 走事件解耦，harbor 就地 inline
+
+Nacos 的「verify 不一致 → owner 定向把该 client 重推给报了缺失的对端」这条自愈**不在 verify 执行体里**，而是拆成异步事件：发送侧 `DistroVerifyExecuteTask`（`core/.../distro/task/verify/DistroVerifyExecuteTask.java:53-66`）只把 verify 数据发出去、回调仅记 metric，不 resync；拿到响应后 `DistroClientTransportAgent.DistroVerifyCallbackWrapper.onResponse` 对失败的 client `publishEvent(new ClientEvent.ClientVerifyFailedEvent(clientId, targetServer))`（`naming/.../distro/v2/DistroClientTransportAgent.java:303-315`，:310），监听者 `DistroClientDataProcessor.syncToVerifyFailedServer` 再 `distroProtocol.syncToTarget(distroKey, ADD, targetServer, 0L)`（`naming/.../distro/v2/DistroClientDataProcessor.java:113-121`，:120，注释「Verify failed data should be sync directly」）。
+
+harbor 把这条链**压平**：`runVerifyTask` 在 `syncVerify` 直接拿回 mismatch 列表后就地 inline 调 `resyncToPeer(peer, mismatched)`（方法见 §1「verify 不一致 → owner 定向重推」行），方向、语义与守卫（只推 owner/native、`hasContent`）都和 Nacos 一致，只是不引事件总线、同步推。这取舍与 §3.9「harbor 把 Nacos 三层压成一层」同源——项目刻意不上事件解耦，能内联的链路就内联。
+
+**别误读成多余**：这是该分歧唯一的自愈路径（除它之外，副本缺/落后的 client 没有别的补偿，启动 load 不会再跑），删 `resyncToPeer` 即正确性回退，不是精简。
+
+### 3.12 出向同步：harbor 单键广播 vs Nacos 的 (client, target) 队列
+
+Nacos 的延迟合并任务按 **(clientId, resourceType, targetServer)** 三元组排队：`DistroProtocol.sync` 对每个 peer 各调一次 `syncToTarget`，后者把待推包成 `distroKeyWithTarget = new DistroKey(resourceKey, resourceType, targetServer)` 再 `addTask`（`core/.../distro/DistroProtocol.java:131-142`），即「每连接 × 每对端」一条待办、各走各的 worker。harbor 把合并键压回**单 `connectionId`**（`requestSyncChange` 的 `pendingSync.computeIfAbsent`），到点 `syncChange` 一次**扇出给所有 peer**：build 一次、把同一份 `content` 发 N 份。
+
+这把不对称两边各有账：
+
+- **harbor 赢在合并率与 CPU**：发往各 peer 的是同一份 client 全量状态，Nacos 的 per-target 键对「内容对所有 peer 一致」的模型是**重复记账**——N 条待办、N 次取数/序列化。一次 build + 广播字节，合并不输反省。
+- **harbor 输在 peer 隔离与健康短路**：`syncChange` / `runVerifyTask` 都是**在一个 scheduler 线程里对 peer 串行阻塞**地 `syncData`（request/response 到超时），一个死/慢 peer 会把它后面所有 peer 一起堵住（队头阻塞）；且 harbor 成员纯静态配置、**没有 peer 健康态**，死节点永远留在发送集里每次白等。Nacos 每 (client,target) 独立派发，且发前一律 `checkTargetServerStatusUnhealthy` 短路跳过不健康 target（`naming/.../distro/v2/DistroClientTransportAgent.java:149`、`:169`、`:199`）。
+
+**关键判断**：per-target 的这两点好处，本质来自「按-peer 异步派发 + peer 健康门」，**不来自那个队列键本身**——键只是把这两件事顺带编码进了调度。所以真要补齐，harbor 的正解是「把扇出丢到 executor 上按 peer 并行」+「给 `ClusterManager` 加连续失败摘除」，而**不是**照搬 (client, target) 队列（那只会平白 N× 记账，违背 §3.9 一层化与「不为用不上的对称性补基础设施」）。
+
+**当前决定：先不动。** harbor 数据量小、集群 3–5 台、超时短，HOL 实测不痛；此条按「已知、刻意接受的偏离」入账。一旦推向多 peer 大集群，再按上面两条正解处置，届时把本行升级为「已实现」。
 
 ## 4. 测试即语义注解
 
-`jaws-harbor` 的 56 个用例里，主干测试类各自钉住一条 Nacos 语义，类名就是命题：
+`jaws-harbor` 的 55 个用例里，主干测试类各自钉住一条 Nacos 语义，类名就是命题：
 
 | 测试 | 钉住的语义 |
 |---|---|
 | `EphemeralHealthTierTest` | 连接静默 15s 标不健康且保留、连接恢复活动则 reconcile 回健康（活性驱动，双向） |
 | `SyncedHealthAuthorityTest` | 健康只由持有连接的节点判定，副本只显示（§2/§3.2） |
-| `SyncedSessionReclamationTest` | 孤儿副本回收判据是 owner 沉默、不被本地改动赦免；并钉住零变更副本仅靠 5s verify 匹配续期即跨窗存活（§3.3 删 owner 重推后唯一周期信号） |
+| `SyncedSessionReclamationTest` | 孤儿副本回收判据是 owner 沉默、不被本地改动赦免；零变更副本仅靠 5s verify 匹配续期即跨窗存活（§3.3 删 owner 重推后唯一周期信号）；副本侧 CHANGE 只在 revision 变时通知本地订阅者、幂等 resync 不推 |
 | `SubscriptionStaysLocalTest` | 订阅不出网：载荷不含订阅、副本永不进推送索引（§3.8） |
 | `WatchdogClosureTest` | 快照必须在摘除 session 之前取，否则漏发 DELETE |
 | `NotifyOnChangeOnlyTest` | 只为真实数据变化播报；巡检与退订不触发全量重推 |

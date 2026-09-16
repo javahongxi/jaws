@@ -30,13 +30,13 @@ import java.util.concurrent.TimeUnit;
  * Nacos's Distro protocol. Data is replicated across all nodes with eventual
  * consistency. The protocol has three main activities:
  * <ul>
+ *   <li><b>Load</b> — on startup, load a snapshot of all client data from a
+ *       peer to catch up on data written while this node was offline</li>
  *   <li><b>Sync</b> — when local data changes, the full client state is pushed
  *       to all peers (client-level granularity, matching Nacos)</li>
  *   <li><b>Verify</b> — periodically send per-client revisions to peers; on a
  *       mismatch the OWNER re-pushes that client's latest state to the reporting
  *       peer (targeted compensating sync), matching Nacos verify → syncToTarget</li>
- *   <li><b>Load</b> — on startup, load a snapshot of all client data from a
- *       peer to catch up on data written while this node was offline</li>
  * </ul>
  * Harbor focuses exclusively on naming (service instances).
  *
@@ -49,14 +49,14 @@ public class DistroProtocol {
     public static final String OP_CHANGE = "CHANGE";
     public static final String OP_DELETE = "DELETE";
 
-    /** Nacos {@code DEFAULT_DATA_SYNC_DELAY_MILLISECONDS = 1s */
-    private static final long SYNC_MERGE_DELAY_MS = 1000L;
+    /** Nacos {@code DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30s} */
+    private static final long LOAD_RETRY_DELAY_MS = 30_000L;
+
+    /** Nacos {@code DEFAULT_DATA_SYNC_DELAY_MILLISECONDS = 1s} */
+    private static final long SYNC_DELAY_MS = 1000L;
 
     /** Nacos {@code DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5s} */
     private static final long VERIFY_INTERVAL_MS = 5000L;
-
-    /** Nacos {@code DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30s} */
-    private static final long LOAD_RETRY_DELAY_MS = 30_000L;
 
     private final ClusterManager clusterManager;
     private final HarborNodeTransport transport;
@@ -96,12 +96,12 @@ public class DistroProtocol {
         running = true;
         log.info("[harbor] distro protocol starting");
 
+        // Schedule initial load task (runs once, retries on failure)
+        scheduler.schedule(this::runLoadTask, 1, TimeUnit.SECONDS);
+
         // Schedule periodic verify task
         scheduler.scheduleAtFixedRate(this::runVerifyTask,
                 VERIFY_INTERVAL_MS, VERIFY_INTERVAL_MS, TimeUnit.MILLISECONDS);
-
-        // Schedule initial load task (runs once, retries on failure)
-        scheduler.schedule(this::runLoadTask, 1, TimeUnit.SECONDS);
     }
 
     /**
@@ -136,10 +136,12 @@ public class DistroProtocol {
             return;
         }
         pendingSync.computeIfAbsent(connectionId, k ->
-                scheduler.schedule(() -> doSyncChange(k), SYNC_MERGE_DELAY_MS, TimeUnit.MILLISECONDS));
+                scheduler.schedule(() -> doSyncChange(k), SYNC_DELAY_MS, TimeUnit.MILLISECONDS));
     }
 
     private void doSyncChange(String connectionId) {
+        // Consume the coalescing ticket before the liveness guard: this task is running
+        // now, so the slot is spent regardless of whether we emit below.
         pendingSync.remove(connectionId);
         if (!running) {
             return;
@@ -241,7 +243,7 @@ public class DistroProtocol {
             ClientSession localCache = connectionManager.getClientSession(info.getConnectionId());
             if (localCache != null) {
                 if (localCache.getRevision() == info.getRevision()) {
-                    localCache.markOwnerConfirmed();
+                    localCache.onRenew();
                 } else {
                     log.info("[harbor] distro verify mismatch: connectionId={} localRev={} remoteRev={}",
                             info.getConnectionId(), localCache.getRevision(), info.getRevision());
@@ -280,6 +282,33 @@ public class DistroProtocol {
     // ========================================================================
 
     /**
+     * Initial load: fetch snapshot from a peer if we have no data.
+     */
+    private void runLoadTask() {
+        try {
+            Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
+            if (peers.isEmpty()) {
+                log.info("[harbor] no peers to load from — running as single node");
+                return;
+            }
+            for (ClusterMember peer : peers) {
+                try {
+                    if (pullSnapshotFromPeer(peer)) {
+                        break;
+                    }
+                } catch (Exception e) {
+                    log.warn("[harbor] load from {} failed: {}", peer.address(), e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.error("[harbor] load task error", e);
+            if (running) {
+                scheduler.schedule(this::runLoadTask, LOAD_RETRY_DELAY_MS, TimeUnit.MILLISECONDS);
+            }
+        }
+    }
+
+    /**
      * Periodic verify: send per-client revisions to all peers.
      */
     private void runVerifyTask() {
@@ -312,33 +341,6 @@ public class DistroProtocol {
     }
 
     /**
-     * Initial load: fetch snapshot from a peer if we have no data.
-     */
-    private void runLoadTask() {
-        try {
-            Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
-            if (peers.isEmpty()) {
-                log.info("[harbor] no peers to load from — running as single node");
-                return;
-            }
-            for (ClusterMember peer : peers) {
-                try {
-                    if (pullSnapshotFromPeer(peer)) {
-                        break;
-                    }
-                } catch (Exception e) {
-                    log.warn("[harbor] load from {} failed: {}", peer.address(), e.getMessage());
-                }
-            }
-        } catch (Exception e) {
-            log.error("[harbor] load task error", e);
-            if (running) {
-                scheduler.schedule(this::runLoadTask, LOAD_RETRY_DELAY_MS, TimeUnit.MILLISECONDS);
-            }
-        }
-    }
-
-    /**
      * Startup load: pull a full snapshot from a peer and apply clients we don't
      * already hold. Any client we already have (native, or freshly synced from
      * its owner) is left intact — we never overwrite a native session here.
@@ -358,7 +360,7 @@ public class DistroProtocol {
         for (ClientSyncData data : clientDataList) {
             String cid = data.getConnectionId();
             if (connectionManager.getClientSession(cid) != null) {
-                continue;   // already hold this client (native or newer) — don't clobber
+                continue;
             }
             serviceStorage.applyClientSyncData(data);
             applied++;

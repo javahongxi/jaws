@@ -398,38 +398,6 @@ public class ServiceStorage {
     }
 
     /**
-     * Remove a specific instance identified by ip:port from the given service.
-     * Notifies subscribers if the instance was actually removed.
-     */
-    public void removeInstanceByIpPort(ServiceKey serviceKey, String ip, int port) {
-        Set<String> connectionIds = publisherIndexes.get(serviceKey);
-        if (connectionIds == null) {
-            return;
-        }
-        for (String connectionId : connectionIds) {
-            ClientSession session = connectionManager.getClientSession(connectionId);
-            if (session == null) {
-                continue;
-            }
-            for (Instance inst : session.getInstances(serviceKey)) {
-                if (ip.equals(inst.getIp()) && port == inst.getPort()) {
-                    session.removeInstance(serviceKey, ip, port);
-                    if (session.getInstances(serviceKey).isEmpty()) {
-                        connectionIds.remove(connectionId);
-                        if (connectionIds.isEmpty()) {
-                            publisherIndexes.remove(serviceKey);
-                        }
-                    }
-                    invalidateServiceCache(serviceKey);
-                    log.info("[harbor] expired instance removed: {} -> {}:{}", serviceKey, ip, port);
-                    checkAndCleanEmptyService(serviceKey, true);
-                    return;
-                }
-            }
-        }
-    }
-
-    /**
      * Remove all instances registered by the given connection across all services.
      * Called when a client connection is closed (bi-stream completed/error or
      * channelInactive). Only removes instances owned by this connection, leaving
@@ -488,10 +456,6 @@ public class ServiceStorage {
         return result;
     }
 
-    // ========================================================================
-    // Client-level Distro support
-    // ========================================================================
-
     /**
      * Build a {@link ClientSyncData} from the given connection's ClientSession.
      * Used by Distro CHANGE sync to send the client's full <em>published</em>
@@ -545,11 +509,22 @@ public class ServiceStorage {
             return;
         }
 
+        // Whether this apply changes what local subscribers route by. The owner folds
+        // content into {@code revision} (XOR, order-independent — see
+        // ClientSession#recalculateRevision), so an identical revision means the peer
+        // re-pushed the exact same state (a coalesced echo or a verify re-sync of an
+        // unchanged client): nothing a subscriber would notice has changed, so no push —
+        // the same dataChanged gate the delete path applies. A first-seen replica is
+        // always a change (its instances become newly routable on this node).
+        boolean routableChanged = existing == null || existing.getRevision() != data.getRevision();
+        Set<ServiceKey> affected = new HashSet<>();
+
         // A re-sync replaces the previous copy: drop this client from exactly the
         // services the old replica held (existing is non-null and, per the check
         // above, non-native). First-time syncs have nothing to undo.
         if (existing != null) {
             for (ServiceKey previous : existing.getAllPublishedServices()) {
+                affected.add(previous);
                 removeFromPublisherIndex(previous, connectionId);
                 invalidateServiceCache(previous);
             }
@@ -572,6 +547,7 @@ public class ServiceStorage {
                 publisherIndexes.computeIfAbsent(serviceKey, k -> new CopyOnWriteArraySet<>())
                         .add(connectionId);
                 invalidateServiceCache(serviceKey);
+                affected.add(serviceKey);
             }
         }
 
@@ -580,11 +556,22 @@ public class ServiceStorage {
         // would otherwise overwrite the source revision we just received.
         session.setRevision(data.getRevision());
 
-        // Receiving the own-state of the owning node IS the confirmation.
-        session.markOwnerConfirmed();
+        // Applying a peer's full state renews this replica's confirmation clock.
+        session.onRenew();
         connectionManager.putClientSession(connectionId, session);
         log.info("[harbor] applied client sync: {} (publishers={})",
                 connectionId, session.getTotalInstanceCount());
+
+        // Close the delete-vs-change asymmetry: a replicated CHANGE must notify this
+        // node's local subscribers exactly like a replicated DELETE does (removeSyncedClient
+        // -> checkAndCleanEmptyService -> onServiceChange), so a subscriber on a non-owner
+        // node learns of the change by push, not only on its next poll. Notify the union of
+        // services this client left/entered, gated on content actually having moved.
+        if (routableChanged) {
+            for (ServiceKey serviceKey : affected) {
+                changeListener.onServiceChange(serviceKey);
+            }
+        }
     }
 
     /**

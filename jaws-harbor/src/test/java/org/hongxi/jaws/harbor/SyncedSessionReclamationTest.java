@@ -7,7 +7,6 @@ import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
-import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.StreamSubject;
 import org.junit.jupiter.api.BeforeEach;
@@ -91,6 +90,10 @@ class SyncedSessionReclamationTest {
         assertNotNull(cm.getClientSession(connectionId), "precondition: replica session installed");
         assertFalse(cm.getClientSession(connectionId).isNativeClient(),
                 "precondition: the replica must not look native here");
+        // First-seen replica now announces its newly-routable services (replica-side
+        // CHANGE notify). This class measures the reclamation path, so drop the setup
+        // announce; the notify behaviour is asserted by the dedicated test below.
+        events.clear();
     }
 
     private void ageReplica(String connectionId, long millis) {
@@ -99,6 +102,35 @@ class SyncedSessionReclamationTest {
     }
 
     // ========================================================================
+
+    @Test
+    void replicaChangeNotifiesLocalSubscribersOnlyOnContentChange() {
+        // Parity with the delete path: a replicated CHANGE must announce like a
+        // replicated DELETE (removeSyncedClient -> onServiceChange), so subscribers on
+        // a non-owner node are pushed rather than waiting for their next poll. Gated on
+        // content actually moving (client-level revision), so an idempotent re-push /
+        // verify re-sync of an unchanged client stays silent (NotifyOnChangeOnly).
+        // Called directly (not via givenReplicaOf, which clears events as setup noise).
+        storage.applyClientSyncData(new ClientSyncData(
+                "snap", List.of(KEY), List.of(instance("10.0.0.9", 9090)), 7L));
+        assertEquals(1, events.size(),
+                "a first-seen replica announces its newly-routable service once: " + events);
+
+        events.clear();
+        // Same connectionId, same revision => owner re-pushed identical state => no announce.
+        storage.applyClientSyncData(new ClientSyncData(
+                "snap", List.of(KEY), List.of(instance("10.0.0.9", 9090)), 7L));
+        assertTrue(events.isEmpty(),
+                "an idempotent re-sync at the same revision must not re-announce: " + events);
+
+        events.clear();
+        // Revision moves (owner added an instance) => announce the service once.
+        storage.applyClientSyncData(new ClientSyncData(
+                "snap", List.of(KEY, KEY),
+                List.of(instance("10.0.0.9", 9090), instance("10.0.0.9", 9091)), 12L));
+        assertEquals(1, events.size(),
+                "a content change (new revision) announces the service once: " + events);
+    }
 
     @Test
     void replicaUnconfirmedByItsOwnerIsReaped() {
@@ -181,20 +213,18 @@ class SyncedSessionReclamationTest {
 
     @Test
     void localMutationDoesNotBuyAReplicaAnotherWindow() {
-        // Measured live: the beat-expiry tier removed an orphan replica's instance in
-        // the very sweep that should have reclaimed its session, and because removing
-        // an instance stamps the session, the reaper in the same pass saw a freshly
-        // confirmed copy and waited another full window. A replica must be reaped one
-        // window after the OWNER went silent, not after the last thing this node did
-        // to it.
+        // A replica must be reaped one window after the OWNER went silent, not after
+        // the last thing this node did to the copy. Removing one of the replica's
+        // instances is a real local mutation that changes what is routed here — but it
+        // must not refresh the confirmation clock and buy the replica another window.
         givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
         ageReplica("remote", WINDOW_MS + 1_000);
-        // The real local mutation, not a synthetic stamp: the expiry tier shedding
-        // one of this replica's instances is exactly what used to re-tolerate it.
-        storage.removeInstanceByIpPort(ServiceKey.parse(KEY), "10.0.0.9", 9090);
+        storage.deregisterInstance(NS, GROUP, SVC, instance("10.0.0.9", 9090), "remote");
+        assertTrue(storage.getInstances(NS, GROUP, SVC).isEmpty(),
+                "precondition: the local removal actually shed the instance (not a no-op)");
 
         assertEquals(1, storage.reapStaleSyncedClients(WINDOW_MS),
-                "a local stamp must not extend the tolerance the owner's silence earned");
+                "a local removal must not extend the tolerance the owner's silence earned");
         assertNull(cm.getClientSession("remote"));
     }
 

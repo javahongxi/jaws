@@ -152,16 +152,6 @@ class NotifyOnChangeOnlyTest {
     }
 
     @Test
-    void expiredInstanceStillAnnounces() {
-        givenLivePublisher();
-        events.clear();
-
-        storage.removeInstanceByIpPort(KEY, "10.0.0.1", 8080);
-
-        assertEquals(1, events.size(), "expiry removes a routable instance: " + events);
-    }
-
-    @Test
     void connectionClosureStillAnnouncesEachLostInstanceOnce() {
         givenLivePublisher();
         cm.register("pub2", "10.0.0.3", "3.0.0", Map.of(), noop());

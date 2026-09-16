@@ -197,11 +197,13 @@ public class ClientSession {
     }
 
     /**
-     * Record that the owning node vouched for this session now — called when a sync
-     * is applied and when the owner's revision matches during verify. Only this clock
-     * may rescue a replica from {@code ServiceStorage#reapStaleSyncedClients}.
+     * Renew this session's confirmation clock to now. Called whenever reconstructing
+     * the replica's backup data is legitimate — applying a peer sync, and a peer's
+     * revision matching during verify — regardless of whether the signal originates from
+     * the owner or this node. Only this clock may rescue a replica from
+     * {@code ServiceStorage#reapStaleSyncedClients}.
      */
-    public void markOwnerConfirmed() {
+    public void onRenew() {
         this.lastRenewTime = System.currentTimeMillis();
     }
 
@@ -218,7 +220,7 @@ public class ClientSession {
      * longer than {@code toleranceMs}. Mirrors Nacos
      * {@code ConnectionBasedClient.isExpire(now)} — {@code !isNative() && now -
      * lastRenewTime > clientExpiredTime} — including the ordering that matters:
-     * only {@link #markOwnerConfirmed()} can move the deadline, so local
+     * only {@link #onRenew()} can move the deadline, so local
      * bookkeeping on a replica never buys it another window.
      *
      * @param nowMillis   caller-supplied clock, so a sweep judges every session
