@@ -27,6 +27,16 @@ import java.util.stream.Collectors;
  * </ol>
  * After setup, the connection is "registered" and can receive server push
  * notifications (e.g. {@code NotifySubscriberRequest}) via the push subject.
+ * <p>
+ * Everything this class owns is keyed by {@code connectionId} — the connection is
+ * the unit of intent.  It holds two maps over that one key space: the liveness
+ * layer ({@link #connections}, native connections only) and the per-connection
+ * {@link ClientSession} table ({@link #clientSessions}, the source of truth that
+ * Distro replicates), plus the server→client push outlet
+ * ({@link #pushToConnection}).  Nacos splits the same responsibilities across a
+ * transport module ({@code core/remote/ConnectionManager}) and
+ * {@code ConnectionBasedClientManager}; harbor keeps them here precisely because
+ * the two maps share one key space — see {@code doc/harbor-vs-nacos.md} §3.9.
  *
  * @author shenhongxi
  */

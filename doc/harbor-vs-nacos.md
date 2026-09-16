@@ -45,7 +45,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | 推送失败重试固定延迟（非指数） | `DEFAULT_PUSH_TASK_RETRY_DELAY = 1000`（`naming/.../constants/PushConstants.java:45`） | `RETRY_DELAY_MS = 1000`（`PushDelayTaskEngine.java:45`） |
 | 延迟合并的「同键合一任务 + 到点重读」 | `NacosDelayTaskExecuteEngine.addTask` → `newTask.merge(existTask)`（`common/.../task/engine/NacosDelayTaskExecuteEngine.java:119-124`）；`DistroDelayTask.merge` 保旧动作（`core/.../distro/task/delay/DistroDelayTask.java:61-69`） | `pending.computeIfAbsent` + 到点 `buildClientSyncData` 重读当前全量幂等推（`DistroProtocol.java:195-217`） |
 | verify 不一致 → **owner 定向重推**（不是去 peer 拉） | `syncToTarget(distroKey, ADD, targetServer, 0L)`（`naming/.../distro/v2/DistroClientDataProcessor.java:120`） | `resyncToPeer(peer, clientIds)`（`DistroProtocol.java:422-442`） |
-| 健康判定权只属于持有连接的节点，副本只显示不判定 | `isResponsibleClient(client)` 随两个事件外发（`ConnectionBasedClientManager.java:113-116`） | `reconcileHealth` 只遍历本节点持有的 `ConnectionRecord`（副本无记录 → 天然不判定），翻转经 `healthFlipHandler` 外发（`ServiceStorage.java:364`、`:393`） |
+| 健康判定权只属于持有连接的节点，副本只显示不判定 | `isResponsibleClient(client)` 随两个事件外发（`ConnectionBasedClientManager.java:113-116`） | `reconcileHealth` 只遍历本节点持有的 `ConnectionRecord`（副本无记录 → 天然不判定），翻转经 `healthFlipHandler` 外发（`ServiceStorage.java:367`、`:396`） |
 | 广播「当前全量 + 幂等收敛」，无应用层 ack | `NotifySubscriberResponse extends Response`，**无任何字段**（`api/.../naming/remote/response/NotifySubscriberResponse.java:26`） | 每次重读当前全量，不缓存旧 payload（`PushDelayTaskEngine` 类注释） |
 | 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`common/.../grpc/DefaultGrpcClientConfig.java:224`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`common/.../remote/client/RpcClient.java:353-359`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckManager.java:43/51`） |
 | HTTP/2 PING 只是「无应用层心跳时」的兜底 | `channelKeepAlive = 6*60*1000`（`DefaultGrpcClientConfig.java:238`，用于 `GrpcClient.java:220-221`） | 不依赖 PING 做活性判定，PING strike 语义归 core |
@@ -58,17 +58,17 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 
 | 容器 | 角色 | 写入口 | 为什么归这一类 |
 |---|---|---|---|
-| `ConnectionManager.connections`（`:42`） | 分片 | `register`（`:60`，仅 `ConnectionSetupRequest` 之后） | 它不是「跟着分片走」，它就是分片归属这件事的定义 |
-| `ConnectionRecord.lastActiveTime`（`:218`，`AtomicLong`） | 分片 | `refreshActiveTime`（`:91` → 记录自身 `:221`） | 活性只有持有 TCP 的节点观测得到；看门狗 `removeStaleConnections`（`:113`）只摘这一层，判据长在记录上（`isStale` `:231`） |
-| `ServiceStorage.subscriberIndexes`（`:59`） | 分片 | `addSubscriber`（`:205`，写入在 `:208`） | 订阅只在本地；副本永不进这里（§3.8 收回的就是这一条） |
-| `clientSessions` 的 **native** 部分（`:48`） | **本体** | `register`（`:60`） | 既非备份也非分片：我这个 shard 的权威写侧就在这里发生 |
-| `clientSessions` 的 **synced** 部分 | 备份 | `putClientSession`（`:173`） | 别人 shard 的只读副本，供本地答路由查询 |
-| `ServiceStorage.publisherIndexes`（`:52`） | 全集群 | `:121`（本地注册）+ `:583`（副本落地） | 任何节点都要能回答任意服务的查询 |
-| `ServiceStorage.serviceDataIndexes`（`:68`） | 全集群（派生缓存） | 随写路径失效重建 | 由全集群数据算出，自然也是全量域 |
+| `ConnectionManager.connections`（`:52`） | 分片 | `register`（`:70`，仅 `ConnectionSetupRequest` 之后） | 它不是「跟着分片走」，它就是分片归属这件事的定义 |
+| `ConnectionRecord.lastActiveTime`（`:228`，`AtomicLong`） | 分片 | `refreshActiveTime`（`:101` → 记录自身 `:231`） | 活性只有持有 TCP 的节点观测得到；看门狗 `removeStaleConnections`（`:123`）只摘这一层，判据长在记录上（`isStale` `:241`） |
+| `ServiceStorage.subscriberIndexes`（`:62`） | 分片 | `addSubscriber`（`:208`，写入在 `:211`） | 订阅只在本地；副本永不进这里（§3.8 收回的就是这一条） |
+| `clientSessions` 的 **native** 部分（`:58`） | **本体** | `register`（`:70`） | 既非备份也非分片：我这个 shard 的权威写侧就在这里发生 |
+| `clientSessions` 的 **synced** 部分 | 备份 | `putClientSession`（`:183`） | 别人 shard 的只读副本，供本地答路由查询 |
+| `ServiceStorage.publisherIndexes`（`:55`） | 全集群 | `:124`（本地注册）+ `:586`（副本落地） | 任何节点都要能回答任意服务的查询 |
+| `ServiceStorage.serviceDataIndexes`（`:71`） | 全集群（派生缓存） | 随写路径失效重建 | 由全集群数据算出，自然也是全量域 |
 
 于是基数关系是确定的：`|connections| = 我的 shard 大小`，而 `|clientSessions| = 全集群连接数 ≥ 前者`——两张表共用 `connectionId` 键空间，**域却不同**。
 
-结构上有一条可点开的铁证，也是这两类的分界：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `refreshActiveTime` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage:626`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager:68`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
+结构上有一条可点开的铁证，也是这两类的分界：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `refreshActiveTime` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage:629`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager:68`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
 
 两条边界值得钉住，免得「备份型」被误读成多主可写：**写只发生在 owner**，同步方向永远是 owner 外推，副本只读；**分片键是 TCP 落点而不是 `hash(clientId) % members`**，所以没有 rebalance——客户端重连即自然迁移 shard，其账单由上面那档收尸机制偿还。
 
@@ -131,7 +131,7 @@ Nacos 把这件事切成三层，中间用事件解耦：
 - **客户端语义**：`ConnectionBasedClientManager.clients: clientId → ConnectionBasedClient`（`naming/.../ConnectionBasedClientManager.java:52`），类本身 `extends ClientConnectionEventListener`（`:49`），靠 `ClientReleaseEvent`/`ClientDisconnectEvent` 与传输层握手。
 - **下推出口**：写出能力长在连接对象上（`core/remote/Connection.java:31` 是 `abstract class Connection implements Requester`），服务端下推统一走 `core/remote/RpcPushService.pushWithCallback/pushWithoutAck`（`:50`、`:100`）。
 
-harbor 把四样东西装进一个类：连接记录（`ConnectionManager.java:42`）、活性时钟（长在记录自己身上：`ConnectionRecord:212` + `refreshActiveTime` `:221`，由 `:91` 转发）、client session 表（`:48`，`putClientSession` `:173` 等于让 Distro 把手伸进传输层注册表）、推送出口（`pushToConnection` `:136` 直接 `pushSubject.onNext`）。
+harbor 把四样东西装进一个类：连接记录（`ConnectionManager.java:52`）、活性时钟（长在记录自己身上：`ConnectionRecord:222` + `refreshActiveTime` `:231`，由 `:101` 转发）、client session 表（`:58`，`putClientSession` `:183` 等于让 Distro 把手伸进传输层注册表）、推送出口（`pushToConnection` `:146` 直接 `pushSubject.onNext`）。
 
 **判断是不拆**。harbor 只有 49 个文件，模块边界已经能由类名表达，再拆一层 `ClientSessionManager` 换来的是类图相似而非正确性，代价是要动 `DistroProtocol`/`ServiceStorage`/`HarborServer` 三处引用面。
 

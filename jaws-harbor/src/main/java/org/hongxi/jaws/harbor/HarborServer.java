@@ -50,8 +50,8 @@ import java.util.UUID;
  * is fully compatible with nacos-client, so Jaws services can register with
  * jaws-harbor using the standard {@code nacos-client} SDK.
  * <p>
- * Phase 2 adds the Distro protocol for multi-node replication of
- * service naming data.
+ * Multi-node replication of service naming data runs over the Distro AP protocol
+ * (see {@code doc/harbor-vs-nacos.md}).
  *
  * @author shenhongxi
  */

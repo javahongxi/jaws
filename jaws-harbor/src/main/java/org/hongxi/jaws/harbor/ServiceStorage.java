@@ -24,7 +24,10 @@ import java.util.function.Consumer;
  * <ul>
  *   <li><b>Layer 1 — ClientSession</b> (source of truth): each client connection
  *       owns its published instances and subscriptions.  Instance data lives
- *       exclusively here.</li>
+ *       exclusively here, in the {@link ClientSession} objects that
+ *       {@link ConnectionManager} holds in its {@code clientSessions} map keyed
+ *       by {@code connectionId}; this class reaches them via
+ *       {@link ConnectionManager#getClientSession} and never stores them.</li>
  *   <li><b>Layer 2 — lightweight indexes</b>: {@code publisherIndexes} and
  *       {@code subscriberIndexes} both map {@link ServiceKey} → Set&lt;connectionId&gt;.
  *       They are ID-only reverse indexes, but they differ in scope: the publisher
