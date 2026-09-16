@@ -98,7 +98,7 @@ class WatchdogClosureTest {
         cluster.addMember(newClusterMember(ADDR2));
         transport = new Recording();
         distro = new DistroProtocol(cluster, transport, storage, cm);
-        health = new HealthCheckManager(cm, storage, new ConnectionLifecycle(cm, storage, distro));
+        health = new HealthCheckManager(cm, storage, new ConnectionCleanup(cm, storage, distro));
     }
 
     private static org.hongxi.jaws.harbor.cluster.ClusterMember newClusterMember(String addr) {

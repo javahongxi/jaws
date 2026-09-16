@@ -111,7 +111,7 @@ public class ConnectionManager {
      * dead connections (e.g. half-open TCP after the client process was killed).
      * <p>
      * Deliberately does NOT evict the {@link ClientSession}: closing the
-     * connection is {@link ConnectionLifecycle#cleanup}'s job — it snapshots
+     * connection is {@link ConnectionCleanup#cleanup}'s job — it snapshots
      * the session's data (which requires the session to still exist), removes
      * subscribers/instances and propagates the Distro DELETE before evicting
      * it.  Removing the session here would blind the closure transaction.

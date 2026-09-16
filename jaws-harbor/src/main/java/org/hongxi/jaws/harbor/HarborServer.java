@@ -108,7 +108,7 @@ public class HarborServer {
     private final ConnectionManager connectionManager;
     private final ClusterManager clusterManager;
     private final DistroProtocol distroProtocol;
-    private final ConnectionLifecycle connectionLifecycle;
+    private final ConnectionCleanup connectionCleanup;
     private final HealthCheckManager healthCheckManager;
     private final PushDelayTaskEngine pushEngine;
     private final WireServer wireServer;
@@ -134,12 +134,12 @@ public class HarborServer {
                 clusterManager, transport, serviceStorage, connectionManager);
 
         // The single connection-closure transaction, shared by the three
-        // closure signals: ConnectionCleanupHandler (channelInactive), the
+        // closure signals: DisconnectionHandler (channelInactive), the
         // bi-stream onError/onCompleted callbacks, and the watchdog sweep.
-        this.connectionLifecycle = new ConnectionLifecycle(
+        this.connectionCleanup = new ConnectionCleanup(
                 this.connectionManager, this.serviceStorage, this.distroProtocol);
         this.healthCheckManager = new HealthCheckManager(
-                this.connectionManager, this.serviceStorage, this.connectionLifecycle);
+                this.connectionManager, this.serviceStorage, this.connectionCleanup);
 
         WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register(SERVICE_NAME_REQUEST, METHOD_REQUEST, new RequestHandler());
@@ -163,9 +163,9 @@ public class HarborServer {
                     connectionId = UUID.randomUUID().toString();
                     pipeline.channel().attr(key).set(connectionId);
                 }
-                ConnectionCleanupHandler handler =
-                        new ConnectionCleanupHandler(connectionLifecycle, connectionId);
-                pipeline.addLast("conn_cleanup", handler);
+                DisconnectionHandler handler =
+                        new DisconnectionHandler(connectionCleanup, connectionId);
+                pipeline.addLast("disconnection", handler);
             }
         };
         // Tell the wire layer to propagate the CONNECTION_ID attribute from the
@@ -398,19 +398,19 @@ public class HarborServer {
                     log.info("[harbor] bi-stream error: {}", throwable.getMessage());
                     // The stream died → run the full closure transaction now
                     // (idempotent; the channelInactive that usually follows is a no-op).
-                    connectionLifecycle.cleanup(connectionId);
+                    connectionCleanup.cleanup(connectionId);
                     // Do NOT call pushSubject.onCompleted() here.
                     // The client already sent RST/GOAWAY — the stream is dead.
                     // Sending trailers on a reset stream confuses the Nacos
                     // client SDK and triggers an immediate reconnect cycle.
-                    // (ConnectionLifecycle's connectionManager.remove completes
+                    // (ConnectionCleanup's connectionManager.remove completes
                     // the push subject as part of the closure.)
                 }
 
                 @Override
                 public void onCompleted() {
                     log.info("[harbor] bi-stream completed for connId={}", connectionId);
-                    connectionLifecycle.cleanup(connectionId);
+                    connectionCleanup.cleanup(connectionId);
                     // Same as onError: the client initiated the close; the closure
                     // transaction owns push-subject completion.
                 }

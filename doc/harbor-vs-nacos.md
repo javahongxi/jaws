@@ -21,7 +21,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | `ClientSession.connectionId`、两张反向索引的 `Set<String> connectionIds`、`ClientSyncData`/`ClientVerifyInfo` 的 `connectionId` 字段 | `getClientId()` 返回 `connectionId`；载荷里叫 `clientId` | 同上 `:52`；Nacos `core/v2/client/ClientSyncData.java:34` | 值就是一个 TCP 连接的 id，"client" 正是让 harbor 早期退回按 IP 匹配的那个词；载荷只在 harbor 节点之间流转，故一并改名，见 §3.10 |
 | `recalculateRevision()` | `recalculateRevision()` | `AbstractClient.java:203-207`、`ConnectionBasedClient.java:80-82` | 同名；语义有偏离，见 §3.1 |
 | `PushDelayTaskEngine` | `PushDelayTaskExecuteEngine` | `naming/.../push/v2/task/PushDelayTaskExecuteEngine.java` | 服务级合并的推送延迟引擎 |
-| `ConnectionLifecycle.cleanup()` | `clientDisconnected(clientId)` | `naming/.../core/v2/client/manager/impl/ConnectionBasedClientManager.java:96`、`:105-118` | 关闭动作的唯一事务入口 |
+| `ConnectionCleanup.cleanup()` | `clientDisconnected(clientId)` | `naming/.../core/v2/client/manager/impl/ConnectionBasedClientManager.java:96`、`:105-118` | 关闭动作的唯一事务入口 |
 | `HealthCheckManager` 的巡检 | `ExpiredClientCleaner.run()` | 同上 `:158-174` | 巡检只是「复用同一个事务入口」，不另写一套清理 |
 | `ConnectionManager`（连接记录 + 活性戳 + client session + 推送出口，四合一） | `core/remote/ConnectionManager`（**只有连接注册表与活性**） | `core/remote/ConnectionManager.java:63`（`connections`）、`:104`（`register`）、`:153`（`unregister`）、`:245-248`（`refreshActiveTime`）、`:260-262`（每 3s 的巡检只 `doEject` 连接） | 名字撞了，**层级与数据域都不同**：见 §2.5 与 §3.9 |
 | —（同上，语义那一半） | `ConnectionBasedClientManager.clients`，走 `ClientManager` 接口 | `naming/.../core/v2/client/manager/impl/ConnectionBasedClientManager.java:52`，且 `:49` 是 `extends ClientConnectionEventListener` | 「连接」与「客户端」在 Nacos 分属两个模块，靠事件解耦 |
@@ -37,9 +37,9 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 
 | 机制 | Nacos 值与出处 | harbor 值与出处 |
 |---|---|---|
-| 巡检节拍 | `DEFAULT_HEART_BEAT_INTERVAL = 5s`（`api/.../common/Constants.java:189`；`SwitchDomain.java:47`） | `CHECK_INTERVAL_MS = 5_000`（`HealthCheckManager.java:43`） |
-| 不健康阈值（保留但标记） | `DEFAULT_HEART_BEAT_TIMEOUT = 15s`（`Constants.java:185`；`UnhealthyInstanceChecker.java:60-65`） | `INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000`（`HealthCheckManager.java:59`） |
-| 副本回收阈值（owner 静默） | `DEFAULT_CLIENT_EXPIRED_TIME = 3min`（`naming/.../constants/ClientConstants.java:57`） | `SYNCED_SESSION_TIMEOUT_MS = 180_000`（`HealthCheckManager.java:68`；A1 已移除 per-instance 180s 过期档，死连接由 90s 看门狗注销） |
+| 巡检节拍 | `DEFAULT_HEART_BEAT_INTERVAL = 5s`（`api/.../common/Constants.java:189`；`SwitchDomain.java:47`） | `CHECK_INTERVAL_MS = 5_000`（`HealthCheckManager.java:47`） |
+| 不健康阈值（保留但标记） | `DEFAULT_HEART_BEAT_TIMEOUT = 15s`（`Constants.java:185`；`UnhealthyInstanceChecker.java:60-65`） | `INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000`（`HealthCheckManager.java:63`） |
+| 副本回收阈值（owner 静默） | `DEFAULT_CLIENT_EXPIRED_TIME = 3min`（`naming/.../constants/ClientConstants.java:57`） | `SYNCED_SESSION_TIMEOUT_MS = 180_000`（`HealthCheckManager.java:72`；A1 已移除 per-instance 180s 过期档，死连接由 90s 看门狗注销） |
 | verify 周期 | `DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5000`（`core/.../distro/DistroConstants.java:54`） | `VERIFY_INTERVAL_MS = 5000`（`DistroProtocol.java:53`） |
 | 启动加载重试 | `DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30000`（`DistroConstants.java:68`） | `LOAD_DATA_RETRY_DELAY_MS = 30_000`（`:56`） |
 | 推送失败重试固定延迟（非指数） | `DEFAULT_PUSH_TASK_RETRY_DELAY = 1000`（`naming/.../constants/PushConstants.java:45`） | `RETRY_DELAY_MS = 1000`（`PushDelayTaskEngine.java:45`） |
@@ -47,7 +47,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | verify 不一致 → **owner 定向重推**（不是去 peer 拉） | `syncToTarget(distroKey, ADD, targetServer, 0L)`（`naming/.../distro/v2/DistroClientDataProcessor.java:120`） | `resyncToPeer(peer, clientIds)`（`DistroProtocol.java:422-442`） |
 | 健康判定权只属于持有连接的节点，副本只显示不判定 | `isResponsibleClient(client)` 随两个事件外发（`ConnectionBasedClientManager.java:113-116`） | `reconcileHealth` 只遍历本节点持有的 `ConnectionRecord`（副本无记录 → 天然不判定），翻转经 `healthFlipHandler` 外发（`ServiceStorage.java:367`、`:396`） |
 | 广播「当前全量 + 幂等收敛」，无应用层 ack | `NotifySubscriberResponse extends Response`，**无任何字段**（`api/.../naming/remote/response/NotifySubscriberResponse.java:26`） | 每次重读当前全量，不缓存旧 payload（`PushDelayTaskEngine` 类注释） |
-| 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`common/.../grpc/DefaultGrpcClientConfig.java:224`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`common/.../remote/client/RpcClient.java:353-359`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckManager.java:43/51`） |
+| 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`common/.../grpc/DefaultGrpcClientConfig.java:224`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`common/.../remote/client/RpcClient.java:353-359`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckManager.java:47/55`） |
 | HTTP/2 PING 只是「无应用层心跳时」的兜底 | `channelKeepAlive = 6*60*1000`（`DefaultGrpcClientConfig.java:238`，用于 `GrpcClient.java:220-221`） | 不依赖 PING 做活性判定，PING strike 语义归 core |
 | 只有 owner 才对外 advertise 对账数据 | `getVerifyData()` 内 `if (clientManager.isResponsibleClient(client))` 才入列（`DistroClientDataProcessor.java:296-310`） | `runVerifyTask` 只遍历 `allNativeClientSessions()`（`DistroProtocol.java:326-330`） |
 | 只有 ephemeral，不做持久实例 | 持久实例走 Raft CP（`consistency` 模块），naming v2 的 `ConnectionBasedClient.isEphemeral()` 恒 true（`ConnectionBasedClient.java:57-59`）；快照与对账构造时 `!client.isEphemeral()` 直接跳过（`DistroClientDataProcessor.java:286`、`:302`） | 只实现 AP 线，见 §5 |
@@ -68,7 +68,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 
 于是基数关系是确定的：`|connections| = 我的 shard 大小`，而 `|clientSessions| = 全集群连接数 ≥ 前者`——两张表共用 `connectionId` 键空间，**域却不同**。
 
-结构上有一条可点开的铁证，也是这两类的分界：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `refreshActiveTime` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage:629`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager:68`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
+结构上有一条可点开的铁证，也是这两类的分界：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `refreshActiveTime` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage:629`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager:72`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
 
 两条边界值得钉住，免得「备份型」被误读成多主可写：**写只发生在 owner**，同步方向永远是 owner 外推，副本只读；**分片键是 TCP 落点而不是 `hash(clientId) % members`**，所以没有 rebalance——客户端重连即自然迁移 shard，其账单由上面那档收尸机制偿还。
 
@@ -117,11 +117,11 @@ Nacos 的复制载荷由 `AbstractClient.generateSyncData()` 生成（`AbstractC
 harbor 早期版本在载荷里多带了一个 `subscriberKeys`，并计入 `hasContent`。核对本表时把它删掉了，因为两条害处都是实打实的：
 
 1. **污染本节点的推送目标索引**。副本落地时会把自己的 clientId 写进 `subscriberIndexes`（`ServiceStorage.getSubscriberConnections` 的语义因此变成谎话——「本节点当前订阅者」里混进了写不到的连接，`PushDelayTaskEngine` 每一轮推送都要空查一次并记一条 "connection gone"）。
-2. **造出没有删除路径的副本壳**。纯订阅副本没有实例、也没有 `ConnectionRecord`，`reconcileHealth` 只遍历本节点持有的连接故永远看不见它；而连接关闭时的 DELETE 判据只看 `serviceKeys`（`ConnectionLifecycle.java:92`），于是这种壳只能等 180s 孤儿回收兜底。
+2. **造出没有删除路径的副本壳**。纯订阅副本没有实例、也没有 `ConnectionRecord`，`reconcileHealth` 只遍历本节点持有的连接故永远看不见它；而连接关闭时的 DELETE 判据只看 `serviceKeys`（`ConnectionCleanup.java:87`），于是这种壳只能等 180s 孤儿回收兜底。
 
 **实测证据**（3 节点集群 19848/19849/19850 + provider/consumer 各起一次）：provider 连到 19848 注册 2 个服务，另两节各自日志出现一条 `applied client sync: <connId> (publishers=2)`（跨节点发现不受影响）；consumer 只订阅，其连接在另两节点上**零**条同步记录，全集群 `publishers=0` 出现 **0** 次、`distro delete client` **0** 次——即「无内容的壳」这一形态在集群里已不存在。
 
-`ConnectionLifecycle` 的 DELETE 判据因此不需要扩展看订阅：没有订阅被复制，就没有需要撤销的订阅副本。回归由 `SubscriptionStaysLocalTest` 钉住（载荷不含订阅 / 就算被请求同步也只会是 DELETE / 副本永不进推送索引），mutation check 双注入验证过非假绿。
+`ConnectionCleanup` 的 DELETE 判据因此不需要扩展看订阅：没有订阅被复制，就没有需要撤销的订阅副本。回归由 `SubscriptionStaysLocalTest` 钉住（载荷不含订阅 / 就算被请求同步也只会是 DELETE / 副本永不进推送索引），mutation check 双注入验证过非假绿。
 
 ### 3.9 `ConnectionManager`：Nacos 的三层，harbor 的一层（**决定不拆**）
 
@@ -135,9 +135,9 @@ harbor 把四样东西装进一个类：连接记录（`ConnectionManager.java:5
 
 **判断是不拆**。harbor 只有 49 个文件，模块边界已经能由类名表达，再拆一层 `ClientSessionManager` 换来的是类图相似而非正确性，代价是要动 `DistroProtocol`/`ServiceStorage`/`HarborServer` 三处引用面。
 
-但这条偏离的代价不是零，而且要分清哪一半已经还了。原来活性戳存放在与连接表并列的第二张 map 里，`putClientSession` 从不写它——两张表必须同步是条隐形契约，漏一处就泄漏。现已把时钟并进 `ConnectionRecord`，只剩一张表，**这条漂移由构造消灭了**。没消掉的是另一半：副本压根没有 `ConnectionRecord`，所以看门狗（只看活性）结构性地看不见副本——「owner 死后副本无人收」那个漏正是这个形状长出来的，今天靠 `reapStaleSyncedClients` + `SYNCED_SESSION_TIMEOUT_MS` 单独立一档兜住（`HealthCheckManager.java:68`）。留此记录，是为了下次有人想说「顺手再加一张表」时能看到：合层的账是按档叠加还的。
+但这条偏离的代价不是零，而且要分清哪一半已经还了。原来活性戳存放在与连接表并列的第二张 map 里，`putClientSession` 从不写它——两张表必须同步是条隐形契约，漏一处就泄漏。现已把时钟并进 `ConnectionRecord`，只剩一张表，**这条漂移由构造消灭了**。没消掉的是另一半：副本压根没有 `ConnectionRecord`，所以看门狗（只看活性）结构性地看不见副本——「owner 死后副本无人收」那个漏正是这个形状长出来的，今天靠 `reapStaleSyncedClients` + `SYNCED_SESSION_TIMEOUT_MS` 单独立一档兜住（`HealthCheckManager.java:72`）。留此记录，是为了下次有人想说「顺手再加一张表」时能看到：合层的账是按档叠加还的。
 
-**同构之处也值得记一笔**：`removeStaleConnections` 只摘活性层、把 session 留给 `ConnectionLifecycle` 单入口收尾，与 Nacos「`doEject` 只处理连接、语义清理走 `clientDisconnected`」是同一个分层判断。
+**同构之处也值得记一笔**：`removeStaleConnections` 只摘活性层、把 session 留给 `ConnectionCleanup` 单入口收尾，与 Nacos「`doEject` 只处理连接、语义清理走 `clientDisconnected`」是同一个分层判断。
 
 **重评触发条件**：一旦要做连接治理（按 label 限流、负载迁移、主动踢连重平衡），或者要让多协议共用同一张连接注册表，把传输层拆出来才有真实收益——那时再拆。
 
@@ -171,7 +171,7 @@ Nacos 在 `ClientSyncData` 与 `DistroClientVerifyInfo` 里把主键字段叫 `c
 - **AP 线之外的东西一概不做**：持久实例与 Raft CP、配置长轮询、鉴权/console/k8s-sync 都不在 harbor 范围内（产品面，研读优先级低于机制层）。
 - **节点间全是一元**：与 Nacos 同形——Nacos 注册中心自己的 gRPC 服务面只有 unary `request` + 一条 bidi 连接流（`nacos_grpc_service.proto:39`、`:45`），仓库里带 streaming 的只有 vendored 的 Istio/MCP proto（`istio/src/main/resources/proto/mcp/v1alpha1/mcp.proto:175`、`:299`），在 `istio/src/main/java` 里没有任何 `rpc` 实现引用；连 jraft-core 1.3.14 的 `installSnapshot` 都是分块多请求而非 gRPC 流。规模化风险点在启动快照——万级 client 时单包 JSON + 5s 一元超时会痛，届时 client-stream 是自然形态，属「用对原语超越 Nacos」而非补角。
 - **已决并落地**：纯订阅连接的复制/回收不对称选了 B——订阅关系整体退出复制载荷，向 Nacos 靠齐（详见 §3.8，含 3 节点集群实测证据）。
-- **已订正**：`ConnectionLifecycle` 的 Javadoc 曾把对标对象写作 Nacos 的 `ConnectionManager` + `ClientConnectionUnregisterEvent`（该符号在 Nacos 不存在）。本次随本文一并改为真实的 `ConnectionBasedClientManager.clientDisconnected(String)`（`:105-118`：`clients.remove` → `release()` → 以 `isResponsible` 发 `ClientReleaseEvent`/`ClientDisconnectEvent`），并点明 Nacos 自己的看门狗 `ExpiredClientCleaner` 也复用这同一个入口——正是本类要编码的性质。
+- **已订正**：`ConnectionCleanup` 的 Javadoc 曾把对标对象写作 Nacos 的 `ConnectionManager` + `ClientConnectionUnregisterEvent`（该符号在 Nacos 不存在）。本次随本文一并改为真实的 `ConnectionBasedClientManager.clientDisconnected(String)`（`:105-118`：`clients.remove` → `release()` → 以 `isResponsible` 发 `ClientReleaseEvent`/`ClientDisconnectEvent`），并点明 Nacos 自己的看门狗 `ExpiredClientCleaner` 也复用这同一个入口——正是本类要编码的性质。
 
 ## 6. 维护纪律
 

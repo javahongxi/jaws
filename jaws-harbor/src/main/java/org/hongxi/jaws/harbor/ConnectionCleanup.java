@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * Three independent signals observe a closure — the bi-stream {@code onError}/
  * {@code onCompleted} (stream dies first), {@code channelInactive} from
- * {@link ConnectionCleanupHandler} (the TCP connection closes), and the
+ * {@link DisconnectionHandler} (the TCP connection closes), and the
  * {@link HealthCheckManager} watchdog sweep (a half-open TCP that never fires
  * {@code channelInactive}). Before this class existed, the first two had drifted
  * into two line-by-line copies and the watchdog ran only a partial subset,
@@ -41,25 +41,20 @@ import org.slf4j.LoggerFactory;
  *
  * @author shenhongxi
  */
-public class ConnectionLifecycle {
+public class ConnectionCleanup {
 
-    private static final Logger log = LoggerFactory.getLogger(ConnectionLifecycle.class);
+    private static final Logger log = LoggerFactory.getLogger(ConnectionCleanup.class);
 
     private final ConnectionManager connectionManager;
     private final ServiceStorage serviceStorage;
     private final DistroProtocol distroProtocol;
 
-    ConnectionLifecycle(ConnectionManager connectionManager,
-                        ServiceStorage serviceStorage,
-                        DistroProtocol distroProtocol) {
+    ConnectionCleanup(ConnectionManager connectionManager,
+                      ServiceStorage serviceStorage,
+                      DistroProtocol distroProtocol) {
         this.connectionManager = connectionManager;
         this.serviceStorage = serviceStorage;
         this.distroProtocol = distroProtocol;
-    }
-
-    /** Liveness bookkeeping — used by the PING proof-of-life path. */
-    ConnectionManager connectionManager() {
-        return connectionManager;
     }
 
     /**
@@ -76,8 +71,11 @@ public class ConnectionLifecycle {
         // client own anything?" and for the DELETE decision below.
         ClientSyncData syncData = serviceStorage.buildClientSyncData(connectionId);
 
-        // (2)+(3) Storage-domain removals while the session is still alive.
+        // (2) Drop the connection's subscriber registrations — done while the
+        // session is still alive to own them.
         serviceStorage.removeAllSubscribersForConnection(connectionId);
+
+        // (3) Deregister the connection's published instances (notifying subscribers).
         int removed = serviceStorage.deregisterInstancesByConnectionId(connectionId);
         if (removed > 0) {
             log.info("[harbor] deregistered {} instance(s) on connection closure: connId={}",

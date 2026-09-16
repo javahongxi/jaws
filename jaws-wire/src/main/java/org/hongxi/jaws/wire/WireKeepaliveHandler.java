@@ -122,10 +122,9 @@ public class WireKeepaliveHandler extends ChannelInboundHandlerAdapter {
                 lastPingTimeNanos = now;
             }
         }
-        // Forward PING downstream so that connection-level handlers (e.g.
-        // Harbor's ConnectionCleanupHandler) can observe it as proof-of-life.
-        // Http2FrameCodec has already auto-ACKed; forwarding does not cause
-        // a duplicate PING reply.
-        super.channelRead(ctx, msg);
+        // The Http2FrameCodec has already auto-ACKed the PING, and the gRFC A8
+        // guard above is its only server-side consumer. No downstream handler
+        // needs a connection-level PING, so it is consumed here rather than
+        // forwarded.  (Non-PING frames were already passed through above.)
     }
 }

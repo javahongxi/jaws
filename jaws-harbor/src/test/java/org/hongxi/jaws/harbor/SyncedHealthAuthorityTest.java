@@ -104,8 +104,8 @@ class SyncedHealthAuthorityTest {
         transport.nodes.put(ADDR1, d1);
         transport.nodes.put(ADDR2, d2);
 
-        health1 = new HealthCheckManager(cm1, st1, new ConnectionLifecycle(cm1, st1, d1));
-        health2 = new HealthCheckManager(cm2, st2, new ConnectionLifecycle(cm2, st2, d2));
+        health1 = new HealthCheckManager(cm1, st1, new ConnectionCleanup(cm1, st1, d1));
+        health2 = new HealthCheckManager(cm2, st2, new ConnectionCleanup(cm2, st2, d2));
 
         d1.start();
         d2.start();

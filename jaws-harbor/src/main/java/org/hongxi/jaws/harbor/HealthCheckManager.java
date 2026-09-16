@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
  *   <li><b>Connection watchdog</b>: connections whose last activity exceeds
  *       {@link #CONNECTION_TIMEOUT_MS} (default 90s) are considered dead —
  *       each one goes through the full closure transaction
- *       ({@link ConnectionLifecycle#cleanup}), exactly the same side effects
+ *       ({@link ConnectionCleanup#cleanup}), exactly the same side effects
  *       a live {@code channelInactive} would produce</li>
  *   <li><b>Instance health</b>: reconciled against connection liveness (Nacos 2.x
  *       model) — a connection idle past {@link #INSTANCE_UNHEALTHY_TIMEOUT_MS} marks
@@ -29,6 +29,10 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  * Connection activity is tracked via {@link ConnectionManager#refreshActiveTime(String)}
  * on every inbound unary/bi-stream request.
+ * <p>
+ * Those three are the health model. Each sweep runs one more, non-health step out of
+ * convenience — empty-service auto-cleanup (Nacos {@code EmptyServiceAutoCleanerV2}),
+ * to bound memory; it carries no health verdict and imposes no ordering on the tiers.
  *
  * @author shenhongxi
  */
@@ -69,14 +73,14 @@ public class HealthCheckManager {
 
     private final ConnectionManager connectionManager;
     private final ServiceStorage serviceStorage;
-    private final ConnectionLifecycle connectionLifecycle;
+    private final ConnectionCleanup connectionCleanup;
     private final ScheduledExecutorService scheduler;
 
     public HealthCheckManager(ConnectionManager connectionManager, ServiceStorage serviceStorage,
-                              ConnectionLifecycle connectionLifecycle) {
+                              ConnectionCleanup connectionCleanup) {
         this.connectionManager = connectionManager;
         this.serviceStorage = serviceStorage;
-        this.connectionLifecycle = connectionLifecycle;
+        this.connectionCleanup = connectionCleanup;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "harbor-health-check");
             t.setDaemon(true);
@@ -107,37 +111,38 @@ public class HealthCheckManager {
      */
     void checkHealth() {
         try {
-            // Phase 1: connection watchdog — detect dead connections, then run
-            // the SAME full closure transaction as channelInactive / bi-stream
-            // signals (snapshot → subscribers → instances → session → Distro DELETE).
+            // Phase 1 — connection watchdog: detect dead connections, then run the SAME
+            // full closure transaction as channelInactive / bi-stream signals
+            // (snapshot → subscribers → instances → session → Distro DELETE).
             List<ConnectionManager.ConnectionRecord> staleConns =
                     connectionManager.removeStaleConnections(CONNECTION_TIMEOUT_MS);
             for (ConnectionManager.ConnectionRecord conn : staleConns) {
-                connectionLifecycle.cleanup(conn.connectionId());
+                connectionCleanup.cleanup(conn.connectionId());
                 log.info("[harbor] watchdog closed dead connection: connId={}, clientIp={}",
                         conn.connectionId(), conn.clientIp());
             }
 
-            // Reconcile instance health against connection liveness (Nacos 2.x model):
-            // a connection idle past the unhealthy window marks its instances unhealthy;
-            // activity restores them. Connection death is handled by the watchdog above,
-            // so there is no separate per-instance expiry tier.
+            // Phase 2 — instance health: reconcile instance health against connection
+            // liveness (Nacos 2.x model). A connection idle past the unhealthy window
+            // marks its instances unhealthy; activity restores them. Connection death is
+            // the watchdog's job (Phase 1), so there is no separate per-instance expiry tier.
             serviceStorage.reconcileHealth(INSTANCE_UNHEALTHY_TIMEOUT_MS);
 
-            // Phase 2.5: reclaim replicated clients their owner no longer confirms.
-            // The beat tiers above only reach instances, so a subscriber-only replica —
-            // and any session shell left behind — would otherwise survive for the whole
-            // process lifetime once the node owning the connection is gone (nothing can
-            // announce that client again: no beat, no Distro DELETE, and the connection
-            // watchdog cannot see a synced session).
+            // Phase 3 — replica reclamation: reclaim replicated clients their owner no
+            // longer confirms. The two phases above reach only native connections'
+            // instances, so a subscriber-only replica — and any session shell left
+            // behind — would otherwise survive for the whole process lifetime once the
+            // node owning the connection is gone (nothing can announce that client
+            // again: no beat, no Distro DELETE, and the watchdog cannot see a synced session).
             int reaped = serviceStorage.reapStaleSyncedClients(SYNCED_SESSION_TIMEOUT_MS);
             if (reaped > 0) {
                 log.info("[harbor] reclaimed {} replicated client session(s) unconfirmed "
                         + "by their owner for {}ms", reaped, SYNCED_SESSION_TIMEOUT_MS);
             }
 
-            // Phase 3: empty service auto-cleanup — remove services with no publishers
-            // and no subscribers (memory leak prevention, matches Nacos EmptyServiceAutoCleanerV2)
+            // Housekeeping — not a health phase: drop services with no publishers and no
+            // subscribers to bound memory. Order-independent, it just rides the same tick
+            // (matches Nacos EmptyServiceAutoCleanerV2).
             serviceStorage.cleanEmptyServices();
         } catch (Exception e) {
             log.warn("[harbor] health check task failed", e);
