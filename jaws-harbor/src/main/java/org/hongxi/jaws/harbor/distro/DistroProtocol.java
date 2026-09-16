@@ -49,26 +49,24 @@ public class DistroProtocol {
     public static final String OP_CHANGE = "CHANGE";
     public static final String OP_DELETE = "DELETE";
 
-    /** Verify interval matching Nacos {@code DEFAULT_HEALTH_CHECK_INTERVAL = 5s}. */
+    /**
+     * Verify interval, matching Nacos
+     * {@code DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5s}.
+     */
     private static final long VERIFY_INTERVAL_MS = 5000L;
 
-    /** Load-data retry delay on failure. */
+    /**
+     * Load-data retry delay on failure, matching Nacos
+     * {@code DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30s}.
+     */
     private static final long LOAD_DATA_RETRY_DELAY_MS = 30_000L;
 
-    /** Coalescing window for outbound sync — mirrors PushDelayTaskEngine. */
-    private static final long SYNC_MERGE_DELAY_MS = 200L;
-
     /**
-     * How often the owner re-publishes each of its native clients, even with no
-     * logical change. A replica holds no connection and never judges liveness itself;
-     * it learns a client is alive only through these pushes, each of which advances
-     * the replica's confirmation clock ({@code lastRenewTime}). Without this pass a
-     * long-lived but unchanged client would let that clock age on every non-owner
-     * node, and {@code reapStaleSyncedClients} would drop the replica as if its owner
-     * had gone silent. At 1/6 of the 180s reclaim window a live owner keeps its
-     * replicas confirmed, so a reclamation means what it should: the owner stopped.
+     * Coalescing window for outbound sync: changes to the same {@code key+target}
+     * within this window collapse into a single push. Matching Nacos
+     * {@code DEFAULT_DATA_SYNC_DELAY_MILLISECONDS = 1s}
      */
-    private static final long CLIENT_REFRESH_INTERVAL_MS = 30_000L;
+    private static final long SYNC_MERGE_DELAY_MS = 1000L;
 
     private final ClusterManager clusterManager;
     private final HarborNodeTransport transport;
@@ -98,8 +96,8 @@ public class DistroProtocol {
     }
 
     /**
-     * Start the Distro protocol: schedule the periodic verify task and client
-     * refresh, and the one-shot initial load from a peer.
+     * Start the Distro protocol: schedule the periodic verify task and the
+     * one-shot initial load from a peer.
      */
     public void start() {
         if (running) {
@@ -112,31 +110,8 @@ public class DistroProtocol {
         scheduler.scheduleAtFixedRate(this::runVerifyTask,
                 VERIFY_INTERVAL_MS, VERIFY_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
-        // Schedule periodic re-publish of owned clients.
-        scheduler.scheduleAtFixedRate(this::runRefreshTask,
-                CLIENT_REFRESH_INTERVAL_MS, CLIENT_REFRESH_INTERVAL_MS, TimeUnit.MILLISECONDS);
-
         // Schedule initial load task (runs once, retries on failure)
         scheduler.schedule(this::runLoadTask, 1, TimeUnit.SECONDS);
-    }
-
-    /**
-     * Re-publish every native client's CURRENT full state. Bursts collapse through
-     * {@link #requestSyncChange(String)}, so a refresh racing a real change costs
-     * one push, not two.
-     */
-    public void refreshOwnedClients() {
-        for (ClientSession session : connectionManager.allNativeClientSessions()) {
-            requestSyncChange(session.getConnectionId());
-        }
-    }
-
-    private void runRefreshTask() {
-        try {
-            refreshOwnedClients();
-        } catch (Exception e) {
-            log.warn("[harbor] distro refresh task failed", e);
-        }
     }
 
     /**

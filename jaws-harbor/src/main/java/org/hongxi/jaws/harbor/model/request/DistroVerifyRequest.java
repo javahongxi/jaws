@@ -1,6 +1,7 @@
 package org.hongxi.jaws.harbor.model.request;
 
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
+import org.hongxi.jaws.harbor.model.Request;
 
 import java.util.List;
 
@@ -10,7 +11,7 @@ import java.util.List;
  *
  * @author shenhongxi
  */
-public class DistroVerifyRequest extends DistroRequest {
+public class DistroVerifyRequest extends Request {
 
     private List<ClientVerifyInfo> verifyInfos;
 

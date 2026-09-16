@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -90,7 +91,11 @@ class DistroSyncCoalesceTest {
         transport.nodes.put(ADDR1, d1);
         transport.nodes.put(ADDR2, d2);
         d1.start();
-        d2.start();
+        // d2 is intentionally left un-started: this class only pins d1's outbound
+        // coalescing, and d2 merely needs to apply inbound syncs (onSync runs
+        // regardless of running). Starting d2 would arm its one-shot snapshot load
+        // (~1s after start), which pulls C back from d1 and would confound
+        // deleteCancelsPendingChange's "the peer was never revived" proof.
         // node1 owns the client "C" with one instance.
         cm1.register("C", "10.0.0.1", "3.0.0", Map.of(), noop());
     }
@@ -102,7 +107,10 @@ class DistroSyncCoalesceTest {
         st1.registerInstance("public", "DEFAULT_GROUP", "svc", instance("10.0.0.1", 8082), "C");
         d1.requestSyncChange("C");
 
-        Thread.sleep(400);
+        // Wait for the single coalesced CHANGE to land (bounded; not tied to the window).
+        awaitTrue(() -> transport.changes.get() >= 1, 5_000);
+        // Settle so an un-coalesced duplicate would surface and the peer's state fully applies.
+        Thread.sleep(250);
 
         assertEquals(1, transport.changes.get(),
                 "two bursts for one client must coalesce into a single CHANGE push");
@@ -113,15 +121,39 @@ class DistroSyncCoalesceTest {
     @Test
     void deleteCancelsPendingChange() throws Exception {
         st1.registerInstance("public", "DEFAULT_GROUP", "svc", instance("10.0.0.1", 8081), "C");
-        d1.requestSyncChange("C");          // queued CHANGE …
+        d1.requestSyncChange("C");          // coalesced CHANGE, would fire at +SYNC_MERGE (~1s) …
         d1.requestSyncDelete("C");          // … must be cancelled by the immediate DELETE
 
-        Thread.sleep(400);
+        awaitTrue(() -> transport.deletes.get() >= 1, 3_000);   // DELETE is propagated immediately
+
+        // Proving a scheduled task did NOT fire cannot be a pure await — it needs to
+        // outlast that task's own deadline, so wait past the 1s sync-merge window (an
+        // un-cancelled CHANGE would have flushed by now). This stays under the 5s verify
+        // tick so d1's periodic verify cannot resync C, and d2 is left un-started so its
+        // snapshot load never revives C: the only remaining way C could reach the peer is
+        // the very CHANGE we assert was cancelled.
+        Thread.sleep(1_500);
 
         assertEquals(0, transport.changes.get(),
                 "a DELETE within the window must cancel the pending coalesced CHANGE");
         assertEquals(1, transport.deletes.get(), "DELETE is propagated immediately");
         assertNull(cm2.getClientSession("C"), "the peer must not be revived by the cancelled CHANGE");
+    }
+
+    /**
+     * Poll {@code condition} until true or {@code timeoutMs} elapses. Lets a positive
+     * "a push landed" assertion key on behaviour instead of a sleep tied to
+     * {@code DistroProtocol.SYNC_MERGE_DELAY_MS}.
+     */
+    private static void awaitTrue(BooleanSupplier condition, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        fail("condition not satisfied within " + timeoutMs + "ms");
     }
 
     private static URL url(int port) {

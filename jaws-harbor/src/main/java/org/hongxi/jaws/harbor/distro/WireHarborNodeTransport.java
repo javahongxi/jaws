@@ -61,8 +61,7 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
         DistroSyncRequest request = new DistroSyncRequest();
         request.setResourceKey(resourceKey);
         request.setOperation(operation);
-        request.setContent(content != null
-                ? java.util.Base64.getEncoder().encodeToString(content) : "");
+        request.setContent(content != null ? Base64.getEncoder().encodeToString(content) : "");
 
         Payload responsePayload = sendRequest(targetAddress,
                 TYPE_DISTRO_SYNC_REQUEST, JSON.toJSONBytes(request));
@@ -87,7 +86,7 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
         DistroVerifyResponse response = parseBody(responsePayload, DistroVerifyResponse.class);
         if (response.getResultCode() != 200) {
             log.warn("[harbor] verify to {} returned code {}", targetAddress, response.getResultCode());
-            List<String> mismatched = response.getMismatchedClientIds();
+            List<String> mismatched = response.getMismatchedConnectionIds();
             return mismatched != null ? mismatched : List.of();
         }
         return List.of();

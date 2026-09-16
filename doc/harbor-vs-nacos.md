@@ -40,16 +40,16 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | 巡检节拍 | `DEFAULT_HEART_BEAT_INTERVAL = 5s`（`api/.../common/Constants.java:189`；`SwitchDomain.java:47`） | `CHECK_INTERVAL_MS = 5_000`（`HealthCheckManager.java:47`） |
 | 不健康阈值（保留但标记） | `DEFAULT_HEART_BEAT_TIMEOUT = 15s`（`Constants.java:185`；`UnhealthyInstanceChecker.java:60-65`） | `INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000`（`HealthCheckManager.java:63`） |
 | 副本回收阈值（owner 静默） | `DEFAULT_CLIENT_EXPIRED_TIME = 3min`（`naming/.../constants/ClientConstants.java:57`） | `SYNCED_SESSION_TIMEOUT_MS = 180_000`（`HealthCheckManager.java:72`；A1 已移除 per-instance 180s 过期档，死连接由 90s 看门狗注销） |
-| verify 周期 | `DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5000`（`core/.../distro/DistroConstants.java:54`） | `VERIFY_INTERVAL_MS = 5000`（`DistroProtocol.java:53`） |
+| verify 周期 | `DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5000`（`core/.../distro/DistroConstants.java:54`） | `VERIFY_INTERVAL_MS = 5000`（`DistroProtocol.java:56`） |
 | 启动加载重试 | `DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30000`（`DistroConstants.java:68`） | `LOAD_DATA_RETRY_DELAY_MS = 30_000`（`:56`） |
-| 推送失败重试固定延迟（非指数） | `DEFAULT_PUSH_TASK_RETRY_DELAY = 1000`（`naming/.../constants/PushConstants.java:45`） | `RETRY_DELAY_MS = 1000`（`PushDelayTaskEngine.java:45`） |
-| 延迟合并的「同键合一任务 + 到点重读」 | `NacosDelayTaskExecuteEngine.addTask` → `newTask.merge(existTask)`（`common/.../task/engine/NacosDelayTaskExecuteEngine.java:119-124`）；`DistroDelayTask.merge` 保旧动作（`core/.../distro/task/delay/DistroDelayTask.java:61-69`） | `pending.computeIfAbsent` + 到点 `buildClientSyncData` 重读当前全量幂等推（`DistroProtocol.java:195-217`） |
-| verify 不一致 → **owner 定向重推**（不是去 peer 拉） | `syncToTarget(distroKey, ADD, targetServer, 0L)`（`naming/.../distro/v2/DistroClientDataProcessor.java:120`） | `resyncToPeer(peer, clientIds)`（`DistroProtocol.java:422-442`） |
+| 推送失败重试固定延迟（非指数） | `DEFAULT_PUSH_TASK_RETRY_DELAY = 1000`（`naming/.../constants/PushConstants.java:45`） | `RETRY_DELAY_MS = 1000`（`PushDelayTaskEngine.java:48`） |
+| 延迟合并的「同键合一任务 + 到点重读」 | `NacosDelayTaskExecuteEngine.addTask` → `newTask.merge(existTask)`（`common/.../task/engine/NacosDelayTaskExecuteEngine.java:119-124`）；`DistroDelayTask.merge` 保旧动作（`core/.../distro/task/delay/DistroDelayTask.java:61-69`） | `pending.computeIfAbsent` + 到点 `buildClientSyncData` 重读当前全量幂等推（`DistroProtocol.java:170-192`） |
+| verify 不一致 → **owner 定向重推**（不是去 peer 拉） | `syncToTarget(distroKey, ADD, targetServer, 0L)`（`naming/.../distro/v2/DistroClientDataProcessor.java:120`） | `resyncToPeer(peer, clientIds)`（`DistroProtocol.java:397-417`） |
 | 健康判定权只属于持有连接的节点，副本只显示不判定 | `isResponsibleClient(client)` 随两个事件外发（`ConnectionBasedClientManager.java:113-116`） | `reconcileHealth` 只遍历本节点持有的 `ConnectionRecord`（副本无记录 → 天然不判定），翻转经 `healthFlipHandler` 外发（`ServiceStorage.java:367`、`:396`） |
 | 广播「当前全量 + 幂等收敛」，无应用层 ack | `NotifySubscriberResponse extends Response`，**无任何字段**（`api/.../naming/remote/response/NotifySubscriberResponse.java:26`） | 每次重读当前全量，不缓存旧 payload（`PushDelayTaskEngine` 类注释） |
 | 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`common/.../grpc/DefaultGrpcClientConfig.java:224`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`common/.../remote/client/RpcClient.java:353-359`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckManager.java:47/55`） |
 | HTTP/2 PING 只是「无应用层心跳时」的兜底 | `channelKeepAlive = 6*60*1000`（`DefaultGrpcClientConfig.java:238`，用于 `GrpcClient.java:220-221`） | 不依赖 PING 做活性判定，PING strike 语义归 core |
-| 只有 owner 才对外 advertise 对账数据 | `getVerifyData()` 内 `if (clientManager.isResponsibleClient(client))` 才入列（`DistroClientDataProcessor.java:296-310`） | `runVerifyTask` 只遍历 `allNativeClientSessions()`（`DistroProtocol.java:326-330`） |
+| 只有 owner 才对外 advertise 对账数据 | `getVerifyData()` 内 `if (clientManager.isResponsibleClient(client))` 才入列（`DistroClientDataProcessor.java:296-310`） | `runVerifyTask` 只遍历 `allNativeClientSessions()`（`DistroProtocol.java:303`） |
 | 只有 ephemeral，不做持久实例 | 持久实例走 Raft CP（`consistency` 模块），naming v2 的 `ConnectionBasedClient.isEphemeral()` 恒 true（`ConnectionBasedClient.java:57-59`）；快照与对账构造时 `!client.isEphemeral()` 直接跳过（`DistroClientDataProcessor.java:286`、`:302`） | 只实现 AP 线，见 §5 |
 
 ## 2.5 节点内的两种拓扑角色：分片层与全集群层
@@ -88,9 +88,13 @@ harbor 反其道：把 Nacos 用在另一类客户端上的内容指纹思路搬
 
 A1 起 harbor 不再有 `Instance.lastBeat`：ephemeral 健康**派生自持有连接之节点的 `ConnectionRecord.lastActiveTime`**（`ServiceStorage.reconcileHealth`），与 Nacos 2.x 的 `Client.lastRefreshTime` 同构。于是没有"墙钟要不要进哈希"的两难——活性根本不是被复制的数据，副本没有 `ConnectionRecord`、`reconcileHealth` 只遍历本节点持有的连接，天然对它不判定（比原来显式 `isNativeClient` 跳过更干净）。剩下的 `healthy` 仍是**被复制的内容**：owner 无实例变更地翻转判定时，必须可被 verify 检出，否则丢一次推送就让两节点永久分歧。见 `ClientSession.java:168-172`。
 
-### 3.3 合并窗口比 Nacos 更激进：200ms vs 1000ms / 500ms
+### 3.3 合并窗口与 owner 续期：曾偏离 Nacos，现已回归其默认
 
-Distro 同步延迟 Nacos 默认 `1000ms`（`DistroConstants.java:33`），推送延迟 `500ms`（`PushConstants.java:31`）；harbor 两处都用 `200ms`（`DistroProtocol.java:59`、`PushDelayTaskEngine.java:42`）。取舍：注册中心的核心 SLA 是「变更多快被看到」，harbor 数据量小（client 级全量载荷），收敛优先于合并率。**代价**：突发批量注册下推送次数放大，靠父通道级 bidi 单流扛住。若将来压测显示推送线程饥饿，回滚动作就是把两个 200 改成 Nacos 的 1000/500，属纯常量改动。
+Distro 同步延迟 Nacos 默认 `1000ms`（`DistroConstants.java:33`）、推送延迟 `500ms`（`PushConstants.java:31`）。harbor 起初两处都取 `200ms` 抢收敛（注册中心 SLA 是「变更多快被看到」、client 级全量载荷小），属刻意偏离；后按口径回归 Nacos 默认——现 `SYNC_MERGE_DELAY_MS = 1000`（`DistroProtocol.java:69`）、`PushDelayTaskEngine.MERGE_DELAY_MS = 500`（`PushDelayTaskEngine.java:45`），与对端一致。
+
+同一条「回归」还带走了一个 Nacos 本就没有的机制：早期 harbor 另设 owner 每 30s 全量重推自有 client（曾名 `CLIENT_REFRESH`）来给副本续背书时钟。核对后确认副本的 `lastRenewTime` 由 5s verify 在 revision 匹配时推进即已足够，正对应 Nacos `ConnectionBasedClientManager.verifyClient` 命中即 `setLastRenewTime`（`ConnectionBasedClientManager.java:147`）——owner 沉默即 verify 停摆、副本时钟自然老化、由 `reapStaleSyncedClients`（`ServiceStorage.java:629`）配 `SYNCED_SESSION_TIMEOUT_MS = 180s`（`HealthCheckManager.java:72`）那档兜底，无需额外重推，故删。回归测试见 `SyncedSessionReclamationTest`（零变更副本仅靠 verify 续期即跨窗存活）。
+
+此条保留以记录「偏离→回归」的来龙，免得读者以为 200ms 或那条周期重推仍是现状；编号不动以免打断 §3.9/§3.10 的交叉引用。
 
 ### 3.4 不做 payload 缓存重发（删掉 `PushRetryManager`）
 
@@ -153,13 +157,13 @@ Nacos 在 `ClientSyncData` 与 `DistroClientVerifyInfo` 里把主键字段叫 `c
 
 ## 4. 测试即语义注解
 
-`jaws-harbor` 的 55 个用例里，主干测试类各自钉住一条 Nacos 语义，类名就是命题：
+`jaws-harbor` 的 56 个用例里，主干测试类各自钉住一条 Nacos 语义，类名就是命题：
 
 | 测试 | 钉住的语义 |
 |---|---|
 | `EphemeralHealthTierTest` | 连接静默 15s 标不健康且保留、连接恢复活动则 reconcile 回健康（活性驱动，双向） |
 | `SyncedHealthAuthorityTest` | 健康只由持有连接的节点判定，副本只显示（§2/§3.2） |
-| `SyncedSessionReclamationTest` | 孤儿副本回收判据是 owner 沉默，不被本地改动赦免 |
+| `SyncedSessionReclamationTest` | 孤儿副本回收判据是 owner 沉默、不被本地改动赦免；并钉住零变更副本仅靠 5s verify 匹配续期即跨窗存活（§3.3 删 owner 重推后唯一周期信号） |
 | `SubscriptionStaysLocalTest` | 订阅不出网：载荷不含订阅、副本永不进推送索引（§3.8） |
 | `WatchdogClosureTest` | 快照必须在摘除 session 之前取，否则漏发 DELETE |
 | `NotifyOnChangeOnlyTest` | 只为真实数据变化播报；巡检与退订不触发全量重推 |

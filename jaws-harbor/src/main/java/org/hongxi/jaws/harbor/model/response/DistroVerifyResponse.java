@@ -17,11 +17,11 @@ public class DistroVerifyResponse extends Response {
 
     private List<String> mismatchedConnectionIds;
 
-    public List<String> getMismatchedClientIds() {
+    public List<String> getMismatchedConnectionIds() {
         return mismatchedConnectionIds;
     }
 
-    public void setMismatchedClientIds(List<String> mismatchedConnectionIds) {
+    public void setMismatchedConnectionIds(List<String> mismatchedConnectionIds) {
         this.mismatchedConnectionIds = mismatchedConnectionIds;
     }
 }

@@ -130,6 +130,41 @@ class SyncedSessionReclamationTest {
     }
 
     @Test
+    void ownerVerifyAloneSustainsAnUnchangedReplicaAcrossWindows() {
+        // Regression pin for the CLIENT_REFRESH removal. Nothing re-pushes an
+        // unchanged client any more; the only periodic signal its replicas receive is
+        // the owner's 5s verify. That verify must, on its own, keep a replica alive —
+        // renewal rides on verify, exactly as Nacos's verifyClient calls
+        // setLastRenewTime on a revision match (ConnectionBasedClientManager:147).
+        // If onVerify ever stops stamping the clock, this goes red: having crossed the
+        // deadline, the replica would be reclaimed by reapStaleSyncedClients.
+        DistroProtocol distro = new DistroProtocol(
+                new ClusterManager(new URL("harbor", "127.0.0.1", 19848, "")),
+                new NoopTransport(), storage, cm);
+        givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
+
+        for (int window = 1; window <= 3; window++) {
+            // Push the replica past its deadline: on its own it now looks orphaned.
+            ageReplica("remote", WINDOW_MS + 1_000);
+            long beforeRenew = cm.getClientSession("remote").getLastRenewTime();
+
+            // Owner still holds "remote" at revision 7 (no logical change) and verifies it.
+            List<String> mismatched = distro.onVerify(List.of(new ClientVerifyInfo("remote", 7L)));
+
+            assertTrue(mismatched.isEmpty(),
+                    "window " + window + ": an unchanged replica must verify clean, got " + mismatched);
+            assertTrue(cm.getClientSession("remote").getLastRenewTime() > beforeRenew,
+                    "window " + window + ": a verify revision-match must stamp lastRenewTime — with the "
+                            + "periodic re-push gone this is the only thing keeping a no-change replica alive");
+            assertEquals(0, storage.reapStaleSyncedClients(WINDOW_MS),
+                    "window " + window + ": verify renewal alone must spare the replica from reclamation");
+            assertNotNull(cm.getClientSession("remote"),
+                    "the session must survive purely on verify, across many reclaim windows");
+        }
+        assertTrue(events.isEmpty(), "a surviving replica announces nothing: " + events);
+    }
+
+    @Test
     void thisTierNeverTouchesNativeSessions() {
         // A node's own client: authoritative locally, judged by the beat tiers.
         // Nothing here may evict it — an idle native session is not a dead one.

@@ -626,7 +626,7 @@ public class HarborServer {
         } else {
             response.setResultCode(500);
             response.setSuccess(false);
-            response.setMismatchedClientIds(mismatched);
+            response.setMismatchedConnectionIds(mismatched);
         }
         return buildPayload(TYPE_DISTRO_VERIFY_RESPONSE, response);
     }

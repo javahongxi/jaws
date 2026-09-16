@@ -13,6 +13,7 @@ import java.net.ServerSocket;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -71,8 +72,8 @@ class HarborServerIntegrationTest {
 
         naming.registerInstance(serviceName, group, instance);
 
-        // Wait for registration to propagate
-        Thread.sleep(1000);
+        // Wait for registration to reach the client's view (bounded poll, window-independent).
+        awaitTrue(() -> !tryDiscover(naming, serviceName, group).isEmpty(), 5_000);
 
         // Query instances
         List<Instance> instances = naming.getAllInstances(serviceName, group);
@@ -87,7 +88,9 @@ class HarborServerIntegrationTest {
 
         // Deregister
         naming.deregisterInstance(serviceName, group, instance);
-        Thread.sleep(500);
+
+        // Wait for the removal to reach the client's view (bounded poll).
+        awaitTrue(() -> tryDiscover(naming, serviceName, group).isEmpty(), 5_000);
 
         // Verify deregistration
         List<Instance> afterDeregister = naming.getAllInstances(serviceName, group);
@@ -114,7 +117,9 @@ class HarborServerIntegrationTest {
 
         naming.registerInstance(serviceName, group, inst1);
         naming.registerInstance(serviceName, group, inst2);
-        Thread.sleep(1000);
+
+        // Wait for both registrations to surface (bounded poll, window-independent).
+        awaitTrue(() -> tryDiscover(naming, serviceName, group).size() >= 2, 5_000);
 
         List<Instance> instances = naming.getAllInstances(serviceName, group);
         assertEquals(2, instances.size());
@@ -122,6 +127,31 @@ class HarborServerIntegrationTest {
         // Cleanup
         naming.deregisterInstance(serviceName, group, inst1);
         naming.deregisterInstance(serviceName, group, inst2);
+    }
+
+    /**
+     * Poll {@code condition} until true or {@code timeoutMs} elapses. Replaces a
+     * fixed sleep tied to the push/sync windows: the assertions key on the
+     * client's view reaching the expected state instead.
+     */
+    private static void awaitTrue(BooleanSupplier condition, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        fail("condition not satisfied within " + timeoutMs + "ms");
+    }
+
+    /** Discover without throwing: a checked client error simply reads as "not there yet". */
+    private static List<Instance> tryDiscover(NamingService naming, String serviceName, String group) {
+        try {
+            return naming.getAllInstances(serviceName, group);
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
     }
 
     private static NamingService createNamingService() throws Exception {

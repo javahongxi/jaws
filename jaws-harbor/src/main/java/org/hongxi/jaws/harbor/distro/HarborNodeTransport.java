@@ -18,7 +18,7 @@ public interface HarborNodeTransport {
      * Send a sync message to a peer node.
      *
      * @param targetAddress peer address (host:port)
-     * @param resourceKey   the connectionId (connectionId) of the sync
+     * @param resourceKey   the connectionId of the sync
      * @param operation     the operation type (CHANGE, DELETE)
      * @param content       the serialized {@link org.hongxi.jaws.harbor.model.ClientSyncData}
      * @return true if sync succeeded

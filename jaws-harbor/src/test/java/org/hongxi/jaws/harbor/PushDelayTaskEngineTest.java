@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -99,8 +100,10 @@ class PushDelayTaskEngineTest {
                 instance("10.0.0.9", 8082, "iB"), "pub-1");
         engine.requestPush(SVC);
 
-        // Wait past the merge window so the single coalesced task fires once.
-        Thread.sleep(600);
+        // Wait for the single coalesced push to land (bounded; not tied to the window).
+        awaitTrue(() -> !sub.received.isEmpty(), 5_000);
+        // Settle so any un-coalesced second push behind the first would surface here too.
+        Thread.sleep(250);
 
         // Coalescing: two requestPush calls collapsed into exactly ONE push.
         assertEquals(1, sub.received.size(),
@@ -130,7 +133,8 @@ class PushDelayTaskEngineTest {
         storage.registerInstance("public", "DEFAULT_GROUP", "svc",
                 instance("10.0.0.9", 8081, "iA"), "pub-1");
 
-        Thread.sleep(600);
+        awaitTrue(() -> !sub.received.isEmpty(), 5_000);
+        Thread.sleep(250);
 
         assertEquals(1, sub.received.size());
         // If the engine had cached the (empty) snapshot at requestPush time it
@@ -139,6 +143,23 @@ class PushDelayTaskEngineTest {
                 "engine must push the state as of fire time, not of requestPush time");
 
         engine.shutdown();
+    }
+
+    /**
+     * Poll {@code condition} until true or {@code timeoutMs} elapses. Lets a push test
+     * key on behaviour (a push landed, carrying the right state) instead of a hard-coded
+     * sleep tied to {@code MERGE_DELAY_MS}, so moving that window does not silently
+     * re-break — or needlessly slow down — the assertion.
+     */
+    private static void awaitTrue(BooleanSupplier condition, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        fail("condition not satisfied within " + timeoutMs + "ms");
     }
 
     private static Instance instance(String ip, int port, String id) {

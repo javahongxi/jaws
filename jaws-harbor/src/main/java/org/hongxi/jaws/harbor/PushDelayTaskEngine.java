@@ -38,8 +38,11 @@ public class PushDelayTaskEngine {
     /** payload {@code metadata.type} for a naming change notification. */
     private static final String TYPE_NOTIFY_SUBSCRIBER_REQUEST = "NotifySubscriberRequest";
 
-    /** Coalescing window: bursts on the same service collapse into one push. */
-    private static final long MERGE_DELAY_MS = 200L;
+    /**
+     * Coalescing window: bursts on the same service collapse into one push.
+     * Matching Nacos {@code DEFAULT_PUSH_TASK_DELAY = 500ms}.
+     */
+    private static final long MERGE_DELAY_MS = 500L;
 
     /** Re-enqueue delay on an unexpected error. Fixed, not exponential (matches Nacos). */
     private static final long RETRY_DELAY_MS = 1000L;
