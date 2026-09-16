@@ -396,8 +396,14 @@ public class HarborServer {
                 @Override
                 public void onError(Throwable throwable) {
                     log.info("[harbor] bi-stream error: {}", throwable.getMessage());
-                    // The stream died → run the full closure transaction now
-                    // (idempotent; the channelInactive that usually follows is a no-op).
+                    // The notification stream died → run the full closure transaction now.
+                    // This is the EARLIEST signal (the RST/GOAWAY frame precedes the TCP FIN),
+                    // and — critically — the ONLY one when the client resets just this stream
+                    // while keeping the TCP connection up: unary HealthCheckRequests then keep
+                    // refreshing lastActiveTime, so neither channelInactive nor the 90s watchdog
+                    // fires, and the session would otherwise linger as "healthy" behind a dead
+                    // push channel.  Idempotent, so the channelInactive that usually follows is
+                    // a no-op.
                     connectionCleanup.cleanup(connectionId);
                     // Do NOT call pushSubject.onCompleted() here.
                     // The client already sent RST/GOAWAY — the stream is dead.
@@ -410,6 +416,9 @@ public class HarborServer {
                 @Override
                 public void onCompleted() {
                     log.info("[harbor] bi-stream completed for connId={}", connectionId);
+                    // Client END_STREAM on this stream is the same stream-only-death case as
+                    // onError — the TCP connection may well stay up — so this is what tears the
+                    // session down; idempotent against a later channelInactive.
                     connectionCleanup.cleanup(connectionId);
                     // Same as onError: the client initiated the close; the closure
                     // transaction owns push-subject completion.
