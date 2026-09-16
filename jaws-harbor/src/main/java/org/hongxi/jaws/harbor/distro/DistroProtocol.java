@@ -49,24 +49,14 @@ public class DistroProtocol {
     public static final String OP_CHANGE = "CHANGE";
     public static final String OP_DELETE = "DELETE";
 
-    /**
-     * Verify interval, matching Nacos
-     * {@code DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5s}.
-     */
+    /** Nacos {@code DEFAULT_DATA_SYNC_DELAY_MILLISECONDS = 1s */
+    private static final long SYNC_MERGE_DELAY_MS = 1000L;
+
+    /** Nacos {@code DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5s} */
     private static final long VERIFY_INTERVAL_MS = 5000L;
 
-    /**
-     * Load-data retry delay on failure, matching Nacos
-     * {@code DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30s}.
-     */
-    private static final long LOAD_DATA_RETRY_DELAY_MS = 30_000L;
-
-    /**
-     * Coalescing window for outbound sync: changes to the same {@code key+target}
-     * within this window collapse into a single push. Matching Nacos
-     * {@code DEFAULT_DATA_SYNC_DELAY_MILLISECONDS = 1s}
-     */
-    private static final long SYNC_MERGE_DELAY_MS = 1000L;
+    /** Nacos {@code DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30s} */
+    private static final long LOAD_RETRY_DELAY_MS = 30_000L;
 
     private final ClusterManager clusterManager;
     private final HarborNodeTransport transport;
@@ -133,32 +123,6 @@ public class DistroProtocol {
     // ========================================================================
 
     /**
-     * Sync a client-level change to all peer nodes.
-     *
-     * @param connectionId the connectionId (connectionId) whose data changed
-     * @param operation    {@link #OP_CHANGE} or {@link #OP_DELETE}
-     * @param content      serialized {@link ClientSyncData} for CHANGE; empty for DELETE
-     */
-    public void syncChange(String connectionId, String operation, byte[] content) {
-        Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
-        if (peers.isEmpty()) {
-            return;
-        }
-        for (ClusterMember peer : peers) {
-            try {
-                boolean ok = transport.syncData(peer.address(), connectionId, operation, content);
-                if (!ok) {
-                    log.warn("[harbor] distro sync failed: {} -> {}",
-                            connectionId, peer.address());
-                }
-            } catch (Exception e) {
-                log.warn("[harbor] distro sync error: {} -> {}",
-                        connectionId, peer.address(), e);
-            }
-        }
-    }
-
-    /**
      * Register that a client's published data changed. Coalescing + reconcile:
      * bursts for the same connectionId collapse into one push, and at fire time we
      * re-read the client's CURRENT full state (never a captured snapshot) and
@@ -204,6 +168,30 @@ public class DistroProtocol {
             f.cancel(false);
         }
         syncChange(connectionId, OP_DELETE, new byte[0]);
+    }
+
+    /**
+     * Sync a client-level change to all peer nodes.
+     *
+     * @param connectionId the connectionId (connectionId) whose data changed
+     * @param operation    {@link #OP_CHANGE} or {@link #OP_DELETE}
+     * @param content      serialized {@link ClientSyncData} for CHANGE; empty for DELETE
+     */
+    public void syncChange(String connectionId, String operation, byte[] content) {
+        Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
+        if (peers.isEmpty()) {
+            return;
+        }
+        for (ClusterMember peer : peers) {
+            try {
+                boolean ok = transport.syncData(peer.address(), connectionId, operation, content);
+                if (!ok) {
+                    log.warn("[harbor] distro sync failed: {} -> {}", connectionId, peer.address());
+                }
+            } catch (Exception e) {
+                log.warn("[harbor] distro sync error: {} -> {}", connectionId, peer.address(), e);
+            }
+        }
     }
 
     // ========================================================================
@@ -344,10 +332,8 @@ public class DistroProtocol {
             }
         } catch (Exception e) {
             log.error("[harbor] load task error", e);
-            // Retry after delay
             if (running) {
-                scheduler.schedule(this::runLoadTask,
-                        LOAD_DATA_RETRY_DELAY_MS, TimeUnit.MILLISECONDS);
+                scheduler.schedule(this::runLoadTask, LOAD_RETRY_DELAY_MS, TimeUnit.MILLISECONDS);
             }
         }
     }
@@ -392,8 +378,6 @@ public class DistroProtocol {
      * wrong — and the previous pull path was additionally self-defeating, since
      * the mismatched client is by definition a native one we already hold locally.
      */
-    // Package-private (not private) so a same-package unit test can drive the
-    // verify-repair directly instead of waiting on the 5s verify scheduler.
     void resyncToPeer(ClusterMember peer, List<String> connectionIds) {
         for (String cid : connectionIds) {
             ClientSession session = connectionManager.getClientSession(cid);
@@ -405,8 +389,7 @@ public class DistroProtocol {
                 continue;
             }
             try {
-                boolean ok = transport.syncData(peer.address(), cid, OP_CHANGE,
-                        JSON.toJSONBytes(data));
+                boolean ok = transport.syncData(peer.address(), cid, OP_CHANGE, JSON.toJSONBytes(data));
                 if (!ok) {
                     log.warn("[harbor] verify-triggered resync failed: {} -> {}", cid, peer.address());
                 }
