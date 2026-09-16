@@ -488,20 +488,6 @@ public class ServiceStorage {
         return result;
     }
 
-    /**
-     * Apply a snapshot from a peer node.
-     * In the client-centric model, snapshots are lists of ClientSyncData.
-     */
-    public void applySnapshot(List<ClientSyncData> clientDataList) {
-        if (clientDataList == null) {
-            return;
-        }
-        for (ClientSyncData data : clientDataList) {
-            applyClientSyncData(data);
-        }
-        log.info("[harbor] naming snapshot applied, {} clients", clientDataList.size());
-    }
-
     // ========================================================================
     // Client-level Distro support
     // ========================================================================

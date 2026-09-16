@@ -83,25 +83,6 @@ class HarborDistroProtocolTest {
     }
 
     @Test
-    void testServiceStorageApplySnapshot() {
-        ConnectionManager connMgr = new ConnectionManager();
-        ServiceStorage storage = new ServiceStorage(connMgr, key -> {});
-
-        Instance inst = createInstance("10.0.0.1", 8080, "10.0.0.1#8080#DEFAULT_GROUP@@svc1");
-        ClientSyncData syncData = new ClientSyncData(
-                "remote-conn-snap",
-                List.of("public@@DEFAULT_GROUP@@svc1"),
-                List.of(inst),
-                0L
-        );
-        storage.applySnapshot(List.of(syncData));
-
-        List<Instance> instances = storage.getInstances("public", "DEFAULT_GROUP", "svc1");
-        assertEquals(1, instances.size());
-        assertEquals("10.0.0.1", instances.get(0).getIp());
-    }
-
-    @Test
     void testClientSyncDataBuildAndApply() {
         ConnectionManager connMgr = new ConnectionManager();
         ServiceStorage storage = new ServiceStorage(connMgr, key -> {});
