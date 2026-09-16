@@ -157,7 +157,10 @@ public class ServiceStorage {
                 }
             }
         }
-        log.warn("[harbor] instance deregister (no match): {} -> {}:{}", key, ip, port);
+        // No match is normal under idempotent retry (the client's redo loop re-sends
+        // DE_REGISTER, or a deregister lands after the connection was already cleaned
+        // up) — not an anomaly, so keep it at debug to avoid noise.
+        log.debug("[harbor] instance deregister (no match): {} -> {}:{}", key, ip, port);
     }
 
     // ========================================================================
