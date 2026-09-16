@@ -19,10 +19,10 @@ import java.util.Objects;
  *       close, so closing here would cause an infinite
  *       connect → GOAWAY → close → reconnect loop.</li>
  *   <li>Treats incoming HTTP/2 PING frames as proof-of-life: calls
- *       {@link ConnectionManager#touch} so the stale-connection watchdog
+ *       {@link ConnectionManager#refreshActiveTime} so the stale-connection watchdog
  *       does not mistake a PING-only connection for a dead one.  Nacos 3.x
  *       clients send both application-level {@code HealthCheckRequest} every
- *       5 s (which already triggers {@code touch} in {@code RequestHandler})
+ *       5 s (which already triggers {@code refreshActiveTime} in {@code RequestHandler})
  *       and transport-level gRPC keepalive PINGs every 6 min.  The PING
  *       handling here is a safety net for other gRPC clients that may not
  *       send Payload-level heartbeats.</li>
@@ -43,7 +43,7 @@ import java.util.Objects;
  * WireCallContext} for every request on that connection — so the id exists
  * from the moment the connection opens, not only after ServerCheck.  The
  * same id is handed to this handler through its CONSTRUCTOR, so it is final:
- * the handler cannot exist without one, hence neither the PING keep-alive touch
+ * the handler cannot exist without one, hence neither the PING keep-alive refresh
  * nor the {@code channelInactive} closure can ever observe a half-built handler
  * with no connection to attribute the signal to.
  *
@@ -86,10 +86,10 @@ class ConnectionCleanupHandler extends ChannelInboundHandlerAdapter {
             // Treat each incoming PING as proof-of-life so the stale-connection
             // watchdog does not kill a healthy idle connection.  For Nacos 3.x
             // clients this is redundant (they already send HealthCheckRequest
-            // every 5 s which triggers touch in RequestHandler), but it serves
+            // every 5 s which triggers refreshActiveTime in RequestHandler), but it serves
             // as a safety net for other gRPC clients that rely solely on
             // transport-level keepalive PINGs.
-            lifecycle.connectionManager().touch(connectionId);
+            lifecycle.connectionManager().refreshActiveTime(connectionId);
         }
         super.channelRead(ctx, msg);
     }

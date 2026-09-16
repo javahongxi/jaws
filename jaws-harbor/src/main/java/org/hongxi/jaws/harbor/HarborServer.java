@@ -277,10 +277,10 @@ public class HarborServer {
             // from the same clientIp connect simultaneously.
             String connectionId = context.getAttachment(WireConstants.CONNECTION_ID);
 
-            // Touch the specific connection. connectionId is minted per TCP connection
-            // at setup (#5) and propagated via WireCallContext, so this is always the
-            // precise path; the old clientIp fallback has been removed.
-            connectionManager.touch(connectionId);
+            // Refresh the specific connection's active time. connectionId is minted per
+            // TCP connection at setup (#5) and propagated via WireCallContext, so this is
+            // always the precise path; the old clientIp fallback has been removed.
+            connectionManager.refreshActiveTime(connectionId);
 
             try {
                 return switch (type) {
@@ -361,7 +361,7 @@ public class HarborServer {
                     // Liveness = a message arrived on this connection. Record it
                     // before dispatch, so a handler that throws can't silently drop
                     // the beat (lastActiveTime is the sole health/watchdog clock).
-                    connectionManager.touch(connectionId);
+                    connectionManager.refreshActiveTime(connectionId);
 
                     switch (type) {
                         case TYPE_CONNECTION_SETUP_REQUEST -> {

@@ -252,7 +252,7 @@ class SyncedHealthAuthorityTest {
 
         int before = transport.changes.get();
         // Traffic resumes on the owner's connection: health is restored and must travel.
-        cm1.touch("pub");
+        cm1.refreshActiveTime("pub");
         health1.checkHealth();
 
         assertTrue(ownerInstance().isHealthy(), "precondition: the owner recovered its instance");

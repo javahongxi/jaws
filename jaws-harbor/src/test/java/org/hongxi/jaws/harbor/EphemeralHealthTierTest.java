@@ -66,7 +66,7 @@ class EphemeralHealthTierTest {
         assertFalse(inst.isHealthy());
         notified.clear();
 
-        cm.touch("pub");            // the connection becomes active again
+        cm.refreshActiveTime("pub");            // the connection becomes active again
         storage.reconcileHealth(15_000);
 
         assertTrue(inst.isHealthy(), "connection activity must restore a previously-unhealthy instance");

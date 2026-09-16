@@ -88,10 +88,10 @@ public class ConnectionManager {
      * shard-local fact, so the clock rides on the connection record and is only
      * ever set here, never inferred from replicated data.
      */
-    public void touch(String connectionId) {
+    public void refreshActiveTime(String connectionId) {
         ConnectionRecord record = connections.get(connectionId);
         if (record != null) {
-            record.touch();
+            record.refreshActiveTime();
         }
     }
 
@@ -205,8 +205,9 @@ public class ConnectionManager {
      * rather than in a parallel map so that the liveness layer cannot drift out
      * of step with the connection registry: there is exactly one place to add
      * and one to remove.  This mirrors Nacos, where the timestamp is a field of
-     * {@code Connection} and {@code ConnectionManager.refreshActiveTime()} just
-     * delegates to {@code connection.freshActiveTime()}.
+     * {@code ConnectionMeta} reached via {@code ConnectionManager.refreshActiveTime()}
+     * delegating to {@code Connection.freshActiveTime()}; here we keep a single
+     * verb at both layers.
      */
     public record ConnectionRecord(
             String connectionId,
@@ -217,7 +218,7 @@ public class ConnectionManager {
             AtomicLong lastActiveTime
     ) {
         /** Stamp as active now; called from the transport thread serving the request. */
-        void touch() {
+        void refreshActiveTime() {
             lastActiveTime.set(System.currentTimeMillis());
         }
 

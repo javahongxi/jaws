@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit;
  *       once the node owning its connection is gone nothing can announce its
  *       departure — and only its instances are visible to the tiers above</li>
  * </ul>
- * Connection activity is tracked via {@link ConnectionManager#touch(String)}
+ * Connection activity is tracked via {@link ConnectionManager#refreshActiveTime(String)}
  * on every inbound unary/bi-stream request.
  *
  * @author shenhongxi
