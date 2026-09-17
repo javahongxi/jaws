@@ -120,7 +120,7 @@ public class WireConnectionLifecycleHandler extends ChannelInboundHandlerAdapter
         if (idleMs >= maxIdleMs) {
             log.info("Connection idle for {}ms (max={}ms), sending GOAWAY: remote={}",
                     idleMs, maxIdleMs, ctx.channel().remoteAddress());
-            sendGoAway(ctx, Http2Error.NO_ERROR, new byte[0]);
+            sendGoAway(ctx, new byte[0]);
         }
     }
 
@@ -130,7 +130,7 @@ public class WireConnectionLifecycleHandler extends ChannelInboundHandlerAdapter
         }
         log.info("Connection max age reached ({}ms), sending GOAWAY: remote={}",
                 maxAgeMs, ctx.channel().remoteAddress());
-        sendGoAway(ctx, Http2Error.NO_ERROR, GRACEFUL_CLOSE);
+        sendGoAway(ctx, GRACEFUL_CLOSE);
 
         // Schedule force-close after grace period
         scheduler.schedule(() -> {
@@ -142,11 +142,11 @@ public class WireConnectionLifecycleHandler extends ChannelInboundHandlerAdapter
         }, graceMs, TimeUnit.MILLISECONDS);
     }
 
-    private void sendGoAway(ChannelHandlerContext ctx, Http2Error error, byte[] debugData) {
+    private void sendGoAway(ChannelHandlerContext ctx, byte[] debugData) {
         goawaySent = true;
-        ctx.writeAndFlush(new DefaultHttp2GoAwayFrame(error, Unpooled.wrappedBuffer(debugData)))
+        ctx.writeAndFlush(new DefaultHttp2GoAwayFrame(Http2Error.NO_ERROR, Unpooled.wrappedBuffer(debugData)))
                 .addListener(f -> {
-                    if (error == Http2Error.NO_ERROR && debugData.length == 0) {
+                    if (debugData.length == 0) {
                         // Idle close: close immediately after GOAWAY
                         ctx.close();
                     }

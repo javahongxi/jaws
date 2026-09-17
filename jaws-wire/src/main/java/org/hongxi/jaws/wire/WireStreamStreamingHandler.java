@@ -43,6 +43,8 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private ByteBuf accumulator;
     private int grpcStatus = -1;
     private String grpcMessage;
+    /** Decoded grpc-status-details-bin (rich error), or null when the server sent none. */
+    private com.google.rpc.Status richStatus;
     private String responseEncoding = WireConstants.ENCODING_IDENTITY;
 
     WireStreamStreamingHandler(Parser<? extends Message> responseParser,
@@ -88,6 +90,7 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
             if (messageSeq != null) {
                 grpcMessage = messageSeq.toString();
             }
+            richStatus = WireErrorDetails.fromTrailers(headersFrame.headers());
         } else {
             // Initial response HEADERS: capture the response message encoding
             CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
@@ -148,7 +151,7 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
             // Surface a semantically typed exception: DEADLINE_EXCEEDED carries the
             // jaws timeout error code, UNAVAILABLE is flagged retryable
             observer.onError(
-                    WireStatus.toException(grpcStatus, grpcMessage));
+                    WireStatus.toException(grpcStatus, grpcMessage, richStatus));
             return;
         }
         observer.onCompleted();
