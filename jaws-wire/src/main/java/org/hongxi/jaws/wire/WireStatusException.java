@@ -3,6 +3,8 @@ package org.hongxi.jaws.wire;
 import com.google.rpc.Status;
 import org.hongxi.jaws.exception.JawsServiceException;
 
+import java.io.Serial;
+
 /**
  * A gRPC failure surfaced to the caller, carrying the numeric {@code grpc-status}
  * code and — when the server sent {@code grpc-status-details-bin} — the decoded
@@ -22,7 +24,8 @@ import org.hongxi.jaws.exception.JawsServiceException;
  */
 public class WireStatusException extends JawsServiceException {
 
-    private static final long serialVersionUID = 1L;
+    @Serial
+    private static final long serialVersionUID = 167949946546769763L;
 
     private final int grpcStatus;
     private final Status statusDetails;
