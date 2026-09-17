@@ -135,6 +135,8 @@ class SyncedSessionReclamationTest {
     @Test
     void replicaUnconfirmedByItsOwnerIsReaped() {
         givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
+        cm.register("sub", "10.0.0.2", "3.0.0", Map.of(), noop());
+        storage.addSubscriber(NS, GROUP, SVC, "sub");
         assertEquals(1, storage.getInstances(NS, GROUP, SVC).size(), "precondition: instance visible");
         ageReplica("remote", WINDOW_MS + 1_000);
 
@@ -146,7 +148,8 @@ class SyncedSessionReclamationTest {
         assertTrue(storage.getInstances(NS, GROUP, SVC).isEmpty(),
                 "and the replicated instance must disappear from this node's view");
         assertEquals(1, events.size(),
-                "dropping a routable instance announces exactly once: " + events);
+                "dropping the replica's last instance while a subscriber stays announces "
+                        + "exactly once: " + events);
     }
 
     @Test

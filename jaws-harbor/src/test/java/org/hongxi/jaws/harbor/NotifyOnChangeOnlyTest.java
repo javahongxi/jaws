@@ -18,17 +18,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * Locks that a subscriber announcement means a change in what subscribers can
  * route to — nothing else.
  * <p>
- * {@code ServiceStorage.checkAndCleanEmptyService} used to announce in its
- * {@code else} branch too, i.e. "service still exists, notify anyway". Since the
- * health sweep calls it for every service every 5 s, each idle service was
- * re-pushed in full to all of its subscribers every sweep: with the beat interval
- * at 5 s that is 17 280 redundant pushes a day per service, and it grows with the
- * number of services, not with the number of changes. Nacos pushes on change.
+ * The regression this pins: a surviving service used to be announced even when the
+ * caller changed nothing routable. Because the health sweep visits every service
+ * every 5 s, that re-pushed each idle service in full to all of its subscribers on
+ * every sweep — with a 5 s beat that is 17 280 redundant pushes a day per service,
+ * growing with the number of services rather than the number of changes. Nacos
+ * pushes on change, so {@code ServiceStorage.announceChange} is only called by paths
+ * that add or remove an instance.
  * <p>
- * The other half of the rule is what must STILL announce: removing an instance
- * (by API, by expiry, by connection closure, by a synced client going away) and
- * the final update when a service is emptied. An unsubscribe changes who receives
- * pushes, not what the remaining receivers route to, so it announces nothing.
+ * The flip side is what must STILL announce: a removal that leaves subscribers
+ * behind (by API, by expiry, by connection closure, by a synced client going away) —
+ * including the empty list the instant the last instance goes. Two things announce
+ * NOTHING: a bare unsubscribe (it changes who receives pushes, not what the remaining
+ * receivers route to), and the retirement of a fully empty service
+ * ({@code ServiceStorage.retireIfEmpty}) — surviving subscribers were already told the
+ * moment the last instance was removed, so once both index sets are empty there is no
+ * one left to notify.
  */
 class NotifyOnChangeOnlyTest {
 
@@ -140,15 +145,17 @@ class NotifyOnChangeOnlyTest {
     // ========================================================================
 
     @Test
-    void explicitDeregistrationStillAnnounces() {
+    void explicitDeregistrationAnnouncesToSurvivingSubscriber() {
         givenLivePublisher();
+        cm.register("sub", "10.0.0.2", "3.0.0", Map.of(), noop());
+        storage.addSubscriber(NS, GROUP, SVC, "sub");
         events.clear();
 
         storage.deregisterInstance(NS, GROUP, SVC, instance("10.0.0.1", 8080), "pub");
 
         assertEquals(1, events.size(),
-                "removing a routable instance is a change, but must not be announced twice: "
-                        + events);
+                "the last instance is gone but a subscriber stays: it must hear the empty "
+                        + "list exactly once: " + events);
     }
 
     @Test
@@ -172,31 +179,40 @@ class NotifyOnChangeOnlyTest {
         Instance inst = instance("10.0.0.9", 9090);
         storage.applyClientSyncData(new ClientSyncData("remote",
                 List.of(KEY.toKeyString()), List.of(inst), 1L));
+        cm.register("sub", "10.0.0.2", "3.0.0", Map.of(), noop());
+        storage.addSubscriber(NS, GROUP, SVC, "sub");
         assertEquals(1, storage.getInstances(NS, GROUP, SVC).size(), "precondition");
         events.clear();
 
         storage.removeSyncedClient("remote");
 
         assertEquals(1, events.size(),
-                "a replica shedding a synced client is a change for local subscribers: " + events);
+                "the replica shed its last instance while a local subscriber stays: it must "
+                        + "hear it exactly once: " + events);
     }
 
     @Test
-    void emptyingAServiceAnnouncesExactlyOneFinalUpdate() {
+    void retirementAfterLastUnsubscribeIsSilent() {
         givenLivePublisher();
         cm.register("sub", "10.0.0.2", "3.0.0", Map.of(), noop());
         storage.addSubscriber(NS, GROUP, SVC, "sub");
         events.clear();
 
+        // Losing the last instance is a real change for the surviving subscriber: it is
+        // told the service is now empty, here, exactly once.
         storage.deregisterInstance(NS, GROUP, SVC, instance("10.0.0.1", 8080), "pub");
-        assertEquals(1, events.size(), "the publisher is gone; subscribers stay, one update: " + events);
+        assertEquals(1, events.size(),
+                "the publisher is gone; the staying subscriber is told once: " + events);
 
         events.clear();
+        // The last subscriber now leaves: the service is fully empty and is retired, but
+        // there is no one left to notify — retirement announces nothing.
         storage.removeSubscriber(NS, GROUP, SVC, "sub");
 
-        assertEquals(1, events.size(),
-                "the service is now empty and is being removed — subscribers get one final "
-                        + "empty update, not two: " + events);
-        assertTrue(storage.getInstances(NS, GROUP, SVC).isEmpty(), "precondition: service gone");
+        assertTrue(events.isEmpty(),
+                "a service retired with its last subscriber gone must not announce to "
+                        + "nobody: " + events);
+        assertTrue(storage.getInstances(NS, GROUP, SVC).isEmpty(), "service retired: instances gone");
+        assertTrue(storage.getSubscriberConnections(KEY).isEmpty(), "service retired: index dropped");
     }
 }

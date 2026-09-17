@@ -155,7 +155,8 @@ public class ServiceStorage {
                         }
                     }
                     log.info("[harbor] instance deregistered: {} -> {}:{}", key, ip, port);
-                    checkAndCleanEmptyService(key, true);
+                    announceChange(key);
+                    retireIfEmpty(key);
                     return;
                 }
             }
@@ -235,7 +236,7 @@ public class ServiceStorage {
             session.removeSubscriber(key);
         }
         // Unsubscribe only: nothing routable changed for the subscribers that stay.
-        checkAndCleanEmptyService(key, false);
+        retireIfEmpty(key);
     }
 
     /**
@@ -268,7 +269,7 @@ public class ServiceStorage {
         // Check affected services for emptiness — no instance was removed, so no re-push
         for (ServiceKey serviceKey : affectedServices) {
             // unsubscribe sweep: nothing routable changed
-            checkAndCleanEmptyService(serviceKey, false);
+            retireIfEmpty(serviceKey);
         }
     }
 
@@ -432,7 +433,8 @@ public class ServiceStorage {
             invalidateServiceCache(serviceKey);
             log.info("[harbor] instance(s) deregistered on disconnect: {} -> connId={} ({} instance(s))",
                     serviceKey, connectionId, count);
-            checkAndCleanEmptyService(serviceKey, true);
+            announceChange(serviceKey);
+            retireIfEmpty(serviceKey);
         }
         return totalRemoved;
     }
@@ -564,7 +566,7 @@ public class ServiceStorage {
 
         // Close the delete-vs-change asymmetry: a replicated CHANGE must notify this
         // node's local subscribers exactly like a replicated DELETE does (removeSyncedClient
-        // -> checkAndCleanEmptyService -> onServiceChange), so a subscriber on a non-owner
+        // -> retireIfEmpty -> onServiceChange), so a subscriber on a non-owner
         // node learns of the change by push, not only on its next poll. Notify the union of
         // services this client left/entered, gated on content actually having moved.
         if (routableChanged) {
@@ -636,7 +638,8 @@ public class ServiceStorage {
         for (ServiceKey serviceKey : affectedServices) {
             removeFromPublisherIndex(serviceKey, connectionId);
             // dropping a synced client removes its instances
-            checkAndCleanEmptyService(serviceKey, true);
+            announceChange(serviceKey);
+            retireIfEmpty(serviceKey);
         }
         log.info("[harbor] removed synced client: {}", connectionId);
     }
@@ -662,37 +665,50 @@ public class ServiceStorage {
     }
 
     /**
-     * Retire a service that has neither publishers nor subscribers, announcing the
-     * final (empty) state first so subscribers drop it.
+     * Retire a service that has neither publishers nor subscribers by dropping every
+     * index and cache entry. This is the only place an emptied service is reclaimed, so it
+     * runs on every removal path — instance change or not.
      * <p>
-     * Whether the caller also announces a SURVIVING service is decided by
-     * {@code dataChanged}, because this check runs from places that changed nothing
-     * anyone routes by: the periodic sweep (every 5 s, for every service) and an
-     * unsubscribe (one receiver leaving, the list the others get is unchanged).
-     * Announcing there re-pushed every service in full every sweep — Nacos pushes on
-     * change, so a surviving service is announced only by callers that added or
-     * removed one of its instances.
-     *
-     * @param dataChanged {@code true} when the caller mutated this service's instance
-     *                    set, {@code false} for a pure index/lifetime cleanup pass
+     * It announces nothing: a surviving subscriber already learned the service is empty at
+     * the moment its last instance was removed (see {@link #announceChange}), so by the time
+     * both sets are empty no one is left to notify — the deferred push would re-read an
+     * empty subscriber set at fire time and deliver to zero connections.
      */
-    private void checkAndCleanEmptyService(ServiceKey serviceKey, boolean dataChanged) {
-        Set<String> publishers = publisherIndexes.get(serviceKey);
-        Set<String> subscribers = subscriberIndexes.get(serviceKey);
-        boolean noPublishers = publishers == null || publishers.isEmpty();
-        boolean noSubscribers = subscribers == null || subscribers.isEmpty();
-
-        if (noPublishers && noSubscribers) {
-            // Notify subscribers with empty service info before cleaning up
-            changeListener.onServiceChange(serviceKey);
-            // Remove from all indexes
-            publisherIndexes.remove(serviceKey);
-            subscriberIndexes.remove(serviceKey);
-            invalidateServiceCache(serviceKey);
-            log.info("[harbor] empty service cleaned: {}", serviceKey);
-        } else if (dataChanged) {
-            changeListener.onServiceChange(serviceKey);
+    private void retireIfEmpty(ServiceKey serviceKey) {
+        if (hasPublishers(serviceKey) || hasSubscribers(serviceKey)) {
+            return;
         }
+        publisherIndexes.remove(serviceKey);
+        subscriberIndexes.remove(serviceKey);
+        invalidateServiceCache(serviceKey);
+        log.info("[harbor] empty service cleaned: {}", serviceKey);
+    }
+
+    /**
+     * Announce a surviving service's new instance set to its subscribers — including the
+     * empty set the moment its last instance is removed while watchers still remain. Call
+     * this only from a path that actually changed what is routable (register/deregister/
+     * expire/connection-closed/synced-client-gone): the periodic sweep and a bare
+     * unsubscribe do NOT call it, because Nacos pushes on change and re-pushing every idle
+     * service on every 5 s sweep is O(services) redundant traffic (locked out by
+     * NotifyOnChangeOnlyTest). A service that is already fully empty (no publishers AND no
+     * subscribers) is left to {@link #retireIfEmpty}, which retires it silently.
+     */
+    private void announceChange(ServiceKey serviceKey) {
+        if (!hasPublishers(serviceKey) && !hasSubscribers(serviceKey)) {
+            return;
+        }
+        changeListener.onServiceChange(serviceKey);
+    }
+
+    private boolean hasPublishers(ServiceKey serviceKey) {
+        Set<String> publishers = publisherIndexes.get(serviceKey);
+        return publishers != null && !publishers.isEmpty();
+    }
+
+    private boolean hasSubscribers(ServiceKey serviceKey) {
+        Set<String> subscribers = subscriberIndexes.get(serviceKey);
+        return subscribers != null && !subscribers.isEmpty();
     }
 
     /**
@@ -705,7 +721,7 @@ public class ServiceStorage {
         allKeys.addAll(subscriberIndexes.keySet());
         for (ServiceKey serviceKey : allKeys) {
             // idle sweep must not re-push every service every cycle
-            checkAndCleanEmptyService(serviceKey, false);
+            retireIfEmpty(serviceKey);
         }
     }
 
