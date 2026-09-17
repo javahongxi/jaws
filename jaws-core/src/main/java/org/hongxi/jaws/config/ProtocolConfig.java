@@ -95,8 +95,10 @@ public class ProtocolConfig extends BaseConfig {
     protected String sslPrivateKey;
 
     /**
-     * Path to the trusted CA certificate PEM file (client-side TLS).
-     * When set, the client verifies the server certificate against this CA.
+     * Path to the trusted CA certificate PEM file.
+     * Client-side: verifies the server certificate against this CA.
+     * Server-side: requires clients to present a certificate signed by this
+     * CA (mutual TLS). When unset on the server, one-way TLS is used.
      */
     protected String sslTrustCert;
 

@@ -13,6 +13,7 @@ import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.handler.ssl.ApplicationProtocolConfig;
 import io.netty.handler.ssl.ApplicationProtocolNames;
+import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
@@ -42,6 +43,8 @@ import java.io.IOException;
  * <p>
  * Speaks plain h2c (HTTP/2 prior-knowledge) by default; TLS is enabled when
  * {@code sslCertChain} and {@code sslPrivateKey} are configured on the URL.
+ * When {@code sslTrustCert} is additionally configured, the server requires
+ * clients to present a certificate signed by the trusted CA (mutual TLS).
  *
  * @author shenhongxi
  */
@@ -99,7 +102,10 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
         // Initialize TLS if configured
         sslContext = buildSslContext();
         if (sslContext != null) {
-            log.info("{} server TLS enabled with ALPN h2: url={}", serverName, url);
+            String trustCert = url.getParameter(UrlParam.Transport.SSL_TRUST_CERT);
+            boolean mutualTls = trustCert != null && !trustCert.isEmpty();
+            log.info("{} server TLS enabled with ALPN h2{}: url={}", serverName,
+                    mutualTls ? " (mTLS)" : "", url);
         }
     }
 
@@ -185,7 +191,8 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
 
     /**
      * Build an {@link SslContext} for TLS if cert and key are configured.
-     * Uses ALPN to negotiate HTTP/2.
+     * Uses ALPN to negotiate HTTP/2. When {@code sslTrustCert} is set, the
+     * server requires client certificates signed by the trusted CA (mTLS).
      *
      * @return the SslContext, or null if TLS is not configured
      */
@@ -195,9 +202,16 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
         if (certChain == null || certChain.isEmpty() || privateKey == null || privateKey.isEmpty()) {
             return null;
         }
+        String trustCert = url.getParameter(UrlParam.Transport.SSL_TRUST_CERT);
+        boolean mutualTls = trustCert != null && !trustCert.isEmpty();
         try {
-            return SslContextBuilder.forServer(new File(certChain), new File(privateKey))
-                    .sslProvider(SslProvider.JDK)
+            SslContextBuilder builder = SslContextBuilder.forServer(new File(certChain), new File(privateKey))
+                    .sslProvider(SslProvider.JDK);
+            if (mutualTls) {
+                builder.trustManager(new File(trustCert))
+                        .clientAuth(ClientAuth.REQUIRE);
+            }
+            return builder
                     .applicationProtocolConfig(new ApplicationProtocolConfig(
                             ApplicationProtocolConfig.Protocol.ALPN,
                             ApplicationProtocolConfig.SelectorFailureBehavior.NO_ADVERTISE,
@@ -206,7 +220,8 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
                     .build();
         } catch (Exception e) {
             throw new RuntimeException("Failed to build SSL context: certChain=" + certChain
-                    + ", privateKey=" + privateKey, e);
+                    + ", privateKey=" + privateKey
+                    + (mutualTls ? ", trustCert=" + trustCert + " (mTLS)" : ""), e);
         }
     }
 }
