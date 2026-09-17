@@ -19,6 +19,8 @@ import org.slf4j.LoggerFactory;
  * <p>
  * Detection rules (applied on the first bytes of each TCP connection):
  * <ul>
+ *   <li>{@code 0x16} — TLS ClientHello → {@code SslHandler} + ALPN
+ *       negotiation to {@code h2} or {@code http/1.1}</li>
  *   <li>{@code 0x4A57} — Jaws binary protocol → {@link NettyDecoder} +
  *       {@link NettyChannelHandler}</li>
  *   <li>{@code PRI * HTTP/2.0} — HTTP/2 h2c prior-knowledge →
@@ -84,6 +86,18 @@ class ProtocolDetectionHandler extends ChannelInboundHandlerAdapter {
         byte b0 = cumulation.getByte(cumulation.readerIndex());
         byte b1 = cumulation.getByte(cumulation.readerIndex() + 1);
 
+        // TLS ClientHello: first byte is 0x16 (ContentType: Handshake)
+        if (b0 == (byte) 0x16) {
+            if (adaptiveServer.isTlsConfigured()) {
+                configureTls(ctx);
+                return;
+            }
+            // TLS detected but server has no SSL context configured — fail fast
+            throw new IllegalStateException(
+                    "AdaptiveServer: received TLS ClientHello but TLS is not configured, remote="
+                            + ctx.channel().remoteAddress());
+        }
+
         // Jaws binary: 2-byte magic 0x4A57 ('J' = 0x4A, 'W' = 0x57)
         if (b0 == (byte) 0x4A && b1 == (byte) 0x57) {
             configureJawsBinary(ctx);
@@ -141,6 +155,18 @@ class ProtocolDetectionHandler extends ChannelInboundHandlerAdapter {
         adaptiveServer.addJawsBinaryPipeline(ctx.pipeline());
         forwardAndCleanup(ctx);
         log.info("AdaptiveServer: detected jaws binary protocol, remote={}", ctx.channel().remoteAddress());
+    }
+
+    /**
+     * TLS: SslHandler + ApplicationProtocolNegotiationHandler (ALPN).
+     * After the TLS handshake, ALPN determines whether h2 or http/1.1
+     * pipeline is installed.
+     */
+    private void configureTls(ChannelHandlerContext ctx) {
+        adaptiveServer.configureTlsPipeline(ctx.pipeline());
+        forwardAndCleanup(ctx);
+        log.info("AdaptiveServer: detected TLS ClientHello, ALPN pending, remote={}",
+                ctx.channel().remoteAddress());
     }
 
     /**

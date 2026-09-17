@@ -1,5 +1,6 @@
 package org.hongxi.jaws.transport.adaptive;
 
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
@@ -8,6 +9,13 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http2.Http2FrameCodec;
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
 import io.netty.handler.codec.http2.Http2MultiplexHandler;
+import io.netty.handler.ssl.ApplicationProtocolConfig;
+import io.netty.handler.ssl.ApplicationProtocolNames;
+import io.netty.handler.ssl.ApplicationProtocolNegotiationHandler;
+import io.netty.handler.ssl.ClientAuth;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProvider;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
@@ -20,7 +28,10 @@ import org.hongxi.jaws.transport.http.mcp.McpToolRegistry;
 import org.hongxi.jaws.transport.netty.HeartbeatHandler;
 import org.hongxi.jaws.transport.netty.NettyChannelHandler;
 import org.hongxi.jaws.transport.netty.NettyDecoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +47,8 @@ import java.util.concurrent.TimeUnit;
  *   <li><b>HTTP/2 h2c</b> (prior-knowledge, no TLS) — via
  *       {@link Http2FrameCodec} + {@link Http2MultiplexHandler} with
  *       Jaws-serialization stream handling</li>
+ *   <li><b>HTTP/2 h2</b> (over TLS with ALPN) — via {@link SslContext} +
+ *       ALPN negotiation to {@code h2} or {@code http/1.1}</li>
  *   <li><b>HTTP/1.1</b> — via {@link HttpServerCodec} + aggregator +
  *       {@link HttpRequestHandler} (JSON RPC endpoint)</li>
  * </ul>
@@ -43,6 +56,11 @@ import java.util.concurrent.TimeUnit;
  * Detection is performed by {@link ProtocolDetectionHandler}, which buffers
  * the first bytes, inserts the correct pipeline, replays the buffered data,
  * and removes itself — leaving zero overhead after detection.
+ * <p>
+ * TLS is enabled when {@code sslCertChain} and {@code sslPrivateKey} are
+ * configured. ALPN negotiates {@code h2} or {@code http/1.1} during the
+ * TLS handshake. When {@code sslTrustCert} is additionally configured, the
+ * server requires client certificates (mutual TLS).
  * <p>
  * Extends {@link AbstractNettyServer} to reuse the bind skeleton, business
  * thread pool, graceful shutdown, and lifecycle management.
@@ -52,6 +70,7 @@ import java.util.concurrent.TimeUnit;
  * @see AdaptiveTransportFactory
  */
 public class AdaptiveServer extends AbstractNettyServer {
+    private static final Logger log = LoggerFactory.getLogger(AdaptiveServer.class);
 
     private final MessageHandler messageHandler;
     private final int maxContentLength;
@@ -63,12 +82,27 @@ public class AdaptiveServer extends AbstractNettyServer {
     private final RestMappingRegistry restMappingRegistry = new RestMappingRegistry();
     private final McpToolRegistry mcpToolRegistry = new McpToolRegistry();
 
+    /** TLS context for h2/http1.1 over TLS, initialized in {@link #onOpen()}. */
+    private SslContext sslContext;
+
     public AdaptiveServer(URL url, MessageHandler messageHandler) {
         super(url, "AdaptiveServer");
         this.messageHandler = messageHandler;
         this.maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
         this.serializationName = url.getParameter(UrlParam.Transport.SERIALIZATION);
         this.heartbeat = url.getLongParameter(UrlParam.Transport.HEARTBEAT);
+    }
+
+    @Override
+    protected void onOpen() {
+        // Initialize TLS if configured
+        sslContext = buildSslContext();
+        if (sslContext != null) {
+            String trustCert = url.getParameter(UrlParam.Transport.SSL_TRUST_CERT);
+            boolean mutualTls = trustCert != null && !trustCert.isEmpty();
+            log.info("{} server TLS enabled with ALPN h2/http1.1{}: url={}", serverName,
+                    mutualTls ? " (mTLS)" : "", url);
+        }
     }
 
     /**
@@ -149,5 +183,72 @@ public class AdaptiveServer extends AbstractNettyServer {
         pipeline.addLast("aggregator", new HttpObjectAggregator(maxContentLength));
         pipeline.addLast("http_handler", new HttpRequestHandler(
                 messageHandler, serverExecutor, interfaceClasses, restMappingRegistry, mcpToolRegistry));
+    }
+
+    /**
+     * @return true if TLS is configured and the SslContext is ready
+     */
+    boolean isTlsConfigured() {
+        return sslContext != null;
+    }
+
+    /**
+     * Build the TLS pipeline: SslHandler → ApplicationProtocolNegotiationHandler.
+     * The ALPN negotiation handler configures h2 or http/1.1 after TLS handshake.
+     */
+    void configureTlsPipeline(ChannelPipeline pipeline) {
+        pipeline.addLast("ssl", sslContext.newHandler(pipeline.channel().alloc()));
+        pipeline.addLast("alpn",
+                new ApplicationProtocolNegotiationHandler(ApplicationProtocolNames.HTTP_1_1) {
+            @Override
+            protected void configurePipeline(ChannelHandlerContext ctx, String protocol) {
+                if (ApplicationProtocolNames.HTTP_2.equals(protocol)) {
+                    addHttp2Pipeline(ctx.pipeline());
+                    log.info("AdaptiveServer: TLS negotiated HTTP/2, remote={}",
+                            ctx.channel().remoteAddress());
+                } else {
+                    addHttp1Pipeline(ctx.pipeline());
+                    log.info("AdaptiveServer: TLS negotiated HTTP/1.1, remote={}",
+                            ctx.channel().remoteAddress());
+                }
+            }
+        });
+    }
+
+    /**
+     * Build an {@link SslContext} for TLS if cert and key are configured.
+     * Uses ALPN to negotiate HTTP/2 or HTTP/1.1. When {@code sslTrustCert} is
+     * set, the server requires client certificates (mTLS).
+     *
+     * @return the SslContext, or null if TLS is not configured
+     */
+    private SslContext buildSslContext() {
+        String certChain = url.getParameter(UrlParam.Transport.SSL_CERT_CHAIN);
+        String privateKey = url.getParameter(UrlParam.Transport.SSL_PRIVATE_KEY);
+        if (certChain == null || certChain.isEmpty() || privateKey == null || privateKey.isEmpty()) {
+            return null;
+        }
+        String trustCert = url.getParameter(UrlParam.Transport.SSL_TRUST_CERT);
+        boolean mutualTls = trustCert != null && !trustCert.isEmpty();
+        try {
+            SslContextBuilder builder = SslContextBuilder.forServer(new File(certChain), new File(privateKey))
+                    .sslProvider(SslProvider.JDK);
+            if (mutualTls) {
+                builder.trustManager(new File(trustCert))
+                        .clientAuth(ClientAuth.REQUIRE);
+            }
+            return builder
+                    .applicationProtocolConfig(new ApplicationProtocolConfig(
+                            ApplicationProtocolConfig.Protocol.ALPN,
+                            ApplicationProtocolConfig.SelectorFailureBehavior.NO_ADVERTISE,
+                            ApplicationProtocolConfig.SelectedListenerFailureBehavior.ACCEPT,
+                            ApplicationProtocolNames.HTTP_2,
+                            ApplicationProtocolNames.HTTP_1_1))
+                    .build();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build SSL context: certChain=" + certChain
+                    + ", privateKey=" + privateKey
+                    + (mutualTls ? ", trustCert=" + trustCert + " (mTLS)" : ""), e);
+        }
     }
 }

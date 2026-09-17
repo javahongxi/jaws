@@ -20,9 +20,13 @@ import java.util.Set;
  * A single adaptive server can simultaneously serve:
  * <ul>
  *   <li>{@code netty} — TCP + Jaws binary protocol (best performance)</li>
- *   <li>{@code http2} — HTTP/2 + Jaws serialization (multiplexing + streaming)</li>
+ *   <li>{@code http2} — HTTP/2 h2c or h2 over TLS (multiplexing + streaming)</li>
  *   <li>{@code http} — HTTP/1.1 + JSON (debugging + universal access)</li>
  * </ul>
+ * <p>
+ * TLS is enabled when {@code sslCertChain} and {@code sslPrivateKey} are
+ * configured. ALPN negotiates {@code h2} or {@code http/1.1} during the
+ * TLS handshake, so a single TLS port serves both HTTP/2 and HTTP/1.1 clients.
  * <p>
  * This transport is server-side only. The adaptive transport factory
  * cannot create clients; consumers must choose a concrete transport
