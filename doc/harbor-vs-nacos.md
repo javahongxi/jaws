@@ -6,7 +6,7 @@
 
 harbor 的定位有两面：**对内自证 wire 协议**（拿一个真实的注册中心当靶子，而不是写自嗨的 demo），**对外充当读懂 Nacos 注册中心机制的标杆**（每个机制以 Nacos 源码为准绳）。第二面意味着一件事——正确性的考卷在 Nacos 那边，所以「抄对了什么」和「故意没抄什么」都必须讲得出道理。
 
-本文就是那张对照表。主体三段：概念映射（名字为什么这么起）、同源决策（照做的机制，含默认值）、刻意偏离（不照做的以及代价）；另附测试锚定、已知边界与维护纪律。第三段是论点所在：**看得懂才敢不抄**。
+本文就是那张对照表。主体三段：概念映射（名字为什么这么起）、同源决策（照做的机制，含默认值）、刻意偏离（不照做的以及代价）；另附测试锚定、已知边界、对外咬合的可验证性与维护纪律。第三段是论点所在：**看得懂才敢不抄**。
 
 ## 1. 概念映射表
 
@@ -211,7 +211,18 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 - **已决并落地**：纯订阅连接的复制/回收不对称选了 B——订阅关系整体退出复制载荷，向 Nacos 靠齐（详见 §3.8，含 3 节点集群实测证据）。
 - **已订正**：`ConnectionCleanup` 的 Javadoc 曾把对标对象写作 Nacos 的 `ConnectionManager` + `ClientConnectionUnregisterEvent`（该符号在 Nacos 不存在）。本文改为真实的 `ConnectionBasedClientManager.clientDisconnected(String)`（`clients.remove` → `release()` → 以 `isResponsible` 发 `ClientReleaseEvent`/`ClientDisconnectEvent`），并点明 Nacos 自己的看门狗 `ExpiredClientCleaner` 也复用这同一个入口——正是本类要编码的性质。
 
-## 6. 维护纪律
+## 6. 对外咬合的可验证性：拿同栈的 spacecloud 当第三方反验
+
+harbor 的定位决定了它不能只靠自证。**自测全绿 ≠ 协议互通**：`jaws-to-jaws` 两端同源，双命名体系的问题会被同一套反射口径互相掩盖，跑再多遍也证明不了「真 nacos-client 能把它当 Nacos 用」。所以咬合的正确验法永远是**从对面打过来**——用一个你不控制、生态现成的客户端反向验证。当前这条腿是 `run-sample.sh interop`（grpc-java ↔ jaws-wire 双向）加 §3.8 的 3 节点集群实测。
+
+`spacecloud` 是这条铁律最顺手的延伸：它是同栈的姊妹仓，**核心技术栈与 jaws 同向（Dubbo + gRPC + Nacos），Spring Cloud 侧注册中心用的就是 Nacos**。三根齿与 jaws 一一对应——wire ↔ 它的 gRPC、harbor/nacos 注册 ↔ 它的 Nacos、jaws 协议 ↔ 它的 Dubbo。于是它天然是那面「不控制、现成、异构」的镜子：
+
+- **harbor 的端到端反验**：让 `spacecloud` 里那套**真 Dubbo 的 Nacos 注册实现**（官方 Dubbo 生态的 nacos 注册，非 harbor 自带的测试替身）去连 harbor。它若能把 harbor 当 Nacos 完成注册 / 发现 / 订阅，就是比单测更硬的证据——真 Dubbo 生态的 nacos 客户端行为最接近生产。反过来，jaws 里任何 registry 语义的纠结（退役要不要推、副本靠什么续期、订阅出不出网）都能拿 `spacecloud` 的真 Dubbo + Nacos 表现当**参考答案**来定口径。
+- **wire 的端到端反验**：`spacecloud` 的 gRPC 那根齿可当 jaws-wire 的互通对端，比只跟 `grpcurl` 验更真——真 grpc-java stub 的双向调用能顺带压出 `grpc-status` 富错误、deadline、压缩这些 wire 级约定。
+
+**这一节记方向，不记已完成**：上面两条反验目前是计划中的联调靶子，尚未落成 `run-sample.sh` 里的固定用例，真正接起来之前别把它们当现状读。它也顺手给「注册中心只对齐 Nacos、不加 ZK / Consul」补了体系自洽这条硬理由——同向锚点在你自己的多仓体系里已经是 Nacos，再钉一根对不上的齿是拆自己的台。
+
+## 7. 维护纪律
 
 1. 新增或改动 harbor 机制时，必须在 §1/§2/§3 中落一行，指明对应的 **Nacos 类 / 概念**（带模块路径）与取值或取舍理由——不接受「Nacos 也是这么做的」这种无对象的断言。
 2. 引用只到 **类 / 概念 / 默认值** 粒度，**不钉 `路径:行号`**。行号随版本漂移，逐次重核的负担高于其可查证收益；本文的信用建立在「机制讲清 + 默认值可核对 + 有回归测试钉语义」上，而非「引用可点开到行」。
