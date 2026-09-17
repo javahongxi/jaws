@@ -52,6 +52,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * try (ManagedChannel ch = ManagedChannel.builder()
  *         .target("dns:///greeter.my-ns.svc.cluster.local:50051")
  *         .roundRobin().build()) { ... }
+ *
+ * // With client interceptors (mirrors grpc-java ManagedChannelBuilder.intercept)
+ * try (ManagedChannel ch = ManagedChannel.builder()
+ *         .addAddress("10.0.0.1:50051")
+ *         .intercept(new AuthInterceptor())
+ *         .intercept(new TracingInterceptor())
+ *         .roundRobin().build()) { ... }
  * }</pre>
  * <p>
  * Supported policies: {@link LoadBalancePolicy#ROUND_ROBIN} (cycle, with
@@ -68,6 +75,7 @@ public class ManagedChannel implements Closeable {
     private final NameResolver resolver;
     private final LoadBalancePolicy policy;
     private final ClientConfig config;
+    private final List<WireClientInterceptor> interceptors;
 
     /** Immutable snapshot of the live backends; replaced on each address sync. */
     private volatile List<WireClient> clients = List.of();
@@ -77,10 +85,12 @@ public class ManagedChannel implements Closeable {
     /** Current preferred index for PICK_FIRST policy. */
     private volatile int pickFirstIndex = 0;
 
-    ManagedChannel(NameResolver resolver, LoadBalancePolicy policy, ClientConfig config) {
+    ManagedChannel(NameResolver resolver, LoadBalancePolicy policy, ClientConfig config,
+                   List<WireClientInterceptor> interceptors) {
         this.resolver = resolver;
         this.policy = policy;
         this.config = config;
+        this.interceptors = List.copyOf(interceptors);
         // start() delivers the initial address set synchronously (passthrough and
         // the first DNS resolve), then pushes updates on the resolver's schedule.
         resolver.start(new NameResolver.Listener() {
@@ -100,8 +110,8 @@ public class ManagedChannel implements Closeable {
             throw new JawsServiceException(
                     "ManagedChannel: no backend reachable for resolver " + resolver);
         }
-        log.info("ManagedChannel created: {} backend(s), policy={}, timeout={}ms",
-                clients.size(), policy, config.requestTimeout);
+        log.info("ManagedChannel created: {} backend(s), policy={}, timeout={}ms, interceptors={}",
+                clients.size(), policy, config.requestTimeout, interceptors.size());
     }
 
     /**
@@ -268,6 +278,9 @@ public class ManagedChannel implements Closeable {
                 String.valueOf(config.maxInboundMessageSize));
         url.addParameter(UrlParam.Transport.COMPRESSION.getName(), config.compression);
         WireClient client = new WireClient(url);
+        for (WireClientInterceptor interceptor : interceptors) {
+            client.addInterceptor(interceptor);
+        }
         client.open();
         return client;
     }
@@ -406,6 +419,7 @@ public class ManagedChannel implements Closeable {
         private int maxInboundMessageSize = 4 * 1024 * 1024;
         private String compression = WireConstants.ENCODING_IDENTITY;
         private long dnsRefreshIntervalMs = 30_000L;
+        private final List<WireClientInterceptor> interceptors = new ArrayList<>();
 
         private Builder() {
         }
@@ -493,6 +507,23 @@ public class ManagedChannel implements Closeable {
         }
 
         /**
+         * Add a client interceptor applied to all calls through this channel.
+         * Interceptors execute in registration order (first added = outermost).
+         * <p>
+         * Mirrors grpc-java's {@code ManagedChannelBuilder.intercept()}.
+         *
+         * @param interceptor the interceptor to add
+         * @return this builder
+         */
+        public Builder intercept(WireClientInterceptor interceptor) {
+            if (interceptor == null) {
+                throw new IllegalArgumentException("interceptor must not be null");
+            }
+            interceptors.add(interceptor);
+            return this;
+        }
+
+        /**
          * Build the {@link ManagedChannel}: select the resolver, start it, and
          * open a client per resolved address.
          *
@@ -502,7 +533,8 @@ public class ManagedChannel implements Closeable {
         public ManagedChannel build() {
             NameResolver resolver = resolveNameResolver();
             return new ManagedChannel(resolver, policy,
-                    new ClientConfig(requestTimeout, connectTimeout, maxInboundMessageSize, compression));
+                    new ClientConfig(requestTimeout, connectTimeout, maxInboundMessageSize, compression),
+                    interceptors);
         }
 
         private NameResolver resolveNameResolver() {

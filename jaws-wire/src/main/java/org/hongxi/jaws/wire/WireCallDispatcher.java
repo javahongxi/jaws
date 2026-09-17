@@ -218,8 +218,20 @@ sealed interface WireCallDispatcher
                 // is inherent to this boundary.
                 // noinspection unchecked
                 StreamSource<Message> requestItems = (StreamSource<Message>) (StreamSource<?>) requestStream;
-                StreamSource<Message> responseSource = methodHandler.handleBidiStream(requestItems, callContext);
-                serverHandler.dispatchStream(ctx, responseSource);
+
+                List<WireServerInterceptor> interceptors = registry.getInterceptors();
+                if (!interceptors.isEmpty()) {
+                    WireCallContext interceptorCtx = WireCallContext.mutableCopy(callContext);
+                    ServerCallImpl serverCall = new ServerCallImpl(
+                            serverHandler, interceptorCtx, serverHandler.path);
+                    WireServerCallHandler chain = buildStreamInterceptorChain(
+                            interceptors, methodHandler, interceptorCtx, requestItems, true);
+                    WireServerListener listener = chain.startCall(serverCall, null);
+                    listener.onHalfClose();
+                } else {
+                    StreamSource<Message> responseSource = methodHandler.handleBidiStream(requestItems, callContext);
+                    serverHandler.dispatchStream(ctx, responseSource);
+                }
             } catch (Exception e) {
                 log.error("Wire bidi invoke failed: path={}", serverHandler.path, e);
                 if (!serverHandler.canceled && ctx.channel().isActive()) {
@@ -238,8 +250,20 @@ sealed interface WireCallDispatcher
             try {
                 // noinspection unchecked
                 StreamSource<Message> requestItems = (StreamSource<Message>) (StreamSource<?>) requestStream;
-                Message response = methodHandler.handleClientStream(requestItems, callContext);
-                serverHandler.sendUnaryResponse(ctx, response);
+
+                List<WireServerInterceptor> interceptors = registry.getInterceptors();
+                if (!interceptors.isEmpty()) {
+                    WireCallContext interceptorCtx = WireCallContext.mutableCopy(callContext);
+                    ServerCallImpl serverCall = new ServerCallImpl(
+                            serverHandler, interceptorCtx, serverHandler.path);
+                    WireServerCallHandler chain = buildStreamInterceptorChain(
+                            interceptors, methodHandler, interceptorCtx, requestItems, false);
+                    WireServerListener listener = chain.startCall(serverCall, null);
+                    listener.onHalfClose();
+                } else {
+                    Message response = methodHandler.handleClientStream(requestItems, callContext);
+                    serverHandler.sendUnaryResponse(ctx, response);
+                }
             } catch (Exception e) {
                 log.error("Wire client-stream invoke failed: path={}", serverHandler.path, e);
                 if (!serverHandler.canceled && ctx.channel().isActive()) {
@@ -278,18 +302,26 @@ sealed interface WireCallDispatcher
                     return;
                 }
 
-                // Run the interceptor chain (if any) before invoking the handler
+                // Run the interceptor chain (if any) before invoking the handler.
+                // The chain supports all call types: unary and server-stream
+                // receive the decoded request; client-stream and bidi receive null.
                 List<WireServerInterceptor> interceptors = registry.getInterceptors();
-                if (!interceptors.isEmpty()
-                        && methodHandler.methodType() == WireMethodHandler.MethodType.UNARY) {
-                    InterceptorCall chain = new InterceptorCall(
-                            interceptors, 0, serverHandler, methodHandler, callContext,
-                            serverHandler.path);
-                    chain.intercept(request);
+                // Ensure a mutable context for the interceptor chain so that
+                // putAttachment works even when the original attachments are empty
+                WireCallContext interceptorCtx = interceptors.isEmpty()
+                        ? callContext : WireCallContext.mutableCopy(callContext);
+                ServerCallImpl serverCall = new ServerCallImpl(
+                        serverHandler, interceptorCtx, serverHandler.path);
+                if (!interceptors.isEmpty()) {
+                    WireServerCallHandler chain = buildInterceptorChain(
+                            interceptors, 0, methodHandler, interceptorCtx);
+                    WireServerListener listener = chain.startCall(serverCall, request);
+                    listener.onMessage(request);
+                    listener.onHalfClose();
                 } else if (methodHandler.methodType() == WireMethodHandler.MethodType.SERVER_STREAM) {
                     StreamSource<Message> source = methodHandler.handleStream(request, callContext);
                     serverHandler.dispatchStream(ctx, source);
-                } else {
+                } else if (methodHandler.methodType() == WireMethodHandler.MethodType.UNARY) {
                     Message response = methodHandler.handle(request, callContext);
                     serverHandler.sendUnaryResponse(ctx, response);
                 }
@@ -315,6 +347,185 @@ sealed interface WireCallDispatcher
             Map<String, String> merged = mergeConnectionAttributes(
                     ctx, serverHandler.attachments, connectionAttributeKeys);
             return WireCallContext.of(merged);
+        }
+
+        // ====================================================================
+        // Interceptor chain helpers (only used by HandlerCallDispatcher)
+        // ====================================================================
+
+        /**
+         * Build the interceptor chain by wrapping the terminal handler from inside out.
+         * The first interceptor in the list is outermost (executed first).
+         */
+        private static WireServerCallHandler buildInterceptorChain(
+                List<WireServerInterceptor> interceptors, int index,
+                WireMethodHandler methodHandler, WireCallContext callContext) {
+            if (index == interceptors.size()) {
+                return new TerminalCallHandler(methodHandler, callContext);
+            }
+            WireServerInterceptor interceptor = interceptors.get(index);
+            WireServerCallHandler next = buildInterceptorChain(
+                    interceptors, index + 1, methodHandler, callContext);
+            return (call, request) ->
+                    interceptor.interceptCall(call, request, next);
+        }
+
+        /**
+         * Build the interceptor chain for streaming calls (client-stream / bidi).
+         * The terminal handler has access to the request stream and invokes
+         * the appropriate streaming handler method.
+         */
+        private static WireServerCallHandler buildStreamInterceptorChain(
+                List<WireServerInterceptor> interceptors,
+                WireMethodHandler methodHandler, WireCallContext callContext,
+                StreamSource<Message> requestItems, boolean isBidi) {
+            WireServerCallHandler chain = new StreamTerminalCallHandler(
+                    methodHandler, callContext, requestItems, isBidi);
+            for (int i = interceptors.size() - 1; i >= 0; i--) {
+                WireServerInterceptor interceptor = interceptors.get(i);
+                WireServerCallHandler next = chain;
+                chain = (call, request) ->
+                        interceptor.interceptCall(call, request, next);
+            }
+            return chain;
+        }
+
+        /**
+         * Terminal handler for streaming calls (client-stream / bidi).
+         */
+        private static final class StreamTerminalCallHandler implements WireServerCallHandler {
+            private final WireMethodHandler methodHandler;
+            private final WireCallContext callContext;
+            private final StreamSource<Message> requestItems;
+            private final boolean isBidi;
+
+            StreamTerminalCallHandler(WireMethodHandler methodHandler, WireCallContext callContext,
+                                      StreamSource<Message> requestItems, boolean isBidi) {
+                this.methodHandler = methodHandler;
+                this.callContext = callContext;
+                this.requestItems = requestItems;
+                this.isBidi = isBidi;
+            }
+
+            @Override
+            public WireServerListener startCall(WireServerCall call, Message request) {
+                return new WireServerListener() {
+                    @Override
+                    public void onHalfClose() {
+                        if (isBidi) {
+                            StreamSource<Message> responseSource =
+                                    methodHandler.handleBidiStream(requestItems, callContext);
+                            call.dispatchStream(responseSource);
+                        } else {
+                            Message response =
+                                    methodHandler.handleClientStream(requestItems, callContext);
+                            call.sendMessage(response);
+                            call.close(WireConstants.STATUS_OK, null);
+                        }
+                    }
+                };
+            }
+        }
+
+        /**
+         * Terminal handler that invokes the actual {@link WireMethodHandler}
+         * for unary and server-streaming calls.
+         */
+        private static final class TerminalCallHandler implements WireServerCallHandler {
+            private final WireMethodHandler methodHandler;
+            private final WireCallContext callContext;
+
+            TerminalCallHandler(WireMethodHandler methodHandler, WireCallContext callContext) {
+                this.methodHandler = methodHandler;
+                this.callContext = callContext;
+            }
+
+            @Override
+            public WireServerListener startCall(WireServerCall call, Message request) {
+                return new WireServerListener() {
+                    private Message capturedRequest;
+
+                    @Override
+                    public void onMessage(Message message) {
+                        this.capturedRequest = message;
+                    }
+
+                    @Override
+                    public void onHalfClose() {
+                        switch (methodHandler.methodType()) {
+                            case UNARY -> {
+                                Message response = methodHandler.handle(capturedRequest, callContext);
+                                call.sendMessage(response);
+                                call.close(WireConstants.STATUS_OK, null);
+                            }
+                            case SERVER_STREAM -> {
+                                StreamSource<Message> source =
+                                        methodHandler.handleStream(capturedRequest, callContext);
+                                call.dispatchStream(source);
+                            }
+                            default -> {
+                                // CLIENT_STREAM and BIDIRECTIONAL are handled by
+                                // dispatchClientStream / dispatchBidiStream
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onCancel() {
+                        // No cleanup needed; the stream handler manages cancellation
+                    }
+                };
+            }
+        }
+
+        /**
+         * {@link WireServerCall} implementation that bridges to the
+         * {@link WireStreamServerHandler}'s response-writing methods.
+         */
+        private static final class ServerCallImpl implements WireServerCall {
+            private final WireStreamServerHandler serverHandler;
+            private final WireCallContext callContext;
+            private final String path;
+
+            ServerCallImpl(WireStreamServerHandler serverHandler,
+                           WireCallContext callContext,
+                            String path) {
+                this.serverHandler = serverHandler;
+                this.callContext = callContext;
+                this.path = path;
+            }
+
+            @Override
+            public WireCallContext context() {
+                return callContext;
+            }
+
+            @Override
+            public String path() {
+                return path;
+            }
+
+            @Override
+            public void sendMessage(Message response) {
+                serverHandler.sendUnaryResponse(serverHandler.ctx(), response);
+            }
+
+            @Override
+            public void dispatchStream(StreamSource<Message> source) {
+                serverHandler.dispatchStream(serverHandler.ctx(), source);
+            }
+
+            @Override
+            public void close(int status, String message) {
+                if (status != WireConstants.STATUS_OK) {
+                    serverHandler.sendError(serverHandler.ctx(), status, message);
+                }
+            }
+
+            @Override
+            public boolean isCancelled() {
+                return serverHandler.canceled;
+            }
         }
     }
 
@@ -622,73 +833,4 @@ sealed interface WireCallDispatcher
         }
     }
 
-    // ========================================================================
-    // Interceptor chain for Direct API mode
-    // ========================================================================
-
-    /**
-     * Walks the interceptor chain: each interceptor calls {@code next(request)}
-     * to hand off to the next interceptor; the last {@code next()} invokes the
-     * actual {@link WireMethodHandler}. Any interceptor can short-circuit via
-     * {@code respond()} or {@code close()}.
-     */
-    final class InterceptorCall implements WireServerInterceptor.Call {
-        private final List<WireServerInterceptor> interceptors;
-        private final int index;
-        private final WireStreamServerHandler serverHandler;
-        private final WireMethodHandler methodHandler;
-        private final WireCallContext callContext;
-        private final String path;
-
-        InterceptorCall(List<WireServerInterceptor> interceptors, int index,
-                        WireStreamServerHandler serverHandler, WireMethodHandler methodHandler,
-                        WireCallContext callContext, String path) {
-            this.interceptors = interceptors;
-            this.index = index;
-            this.serverHandler = serverHandler;
-            this.methodHandler = methodHandler;
-            this.callContext = callContext;
-            this.path = path;
-        }
-
-        void intercept(Message request) {
-            interceptors.get(index).intercept(request, this);
-        }
-
-        @Override
-        public WireCallContext context() {
-            return callContext;
-        }
-
-        @Override
-        public String path() {
-            return path;
-        }
-
-        @Override
-        public void next(Message request) {
-            if (index + 1 < interceptors.size()) {
-                // Delegate to the next interceptor
-                InterceptorCall next = new InterceptorCall(
-                        interceptors, index + 1, serverHandler, methodHandler,
-                        callContext, path);
-                next.intercept(request);
-            } else {
-                // Last interceptor called next() — invoke the actual handler
-                Message response = methodHandler.handle(request, callContext);
-                respond(response);
-            }
-        }
-
-        @Override
-        public void respond(Message response) {
-            serverHandler.sendUnaryResponse(
-                    serverHandler.ctx(), response);
-        }
-
-        @Override
-        public void close(int status, String message) {
-            serverHandler.sendError(serverHandler.ctx(), status, message);
-        }
-    }
 }

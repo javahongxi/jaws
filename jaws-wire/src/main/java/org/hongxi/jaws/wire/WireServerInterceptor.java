@@ -7,6 +7,23 @@ import com.google.protobuf.Message;
  * <p>
  * Interceptors form a chain; each interceptor can inspect/modify the request,
  * short-circuit with an error or response, or delegate to the next interceptor.
+ * Unlike the previous unary-only design, this interface supports all four gRPC
+ * call types: unary, server-streaming, client-streaming, and bidirectional
+ * streaming.
+ * <p>
+ * The interception model follows the grpc-java pattern:
+ * <ol>
+ *   <li>The interceptor receives a {@link WireServerCall} facade for sending
+ *       responses and a {@link WireServerCallHandler} representing the next
+ *       element in the chain.</li>
+ *   <li>It returns a {@link WireServerListener} that receives inbound request
+ *       messages. For unary calls, the framework delivers the single request
+ *       via {@link WireServerListener#onMessage(Message)}; for streaming calls,
+ *       the request stream is passed directly to the handler.</li>
+ *   <li>By wrapping the {@code WireServerCall} (Forwarding pattern), interceptors
+ *       can observe or modify outbound responses without short-circuiting.</li>
+ * </ol>
+ * <p>
  * Common use cases:
  * <ul>
  *   <li>Authentication / authorization (check metadata tokens)</li>
@@ -28,52 +45,22 @@ public interface WireServerInterceptor {
     /**
      * Intercept a gRPC call. The interceptor can:
      * <ul>
-     *   <li>Call {@code call.next(request)} to continue the chain</li>
-     *   <li>Call {@code call.close(error)} to reject the call</li>
-     *   <li>Call {@code call.respond(message)} to short-circuit with a response</li>
+     *   <li>Call {@code next.startCall(call, request)} to continue the chain</li>
+     *   <li>Call {@code call.close(status, message)} to reject the call</li>
+     *   <li>Call {@code call.sendMessage(response)} + {@code call.close(0, null)}
+     *       to short-circuit with a response</li>
+     *   <li>Wrap the {@code call} to observe/modify outbound responses</li>
+     *   <li>Wrap the returned {@link WireServerListener} to observe inbound
+     *       request messages</li>
      * </ul>
      *
-     * @param request the decoded protobuf request message
-     * @param call    the call facade for interacting with the chain
+     * @param call    the server call facade for sending responses
+     * @param request the decoded protobuf request message (unary/server-stream),
+     *                or {@code null} for client-stream/bidi where the request
+     *                arrives as a stream
+     * @param next    the next handler in the interceptor chain
+     * @return a listener that receives inbound request messages
      */
-    void intercept(Message request, Call call);
-
-    /**
-     * Facade provided to interceptors for interacting with the call chain.
-     */
-    interface Call {
-        /**
-         * @return the per-call context carrying inbound gRPC metadata
-         */
-        WireCallContext context();
-
-        /**
-         * @return the fully-qualified gRPC path (e.g. {@code /service/method})
-         */
-        String path();
-
-        /**
-         * Continue the interceptor chain with the (possibly modified) request.
-         * The final result is delivered asynchronously via {@link #respond}
-         * or {@link #close}.
-         *
-         * @param request the request to pass to the next interceptor
-         */
-        void next(Message request);
-
-        /**
-         * Short-circuit the call with a successful response.
-         *
-         * @param response the protobuf response message
-         */
-        void respond(Message response);
-
-        /**
-         * Short-circuit the call with an error.
-         *
-         * @param status  the gRPC status code
-         * @param message the error description
-         */
-        void close(int status, String message);
-    }
+    WireServerListener interceptCall(WireServerCall call, Message request,
+                                     WireServerCallHandler next);
 }

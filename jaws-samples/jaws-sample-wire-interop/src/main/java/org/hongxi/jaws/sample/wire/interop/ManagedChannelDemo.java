@@ -1,8 +1,15 @@
 package org.hongxi.jaws.sample.wire.interop;
 
+import io.grpc.Metadata;
+import io.grpc.ServerCall;
+import io.grpc.ServerCallHandler;
+import io.grpc.ServerInterceptor;
 import io.grpc.stub.StreamObserver;
 import org.hongxi.jaws.wire.LoadBalancePolicy;
 import org.hongxi.jaws.wire.ManagedChannel;
+import org.hongxi.jaws.wire.WireClientCall;
+import org.hongxi.jaws.wire.WireClientCallHandler;
+import org.hongxi.jaws.wire.WireClientInterceptor;
 
 import org.hongxi.jaws.rpc.Response;
 
@@ -38,8 +45,17 @@ public class ManagedChannelDemo {
 
     private static final int[] PORTS = {50061, 50062, 50063};
 
+    private static final Metadata.Key<String> AUTH_TOKEN_KEY =
+            Metadata.Key.of("x-auth-token", Metadata.ASCII_STRING_MARSHALLER);
+
+    /** gRPC Context key for passing observed metadata from the server interceptor to the handler. */
+    private static final io.grpc.Context.Key<String> RECEIVED_META_CTX =
+            io.grpc.Context.key("receivedMeta");
+
     public static void main(String[] args) throws Exception {
-        // Start three grpc-java servers, each identifying itself in responses
+        // Start three grpc-java servers, each identifying itself in responses.
+        // A ServerInterceptor echoes received metadata into the response so we
+        // can verify that ManagedChannel client interceptors propagated it.
         io.grpc.Server[] servers = new io.grpc.Server[PORTS.length];
         for (int i = 0; i < PORTS.length; i++) {
             final String serverId = "server-" + (char) ('A' + i) + ":" + PORTS[i];
@@ -48,12 +64,30 @@ public class ManagedChannelDemo {
                         @Override
                         public void sayHello(HelloRequest request,
                                              StreamObserver<HelloReply> responseObserver) {
-                            System.out.println("[" + serverId + "] Received: " + request.getName());
-                            HelloReply reply = HelloReply.newBuilder()
-                                    .setMessage("Hello, " + request.getName() + "! (from " + serverId + ")")
-                                    .build();
-                            responseObserver.onNext(reply);
+                            String receivedMeta = RECEIVED_META_CTX.get();
+                            System.out.println("[" + serverId + "] Received: " + request.getName()
+                                    + (receivedMeta != null ? " [meta=" + receivedMeta + "]" : ""));
+                            String reply = "Hello, " + request.getName() + "! (from " + serverId + ")";
+                            if (receivedMeta != null) {
+                                reply += " [server-saw: " + receivedMeta + "]";
+                            }
+                            responseObserver.onNext(HelloReply.newBuilder().setMessage(reply).build());
                             responseObserver.onCompleted();
+                        }
+                    })
+                    .intercept(new ServerInterceptor() {
+                        @Override
+                        public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
+                                ServerCall<ReqT, RespT> call, Metadata headers,
+                                ServerCallHandler<ReqT, RespT> next) {
+                            StringBuilder meta = new StringBuilder();
+                            String token = headers.get(AUTH_TOKEN_KEY);
+                            if (token != null) {
+                                meta.append("x-auth-token=").append(token);
+                            }
+                            io.grpc.Context ctx = io.grpc.Context.current()
+                                    .withValue(RECEIVED_META_CTX, meta.isEmpty() ? null : meta.toString());
+                            return io.grpc.Contexts.interceptCall(ctx, call, headers, next);
                         }
                     })
                     .build()
@@ -129,6 +163,42 @@ public class ManagedChannelDemo {
                         metadata);
                 HelloReply reply = (HelloReply) response.getValue();
                 System.out.println("  Response: " + reply.getMessage());
+            }
+
+            // ---- 4. Round-Robin with client interceptor ----
+            System.out.println("\n=== 4. Round-Robin + Client Interceptor ===");
+            try (ManagedChannel channel = ManagedChannel.builder()
+                    .addAddress("127.0.0.1:" + PORTS[0])
+                    .addAddress("127.0.0.1:" + PORTS[1])
+                    .addAddress("127.0.0.1:" + PORTS[2])
+                    .roundRobin()
+                    .requestTimeout(5000)
+                    // Client interceptor: auto-inject x-auth-token on every call
+                    // to every backend, mirroring grpc-java's ManagedChannelBuilder.intercept()
+                    .intercept((call, next) -> {
+                        System.out.println("[AuthInjector] injecting x-auth-token for " + call.path());
+                        call.putAttachment("x-auth-token", "lb-token-789");
+                        return next.newCall(call);
+                    })
+                    .build()) {
+
+                System.out.println("ManagedChannel with " + channel.size()
+                        + " backends + AuthInjector interceptor");
+
+                // Issue 3 calls — interceptor fires on each, load balancer distributes
+                for (int i = 1; i <= 3; i++) {
+                    Response response = channel.unaryCall(
+                            "interop.Greeter", "SayHello",
+                            HelloRequest.newBuilder().setName("intercepted-" + i).build(),
+                            HelloReply.parser());
+                    HelloReply reply = (HelloReply) response.getValue();
+                    System.out.println("  Call " + i + " -> " + reply.getMessage());
+                    if (!reply.getMessage().contains("x-auth-token=lb-token-789")) {
+                        throw new AssertionError(
+                                "expected token in server-saw metadata, got: " + reply.getMessage());
+                    }
+                }
+                System.out.println("Interceptor fired on every call across all backends.");
             }
 
             System.out.println("\n=== ManagedChannel Load Balancing Demo Passed ===");
