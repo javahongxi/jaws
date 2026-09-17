@@ -1,14 +1,14 @@
 # Jaws 全链路异步解剖：一个 CompletableFuture 如何贯穿 RPC 的六层
 
-> 本文基于 jaws 源码撰写。jaws 是一个核心约 2.3 万行的轻量级 RPC 框架，目标是用可读完的代码量完整呈现工业级 RPC 的核心机制。
+> 本文基于 jaws 源码撰写。jaws 是一个核心 2.9 万多行的轻量级 RPC 框架，目标是用可读完的代码量完整呈现工业级 RPC 的核心机制。
 
 ## 0. 从一个问题开始
 
 一个 RPC 框架为什么要关心异步？
 
-答案藏在一次性能测试里。20 个线程打同一个 Provider，线程池 200 线程，QPS 卡在 3 万上不去。排查发现 Netty 的 event loop 线程在 `DefaultProvider.invoke()` 里被 `.get()` 阻塞了——业务方法返回 `CompletableFuture`，框架却同步等它完成，IO 线程变成了业务线程的附庸。
+答案藏在性能档案里。jaws 有一条可 checkout 复现的 20 线程演进线——起点 50,836 QPS（commit `e66c19e`，完整数据在 `doc/benchmark.md`），其中一笔跃迁正是异步化挣来的：`NettyClient.request()` 原本对 `writeAndFlush` 的 future 调 `awaitUninterruptibly`，一个请求先等字节落到 socket、再等响应，业务线程**阻塞两次**、飞行中的请求数永远上不去；改成「发完即走 + `addListener` 异步处理写结果」后，20 线程基准从 97,792 跳到 131,239（约 +34%）。同一时期还揪出 Provider 端的镜像病灶：event loop 线程在 `DefaultProvider.invoke()` 里被 `.get()` 阻塞——业务方法返回 `CompletableFuture`，框架却同步等它完成，IO 线程变成了业务线程的附庸。
 
-修复后 QPS 翻倍。但更重要的收获是：**异步不是加一个异步接口的事，它是一根从消费端代理穿到传输层再穿回 Provider 业务实现的线，任何一层断了都是同步阻塞。**
+（别把「翻倍」记到异步头上——那条演进线里近乎翻倍的那一跃是**零拷贝改造**，异步化对应的是上面这 +34%。）但更重要的收获不是具体涨幅，而是：**异步不是加一个异步接口的事，它是一根从消费端代理穿到传输层再穿回 Provider 业务实现的线，任何一层断了都是同步阻塞。**
 
 这篇文章自顶向下拆解 jaws 的异步全链路，六层，每层都有真实代码。
 
@@ -504,4 +504,4 @@ jaws 的选择是：
 
 六层，每层都是异步的，所以全链路才是异步的。
 
-> jaws 源码：[github.com/javahongxi/jaws](https://github.com/javahongxi/jaws)（核心约 2.3 万行，欢迎 star 交流）
+> jaws 源码：[github.com/javahongxi/jaws](https://github.com/javahongxi/jaws)（核心 2.9 万多行，欢迎 star 交流）
