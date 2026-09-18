@@ -83,6 +83,14 @@ public final class HarborProtocol {
     }
 
     /**
+     * Wrap an outbound request that must declare the caller's address, which is
+     * how a connection identifies itself before any unary call exists.
+     */
+    public static Payload encodeRequest(Request request, String clientIp) {
+        return wrap(typeToken(request.getClass()), request, clientIp);
+    }
+
+    /**
      * Wrap a reply to a unary request.
      */
     public static Payload encodeResponse(Response response) {

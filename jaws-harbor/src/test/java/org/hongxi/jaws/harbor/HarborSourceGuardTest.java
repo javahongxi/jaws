@@ -51,11 +51,13 @@ class HarborSourceGuardTest {
             "com.alibaba.fastjson2.",
             "com.google.protobuf.",
             "org.hongxi.jaws.common.",
+            "org.hongxi.jaws.exception.",
             "org.hongxi.jaws.harbor.HarborProtocol",
             "org.hongxi.jaws.harbor.model.",
             "org.hongxi.jaws.harbor.proto.",
             "org.hongxi.jaws.rpc.",
             "org.hongxi.jaws.stream.",
+            "org.hongxi.jaws.transport.StreamSubject",
             "org.hongxi.jaws.wire.",
             "org.slf4j.");
 

@@ -1,0 +1,48 @@
+package org.hongxi.jaws.harbor.client;
+
+/**
+ * Settings of one {@link HarborClient}: where to connect, which tenant to work
+ * in, and how loudly to keep the connection alive.
+ * <p>
+ * {@code keepAliveMillis} is not cosmetic. Harbor judges an ephemeral instance
+ * unhealthy once its connection has been silent past ~3 beat intervals and
+ * retires the connection past ~18, so a client that stays quiet long enough
+ * loses its own registrations — this value is that beat.
+ *
+ * @author shenhongxi
+ */
+public record HarborClientConfig(String host,
+                                 int port,
+                                 String namespace,
+                                 String defaultGroup,
+                                 long keepAliveMillis,
+                                 int requestTimeoutMillis,
+                                 int connectTimeoutMillis,
+                                 int setupTimeoutMillis) {
+
+    public static HarborClientConfig of(String host, int port) {
+        return new HarborClientConfig(host, port, null, null,
+                5_000L, 3_000, 3_000, 5_000);
+    }
+
+    public HarborClientConfig {
+        if (host == null || host.isEmpty()) {
+            throw new IllegalArgumentException("host is required");
+        }
+        if (port <= 0) {
+            throw new IllegalArgumentException("port must be positive");
+        }
+        namespace = namespace == null || namespace.isEmpty() ? "public" : namespace;
+        defaultGroup = defaultGroup == null || defaultGroup.isEmpty()
+                ? "DEFAULT_GROUP" : defaultGroup;
+        keepAliveMillis = keepAliveMillis <= 0 ? 5_000L : keepAliveMillis;
+        requestTimeoutMillis = requestTimeoutMillis <= 0 ? 3_000 : requestTimeoutMillis;
+        connectTimeoutMillis = connectTimeoutMillis <= 0 ? 3_000 : connectTimeoutMillis;
+        setupTimeoutMillis = setupTimeoutMillis <= 0 ? 5_000 : setupTimeoutMillis;
+    }
+
+    public HarborClientConfig withKeepAliveMillis(long millis) {
+        return new HarborClientConfig(host, port, namespace, defaultGroup, millis,
+                requestTimeoutMillis, connectTimeoutMillis, setupTimeoutMillis);
+    }
+}
