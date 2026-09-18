@@ -142,6 +142,47 @@ class HarborClientTest {
     }
 
     /**
+     * The redo pass, not the caller, collects a spent entry — Nacos defers it the
+     * same way. Asserting both halves matters: removal at call time would leak
+     * nothing but also prove nothing about the pass, while a pass that never runs
+     * turns every deregister into a permanent table entry.
+     */
+    @Test
+    void redoPassCollectsSpentEntries() throws Exception {
+        try (HarborClient client = new HarborClient(
+                HarborClientConfig.of("127.0.0.1", port).withRedoDelayMillis(1_000))) {
+            client.registerInstance("spent-entry", instance("127.0.0.1", 9900));
+            awaitTrue(() -> !nacosInstances("spent-entry").isEmpty(), 5_000);
+
+            client.deregisterInstance("spent-entry", instance("127.0.0.1", 9900));
+            awaitTrue(() -> nacosInstances("spent-entry").isEmpty(), 5_000);
+            assertEquals(1, client.registrationCount(),
+                    "a confirmed deregister leaves the entry for the pass, it does not remove it");
+
+            awaitTrue(() -> client.registrationCount() == 0, 5_000);
+
+            // And it stays gone across a recovery: nothing was left owed.
+            client.connection().recover();
+            Thread.sleep(1_500);
+            assertTrue(nacosInstances("spent-entry").isEmpty());
+            assertEquals(0, client.registrationCount());
+        }
+    }
+
+    @Test
+    void redoPassCollectsSpentSubscriptions() throws Exception {
+        try (HarborClient client = new HarborClient(
+                HarborClientConfig.of("127.0.0.1", port).withRedoDelayMillis(1_000))) {
+            Consumer<ServiceInfo> listener = info -> { };
+            client.subscribe("spent-subscription", listener);
+            assertEquals(1, client.subscriptionCount());
+
+            client.unsubscribe("spent-subscription", listener);
+            awaitTrue(() -> client.subscriptionCount() == 0, 5_000);
+        }
+    }
+
+    /**
      * Harbor's health tiers are calibrated against a 5s beat
      * (unhealthy past ~3 beats, connection retired past ~18), and a v2 client
      * sends no beat — so the keep-alive message is what holds an idle provider's

@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
@@ -54,6 +56,7 @@ public class HarborClient implements Closeable {
     private final Map<ServiceKey, InstanceRedoData> registrations = new ConcurrentHashMap<>();
     private final Map<ServiceKey, ServiceSubscription> subscriptions = new ConcurrentHashMap<>();
     private final ExecutorService notifier;
+    private final ScheduledExecutorService redoScheduler;
     private final HarborConnection connection;
 
     public HarborClient(String host, int port) {
@@ -69,6 +72,29 @@ public class HarborClient implements Closeable {
         });
         this.connection = new HarborConnection(config, this::onPushFrame, this::replayOwnedState);
         this.connection.start();
+        this.redoScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "harbor-client-redo");
+            thread.setDaemon(true);
+            return thread;
+        });
+        // Nacos drives the same reconcile from a fixed-delay task: an owed removal
+        // must complete without waiting for a reconnect, and spent entries must be
+        // collected rather than accumulate.
+        this.redoScheduler.scheduleWithFixedDelay(this::reconcileQuietly,
+                config.redoDelayMillis(), config.redoDelayMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Entries still held in the two redo tables, including spent ones awaiting
+     * collection. Exposed for this package's tests: deferred removal is only safe if
+     * the pass really collects.
+     */
+    int registrationCount() {
+        return registrations.size();
+    }
+
+    int subscriptionCount() {
+        return subscriptions.size();
     }
 
     // ========================================================================
@@ -112,9 +138,8 @@ public class HarborClient implements Closeable {
         entry.expectUnregistered();
         sendInstanceRequest(key, entry.instance(), HarborProtocol.DEREGISTER_INSTANCE);
         entry.unregistered();
-        // Confirmed spent. Nacos drops the entry on the next redo pass via
-        // RedoType.REMOVE; there is no periodic pass here, so it goes now.
-        registrations.remove(key);
+        // Left in place on purpose: it now reads RedoType.REMOVE and the redo pass
+        // collects it, exactly as Nacos defers collection to its RedoScheduledTask.
     }
 
     private void sendInstanceRequest(ServiceKey key, Instance instance, String operation) {
@@ -309,7 +334,7 @@ public class HarborClient implements Closeable {
         subscription.expectUnregistered();
         sendSubscribe(key, subscription.clusters(), false);
         subscription.unregistered();
-        subscriptions.remove(key);
+        // Collected by the redo pass, not here.
     }
 
     private SubscribeServiceResponse sendSubscribe(ServiceKey key, String clusters,
@@ -349,13 +374,37 @@ public class HarborClient implements Closeable {
      * and subscribers to a per-connection id, so anything not replayed here is
      * simply gone from the registry.
      */
+    /**
+     * One reconcile tick. A dead connection is skipped — the recovery path replays
+     * everything anyway, and queueing calls against a broken stream only turns the
+     * log into noise.
+     */
+    private void reconcileQuietly() {
+        try {
+            if (!connection.isConnected()) {
+                return;
+            }
+            reconcileOwnedState();
+        } catch (Exception e) {
+            log.warn("[harbor-client] reconcile pass failed: {}", e.getMessage());
+        }
+    }
+
     private void replayOwnedState() {
         // The session that just died held all of these; without dirtying the
         // confirmations first, every entry reads RedoType.NONE and the replay is
         // a no-op. This is what Nacos's onDisConnect does to both of its tables.
         registrations.values().forEach(RedoData::markDirty);
         subscriptions.values().forEach(RedoData::markDirty);
+        reconcileOwnedState();
+    }
 
+    /**
+     * Walk both tables and do what each entry owes: re-register, complete a removal
+     * that was never confirmed, or collect a spent one. Nothing is sent for an entry
+     * that the server already agrees with, so an idle client stays idle.
+     */
+    private void reconcileOwnedState() {
         int replayed = 0;
         for (Map.Entry<ServiceKey, InstanceRedoData> each : registrations.entrySet()) {
             replayed += replayRegistration(each.getKey(), each.getValue()) ? 1 : 0;
@@ -363,9 +412,11 @@ public class HarborClient implements Closeable {
         for (Map.Entry<ServiceKey, ServiceSubscription> each : subscriptions.entrySet()) {
             replayed += replaySubscription(each.getKey(), each.getValue()) ? 1 : 0;
         }
-        log.info("[harbor-client] replayed {} owned state change(s), {} registration(s) and"
-                        + " {} subscription(s) remain",
-                replayed, registrations.size(), subscriptions.size());
+        if (replayed > 0) {
+            log.info("[harbor-client] reconciled {} state change(s); {} registration(s) and"
+                    + " {} subscription(s) remain",
+                    replayed, registrations.size(), subscriptions.size());
+        }
     }
 
     /**
@@ -466,6 +517,7 @@ public class HarborClient implements Closeable {
      */
     @Override
     public void close() {
+        redoScheduler.shutdownNow();
         connection.close();
         notifier.shutdownNow();
         registrations.clear();

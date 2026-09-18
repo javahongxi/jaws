@@ -4,7 +4,8 @@ package org.hongxi.jaws.harbor.client;
  * Settings of one {@link HarborClient}: where to connect, which tenant to work
  * in, and how loudly to keep the connection alive.
  * <p>
- * {@code keepAliveMillis} is not cosmetic. Harbor judges an ephemeral instance
+ * {@code redoDelayMillis} is the reconcile pass over the redo tables, named after its
+ * Nacos counterpart; {@code keepAliveMillis} is not cosmetic. Harbor judges an ephemeral instance
  * unhealthy once its connection has been silent past ~3 beat intervals and
  * retires the connection past ~18, so a client that stays quiet long enough
  * loses its own registrations — this value is that beat.
@@ -16,13 +17,14 @@ public record HarborClientConfig(String host,
                                  String namespace,
                                  String defaultGroup,
                                  long keepAliveMillis,
+                                 long redoDelayMillis,
                                  int requestTimeoutMillis,
                                  int connectTimeoutMillis,
                                  int setupTimeoutMillis) {
 
     public static HarborClientConfig of(String host, int port) {
         return new HarborClientConfig(host, port, null, null,
-                5_000L, 3_000, 3_000, 5_000);
+                5_000L, 3_000L, 3_000, 3_000, 5_000);
     }
 
     public HarborClientConfig {
@@ -36,6 +38,8 @@ public record HarborClientConfig(String host,
         defaultGroup = defaultGroup == null || defaultGroup.isEmpty()
                 ? "DEFAULT_GROUP" : defaultGroup;
         keepAliveMillis = keepAliveMillis <= 0 ? 5_000L : keepAliveMillis;
+        // Nacos Constants.DEFAULT_REDO_DELAY_TIME.
+        redoDelayMillis = redoDelayMillis <= 0 ? 3_000L : redoDelayMillis;
         requestTimeoutMillis = requestTimeoutMillis <= 0 ? 3_000 : requestTimeoutMillis;
         connectTimeoutMillis = connectTimeoutMillis <= 0 ? 3_000 : connectTimeoutMillis;
         setupTimeoutMillis = setupTimeoutMillis <= 0 ? 5_000 : setupTimeoutMillis;
@@ -43,6 +47,11 @@ public record HarborClientConfig(String host,
 
     public HarborClientConfig withKeepAliveMillis(long millis) {
         return new HarborClientConfig(host, port, namespace, defaultGroup, millis,
-                requestTimeoutMillis, connectTimeoutMillis, setupTimeoutMillis);
+                redoDelayMillis, requestTimeoutMillis, connectTimeoutMillis, setupTimeoutMillis);
+    }
+
+    public HarborClientConfig withRedoDelayMillis(long millis) {
+        return new HarborClientConfig(host, port, namespace, defaultGroup, keepAliveMillis,
+                millis, requestTimeoutMillis, connectTimeoutMillis, setupTimeoutMillis);
     }
 }

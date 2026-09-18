@@ -268,6 +268,15 @@ final class HarborConnection implements Closeable {
         }
     }
 
+    /**
+     * Whether a request can go out right now. A reconcile pass over the redo tables
+     * on a dead connection would only queue failures and re-trigger recovery.
+     */
+    boolean isConnected() {
+        CompletableFuture<Void> pending = setupAck;
+        return !closed && pending != null && pending.isDone();
+    }
+
     private void markActive() {
         lastActivity.set(System.currentTimeMillis());
     }
