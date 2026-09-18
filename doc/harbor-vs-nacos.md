@@ -217,6 +217,8 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 | `ServiceListPagingSemanticsTest` | `pageNo/pageSize` 真分页（1-based、越界回空、尾页截断），而 `count` 是整个匹配集大小——页不满不等于还有下一页 |
 | `CapabilityBoundaryTest` | 范围外的请求要读成「能力边界」而不是「handler 丢了」：`PersistentInstanceRequest`/fuzzy watch 走显式不支持，未知 token 仍报 unknown；持久实例在 client 侧与 server 侧都先拒后写，拒了就不留任何状态 |
 | `StaleStreamClosureTest` | 关闭事务按**流身份**守卫：连接标识是 TCP 连接，同通道重连会复用同一个 id，迟到的旧流 END 不许拆掉刚建立的新会话（否则客户端重放回来的实例被莫名抹掉） |
+| `client/NodeSelectionTest` | 起点在节点列表里**随机**（对齐 `NamingServerListManager.start()` 的 `currentIndex.set(random)`）：上百个 provider 进程不该全压列表第一项、等它挂了才散开；候选顺序从游标走而非从顶部重数 |
+| `ClientFailoverSemanticsTest` | 恢复先探活当前节点（`HealthCheckRequest`，同 `RpcClient.reconnect` 请求失败前的 `healthCheck()` 短路）：节点还活着就只在那条通道上重开通知流、**不换 TCP 连接**，身份因此不变；探不到才按游标轮转换节点。挂掉的节点被接替后**重放自己的状态**：两个节点故意不 join 集群，所以第二台之所以有数据只可能是客户端自己搬过去的；只有一个地址且不可达时当场报错并点出那个地址（此处与 Nacos 有意不同：它 `while(!switchSuccess)` 无上限退避重试，harbor 选择响亮失败，长驻恢复交给 keepalive 下一轮） |
 | `ConnectResetSemanticsTest` | 服务端 `ConnectResetRequest` 双向契约：客户端先回 `ConnectResetResponse` 再重连重放；超时不回则由服务端自己跑关闭事务（对齐 Nacos `loadSingle` 的 3s 等 ack）；带 redirect 时整份状态搬到另一节点 |
 | `client/HarborClientTest` / `client/RedoDataTest` | 原生 client 的跨实现互证（自家 client 写、真 nacos-client 读，反之亦然）与 `RedoData` 三 bool 决策表 |
 
@@ -225,7 +227,7 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 - **AP 线之外的东西一概不做，但一律响亮拒绝**：持久实例（要 CP/Raft 存储＋服务端主动探活＋活过连接的生命周期）、3.0 才有的模糊订阅（要 pattern→services 索引＋另一套订阅者身份与对账）、配置中心与鉴权/console/k8s-sync 都不在 harbor 范围内（产品面，研读优先级低于机制层）。成本参照：Nacos 的 `consistency/persistent` ＋ `healthcheck` 两处约 3.6k 行，再加 `PersistentClientOperationServiceImpl` 559 行——这不是补一个 DTO，是往「AP ＋ 连接即活性」里塞第二套一致性档位与第二个健康权威。
   边界必须可听见：`HarborProtocol.UNSUPPORTED_REQUEST_TYPES` 里的已知类型回「not supported ＋ 一句范围说明」，未知 token 才回 unknown，日志与客户端异常据此能分清「不支持」和「我们漏了」。**自家 client 更严**：`ephemeral=false` 在 `HarborClient` 直接抛 `IllegalArgumentException`，服务端也拒带 `ephemeral=false` 的 `InstanceRequest`——Nacos 服务端只按请求类型分流、并不查这个字段，但 nacos-client 永远不会这么发，所以严格化不破兼容；否则它就是静默把持久实例降级成连接所有物，正是持久实例定义里不允许的那件事。
 - **节点间全是一元**：与 Nacos 同形——Nacos 注册中心自己的 gRPC 服务面只有 unary `request` + 一条 bidi 连接流（`nacos_grpc_service.proto`），仓库里带 streaming 的只有 vendored 的 Istio/MCP proto（`mcp.proto`），在 `istio/src/main/java` 里没有任何 `rpc` 实现引用；连 jraft-core 的 `installSnapshot` 都是分块多请求而非 gRPC 流。规模化风险点在启动快照——万级 client 时单包 JSON + 5s 一元超时会痛，届时 client-stream 是自然形态，属「用对原语超越 Nacos」而非补角。
-- **批注册的形状**：`BatchInstanceRedoData extends InstanceRedoData`（与 Nacos 同形），重放按表项自己的形状决定发单个还是发批。Nacos 没有批反注册的动作常量，其 redo 在 UNREGISTER 分支会把批表项的 null 实例交给单个反注册路径；harbor 逐实例补齐，不照抄这个边界。
+- **批注册的形状，与「批注销」的真相**：`BatchInstanceRedoData extends InstanceRedoData`（与 Nacos 同形），重放按表项自己的形状决定发单个还是发批。Nacos 的批量注销 `batchDeregisterService` 并不是新请求，而是**取本地全量减掉要删的、再把余集整体 batchRegister 回去**——因为它的批语义是「替换该 client 在该服务上的实例集」。这解释了为什么 `NamingRemoteConstants` 只有 `BATCH_REGISTER_INSTANCE` 而没有批注销常量，也解释了为什么服务端 `BatchInstanceRequestHandler` 的 switch 只认批注册、其余 `throw Unsupported request type`：harbor 服务端此处与它**完全一致**，不需要改。harbor 的 `deregisterInstance` 本就是实例级的，所以客户端逐条反注册即可，但**redo 表项必须随之收缩到余集**（否则重放会忠实 resurrect 被删掉的实例）；同一性按 ip+port+cluster 判，不像 Nacos 那样用 `toString()` 等值——权重或健康一变，余集就算不上了。
 - **已决并落地**：纯订阅连接的复制/回收不对称选了 B——订阅关系整体退出复制载荷，向 Nacos 靠齐（详见 §3.8，含 3 节点集群实测证据）。
 - **已订正**：`ConnectionCleanup` 的 Javadoc 曾把对标对象写作 Nacos 的 `ConnectionManager` + `ClientConnectionUnregisterEvent`（该符号在 Nacos 不存在）。本文改为真实的 `ConnectionBasedClientManager.clientDisconnected(String)`（`clients.remove` → `release()` → 以 `isResponsible` 发 `ClientReleaseEvent`/`ClientDisconnectEvent`），并点明 Nacos 自己的看门狗 `ExpiredClientCleaner` 也复用这同一个入口——正是本类要编码的性质。
 

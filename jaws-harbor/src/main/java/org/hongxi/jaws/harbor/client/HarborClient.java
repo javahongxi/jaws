@@ -24,6 +24,7 @@ import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
@@ -179,6 +180,53 @@ public class HarborClient implements Closeable {
         request.setType(operation);
         request.setInstances(instances);
         connection.call(request, BatchInstanceResponse.class);
+    }
+
+    /**
+     * Drop several instances of one service.
+     * <p>
+     * Nacos expresses this as {@code retain + batchRegister}, because a batch there
+     * replaces the whole instance set its client owns for that service. Harbor's
+     * deregister is already instance-level, so the calls go one by one — what still
+     * has to be done is to shrink the redo entry to the remainder, otherwise a later
+     * replay would dutifully register the ones we were asked to remove.
+     */
+    public void batchDeregisterInstance(String serviceName, List<Instance> instances) {
+        batchDeregisterInstance(serviceName, config.defaultGroup(), instances);
+    }
+
+    public void batchDeregisterInstance(String serviceName, String groupName,
+                                        List<Instance> instances) {
+        if (instances == null || instances.isEmpty()) {
+            throw new IllegalArgumentException("no instances to deregister for " + serviceName);
+        }
+        ServiceKey key = keyOf(serviceName, groupName);
+        for (Instance each : instances) {
+            requireEphemeral(key, each);
+            sendInstanceRequest(key, each, HarborProtocol.DEREGISTER_INSTANCE);
+        }
+        InstanceRedoData entry = registrations.get(key);
+        if (entry == null) {
+            return;
+        }
+        List<Instance> remainder = new ArrayList<>(entry.instances());
+        for (Instance removal : instances) {
+            remainder.removeIf(held -> sameInstance(held, removal));
+        }
+        if (remainder.isEmpty()) {
+            registrations.remove(key);
+            return;
+        }
+        // Rebuild the entry from the remainder: a batch entry's own list is what the
+        // replay reads, so shrinking it by writing the single-instance field would
+        // leave the removed instance owed. The remainder is still held by the server,
+        // so the rebuilt entry carries that confirmation — dropping it would make the
+        // next pass re-register what nothing asked for.
+        InstanceRedoData shrunk = remainder.size() > 1
+                ? new BatchInstanceRedoData(remainder)
+                : new InstanceRedoData(remainder.get(0));
+        shrunk.registered();
+        registrations.put(key, shrunk);
     }
 
     private void sendInstanceRequest(ServiceKey key, Instance instance, String operation) {
@@ -559,6 +607,19 @@ public class HarborClient implements Closeable {
                 return false;
             }
         }
+    }
+
+    /**
+     * Whether a caller's handle refers to this instance. An instance is identified
+     * by where it listens — address, port and cluster — not by the rest of its
+     * fields: weight, health and metadata are properties that change while the
+     * instance stays the same one. Nacos compares these objects by toString(), which
+     * silently stops matching the moment any of those properties move.
+     */
+    private static boolean sameInstance(Instance held, Instance other) {
+        return held.getPort() == other.getPort()
+                && Objects.equals(held.getIp(), other.getIp())
+                && Objects.equals(held.getClusterName(), other.getClusterName());
     }
 
     private static void requireEphemeral(ServiceKey key, Instance instance) {

@@ -21,6 +21,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -116,14 +117,14 @@ class HarborClientTest {
             client.connection().recover();
             String connectionIdAfter = onlyNativeConnectionId();
 
-            // Session identity is per TCP connection and recovery reused the
-            // channel, so the id legitimately survives. What cannot survive on its
-            // own is the session's content: ending the old stream runs harbor's
-            // closure transaction, which removes this connection's instances and
-            // subscribers. So everything asserted below came back through the
-            // replay, and is not state that was merely left behind.
-            assertEquals(1, nativeConnectionIds().size());
+            // The node was alive, so recovery probed it and reopened the stream on the
+            // existing channel — identity is per TCP connection, so the id survives.
+            // What must not survive untouched is the session's content: ending the old
+            // stream runs harbor's closure transaction, and the assertions below can only
+            // be satisfied by the replay (a stale stream ending late is likewise kept from
+            // tearing down what the client has just rebuilt).
             assertEquals(connectionIdBefore, connectionIdAfter);
+            assertEquals(1, nativeConnectionIds().size(), "one session, not two");
             // The registration is back.
             awaitTrue(() -> nacosInstances("replayed").stream()
                     .anyMatch(each -> each.getPort() == 9400), 5_000);
@@ -193,6 +194,27 @@ class HarborClientTest {
             // keeps the batch shape puts both instances back.
             client.connection().recover();
             awaitTrue(() -> nacosInstances("batched").size() == 2, 10_000);
+        }
+    }
+
+    @Test
+    void batchDeregisterShrinksWhatALaterReplayOwes() throws Exception {
+        try (HarborClient client = newClient()) {
+            client.batchRegisterInstance("partial-drop", List.of(
+                    instance("127.0.0.1", 9970), instance("127.0.0.1", 9971)));
+            awaitTrue(() -> client.getInstances("partial-drop").size() == 2, 5_000);
+
+            // Removing one instance must leave the sibling published: the publisher
+            // index is per client while instances are per instance.
+            client.batchDeregisterInstance("partial-drop",
+                    List.of(instance("127.0.0.1", 9970)));
+            awaitTrue(() -> client.getInstances("partial-drop").size() == 1, 5_000);
+
+            // The replay is what shows the bookkeeping: a redo table still holding the
+            // removed instance would put it back.
+            client.connection().recover();
+            awaitTrue(() -> nacosInstances("partial-drop").size() == 1, 10_000);
+            assertEquals(9971, nacosInstances("partial-drop").get(0).getPort());
         }
     }
 

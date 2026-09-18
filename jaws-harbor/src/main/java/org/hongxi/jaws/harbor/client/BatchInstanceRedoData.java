@@ -22,6 +22,7 @@ class BatchInstanceRedoData extends InstanceRedoData {
         this.instances = List.copyOf(instances);
     }
 
+    @Override
     List<Instance> instances() {
         return instances;
     }

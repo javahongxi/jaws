@@ -2,6 +2,8 @@ package org.hongxi.jaws.harbor.client;
 
 import org.hongxi.jaws.harbor.model.Instance;
 
+import java.util.List;
+
 /**
  * Redo entry of one registered instance. Named after Nacos's
  * {@code InstanceRedoData}; the payload is replaceable because re-registering
@@ -24,5 +26,14 @@ class InstanceRedoData extends RedoData {
 
     void setInstance(Instance instance) {
         this.instance = instance;
+    }
+
+    /**
+     * The instances this entry owes, in whichever shape it was registered: replay
+     * and batch-deregistration both have to reason about the whole set, not about
+     * the last instance written.
+     */
+    List<Instance> instances() {
+        return instance == null ? List.of() : List.of(instance);
     }
 }

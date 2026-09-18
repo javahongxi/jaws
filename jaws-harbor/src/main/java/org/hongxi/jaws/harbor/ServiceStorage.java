@@ -153,12 +153,18 @@ public class ServiceStorage {
                 if (ip.equals(cached.getIp()) && port == cached.getPort()) {
                     session.removeInstance(key, ip, port);
                     invalidateServiceCache(key);
-                    // Update publisher index
-                    Set<String> connectionIds = publisherIndexes.get(key);
-                    if (connectionIds != null) {
-                        connectionIds.remove(connectionId);
-                        if (connectionIds.isEmpty()) {
-                            publisherIndexes.remove(key);
+                    // Update the publisher index only once this client's last
+                    // instance of the service is gone: the index is per client while
+                    // instances are per instance, and dropping the client here would
+                    // make an over-count in hasPublishers — retireIfEmpty then retires
+                    // a service the client is still publishing.
+                    if (session.getInstances(key).isEmpty()) {
+                        Set<String> connectionIds = publisherIndexes.get(key);
+                        if (connectionIds != null) {
+                            connectionIds.remove(connectionId);
+                            if (connectionIds.isEmpty()) {
+                                publisherIndexes.remove(key);
+                            }
                         }
                     }
                     log.info("[harbor] instance deregistered: {} -> {}:{}", key, ip, port);

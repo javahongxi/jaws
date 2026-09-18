@@ -24,10 +24,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -55,7 +58,18 @@ final class HarborConnection implements Closeable {
     private final HarborClientConfig config;
     private final String clientIp;
 
-    /** The address we are actually attached to — a redirect changes it, the config does not. */
+    /** Every node this client may attach to, the configured primary first. */
+    private final List<String> targets;
+
+    /**
+     * Rotation cursor over {@link #targets}, seeded randomly: Nacos
+     * {@code NamingServerListManager.start()} does the same so that a hundred
+     * provider processes do not all land on the first entry and only scatter after
+     * it dies.
+     */
+    private volatile int cursor;
+
+    /** The address we are attached to; a redirect or a failover moves it. */
     private volatile String host;
     private volatile int port;
     private volatile WireClient wireClient;
@@ -77,9 +91,11 @@ final class HarborConnection implements Closeable {
         this.clientIp = NetUtils.getLocalAddress(Map.of(config.host(), config.port())).getHostAddress();
         this.pushSink = pushSink;
         this.replayHook = replayHook;
-        this.host = config.host();
-        this.port = config.port();
-        this.wireClient = new WireClient(buildUrl(config, this.host, this.port));
+        this.targets = config.allAddresses();
+        this.cursor = startCursor(targets.size());
+        String[] first = targets.get(cursor).split(":");
+        this.host = first[0];
+        this.port = Integer.parseInt(first[1]);
         this.keepAliveScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "harbor-client-keepalive");
             thread.setDaemon(true);
@@ -88,10 +104,7 @@ final class HarborConnection implements Closeable {
     }
 
     void start() {
-        if (!wireClient.open()) {
-            throw new JawsServiceException("Cannot connect to harbor "
-                    + config.host() + ":" + config.port());
-        }
+        attach(host, port);
         openNotificationStream();
         keepAliveScheduler.scheduleWithFixedDelay(this::keepAliveTick,
                 config.keepAliveMillis(), config.keepAliveMillis(), TimeUnit.MILLISECONDS);
@@ -150,7 +163,9 @@ final class HarborConnection implements Closeable {
      */
     boolean serverHealthy() {
         try {
-            call(new HealthCheckRequest(), HealthCheckResponse.class);
+            // doCall, not call: probing is what decides whether to recover, so it must
+            // not itself trigger a recovery.
+            doCall(new HealthCheckRequest(), HealthCheckResponse.class);
             return true;
         } catch (Exception e) {
             log.debug("[harbor-client] health check failed: {}", e.getMessage());
@@ -178,12 +193,99 @@ final class HarborConnection implements Closeable {
                 log.debug("[harbor-client] old stream already dead: {}", e.getMessage());
             }
         }
+
+        // A node that is alive but whose stream broke needs no new channel: probing it
+        // first keeps a transient failure from costing a TCP round trip — and keeps our
+        // identity, which is minted per connection, from changing under the registry.
+        if (serverHealthy() && reopenStreamInPlace()) {
+            replayHook.run();
+            return;
+        }
+
+        // Otherwise walk the node list, which is what makes losing a node survivable.
+        List<String> candidates = candidateOrder();
+        String attachedBefore = host + ":" + port;
+        Exception last = null;
+        for (String candidate : candidates) {
+            try {
+                attachTo(candidate);
+                openNotificationStream();
+                if (!candidate.equals(attachedBefore)) {
+                    log.warn("[harbor-client] failed over from {} to {}", attachedBefore,
+                            candidate);
+                }
+                replayHook.run();
+                return;
+            } catch (Exception e) {
+                last = e;
+                log.warn("[harbor-client] cannot attach to {}: {}", candidate, e.getMessage());
+            }
+        }
+        throw new JawsServiceException("no harbor node reachable out of " + candidates.size()
+                + " (" + candidates + ")", last);
+    }
+
+    /**
+     * Where to try next: the address we are on, then the rest of the list walked from
+     * the cursor. Walking from a cursor rather than from the top matters — a client
+     * that has already failed over once should not all pile back onto the same node.
+     */
+    private List<String> candidateOrder() {
+        List<String> candidates = new ArrayList<>();
+        candidates.add(host + ":" + port);
+        for (int step = 1; step < targets.size(); step++) {
+            int index = (cursor + step) % targets.size();
+            String each = targets.get(index);
+            if (!candidates.contains(each)) {
+                candidates.add(each);
+            }
+        }
+        return candidates;
+    }
+
+    /** Random start index over a node list of {@code size}. */
+    static int startCursor(int size) {
+        return size <= 1 ? 0 : ThreadLocalRandom.current().nextInt(size);
+    }
+
+    private void attachTo(String address) {
+        String[] parts = address.split(":");
+        int known = targets.indexOf(address);
+        if (known >= 0) {
+            cursor = known;
+        }
+        attach(parts[0], Integer.parseInt(parts[1]));
+    }
+
+    /** Re-open the notification stream over the channel we already hold. */
+    private boolean reopenStreamInPlace() {
         try {
             openNotificationStream();
+            return true;
         } catch (Exception e) {
-            throw new JawsServiceException("cannot re-establish harbor notification stream", e);
+            log.warn("[harbor-client] node is reachable but its stream could not be reopened"
+                    + " ({}), falling over to another node", e.getMessage());
+            return false;
         }
-        replayHook.run();
+    }
+
+    /** Open a fresh transport to one node; a stale half-dead channel is never reused. */
+    private void attach(String newHost, int newPort) {
+        WireClient previous = wireClient;
+        if (previous != null) {
+            try {
+                previous.close();
+            } catch (Exception e) {
+                log.debug("[harbor-client] closing transport away from {}:{}", host, port);
+            }
+        }
+        host = newHost;
+        port = newPort;
+        WireClient next = new WireClient(buildUrl(config, newHost, newPort));
+        wireClient = next;
+        if (!next.open()) {
+            throw new JawsServiceException("cannot connect to harbor " + newHost + ":" + newPort);
+        }
     }
 
     private void openNotificationStream() {
@@ -288,21 +390,12 @@ final class HarborConnection implements Closeable {
     }
 
     private void replaceTransport(String newHost, int newPort) {
-        WireClient previous = wireClient;
-        if (previous != null) {
-            try {
-                previous.close();
-            } catch (Exception e) {
-                log.debug("[harbor-client] closing redirected-from client: {}", e.getMessage());
-            }
-        }
-        this.host = newHost;
-        this.port = newPort;
-        WireClient next = new WireClient(buildUrl(config, newHost, newPort));
-        this.wireClient = next;
-        if (!next.open()) {
-            throw new JawsServiceException("cannot reach the redirect target "
-                    + newHost + ":" + newPort);
+        attach(newHost, newPort);
+        // A named address from the server wins over the rotation until it fails us;
+        // one outside our list leaves the cursor where it was.
+        int known = targets.indexOf(newHost + ":" + newPort);
+        if (known >= 0) {
+            cursor = known;
         }
         log.info("[harbor-client] redirected to {}:{}", newHost, newPort);
     }
