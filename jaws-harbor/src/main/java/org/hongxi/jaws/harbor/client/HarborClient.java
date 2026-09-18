@@ -130,20 +130,39 @@ public class HarborClient implements Closeable {
     // ========================================================================
 
     public List<Instance> getInstances(String serviceName) {
-        return getInstances(serviceName, config.defaultGroup(), false);
+        return getInstances(serviceName, config.defaultGroup(), null, false);
     }
 
     public List<Instance> getInstances(String serviceName, boolean healthyOnly) {
-        return getInstances(serviceName, config.defaultGroup(), healthyOnly);
+        return getInstances(serviceName, config.defaultGroup(), null, healthyOnly);
     }
 
-    public List<Instance> getInstances(String serviceName, String groupName, boolean healthyOnly) {
+    public List<Instance> getInstances(String serviceName, String groupName,
+                                       boolean healthyOnly) {
+        return getInstances(serviceName, groupName, null, healthyOnly);
+    }
+
+    /**
+     * @param cluster      comma-separated cluster allow-list, null for every cluster
+     * @param healthyOnly  keep only healthy instances
+     */
+    public List<Instance> getInstances(String serviceName, String groupName, String cluster,
+                                       boolean healthyOnly) {
+        ServiceKey key = keyOf(serviceName, groupName);
         ServiceQueryRequest request = new ServiceQueryRequest();
-        request.setNamespace(keyOf(serviceName, groupName).namespace());
-        request.setGroupName(keyOf(serviceName, groupName).group());
+        request.setNamespace(key.namespace());
+        request.setGroupName(key.group());
         request.setServiceName(serviceName);
+        request.setCluster(cluster == null ? "" : cluster);
+        request.setHealthyOnly(healthyOnly);
+        // The server answers the projection, so nothing is filtered a second time
+        // here: a local retry would only hide a filter that failed to apply.
         QueryServiceResponse response = connection.call(request, QueryServiceResponse.class);
-        return filterHealthy(response.getServiceInfo(), healthyOnly);
+        ServiceInfo serviceInfo = response.getServiceInfo();
+        if (serviceInfo == null || serviceInfo.getHosts() == null) {
+            return List.of();
+        }
+        return serviceInfo.getHosts();
     }
 
     /**
@@ -155,7 +174,7 @@ public class HarborClient implements Closeable {
     }
 
     public Instance selectOneHealthyInstance(String serviceName, String groupName) {
-        List<Instance> candidates = getInstances(serviceName, groupName, true);
+        List<Instance> candidates = getInstances(serviceName, groupName, null, true);
         if (candidates.isEmpty()) {
             throw new JawsServiceException("no healthy instance for service "
                     + keyOf(serviceName, groupName).toKeyString());
@@ -179,12 +198,24 @@ public class HarborClient implements Closeable {
     }
 
     public List<String> listServices(String groupName) {
+        return listServicesPage(groupName, 1, Integer.MAX_VALUE).names();
+    }
+
+    /**
+     * One page of service names. Pages are 1-based and {@code total} is the whole
+     * match set, not the page size — Nacos semantics, so a caller can page without
+     * losing the count.
+     */
+    public ServicePage listServicesPage(String groupName, int pageNo, int pageSize) {
         ServiceListRequest request = new ServiceListRequest();
         request.setNamespace(config.namespace());
         request.setGroupName(groupName);
+        request.setPageNo(pageNo);
+        request.setPageSize(pageSize);
         ServiceListResponse response = connection.call(request, ServiceListResponse.class);
         List<String> names = response.getServiceNames();
-        return names != null ? names : List.of();
+        return new ServicePage(names != null ? names : List.of(), response.getCount(),
+                pageNo, pageSize);
     }
 
     public boolean serverHealthy() {
@@ -215,16 +246,26 @@ public class HarborClient implements Closeable {
      * subscribed.
      */
     public void subscribe(String serviceName, Consumer<ServiceInfo> listener) {
-        subscribe(serviceName, config.defaultGroup(), listener);
+        subscribe(serviceName, config.defaultGroup(), "", listener);
     }
 
     public void subscribe(String serviceName, String groupName, Consumer<ServiceInfo> listener) {
+        subscribe(serviceName, groupName, "", listener);
+    }
+
+    /**
+     * @param clusters comma-separated cluster allow-list; pushes are then narrowed
+     *                 per subscriber, and the subscriber only learns of changes to
+     *                 those clusters
+     */
+    public void subscribe(String serviceName, String groupName, String clusters,
+                          Consumer<ServiceInfo> listener) {
         if (listener == null) {
             return;
         }
         ServiceKey key = keyOf(serviceName, groupName);
         ServiceSubscription subscription = subscriptions.computeIfAbsent(key,
-                found -> new ServiceSubscription(found, ""));
+                found -> new ServiceSubscription(found, clusters));
         boolean first = !subscription.hasListeners();
         subscription.addListener(listener);
         if (!first) {
@@ -236,7 +277,7 @@ public class HarborClient implements Closeable {
             return;
         }
         subscription.expectRegistered();
-        SubscribeServiceResponse response = sendSubscribe(key, true);
+        SubscribeServiceResponse response = sendSubscribe(key, subscription.clusters(), true);
         subscription.registered();
         subscription.cache(response.getServiceInfo());
         notifier.execute(() -> listener.accept(response.getServiceInfo()));
@@ -264,18 +305,19 @@ public class HarborClient implements Closeable {
         // so a lost reply leaves the removal for the next replay pass rather than
         // silently re-subscribing an unwatched service.
         subscription.expectUnregistered();
-        sendSubscribe(key, false);
+        sendSubscribe(key, subscription.clusters(), false);
         subscription.unregistered();
         subscriptions.remove(key);
     }
 
-    private SubscribeServiceResponse sendSubscribe(ServiceKey key, boolean subscribe) {
+    private SubscribeServiceResponse sendSubscribe(ServiceKey key, String clusters,
+                                                   boolean subscribe) {
         SubscribeServiceRequest request = new SubscribeServiceRequest();
         request.setNamespace(key.namespace());
         request.setGroupName(key.group());
         request.setServiceName(key.name());
         request.setSubscribe(subscribe);
-        request.setClusters("");
+        request.setClusters(clusters == null ? "" : clusters);
         return connection.call(request, SubscribeServiceResponse.class);
     }
 
@@ -367,7 +409,8 @@ public class HarborClient implements Closeable {
         switch (entry.getRedoType()) {
             case REGISTER -> {
                 try {
-                    SubscribeServiceResponse response = sendSubscribe(key, true);
+                    SubscribeServiceResponse response =
+                            sendSubscribe(key, entry.clusters(), true);
                     entry.registered();
                     entry.cache(response.getServiceInfo());
                 } catch (Exception e) {
@@ -379,7 +422,7 @@ public class HarborClient implements Closeable {
             }
             case UNREGISTER -> {
                 try {
-                    sendSubscribe(key, false);
+                    sendSubscribe(key, entry.clusters(), false);
                     entry.unregistered();
                 } catch (Exception e) {
                     log.warn("[harbor-client] replay of pending unsubscribe {} failed: {}",
@@ -403,22 +446,6 @@ public class HarborClient implements Closeable {
         return ServiceKey.of(config.namespace(),
                 groupName == null || groupName.isEmpty() ? config.defaultGroup() : groupName,
                 serviceName);
-    }
-
-    private static List<Instance> filterHealthy(ServiceInfo serviceInfo, boolean healthyOnly) {
-        if (serviceInfo == null || serviceInfo.getHosts() == null) {
-            return List.of();
-        }
-        if (!healthyOnly) {
-            return serviceInfo.getHosts();
-        }
-        List<Instance> usable = new ArrayList<>();
-        for (Instance each : serviceInfo.getHosts()) {
-            if (each.isHealthy() && each.isEnabled()) {
-                usable.add(each);
-            }
-        }
-        return usable;
     }
 
     /**

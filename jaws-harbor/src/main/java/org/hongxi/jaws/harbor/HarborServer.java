@@ -24,6 +24,7 @@ import org.hongxi.jaws.wire.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -584,9 +585,26 @@ public class HarborServer {
         ServiceListResponse response = new ServiceListResponse();
         response.setResultCode(200);
         response.setSuccess(true);
+        // count is the whole match set, serviceNames the requested page — so a
+        // client can page without losing the total.
         response.setCount(services.size());
-        response.setServiceNames(services);
+        response.setServiceNames(pageOf(services, request.getPageNo(), request.getPageSize()));
         return HarborProtocol.encodeResponse(response);
+    }
+
+    /**
+     * Nacos {@code ServiceUtil.pageServiceName}: 1-based page, out-of-range start
+     * yields nothing, page trimmed at the end.
+     */
+    static List<String> pageOf(List<String> all, int pageNo, int pageSize) {
+        int start = (pageNo - 1) * pageSize;
+        if (start < 0) {
+            start = 0;
+        }
+        if (start >= all.size()) {
+            return List.of();
+        }
+        return new ArrayList<>(all.subList(start, Math.min(start + pageSize, all.size())));
     }
 
     private Payload handleHealthCheck() {
