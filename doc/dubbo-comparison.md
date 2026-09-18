@@ -138,7 +138,7 @@ Dubbo 3.3 将 REST 重新定位为 Triple 协议之上的访问层（Triple REST
 
 ## 十、Jaws 的差异化点
 
-- **gRPC 线格式兼容（新能力）** — `jaws-wire` 模块实现标准 gRPC 线格式（5 字节长度前缀帧 + trailers 状态码），通过 WireProtocol 完整支持注册中心/负载均衡/Filter 链，兼容 grpcurl 等标准 gRPC 工具，无 grpc-java 依赖
+- **gRPC 线格式兼容** — `jaws-wire` 模块实现标准 gRPC 线格式（5 字节长度前缀帧 + trailers 状态码），通过 WireProtocol 完整支持注册中心/负载均衡/Filter 链，兼容 grpcurl 等标准 gRPC 工具，无 grpc-java 依赖
 - **HTTP/2 传输轻量可插拔（设计取舍）** — 通过 `TransportFactory` SPI 零侵入接入基于 Netty `Http2FrameCodec` + `Http2MultiplexHandler` 自研的 HTTP/2 传输，无 grpc-java/protobuf 依赖，复用 Jaws 序列化体系，支持 Server/Client/Bidirectional 三种流式，可获得多路复用、流控、网关穿透与 Service Mesh 友好能力
 - **Adaptive 单端口多协议（设计亮点）** — AdaptiveServer 通过首字节检测自动路由到 Jaws 二进制 / HTTP/2 / HTTP/1.1 / TLS 四种 pipeline（TLS 经 ALPN 落到 h2 或 http/1.1，配 trustCert 即 mTLS），HTTP/1.1 上叠加注解驱动 REST 路由（Spring Web + JAX-RS），单端口即可服务所有客户端，与 Dubbo Port Unification Server 能力对等
 - **编解码设计简洁性** — JawsCodec 分层清晰，Dubbo 的继承体系更复杂
