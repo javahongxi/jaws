@@ -9,6 +9,7 @@ import org.hongxi.jaws.harbor.proto.Metadata;
 import org.hongxi.jaws.harbor.proto.Payload;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 /**
  * The harbor wire contract: RPC names, payload type tokens, and the Payload
@@ -39,6 +40,24 @@ public final class HarborProtocol {
      * name. Kept here so the exception is stated once, in words.
      */
     public static final String CONFIG_LISTEN_REQUEST = "ConfigBatchListenRequest";
+
+    /**
+     * Nacos request types that are a deliberate boundary rather than a gap. They
+     * have no DTO here — their bodies are never parsed — so the token is spelled
+     * out exactly as {@link #CONFIG_LISTEN_REQUEST} has to be.
+     */
+    public static final Set<String> UNSUPPORTED_REQUEST_TYPES = Set.of(
+            "PersistentInstanceRequest",
+            "NamingFuzzyWatchRequest", "NamingFuzzyWatchSyncRequest",
+            "NamingFuzzyWatchChangeNotifyRequest",
+            "ConfigPublishRequest", "ConfigQueryRequest", "ConfigDeleteRequest",
+            "ConfigBatchGetRequest");
+
+    /** The reason behind every refusal, so client and log read the same sentence. */
+    public static final String UNSUPPORTED_BOUNDARY =
+            "harbor is an ephemeral-instance naming registry only: no persistent "
+                    + "instances (which need a CP store and server-side probing), "
+                    + "no fuzzy watch, no config center";
 
     /**
      * Values of {@code InstanceRequest.type} / {@code BatchInstanceRequest.type}

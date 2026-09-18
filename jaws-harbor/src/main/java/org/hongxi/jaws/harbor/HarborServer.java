@@ -287,8 +287,7 @@ public class HarborServer {
 
             UnaryRequestHandler handler = unaryHandlers.get(type);
             if (handler == null) {
-                log.warn("[harbor] unknown request type: {}", type);
-                return HarborProtocol.encodeError(type, "Unknown request type: " + type);
+                return refuseUnroutable(type);
             }
             try {
                 return handler.handle(payload, clientIp, connectionId);
@@ -302,6 +301,22 @@ public class HarborServer {
         public Parser<? extends Message> getRequestParser() {
             return Payload.getDefaultInstance().getParserForType();
         }
+    }
+
+    /**
+     * An answer that tells a boundary apart from a bug: a Nacos request harbor
+     * deliberately does not implement says so, while a token nobody recognises
+     * stays "unknown". Fused into one message, a failing client cannot tell an
+     * unsupported feature from a handler that went missing.
+     */
+    private Payload refuseUnroutable(String type) {
+        if (HarborProtocol.UNSUPPORTED_REQUEST_TYPES.contains(type)) {
+            log.warn("[harbor] refused a request outside harbor's scope: {}", type);
+            return HarborProtocol.encodeError(type,
+                    type + " is not supported: " + HarborProtocol.UNSUPPORTED_BOUNDARY);
+        }
+        log.warn("[harbor] unknown request type: {}", type);
+        return HarborProtocol.encodeError(type, "Unknown request type: " + type);
     }
 
     // ========================================================================
@@ -447,6 +462,14 @@ public class HarborServer {
         if (instance == null) {
             return instanceError("Missing instance");
         }
+        if (!instance.isEphemeral()) {
+            // Nacos sends a persistent instance over its own request type. One that
+            // arrives inside an InstanceRequest must not be served as ephemeral: it
+            // would ride the connection-liveness model and vanish on disconnect,
+            // which is precisely what persistent means it must not do.
+            return instanceError("ephemeral=false is not supported: "
+                    + HarborProtocol.UNSUPPORTED_BOUNDARY);
+        }
 
         // Set default instanceId if not provided
         if (instance.getInstanceId() == null || instance.getInstanceId().isEmpty()) {
@@ -497,6 +520,14 @@ public class HarborServer {
         String serviceName = request.getServiceName();
 
         List<Instance> instances = request.getInstances();
+        for (Instance each : instances == null ? List.<Instance>of() : instances) {
+            if (!each.isEphemeral()) {
+                return HarborProtocol.encodeError(
+                        HarborProtocol.typeToken(BatchInstanceResponse.class),
+                        "ephemeral=false is not supported: "
+                                + HarborProtocol.UNSUPPORTED_BOUNDARY);
+            }
+        }
         if (instances == null || instances.isEmpty()) {
             return HarborProtocol.encodeError(
                     HarborProtocol.typeToken(BatchInstanceResponse.class), "Missing instances");

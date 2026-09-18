@@ -81,6 +81,7 @@ public class HarborClient implements Closeable {
 
     public void registerInstance(String serviceName, String groupName, Instance instance) {
         ServiceKey key = keyOf(serviceName, groupName);
+        requireEphemeral(key, instance);
         // Cached before the call, with intent set: a reconnect that follows a lost
         // reply must still replay what the caller asked for. Re-registering the
         // same service replaces the payload, so the replay sends the newest value.
@@ -98,6 +99,7 @@ public class HarborClient implements Closeable {
 
     public void deregisterInstance(String serviceName, String groupName, Instance instance) {
         ServiceKey key = keyOf(serviceName, groupName);
+        requireEphemeral(key, instance);
         InstanceRedoData entry = registrations.get(key);
         if (entry == null) {
             // Nothing was owed to the registry here; send anyway so a caller that
@@ -439,6 +441,13 @@ public class HarborClient implements Closeable {
             default -> {
                 return false;
             }
+        }
+    }
+
+    private static void requireEphemeral(ServiceKey key, Instance instance) {
+        if (!instance.isEphemeral()) {
+            throw new IllegalArgumentException(key.toKeyString()
+                    + " asks ephemeral=false; " + HarborProtocol.UNSUPPORTED_BOUNDARY);
         }
     }
 
