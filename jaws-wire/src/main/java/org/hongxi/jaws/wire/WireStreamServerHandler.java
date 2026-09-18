@@ -709,10 +709,12 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        // Ignore expected client disconnects (Connection reset, Broken pipe, etc.)
-        // These are normal when clients close connections abruptly or use wrong protocol
-        if (cause instanceof IOException || cause.getCause() instanceof IOException) {
-            log.debug("client disconnected: path={} error={}", path, cause.getMessage());
+        if (isExpectedDisconnect(cause)) {
+            // toString, not the throwable itself: an expected teardown must not print a
+            // stack, and the exception class is what tells a reset apart from a
+            // flow-control frame that raced the pipeline teardown. getMessage() alone
+            // would print "null" for the Netty IOExceptions that carry no message.
+            log.debug("stream already going away: path={} cause={}", path, cause.toString());
             return;
         }
         
@@ -721,6 +723,31 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             sendError(ctx, WireConstants.STATUS_INTERNAL, cause.getMessage());
         }
         ctx.close();
+    }
+
+    /**
+     * Whether this exception only says the stream was already going away.
+     * <p>
+     * {@code IOException} is an abrupt client disconnect (reset, broken pipe). The
+     * second shape is Netty's HTTP/2 codec refilling flow control after the stream's
+     * frame encoder has been removed during teardown: the queued write then lands on a
+     * raw {@code ByteBuf} encoder and surfaces as
+     * {@code UnsupportedOperationException: unsupported message type
+     * [DefaultHttp2WindowUpdateFrame]}. Neither is fixable here — the frame is the
+     * codec's, not ours — and logging them as server failures buries the real ones,
+     * which is why the classification is narrow: an {@code Unknown method} from a
+     * streaming handler stays an error.
+     */
+    static boolean isExpectedDisconnect(Throwable cause) {
+        if (cause instanceof IOException || cause.getCause() instanceof IOException) {
+            return true;
+        }
+        if (!(cause instanceof UnsupportedOperationException)) {
+            return false;
+        }
+        String message = cause.getMessage();
+        return message != null && message.contains("unsupported message type")
+                && message.contains("Http2");
     }
 
     /**
