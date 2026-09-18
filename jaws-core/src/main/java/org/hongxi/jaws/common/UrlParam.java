@@ -188,19 +188,6 @@ public final class UrlParam {
          */
         public static final Def<Integer> RETRY_JITTER_PCT = new Def<>("retryJitterPct", 20);
 
-        /**
-         * Whether to enable DNS-based service discovery for the wire client.
-         * When enabled, the hostname is resolved to multiple A/AAAA records
-         * and connections are established to each resolved address.
-         */
-        public static final Def<Boolean> DNS_ENABLED = new Def<>("dnsEnabled", false);
-
-        /**
-         * DNS service discovery: how often to re-resolve the hostname (ms).
-         * 0 means resolve once at startup. Default 30s.
-         */
-        public static final Def<Long> DNS_REFRESH_INTERVAL_MS = new Def<>("dnsRefreshIntervalMs", 30_000L);
-
         private Transport() {
         }
     }

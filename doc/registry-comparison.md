@@ -40,7 +40,7 @@ instance metadata = {protocol, path, ...所有URL参数}
 2. **单实体**：只注册一个 `Instance` 对象，设置 `ephemeral=true, healthy=true`
 3. **数据载体**：URL 参数全部放入 `instance.metadata`，额外存储 `protocol` 和 `path`
 
-**核心区别**：ZK 依赖临时节点 + 会话心跳实现自动下线；Nacos 依赖心跳 + 健康检查机制。
+**核心区别**：v2 模型下两者其实都是**连接活性驱动**——ZK 靠临时节点 + 会话超时自动下线；Nacos 2.x 靠客户端与服务端之间的 **gRPC 连接**（连接断即临时实例消失），**已无 1.x 的 HTTP 心跳**（详见 [nacos-client-internals.md](nacos-client-internals.md) §4）。
 
 ## 三、服务订阅与发现机制
 
@@ -77,7 +77,7 @@ if (connectionState == ConnectionState.RECONNECTED) {
 
 ### Nacos — 无显式重连
 
-`NacosRegistry` **没有**连接状态监听。Nacos 客户端 SDK 内部处理了心跳和重连，`NamingService` 会自动维护注册状态。
+`NacosRegistry` **没有**连接状态监听。Nacos 客户端 SDK 内部靠 **gRPC 连接活性 + 客户端 redo 重放**维护注册状态（v2 无 beat：断连只把 redo 数据标脏位，重连后由 `RedoScheduledTask` 重发注册/订阅）——详见 [nacos-client-internals.md](nacos-client-internals.md) §5。
 
 ## 五、服务发现（doDiscover）
 
@@ -113,18 +113,18 @@ if (connectionState == ConnectionState.RECONNECTED) {
 | **客户端** | `NamingFactory.createNamingService(Properties)` | `CuratorFrameworkFactory.builder().build()` |
 | **重试策略** | Nacos SDK 内部管理 | `ExponentialBackoffRetry(1000, 3)` 显式配置 |
 | **认证** | username/password 放入 Properties | `digest` 模式 ACL 认证 |
-| **超时** | `CONFIG_LONG_POLL_TIMEOUT` | `sessionTimeoutMs` + `connectionTimeoutMs` 分离 |
+| **超时** | 不在 NamingService 属性里设（gRPC 的 serverCheck/keepAlive 超时走 `GrpcClientConfig` + 系统属性 `nacos.remote.client.grpc.*`） | `sessionTimeoutMs` + `connectionTimeoutMs` 分离 |
 
 ## 九、总结
 
 | 特性 | Nacos | ZooKeeper |
 |------|-------|-----------|
 | **数据模型** | 扁平，面向服务注册设计 | 通用协调服务 |
-| **健康检查** | 服务端主动心跳检测 | 会话超时 + 临时节点自动消失 |
+| **实例活性** | v2：服务端以 gRPC 连接活性判临时实例（1.x 才是 HTTP 心跳） | 会话超时 + 临时节点自动消失 |
 | **变更通知** | 推送全量实例列表 | Watch 通知 + 客户端重新拉取 |
 | **重连恢复** | SDK 内部处理，应用层无感 | 应用层监听 `RECONNECTED` 手动恢复 |
 | **消费者感知** | 不记录消费者信息 | 创建 CLIENT 临时节点标记消费者 |
 | **配置中心** | 原生 ConfigService 支持 | 用节点 data 模拟，需自建路径规范 |
-| **代码复杂度** | 较低（~183行），API 更高级 | 较高（~267行），需手动管理节点生命周期 |
+| **代码复杂度** | 较低（`NacosRegistry` 约 185 行），API 更高级 | 较高（`ZookeeperRegistry` 约 308 行），需手动管理节点生命周期 |
 
 简而言之：**Nacos 实现更简洁**，因为 Nacos SDK 封装了更多服务注册的高层语义；**ZooKeeper 实现更底层**，需要手动处理节点创建/删除、会话重连、消费者标记等细节，但控制粒度也更细。

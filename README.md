@@ -191,6 +191,7 @@ public class MyRunner implements CommandLineRunner {
 | [与 Dubbo 对比](doc/dubbo-comparison.md)      | 八个维度的系统性能力对比                        |
 | [注册中心对比](doc/registry-comparison.md)    | Nacos 与 ZooKeeper 实现对比                     |
 | [Harbor ↔ Nacos 字帖](doc/harbor-vs-nacos.md) | 内置注册中心与 Nacos 的详细设计对比             |
+| [Nacos-Client 内部机制](doc/nacos-client-internals.md) | 命名 gRPC 客户端怎么发——字帖的对面那半       |
 | [性能测试](doc/benchmark.md)                  | Benchmark 环境变量与参数选择建议                |
 
 
