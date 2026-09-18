@@ -114,9 +114,14 @@ public class PushDelayTaskEngine {
             Payload payload = HarborProtocol.encodePush(push);
 
             for (String connId : serviceStorage.getSubscriberConnections(service)) {
+                // The shared payload only fits watchers of every cluster; one that
+                // subscribed a cluster subset must not be handed the rest.
+                String clusters = serviceStorage.getSubscriberClusters(service, connId);
+                Payload target = clusters.isEmpty() ? payload : narrowed(latest, clusters, push);
+
                 // pushToConnection returns false only when the connection is gone;
                 // a gone client re-subscribes on reconnect, so skip — do not retry.
-                boolean connected = connectionManager.pushToConnection(connId, payload);
+                boolean connected = connectionManager.pushToConnection(connId, target);
                 if (!connected) {
                     log.debug("[harbor] push skipped, connection gone: connId={}, service={}",
                             connId, service);
@@ -130,6 +135,20 @@ public class PushDelayTaskEngine {
                 pending.add(service);
             }
         }
+    }
+
+    /**
+     * Same change, seen through one subscriber's cluster filter. Health is left
+     * visible as-is: Nacos pushes the enabled/disabled and healthy flags through so
+     * a watcher learns that an instance it holds went out of service.
+     */
+    private Payload narrowed(ServiceInfo latest, String clusters, NotifySubscriberRequest base) {
+        NotifySubscriberRequest copy = new NotifySubscriberRequest();
+        copy.setNamespace(base.getNamespace());
+        copy.setServiceName(base.getServiceName());
+        copy.setGroupName(base.getGroupName());
+        copy.setServiceInfo(ServiceInstanceSelector.select(latest, clusters, false, false));
+        return HarborProtocol.encodePush(copy);
     }
 
     public void shutdown() {

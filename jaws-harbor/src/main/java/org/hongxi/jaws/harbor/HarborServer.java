@@ -526,15 +526,20 @@ public class HarborServer {
         String groupName = request.getGroupName();
         String serviceName = request.getServiceName();
         boolean subscribe = request.isSubscribe();
+        String clusters = request.getClusters();
 
         if (subscribe) {
-            serviceStorage.addSubscriber(namespace, groupName, serviceName, connectionId);
+            serviceStorage.addSubscriber(namespace, groupName, serviceName, connectionId,
+                    clusters);
         } else {
             serviceStorage.removeSubscriber(namespace, groupName, serviceName, connectionId);
         }
 
-        ServiceInfo serviceInfo = serviceStorage.buildServiceInfo(
-                namespace, groupName, serviceName);
+        // Nacos answers a subscribe with cluster and enabled filtering but keeps
+        // unhealthy instances visible, so the watcher learns the whole picture.
+        ServiceInfo serviceInfo = ServiceInstanceSelector.select(
+                serviceStorage.buildServiceInfo(namespace, groupName, serviceName),
+                clusters, false, true);
 
         SubscribeServiceResponse response = new SubscribeServiceResponse();
         response.setResultCode(200);
@@ -548,9 +553,16 @@ public class HarborServer {
         String namespace = request.getNamespace();
         String groupName = request.getGroupName();
         String serviceName = request.getServiceName();
+        if (request.getUdpPort() != 0) {
+            // Named rather than swallowed: UDP push is a v1 transport, and harbor
+            // notifies over the bi-directional stream.
+            log.warn("[harbor] ignoring ServiceQueryRequest.udpPort={} for {},"
+                    + " notifications go over the bi-stream", request.getUdpPort(), serviceName);
+        }
 
-        ServiceInfo serviceInfo = serviceStorage.buildServiceInfo(
-                namespace, groupName, serviceName);
+        ServiceInfo serviceInfo = ServiceInstanceSelector.select(
+                serviceStorage.buildServiceInfo(namespace, groupName, serviceName),
+                request.getCluster(), request.isHealthyOnly(), true);
 
         QueryServiceResponse response = new QueryServiceResponse();
         response.setResultCode(200);

@@ -62,6 +62,13 @@ public class ServiceStorage {
     private final Map<ServiceKey, Set<String>> subscriberIndexes = new ConcurrentHashMap<>();
 
     /**
+     * Per-subscriber cluster filter: service -> connectionId -> requested clusters.
+     * Nacos keeps this on the {@code Subscriber} object; a push has to be narrowed
+     * per subscriber, so the shared payload cannot go out verbatim to everyone.
+     */
+    private final Map<ServiceKey, Map<String, String>> subscriberClusters = new ConcurrentHashMap<>();
+
+    /**
      * Read cache: service → aggregated {@link ServiceInfo}.
      * Matches Nacos {@code ServiceStorage.serviceDataIndexes}, which is likewise
      * keyed by the service object rather than a joined string.
@@ -204,13 +211,25 @@ public class ServiceStorage {
     // ========================================================================
 
     /**
-     * Add a subscriber for the given service.
+     * Add a subscriber for the given service, watching every cluster.
      */
     public void addSubscriber(String namespace, String group, String serviceName,
                               String connectionId) {
+        addSubscriber(namespace, group, serviceName, connectionId, "");
+    }
+
+    /**
+     * Add a subscriber for the given service with its cluster filter.
+     *
+     * @param clusters comma-separated cluster allow-list, empty for all clusters
+     */
+    public void addSubscriber(String namespace, String group, String serviceName,
+                              String connectionId, String clusters) {
         ServiceKey key = ServiceKey.of(namespace, group, serviceName);
         subscriberIndexes.computeIfAbsent(key, k -> new CopyOnWriteArraySet<>())
                 .add(connectionId);
+        subscriberClusters.computeIfAbsent(key, k -> new ConcurrentHashMap<>())
+                .put(connectionId, clusters == null ? "" : clusters);
         ClientSession session = connectionManager.getClientSession(connectionId);
         if (session != null) {
             session.addSubscriber(key);
@@ -229,6 +248,13 @@ public class ServiceStorage {
             subscribers.remove(connectionId);
             if (subscribers.isEmpty()) {
                 subscriberIndexes.remove(key);
+            }
+        }
+        Map<String, String> clustersOfKey = subscriberClusters.get(key);
+        if (clustersOfKey != null) {
+            clustersOfKey.remove(connectionId);
+            if (clustersOfKey.isEmpty()) {
+                subscriberClusters.remove(key);
             }
         }
         ClientSession session = connectionManager.getClientSession(connectionId);
@@ -254,6 +280,7 @@ public class ServiceStorage {
                         subscriberIndexes.remove(serviceKey);
                     }
                 }
+                removeSubscriberFilter(serviceKey, connectionId);
                 affectedServices.add(serviceKey);
             }
         } else {
@@ -263,6 +290,7 @@ public class ServiceStorage {
                 if (entry.getValue().isEmpty()) {
                     subscriberIndexes.remove(entry.getKey());
                 }
+                removeSubscriberFilter(entry.getKey(), connectionId);
                 affectedServices.add(entry.getKey());
             }
         }
@@ -322,6 +350,7 @@ public class ServiceStorage {
             host.setHealthy(inst.isHealthy());
             host.setEnabled(inst.isEnabled());
             host.setEphemeral(inst.isEphemeral());
+            host.setClusterName(inst.getClusterName());
             host.setServiceName(groupedName);
             host.setInstanceId(inst.getInstanceId());
             host.setMetadata(inst.getMetadata() != null ? inst.getMetadata() : new HashMap<>());
@@ -341,6 +370,27 @@ public class ServiceStorage {
     public Set<String> getSubscriberConnections(ServiceKey serviceKey) {
         Set<String> subscribers = subscriberIndexes.get(serviceKey);
         return subscribers == null ? Set.of() : Set.copyOf(subscribers);
+    }
+
+    /**
+     * The cluster filter a subscriber asked for, {@code ""} when it watches every
+     * cluster. Re-read with the live subscriber set so a push narrows per watcher.
+     */
+    public String getSubscriberClusters(ServiceKey serviceKey, String connectionId) {
+        Map<String, String> filters = subscriberClusters.get(serviceKey);
+        String clusters = filters == null ? null : filters.get(connectionId);
+        return clusters == null ? "" : clusters;
+    }
+
+    private void removeSubscriberFilter(ServiceKey serviceKey, String connectionId) {
+        Map<String, String> filters = subscriberClusters.get(serviceKey);
+        if (filters == null) {
+            return;
+        }
+        filters.remove(connectionId);
+        if (filters.isEmpty()) {
+            subscriberClusters.remove(serviceKey);
+        }
     }
 
     // ========================================================================
@@ -680,6 +730,7 @@ public class ServiceStorage {
         }
         publisherIndexes.remove(serviceKey);
         subscriberIndexes.remove(serviceKey);
+        subscriberClusters.remove(serviceKey);
         invalidateServiceCache(serviceKey);
         log.info("[harbor] empty service cleaned: {}", serviceKey);
     }

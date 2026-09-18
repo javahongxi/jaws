@@ -19,6 +19,8 @@ public class Instance {
     private boolean healthy = true;
     private boolean enabled = true;
     private boolean ephemeral = true;
+    /** Nacos fills a blank cluster with this name client-side; we keep parity. */
+    private String clusterName = "DEFAULT";
     private String serviceName;
     private Map<String, String> metadata;
 
@@ -79,6 +81,14 @@ public class Instance {
 
     public void setEphemeral(boolean ephemeral) {
         this.ephemeral = ephemeral;
+    }
+
+    public String getClusterName() {
+        return clusterName;
+    }
+
+    public void setClusterName(String clusterName) {
+        this.clusterName = clusterName;
     }
 
     public String getServiceName() {
