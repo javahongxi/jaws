@@ -427,18 +427,36 @@ public class ServiceStorage {
                 continue;
             }
             boolean wantHealthy = !record.isStale(now, timeoutMs);
-            boolean flipped = false;
+            int flippedInstances = 0;
+            Set<ServiceKey> flippedServices = new HashSet<>();
+            long idleMillis = now - record.lastActive();
             for (Map.Entry<ServiceKey, List<Instance>> entry : session.getAllPublishers().entrySet()) {
                 for (Instance inst : entry.getValue()) {
                     if (inst.isHealthy() != wantHealthy) {
                         inst.setHealthy(wantHealthy);
                         invalidateServiceCache(entry.getKey());
                         affectedServices.add(entry.getKey());
-                        flipped = true;
+                        flippedInstances++;
+                        flippedServices.add(entry.getKey());
                     }
                 }
             }
-            if (flipped) {
+            if (flippedInstances > 0 && !wantHealthy) {
+                // Visible on purpose: health here is judged from a client's silence,
+                // so one stalled process — a long pause, a NAT-dropped channel that is
+                // still open — turns everything that client published unhealthy at
+                // once. Without this line the only trace of it is a consumer's empty
+                // list, which does not point back here.
+                log.warn("[harbor] connection idle {}ms, marked {} instance(s) of {} service(s)"
+                                + " unhealthy: connId={}, clientIp={}",
+                        idleMillis, flippedInstances, flippedServices.size(),
+                        session.getConnectionId(), record.clientIp());
+            } else if (flippedInstances > 0) {
+                log.info("[harbor] connection active again, restored {} instance(s) to healthy:"
+                                + " connId={}, clientIp={}",
+                        flippedInstances, session.getConnectionId(), record.clientIp());
+            }
+            if (flippedInstances > 0) {
                 // Health is part of the replicated content: without folding it into
                 // the revision, a lost push for a client whose instances did not
                 // otherwise change would never be noticed by verify.

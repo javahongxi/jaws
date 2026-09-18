@@ -231,6 +231,9 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 - **已决并落地**：纯订阅连接的复制/回收不对称选了 B——订阅关系整体退出复制载荷，向 Nacos 靠齐（详见 §3.8，含 3 节点集群实测证据）。
 - **已订正**：`ConnectionCleanup` 的 Javadoc 曾把对标对象写作 Nacos 的 `ConnectionManager` + `ClientConnectionUnregisterEvent`（该符号在 Nacos 不存在）。本文改为真实的 `ConnectionBasedClientManager.clientDisconnected(String)`（`clients.remove` → `release()` → 以 `isResponsible` 发 `ClientReleaseEvent`/`ClientDisconnectEvent`），并点明 Nacos 自己的看门狗 `ExpiredClientCleaner` 也复用这同一个入口——正是本类要编码的性质。
 
+- **无空列表保护，抖动会成批翻转（明确不做）**：健康是按**连接**判的，静默过 `INSTANCE_UNHEALTHY_TIMEOUT_MS=15s` 就把该 client 在所有服务上的实例**一起**标 unhealthy，活动回来再一起翻回——余量只有 3 拍（客户端 keepalive 5s ÷ 15s）。所以一次超过 15s 的客户端停顿（长 GC、合盖、NAT 静默丢包而 TCP 未断）在消费侧表现为"服务突然空了"，而 90s 看门狗之后实例是被**删除**而非降级，那时任何阈值都无从回退。Nacos 的两个开关都不解决这个问题：服务端 `protectThreshold` 默认 0.0（等于没开），客户端 `namingPushEmptyProtection` 默认 false 且判据是 `ServiceInfo.validate()`——"列表里还有没有一个 healthy 且 weight>0 的实例"，一旦开启连**正常清空**也会被当错误推送忽略，客户端死抱旧地址；nacos-client 也**没有**"忽略后延迟反查"这回事，恢复只靠下一次有效推送、显式 `subscribe=false` 查询，或重连时 redo 重投订阅带回新快照。harbor 侧现有兜底在消费层：`RegistryDirectory.notify` 收到空列表保留既有引用并 warn，`AbstractRegistry` 另有本地文件缓存；**裸用 nacos-client 或 HarborClient 的调用方没有这层**。翻转与恢复现在各有一行日志（unhealthy 为 WARN）可查。
+- **元数据/服务编辑面不做**：`NacosNamingMaintainService` 走 HTTP（`NamingHttpClientProxy`），服务端 `NamingMetadataOperateService` 把 `ServiceMetadata` 变更提交给 **CP 协议（JRaft，group=`SERVICE_METADATA`）**；`ServiceMetadata` 还携带 `selector` 与 `clusters: Map<String, ClusterMetadata>`（内含服务端主动探活 tcp/http/mysql）。这三样各自撞上 harbor 的立身前提：没有 CP 层、健康权威只有"连接即活性"、gRPC 面上不存在元数据写入请求类型。故 harbor 不做元数据写面，README 也不宣称支持。
+
 ## 6. 对外咬合的可验证性：拿同栈的 spacecloud 当第三方反验
 
 harbor 的定位决定了它不能只靠自证。**自测全绿 ≠ 协议互通**：`jaws-to-jaws` 两端同源，双命名体系的问题会被同一套反射口径互相掩盖，跑再多遍也证明不了「真 nacos-client 能把它当 Nacos 用」。所以咬合的正确验法永远是**从对面打过来**——用一个你不控制、生态现成的客户端反向验证。当前这条腿是 `run-sample.sh interop`（grpc-java ↔ jaws-wire 双向）加 §3.8 的 3 节点集群实测。
