@@ -230,6 +230,33 @@ class HarborClientTest {
     }
 
     /**
+     * Starting up must survive any random start node, not just the healthy one.
+     * <p>
+     * A registry URL may carry backup addresses while only one node is actually up,
+     * so the first connect walks the same list recovery does. Before that was shared,
+     * roughly half of these starts died on the dead first entry — a registry coming
+     * online would have been unreachable to this client until a call triggered
+     * recovery.
+     */
+    @Test
+    void startSucceedsWhicheverNodeTheRandomStartPicks() throws Exception {
+        int deadPort;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            deadPort = socket.getLocalPort();
+        }
+        String clusterList = "127.0.0.1:" + deadPort + ",127.0.0.1:" + port;
+
+        for (int attempt = 0; attempt < 12; attempt++) {
+            try (HarborClient client = new HarborClient(HarborClientConfig.ofCluster(clusterList))) {
+                String service = "started-" + attempt;
+                client.registerInstance(service, instance("127.0.0.1", 9800 + attempt));
+                assertEquals(1, client.getInstances(service).size(),
+                        "attempt " + attempt + " should have reached the live node");
+            }
+        }
+    }
+
+    /**
      * Keep-alive traffic is what holds an idle provider's instances up: harbor's
      * health tiers are calibrated against a beat (unhealthy past 3×5s of silence,
      * session retired past ~18) while a v2 client sends no beat at all.

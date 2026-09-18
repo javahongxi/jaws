@@ -104,8 +104,10 @@ final class HarborConnection implements Closeable {
     }
 
     void start() {
-        attach(host, port);
-        openNotificationStream();
+        // Same walk as recovery: a node list may well hold a node that is not up yet
+        // (a cluster coming online, a backup address kept for failover), and choosing
+        // a random start must not turn that into a failed startup.
+        establish();
         keepAliveScheduler.scheduleWithFixedDelay(this::keepAliveTick,
                 config.keepAliveMillis(), config.keepAliveMillis(), TimeUnit.MILLISECONDS);
     }
@@ -203,6 +205,16 @@ final class HarborConnection implements Closeable {
         }
 
         // Otherwise walk the node list, which is what makes losing a node survivable.
+        establish();
+        replayHook.run();
+    }
+
+    /**
+     * Attach to the first node that answers and open its notification stream: the one
+     * we are on first, then the rest of the list from the cursor. Failing all of them
+     * is reported as one event listing every address tried.
+     */
+    private void establish() {
         List<String> candidates = candidateOrder();
         String attachedBefore = host + ":" + port;
         Exception last = null;
@@ -211,10 +223,9 @@ final class HarborConnection implements Closeable {
                 attachTo(candidate);
                 openNotificationStream();
                 if (!candidate.equals(attachedBefore)) {
-                    log.warn("[harbor-client] failed over from {} to {}", attachedBefore,
-                            candidate);
+                    log.warn("[harbor-client] attached to {} instead of {}", candidate,
+                            attachedBefore);
                 }
-                replayHook.run();
                 return;
             } catch (Exception e) {
                 last = e;

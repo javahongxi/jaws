@@ -15,6 +15,7 @@
         <module>jaws-wire-proto</module>
         <module>jaws-registry-zookeeper</module>
         <module>jaws-registry-nacos</module>
+        <module>jaws-registry-harbor</module>
         <module>jaws-spring-boot</module>
         <module>jaws-extensions</module>
         <module>jaws-harbor</module>

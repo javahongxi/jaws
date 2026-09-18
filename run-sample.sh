@@ -175,6 +175,11 @@ build_classpath() {
     if grep -q 'jaws-harbor' "$module/pom.xml" 2>/dev/null; then
         project_cp="$project_cp:jaws-harbor/target/classes"
     fi
+    # The native harbor registry leg needs its SPI classes and the harbor client
+    # (jaws-harbor) on the path; it does not touch nacos-client at all.
+    if grep -q 'jaws-registry-harbor' "$module/pom.xml" 2>/dev/null; then
+        project_cp="$project_cp:jaws-registry-harbor/target/classes:jaws-harbor/target/classes"
+    fi
     echo "$project_cp:$deps"
 }
 

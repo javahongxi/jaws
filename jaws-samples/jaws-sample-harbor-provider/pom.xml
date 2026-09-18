@@ -19,7 +19,7 @@
         </dependency>
         <dependency>
             <groupId>org.hongxi</groupId>
-            <artifactId>jaws-registry-nacos</artifactId>
+            <artifactId>jaws-registry-harbor</artifactId>
             <version>${project.version}</version>
         </dependency>
 

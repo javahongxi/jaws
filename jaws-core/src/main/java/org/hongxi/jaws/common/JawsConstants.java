@@ -31,9 +31,10 @@ public class JawsConstants {
     public static final String REGISTRY_PROTOCOL_LOCAL = "local";
     public static final String REGISTRY_PROTOCOL_ZOOKEEPER = "zookeeper";
     public static final String REGISTRY_PROTOCOL_NACOS = "nacos";
+    public static final String REGISTRY_PROTOCOL_HARBOR = "harbor";
 
     public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
-    public static final String NACOS_REGISTRY_NAMESPACE = "jaws";
+    public static final String REGISTRY_SERVICE_NAMESPACE = "jaws";
 
     public static final String PROTOCOL_INJVM = "injvm";
     public static final String PROTOCOL_JAWS = "jaws";

@@ -23,7 +23,7 @@ public class NacosPathUtils {
      * Format: "jaws/{path}"
      */
     public static String toServiceName(URL url) {
-        return JawsConstants.NACOS_REGISTRY_NAMESPACE + JawsConstants.PATH_SEPARATOR + url.getPath();
+        return JawsConstants.REGISTRY_SERVICE_NAMESPACE + JawsConstants.PATH_SEPARATOR + url.getPath();
     }
 
     /**
