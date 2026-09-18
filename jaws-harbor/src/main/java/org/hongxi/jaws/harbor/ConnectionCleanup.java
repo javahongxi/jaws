@@ -1,6 +1,8 @@
 package org.hongxi.jaws.harbor;
 
+import com.google.protobuf.Message;
 import org.hongxi.jaws.harbor.distro.DistroProtocol;
+import org.hongxi.jaws.transport.StreamSubject;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +57,26 @@ public class ConnectionCleanup {
         this.connectionManager = connectionManager;
         this.serviceStorage = serviceStorage;
         this.distroProtocol = distroProtocol;
+    }
+
+    /**
+     * Closure transaction for a notification stream that ended, guarded by stream
+     * identity: when the connection has already been re-established on the same TCP
+     * channel, this stream is history and nothing may be torn down. Everything the
+     * stale session owned is either re-registered by the client's replay or belongs
+     * to the live session with the same id, so skipping is the safe half.
+     */
+    boolean cleanup(String connectionId, StreamSubject<Message> ownedPushSubject) {
+        ConnectionManager.ConnectionRecord live = connectionManager.allConnections().stream()
+                .filter(each -> each.connectionId().equals(connectionId))
+                .findFirst().orElse(null);
+        if (live != null && live.pushSubject() != ownedPushSubject) {
+            log.info("[harbor] stale notification stream ended on a re-established "
+                    + "connection, closure skipped: connId={}", connectionId);
+            return false;
+        }
+        cleanup(connectionId);
+        return true;
     }
 
     /**

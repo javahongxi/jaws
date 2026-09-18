@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
  *   <li>{@code GET /api/services} — all registered services</li>
  *   <li>{@code GET /api/cluster} — cluster members</li>
  *   <li>{@code GET /api/connections} — active connection count</li>
+ *   <li>{@code POST /api/connections/reset} — ask one client to reconnect, optionally
+ *       elsewhere; the load-shedding hook Nacos has on its loader endpoint</li>
  * </ul>
  * Runs on {@code grpcPort + 10}, zero external dependencies (JDK HttpServer only).
  *
@@ -46,6 +48,8 @@ public class HarborHttpApi {
         this.httpServer.createContext("/api/services", new ServicesHandler());
         this.httpServer.createContext("/api/cluster", new ClusterHandler());
         this.httpServer.createContext("/api/connections", new ConnectionsHandler());
+        // Longer path wins in JDK HttpServer, so this shadows the read-only listing.
+        this.httpServer.createContext("/api/connections/reset", new ConnectionResetHandler());
         this.httpServer.setExecutor(null); // use daemon threads
     }
 
@@ -119,6 +123,51 @@ public class HarborHttpApi {
             result.put("members", members);
             sendJson(exchange, 200, result.toJSONString());
         }
+    }
+
+    private class ConnectionResetHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
+                return;
+            }
+            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+            String connectionId = query.get("connectionId");
+            if (connectionId == null || connectionId.isEmpty()) {
+                sendJson(exchange, 400, "{\"error\":\"connectionId is required\"}");
+                return;
+            }
+            String redirect = query.get("redirect");
+            String ip = null;
+            String port = null;
+            if (redirect != null && redirect.contains(":")) {
+                String[] parts = redirect.split(":");
+                ip = parts[0];
+                port = parts[1];
+            }
+            boolean acked = harborServer.expelConnection(connectionId, ip, port);
+            JSONObject result = new JSONObject();
+            result.put("connectionId", connectionId);
+            result.put("acked", acked);
+            sendJson(exchange, acked ? 200 : 504, result.toJSONString());
+        }
+    }
+
+    private static Map<String, String> parseQuery(String rawQuery) {
+        Map<String, String> params = new java.util.HashMap<>();
+        if (rawQuery == null || rawQuery.isEmpty()) {
+            return params;
+        }
+        for (String pair : rawQuery.split("&")) {
+            int split = pair.indexOf('=');
+            if (split > 0) {
+                params.put(pair.substring(0, split),
+                        java.net.URLDecoder.decode(pair.substring(split + 1),
+                                java.nio.charset.StandardCharsets.UTF_8));
+            }
+        }
+        return params;
     }
 
     private class ConnectionsHandler implements HttpHandler {

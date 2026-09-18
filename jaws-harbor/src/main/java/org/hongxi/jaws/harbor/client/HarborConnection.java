@@ -6,10 +6,12 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.harbor.HarborProtocol;
 import org.hongxi.jaws.harbor.model.Request;
 import org.hongxi.jaws.harbor.model.Response;
+import org.hongxi.jaws.harbor.model.request.ConnectResetRequest;
 import org.hongxi.jaws.harbor.model.request.ConnectionSetupRequest;
 import org.hongxi.jaws.harbor.model.request.HealthCheckRequest;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
 import org.hongxi.jaws.harbor.model.request.SetupAckRequest;
+import org.hongxi.jaws.harbor.model.response.ConnectResetResponse;
 import org.hongxi.jaws.harbor.model.response.HealthCheckResponse;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.rpc.DefaultRequest;
@@ -52,7 +54,11 @@ final class HarborConnection implements Closeable {
 
     private final HarborClientConfig config;
     private final String clientIp;
-    private final WireClient wireClient;
+
+    /** The address we are actually attached to — a redirect changes it, the config does not. */
+    private volatile String host;
+    private volatile int port;
+    private volatile WireClient wireClient;
     private final Consumer<Payload> pushSink;
     private final Runnable replayHook;
     private final AtomicLong lastActivity = new AtomicLong(System.currentTimeMillis());
@@ -71,7 +77,9 @@ final class HarborConnection implements Closeable {
         this.clientIp = NetUtils.getLocalAddress(Map.of(config.host(), config.port())).getHostAddress();
         this.pushSink = pushSink;
         this.replayHook = replayHook;
-        this.wireClient = new WireClient(buildUrl(config));
+        this.host = config.host();
+        this.port = config.port();
+        this.wireClient = new WireClient(buildUrl(config, this.host, this.port));
         this.keepAliveScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "harbor-client-keepalive");
             thread.setDaemon(true);
@@ -241,11 +249,62 @@ final class HarborConnection implements Closeable {
         if (HarborProtocol.typeToken(NotifySubscriberRequest.class).equals(type)) {
             markActive();
             pushSink.accept(payload);
+            return;
+        }
+        if (HarborProtocol.typeToken(ConnectResetRequest.class).equals(type)) {
+            // Reconnecting means tearing this stream down, so it cannot happen on the
+            // stream's own thread; the keep-alive thread has nothing else to do.
+            keepAliveScheduler.execute(() -> handleReset(payload));
         }
         // A NotifySubscriberResponse ack is deliberately not sent: harbor's push
         // is latest-state idempotent convergence with no delivery signal, so an
         // ack would only add traffic. The class exists for the frames nacos
         // clients send back.
+    }
+
+    /**
+     * Comply with a server's order to reconnect. The ack goes out first: it is what
+     * tells the expelling node that we left rather than were cut loose — on silence it
+     * closes our session itself and we would be told twice.
+     */
+    private void handleReset(Payload frame) {
+        ConnectResetRequest reset = HarborProtocol.parseBody(frame, ConnectResetRequest.class);
+        StreamSubject<Object> stream = outbound;
+        if (stream != null) {
+            stream.onNext(HarborProtocol.encodeResponse(new ConnectResetResponse()));
+        }
+        if (closed) {
+            return;
+        }
+        String redirectIp = reset.getServerIp();
+        try {
+            if (redirectIp != null && !redirectIp.isEmpty() && reset.getServerPort() != null) {
+                replaceTransport(redirectIp, Integer.parseInt(reset.getServerPort()));
+            }
+            recover();
+        } catch (Exception e) {
+            log.warn("[harbor-client] reconnect after connect-reset failed: {}", e.getMessage());
+        }
+    }
+
+    private void replaceTransport(String newHost, int newPort) {
+        WireClient previous = wireClient;
+        if (previous != null) {
+            try {
+                previous.close();
+            } catch (Exception e) {
+                log.debug("[harbor-client] closing redirected-from client: {}", e.getMessage());
+            }
+        }
+        this.host = newHost;
+        this.port = newPort;
+        WireClient next = new WireClient(buildUrl(config, newHost, newPort));
+        this.wireClient = next;
+        if (!next.open()) {
+            throw new JawsServiceException("cannot reach the redirect target "
+                    + newHost + ":" + newPort);
+        }
+        log.info("[harbor-client] redirected to {}:{}", newHost, newPort);
     }
 
     private void keepAliveTick() {
@@ -298,9 +357,8 @@ final class HarborConnection implements Closeable {
         wireClient.close();
     }
 
-    private static URL buildUrl(HarborClientConfig config) {
-        URL url = new URL("wire", config.host(), config.port(),
-                HarborProtocol.RPC_UNARY_SERVICE);
+    private static URL buildUrl(HarborClientConfig config, String host, int port) {
+        URL url = new URL("wire", host, port, HarborProtocol.RPC_UNARY_SERVICE);
         url.addParameter(UrlParam.Transport.REQUEST_TIMEOUT.getName(),
                 String.valueOf(config.requestTimeoutMillis()));
         url.addParameter(UrlParam.Transport.CONNECT_TIMEOUT.getName(),

@@ -182,6 +182,20 @@ class HarborClientTest {
         }
     }
 
+    @Test
+    void batchRegistrationReplaysEveryInstanceItHeld() throws Exception {
+        try (HarborClient client = newClient()) {
+            client.batchRegisterInstance("batched",
+                    List.of(instance("127.0.0.1", 9950), instance("127.0.0.1", 9951)));
+            awaitTrue(() -> client.getInstances("batched").size() == 2, 5_000);
+
+            // Ending the old stream runs the closure transaction; only a replay that
+            // keeps the batch shape puts both instances back.
+            client.connection().recover();
+            awaitTrue(() -> nacosInstances("batched").size() == 2, 10_000);
+        }
+    }
+
     /**
      * Harbor's health tiers are calibrated against a 5s beat
      * (unhealthy past ~3 beats, connection retired past ~18), and a v2 client

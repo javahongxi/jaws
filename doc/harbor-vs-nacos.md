@@ -216,6 +216,8 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 | `ClusterFilterSemanticsTest` | `cluster` 白名单与 `healthyOnly` 是**读投影**而非装饰：query 与订阅响应丢 disabled、推送保留 disabled（让订阅者知道自己那台退了服务）；`clusterName` 要能穿过注册与投影往返 |
 | `ServiceListPagingSemanticsTest` | `pageNo/pageSize` 真分页（1-based、越界回空、尾页截断），而 `count` 是整个匹配集大小——页不满不等于还有下一页 |
 | `CapabilityBoundaryTest` | 范围外的请求要读成「能力边界」而不是「handler 丢了」：`PersistentInstanceRequest`/fuzzy watch 走显式不支持，未知 token 仍报 unknown；持久实例在 client 侧与 server 侧都先拒后写，拒了就不留任何状态 |
+| `StaleStreamClosureTest` | 关闭事务按**流身份**守卫：连接标识是 TCP 连接，同通道重连会复用同一个 id，迟到的旧流 END 不许拆掉刚建立的新会话（否则客户端重放回来的实例被莫名抹掉） |
+| `ConnectResetSemanticsTest` | 服务端 `ConnectResetRequest` 双向契约：客户端先回 `ConnectResetResponse` 再重连重放；超时不回则由服务端自己跑关闭事务（对齐 Nacos `loadSingle` 的 3s 等 ack）；带 redirect 时整份状态搬到另一节点 |
 | `client/HarborClientTest` / `client/RedoDataTest` | 原生 client 的跨实现互证（自家 client 写、真 nacos-client 读，反之亦然）与 `RedoData` 三 bool 决策表 |
 
 ## 5. 已知边界（不是偏离，是尚未做）
@@ -223,6 +225,7 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 - **AP 线之外的东西一概不做，但一律响亮拒绝**：持久实例（要 CP/Raft 存储＋服务端主动探活＋活过连接的生命周期）、3.0 才有的模糊订阅（要 pattern→services 索引＋另一套订阅者身份与对账）、配置中心与鉴权/console/k8s-sync 都不在 harbor 范围内（产品面，研读优先级低于机制层）。成本参照：Nacos 的 `consistency/persistent` ＋ `healthcheck` 两处约 3.6k 行，再加 `PersistentClientOperationServiceImpl` 559 行——这不是补一个 DTO，是往「AP ＋ 连接即活性」里塞第二套一致性档位与第二个健康权威。
   边界必须可听见：`HarborProtocol.UNSUPPORTED_REQUEST_TYPES` 里的已知类型回「not supported ＋ 一句范围说明」，未知 token 才回 unknown，日志与客户端异常据此能分清「不支持」和「我们漏了」。**自家 client 更严**：`ephemeral=false` 在 `HarborClient` 直接抛 `IllegalArgumentException`，服务端也拒带 `ephemeral=false` 的 `InstanceRequest`——Nacos 服务端只按请求类型分流、并不查这个字段，但 nacos-client 永远不会这么发，所以严格化不破兼容；否则它就是静默把持久实例降级成连接所有物，正是持久实例定义里不允许的那件事。
 - **节点间全是一元**：与 Nacos 同形——Nacos 注册中心自己的 gRPC 服务面只有 unary `request` + 一条 bidi 连接流（`nacos_grpc_service.proto`），仓库里带 streaming 的只有 vendored 的 Istio/MCP proto（`mcp.proto`），在 `istio/src/main/java` 里没有任何 `rpc` 实现引用；连 jraft-core 的 `installSnapshot` 都是分块多请求而非 gRPC 流。规模化风险点在启动快照——万级 client 时单包 JSON + 5s 一元超时会痛，届时 client-stream 是自然形态，属「用对原语超越 Nacos」而非补角。
+- **批注册的形状**：`BatchInstanceRedoData extends InstanceRedoData`（与 Nacos 同形），重放按表项自己的形状决定发单个还是发批。Nacos 没有批反注册的动作常量，其 redo 在 UNREGISTER 分支会把批表项的 null 实例交给单个反注册路径；harbor 逐实例补齐，不照抄这个边界。
 - **已决并落地**：纯订阅连接的复制/回收不对称选了 B——订阅关系整体退出复制载荷，向 Nacos 靠齐（详见 §3.8，含 3 节点集群实测证据）。
 - **已订正**：`ConnectionCleanup` 的 Javadoc 曾把对标对象写作 Nacos 的 `ConnectionManager` + `ClientConnectionUnregisterEvent`（该符号在 Nacos 不存在）。本文改为真实的 `ConnectionBasedClientManager.clientDisconnected(String)`（`clients.remove` → `release()` → 以 `isResponsible` 发 `ClientReleaseEvent`/`ClientDisconnectEvent`），并点明 Nacos 自己的看门狗 `ExpiredClientCleaner` 也复用这同一个入口——正是本类要编码的性质。
 

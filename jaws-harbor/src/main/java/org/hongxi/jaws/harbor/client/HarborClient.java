@@ -5,11 +5,13 @@ import org.hongxi.jaws.harbor.HarborProtocol;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
 import org.hongxi.jaws.harbor.model.ServiceKey;
+import org.hongxi.jaws.harbor.model.request.BatchInstanceRequest;
 import org.hongxi.jaws.harbor.model.request.InstanceRequest;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
 import org.hongxi.jaws.harbor.model.request.ServiceListRequest;
 import org.hongxi.jaws.harbor.model.request.ServiceQueryRequest;
 import org.hongxi.jaws.harbor.model.request.SubscribeServiceRequest;
+import org.hongxi.jaws.harbor.model.response.BatchInstanceResponse;
 import org.hongxi.jaws.harbor.model.response.InstanceResponse;
 import org.hongxi.jaws.harbor.model.response.QueryServiceResponse;
 import org.hongxi.jaws.harbor.model.response.ServiceListResponse;
@@ -140,6 +142,43 @@ public class HarborClient implements Closeable {
         entry.unregistered();
         // Left in place on purpose: it now reads RedoType.REMOVE and the redo pass
         // collects it, exactly as Nacos defers collection to its RedoScheduledTask.
+    }
+
+    /**
+     * Register several instances of one service in a single request, as Nacos's
+     * {@code batchRegisterInstance} does.
+     * <p>
+     * The entry this leaves in the redo table replaces any single-instance entry for
+     * the same service: a service is owed at most one registration shape, and the
+     * replay has to know which one to send.
+     */
+    public void batchRegisterInstance(String serviceName, List<Instance> instances) {
+        batchRegisterInstance(serviceName, config.defaultGroup(), instances);
+    }
+
+    public void batchRegisterInstance(String serviceName, String groupName,
+                                      List<Instance> instances) {
+        if (instances == null || instances.isEmpty()) {
+            throw new IllegalArgumentException("no instances to register for " + serviceName);
+        }
+        ServiceKey key = keyOf(serviceName, groupName);
+        for (Instance each : instances) {
+            requireEphemeral(key, each);
+        }
+        BatchInstanceRedoData entry = new BatchInstanceRedoData(instances);
+        registrations.put(key, entry);
+        sendBatchRequest(key, instances, HarborProtocol.BATCH_REGISTER_INSTANCE);
+        entry.registered();
+    }
+
+    private void sendBatchRequest(ServiceKey key, List<Instance> instances, String operation) {
+        BatchInstanceRequest request = new BatchInstanceRequest();
+        request.setNamespace(key.namespace());
+        request.setGroupName(key.group());
+        request.setServiceName(key.name());
+        request.setType(operation);
+        request.setInstances(instances);
+        connection.call(request, BatchInstanceResponse.class);
     }
 
     private void sendInstanceRequest(ServiceKey key, Instance instance, String operation) {
@@ -370,11 +409,6 @@ public class HarborClient implements Closeable {
     }
 
     /**
-     * Re-establish what the dead connection owned. Harbor keys both instances
-     * and subscribers to a per-connection id, so anything not replayed here is
-     * simply gone from the registry.
-     */
-    /**
      * One reconcile tick. A dead connection is skipped — the recovery path replays
      * everything anyway, and queueing calls against a broken stream only turns the
      * log into noise.
@@ -390,6 +424,11 @@ public class HarborClient implements Closeable {
         }
     }
 
+    /**
+     * Re-establish what the dead connection owned. Harbor keys both instances
+     * and subscribers to a per-connection id, so anything not replayed here is
+     * simply gone from the registry.
+     */
     private void replayOwnedState() {
         // The session that just died held all of these; without dirtying the
         // confirmations first, every entry reads RedoType.NONE and the replay is
@@ -426,7 +465,7 @@ public class HarborClient implements Closeable {
         switch (entry.getRedoType()) {
             case REGISTER -> {
                 try {
-                    sendInstanceRequest(key, entry.instance(), HarborProtocol.REGISTER_INSTANCE);
+                    sendRegistration(key, entry);
                     entry.registered();
                 } catch (Exception e) {
                     log.warn("[harbor-client] replay of registration {} failed: {}",
@@ -437,8 +476,7 @@ public class HarborClient implements Closeable {
             }
             case UNREGISTER -> {
                 try {
-                    sendInstanceRequest(key, entry.instance(),
-                            HarborProtocol.DEREGISTER_INSTANCE);
+                    deregisterEntry(key, entry);
                     entry.unregistered();
                 } catch (Exception e) {
                     log.warn("[harbor-client] replay of pending deregister {} failed: {}",
@@ -456,6 +494,34 @@ public class HarborClient implements Closeable {
                 return false;
             }
         }
+    }
+
+    /**
+     * Send a owed registration in the shape it was made in — one request for a
+     * single instance, one batch request for a batch (Nacos branches the same way in
+     * {@code RedoScheduledTask.processRegisterRedoType}).
+     */
+    private void sendRegistration(ServiceKey key, InstanceRedoData entry) {
+        if (entry instanceof BatchInstanceRedoData batch) {
+            sendBatchRequest(key, batch.instances(), HarborProtocol.BATCH_REGISTER_INSTANCE);
+            return;
+        }
+        sendInstanceRequest(key, entry.instance(), HarborProtocol.REGISTER_INSTANCE);
+    }
+
+    /**
+     * Complete an owed removal. A batch entry is taken down instance by instance:
+     * Nacos has no batch-deregister action constant, so its redo pass would hand a
+     * null instance to the single path here — we do the obvious thing instead.
+     */
+    private void deregisterEntry(ServiceKey key, InstanceRedoData entry) {
+        if (entry instanceof BatchInstanceRedoData batch) {
+            for (Instance each : batch.instances()) {
+                sendInstanceRequest(key, each, HarborProtocol.DEREGISTER_INSTANCE);
+            }
+            return;
+        }
+        sendInstanceRequest(key, entry.instance(), HarborProtocol.DEREGISTER_INSTANCE);
     }
 
     private boolean replaySubscription(ServiceKey key, ServiceSubscription entry) {

@@ -30,6 +30,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Jaws Harbor — a Nacos-compatible service registry server.
@@ -69,6 +72,12 @@ public class HarborServer {
     private final HealthCheckScheduler healthCheckScheduler;
     private final PushDelayTaskEngine pushEngine;
     private final WireServer wireServer;
+
+    /** Outstanding connect-reset orders, by connection id, awaiting the client ack. */
+    private final Map<String, CompletableFuture<Void>> resetAcks = new ConcurrentHashMap<>();
+
+    /** Nacos waits the same window in {@code ConnectionManager.loadSingle}. */
+    private static final long RESET_ACK_TIMEOUT_MS = 3_000;
 
     /** Unary dispatch table, keyed by the wire token of each request DTO. */
     private final Map<String, UnaryRequestHandler> unaryHandlers;
@@ -203,6 +212,41 @@ public class HarborServer {
 
     public DistroProtocol getDistroProtocol() {
         return distroProtocol;
+    }
+
+    /**
+     * Ask one client to reconnect, optionally somewhere else — the load-shedding and
+     * node-decommission hook Nacos has. Returns true only when the client answered on
+     * its notification stream; silence is treated as a dead connection and we close the
+     * session ourselves rather than leave it half-alive.
+     */
+    public boolean expelConnection(String connectionId, String redirectIp, String redirectPort) {
+        boolean held = connectionManager.allConnections().stream()
+                .anyMatch(each -> each.connectionId().equals(connectionId));
+        if (!held) {
+            return true;
+        }
+        CompletableFuture<Void> ack = new CompletableFuture<>();
+        resetAcks.put(connectionId, ack);
+        try {
+            boolean sent = connectionManager.pushToConnection(connectionId,
+                    HarborProtocol.encodePush(new ConnectResetRequest(
+                            redirectIp, redirectPort, connectionId)));
+            if (!sent) {
+                throw new IllegalStateException("notification stream already gone");
+            }
+            ack.get(RESET_ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            log.info("[harbor] client acked connect-reset: connId={}, redirect={}:{}",
+                    connectionId, redirectIp, redirectPort);
+            return true;
+        } catch (Exception e) {
+            log.warn("[harbor] connect-reset not acked by {} ({}), running its closure now",
+                    connectionId, e.getMessage());
+            connectionCleanup.cleanup(connectionId);
+            return false;
+        } finally {
+            resetAcks.remove(connectionId);
+        }
     }
 
     /**
@@ -389,6 +433,12 @@ public class HarborServer {
                     } else if (HarborProtocol.typeToken(NotifySubscriberResponse.class).equals(type)) {
                         // Client ack for a NotifySubscriberRequest — no action needed
                         log.debug("[harbor] received NotifySubscriberResponse ack");
+                    } else if (HarborProtocol.typeToken(ConnectResetResponse.class).equals(type)) {
+                        CompletableFuture<Void> pending = resetAcks.get(connectionId);
+                        if (pending != null) {
+                            pending.complete(null);
+                        }
+                        log.debug("[harbor] connect-reset acknowledged by connId={}", connectionId);
                     } else {
                         log.debug("[harbor] bi-stream received type={}", type);
                     }
@@ -405,7 +455,7 @@ public class HarborServer {
                     // fires, and the session would otherwise linger as "healthy" behind a dead
                     // push channel.  Idempotent, so the channelInactive that usually follows is
                     // a no-op.
-                    connectionCleanup.cleanup(connectionId);
+                    connectionCleanup.cleanup(connectionId, pushSubject);
                     // Do NOT call pushSubject.onCompleted() here.
                     // The client already sent RST/GOAWAY — the stream is dead.
                     // Sending trailers on a reset stream confuses the Nacos
@@ -419,8 +469,9 @@ public class HarborServer {
                     log.info("[harbor] bi-stream completed for connId={}", connectionId);
                     // Client END_STREAM on this stream is the same stream-only-death case as
                     // onError — the TCP connection may well stay up — so this is what tears the
-                    // session down; idempotent against a later channelInactive.
-                    connectionCleanup.cleanup(connectionId);
+                    // session down; idempotent against a later channelInactive, and skipped
+                    // when the connection has already been set up again on this channel.
+                    connectionCleanup.cleanup(connectionId, pushSubject);
                     // Same as onError: the client initiated the close; the closure
                     // transaction owns push-subject completion.
                 }
