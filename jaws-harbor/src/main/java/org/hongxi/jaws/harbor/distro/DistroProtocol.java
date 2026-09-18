@@ -66,6 +66,9 @@ public class DistroProtocol {
     /** connectionId → in-flight coalesced sync task; presence = merge lock. */
     private final Map<String, ScheduledFuture<?>> pendingSync = new ConcurrentHashMap<>();
 
+    // 2 = keep the two blocking streams from starving each other: periodic verify
+    // vs coalesced sync/load. Peer fan-out stays single-threaded serial
+    // (see harbor-vs-nacos §3.12).
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(2, r -> {
                 Thread t = new Thread(r, "harbor-distro-scheduler");

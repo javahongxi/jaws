@@ -713,7 +713,7 @@ public class ServiceStorage {
 
     /**
      * Periodically clean up empty services (no publishers and no subscribers).
-     * Called by {@link HealthCheckManager} after instance/connection cleanup.
+     * Called by {@link HealthCheckScheduler} after instance/connection cleanup.
      */
     public void cleanEmptyServices() {
         Set<ServiceKey> allKeys = new HashSet<>();

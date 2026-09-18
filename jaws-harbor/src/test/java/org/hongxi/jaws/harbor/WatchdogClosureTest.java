@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Locks the connection watchdog (HealthCheckManager Phase 1) into performing the
+ * Locks the connection watchdog (HealthCheckScheduler Phase 1) into performing the
  * FULL client-connection closure transaction — the same one {@code channelInactive}
  * and bi-stream {@code onError}/{@code onCompleted} trigger — not just
  * deregister-instances:
@@ -48,7 +48,7 @@ class WatchdogClosureTest {
     private ServiceStorage storage;
     private Recording transport;
     private DistroProtocol distro;
-    private HealthCheckManager health;
+    private HealthCheckScheduler health;
 
     /** Counts CHANGE vs DELETE deliveries to the peer. */
     private static final class Recording implements HarborNodeTransport {
@@ -98,7 +98,7 @@ class WatchdogClosureTest {
         cluster.addMember(newClusterMember(ADDR2));
         transport = new Recording();
         distro = new DistroProtocol(cluster, transport, storage, cm);
-        health = new HealthCheckManager(cm, storage, new ConnectionCleanup(cm, storage, distro));
+        health = new HealthCheckScheduler(cm, storage, new ConnectionCleanup(cm, storage, distro));
     }
 
     private static org.hongxi.jaws.harbor.cluster.ClusterMember newClusterMember(String addr) {

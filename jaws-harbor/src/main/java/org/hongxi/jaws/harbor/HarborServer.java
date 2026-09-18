@@ -37,7 +37,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Jaws Harbor — a Nacos-compatible control plane server.
+ * Jaws Harbor — a Nacos-compatible service registry server.
  * <p>
  * Implements the Nacos 2.x gRPC protocol on top of the Jaws wire transport:
  * <ul>
@@ -109,7 +109,7 @@ public class HarborServer {
     private final ClusterManager clusterManager;
     private final DistroProtocol distroProtocol;
     private final ConnectionCleanup connectionCleanup;
-    private final HealthCheckManager healthCheckManager;
+    private final HealthCheckScheduler healthCheckScheduler;
     private final PushDelayTaskEngine pushEngine;
     private final WireServer wireServer;
 
@@ -138,7 +138,7 @@ public class HarborServer {
         // bi-stream onError/onCompleted callbacks, and the watchdog sweep.
         this.connectionCleanup = new ConnectionCleanup(
                 this.connectionManager, this.serviceStorage, this.distroProtocol);
-        this.healthCheckManager = new HealthCheckManager(
+        this.healthCheckScheduler = new HealthCheckScheduler(
                 this.connectionManager, this.serviceStorage, this.connectionCleanup);
 
         WireHandlerRegistry registry = new WireHandlerRegistry();
@@ -190,7 +190,7 @@ public class HarborServer {
 
         wireServer.open();
         distroProtocol.start();
-        healthCheckManager.start();
+        healthCheckScheduler.start();
 
         // Start HTTP/1.1 management API (port from URL param, default grpcPort + 10)
         int grpcPort = wireServer.getUrl().getPort();
@@ -219,7 +219,7 @@ public class HarborServer {
         // engine or a distro protocol closed underneath them throws back into a
         // Netty worker thread (observed as RejectedExecutionException on close).
         wireServer.close();
-        healthCheckManager.shutdown();
+        healthCheckScheduler.shutdown();
         distroProtocol.shutdown();
         pushEngine.shutdown();
         log.info("[harbor] server closed");

@@ -74,7 +74,7 @@ class NotifyOnChangeOnlyTest {
         storage.registerInstance(NS, GROUP, SVC, instance("10.0.0.1", 8080), "pub");
     }
 
-    /** One health-sweep pass, exactly what HealthCheckManager does every 5 s. */
+    /** One health-sweep pass, exactly what HealthCheckScheduler does every 5 s. */
     private void sweep() {
         storage.reconcileHealth(15_000);
         storage.cleanEmptyServices();

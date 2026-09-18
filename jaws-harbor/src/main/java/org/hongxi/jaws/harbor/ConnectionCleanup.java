@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
  * Three independent signals observe a closure — the bi-stream {@code onError}/
  * {@code onCompleted} (stream dies first), {@code channelInactive} from
  * {@link DisconnectionHandler} (the TCP connection closes), and the
- * {@link HealthCheckManager} watchdog sweep (a half-open TCP that never fires
+ * {@link HealthCheckScheduler} watchdog sweep (a half-open TCP that never fires
  * {@code channelInactive}). Before this class existed, the first two had drifted
  * into two line-by-line copies and the watchdog ran only a partial subset,
  * leaking subscriber registrations and delaying peer convergence. All three

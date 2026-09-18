@@ -9,7 +9,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Periodic health check manager for ephemeral service instances and connections.
+ * Periodic health check scheduler for ephemeral service instances and connections.
  * <p>
  * Modeled after Nacos 2.x connection-based health check:
  * <ul>
@@ -36,9 +36,9 @@ import java.util.concurrent.TimeUnit;
  *
  * @author shenhongxi
  */
-public class HealthCheckManager {
+public class HealthCheckScheduler {
 
-    private static final Logger log = LoggerFactory.getLogger(HealthCheckManager.class);
+    private static final Logger log = LoggerFactory.getLogger(HealthCheckScheduler.class);
 
     /**
      * How often the health check task runs (milliseconds).
@@ -76,8 +76,9 @@ public class HealthCheckManager {
     private final ConnectionCleanup connectionCleanup;
     private final ScheduledExecutorService scheduler;
 
-    public HealthCheckManager(ConnectionManager connectionManager, ServiceStorage serviceStorage,
-                              ConnectionCleanup connectionCleanup) {
+    public HealthCheckScheduler(ConnectionManager connectionManager,
+                                ServiceStorage serviceStorage,
+                                ConnectionCleanup connectionCleanup) {
         this.connectionManager = connectionManager;
         this.serviceStorage = serviceStorage;
         this.connectionCleanup = connectionCleanup;

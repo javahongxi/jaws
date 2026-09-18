@@ -47,7 +47,7 @@ class SyncedHealthAuthorityTest {
     private ConnectionManager cm1, cm2;
     private ServiceStorage st1, st2;
     private DistroProtocol d1, d2;
-    private HealthCheckManager health1, health2;
+    private HealthCheckScheduler health1, health2;
     private final List<String> notified2 = new CopyOnWriteArrayList<>();
 
     /** Delivers to the peer as the real transport does, counting CHANGE pushes. */
@@ -104,8 +104,8 @@ class SyncedHealthAuthorityTest {
         transport.nodes.put(ADDR1, d1);
         transport.nodes.put(ADDR2, d2);
 
-        health1 = new HealthCheckManager(cm1, st1, new ConnectionCleanup(cm1, st1, d1));
-        health2 = new HealthCheckManager(cm2, st2, new ConnectionCleanup(cm2, st2, d2));
+        health1 = new HealthCheckScheduler(cm1, st1, new ConnectionCleanup(cm1, st1, d1));
+        health2 = new HealthCheckScheduler(cm2, st2, new ConnectionCleanup(cm2, st2, d2));
 
         d1.start();
         d2.start();

@@ -235,7 +235,7 @@ class SyncedSessionReclamationTest {
     void theWatchdogActuallyRunsTheReaper() {
         ClusterManager cluster = new ClusterManager(new URL("harbor", "127.0.0.1", 19848, ""));
         DistroProtocol distro = new DistroProtocol(cluster, new NoopTransport(), storage, cm);
-        HealthCheckManager health = new HealthCheckManager(cm, storage,
+        HealthCheckScheduler health = new HealthCheckScheduler(cm, storage,
                 new ConnectionCleanup(cm, storage, distro));
 
         givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));

@@ -3,7 +3,7 @@ package org.hongxi.jaws.harbor;
 import org.hongxi.jaws.rpc.URL;
 
 /**
- * Standalone HarborServer — a Nacos-compatible control plane.
+ * Standalone HarborServer — a Nacos-compatible service registry.
  *
  * <p>Starts a standalone HarborServer that handles service registration and
  * discovery via the Nacos 2.x gRPC protocol.</p>
@@ -56,7 +56,7 @@ public class HarborBootstrap {
         } else {
             System.out.println("  Single-node mode (no cluster peers)");
         }
-        System.out.println("  Nacos-compatible gRPC control plane");
+        System.out.println("  Nacos-compatible gRPC registry");
         System.out.println("  Management API: http://localhost:" + (port + 10) + "/api/*");
         System.out.println("========================================");
     }
