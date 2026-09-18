@@ -245,6 +245,24 @@ harbor 的定位决定了它不能只靠自证。**自测全绿 ≠ 协议互通
 
 已经落成的一条是**两条注册腿的互相可见**：`./run-sample.sh harborx`（jaws-registry-nacos ＋ 真 nacos-client 连 HarborServer）与 `harbor`（原生 client）跑在同一条 `harbor-standalone` 上时，原生腿的 consumer 会调用到 nacos 腿 provider 导出的端口（实测 `server => 192.168.10.120:20001`，服务端同时留着 `version=Nacos-Java-Client:v3.2.3` 与 `version=jaws-harbor-client/1.0` 两类会话）。这条不是"两家自测"，而是两个**不同实现**在同一份 wire 契约上互操作——也正是 `HarborPathUtils` 要求两条腿 URL↔实例映射逐字一致的原因。它仍不替代下面 spacecloud 那条：那是拿"你不控制的第三方实现"来验。
 
+两条腿等价性的实测记录（一台 `harbor-standalone`，先后跑 `harbor` 与 `harborx`，服务端日志按事件签名归一化后分段比对；裸 diff 会被时间戳、connectionId、ip:port 淹没）：
+
+| 事件 | 原生腿 | nacos 腿 |
+|---|---|---|
+| `connection registered` | 2 | 2 |
+| `instance registered` / `instance deregistered`（两服务） | 2 / 2 | 2 / 2 |
+| `empty service cleaned`（退役） | 2 | 2 |
+| `bi-stream completed` / `connection removed` | 2 | 2 |
+| `ERROR` / `WARN` | 0 / 0 | 0 / 0 |
+
+**命名链路无差异**，两边业务调用同样跑通。三处差异都不构成缺功能：
+
+- `clientVersion` 标识不同（`Nacos-Java-Client:vX.Y.Z` 与 `jaws-harbor-client/1.0`），本就该不同。
+- **传输层 keepalive**：nacos-client 会发 HTTP/2 PING，原生 client 只发应用层 `HealthCheckRequest`。这不是缺陷——`WireKeepaliveHandler` 按 gRFC A8 判「两次 PING 之间有无数据帧」，而 nacos 每 5s 那次 `HealthCheckRequest` 本身就是数据帧、会重置判定窗口；实测 5 条 PING 全部 `strikes=0/2`、零次记 strike。真要补 PING 的时机是"接入方中间设备的空闲回收只认传输层探测"，与 harbor 的活性判定无关（服务端活性时钟只被消息刷新，PING 不刷新它）。
+- GOAWAY 计数 1 : 2，两端关闭路径细节（先 GOAWAY 再断 vs 直接断链）不同，无功能含义。
+
+两条**已被排除的解释**，留此免得被重复试探：① 为消掉配置中心噪声而把 `NacosDynamicConfiguration.init()` 短路，结果开关两种状态下服务端都**没有任何 config 流量**（`ConfigService` 建了但无人注册 listener，就不发长轮询）——这个开关对本比对是多余的，两腿日志本来就干净可比；② 第一段里那条 `no peers to load from — running as single node` 不是腿间差异，是 server 启动后 +1s 的 Distro 一次性加载恰好落在分段线上。
+
 **这一节其余部分记方向，不记已完成**：上面两条反验目前是计划中的联调靶子，尚未落成 `run-sample.sh` 里的固定用例，真正接起来之前别把它们当现状读。它也顺手给「注册中心只对齐 Nacos、不加 ZK / Consul」补了体系自洽这条硬理由——同向锚点在你自己的多仓体系里已经是 Nacos，再钉一根对不上的齿是拆自己的台。
 
 ## 7. 维护纪律
