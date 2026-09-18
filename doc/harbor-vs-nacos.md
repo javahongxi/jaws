@@ -22,7 +22,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | `recalculateRevision()` | `AbstractClient.recalculateRevision()` | 同名；语义有偏离，见 §3.1 |
 | `PushDelayTaskEngine` | `push/v2` 的 `PushDelayTaskExecuteEngine` | 服务级合并的推送延迟引擎 |
 | `ConnectionCleanup.cleanup()` | `ConnectionBasedClientManager.clientDisconnected(clientId)` | 关闭动作的唯一事务入口 |
-| `HealthCheckManager` 的巡检 | `ExpiredClientCleaner.run()` | 巡检只是「复用同一个事务入口」，不另写一套清理 |
+| `HealthCheckScheduler` 的巡检 | `ExpiredClientCleaner.run()` | 巡检只是「复用同一个事务入口」，不另写一套清理 |
 | `ConnectionManager`（连接记录 + 活性戳 + client session + 推送出口，四合一） | `core/remote/ConnectionManager`（**只有连接注册表与活性**：`connections`/`register`/`unregister`/`refreshActiveTime`，每 3s 的巡检只 `doEject` 连接） | 名字撞了，**层级与数据域都不同**：见 §2.5 与 §3.9 |
 | —（同上，语义那一半） | `ConnectionBasedClientManager.clients`，走 `ClientManager` 接口，且该类 `extends ClientConnectionEventListener` | 「连接」与「客户端」在 Nacos 分属两个模块，靠事件解耦 |
 | —（同上，推送那一半） | `Connection implements Requester` + `RpcPushService`（`pushWithCallback`/`pushWithoutAck`） | 写出能力长在连接对象上，下推另有统一入口 |
@@ -37,9 +37,9 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 
 | 机制 | Nacos 默认值 | harbor 值（类） |
 |---|---|---|
-| 巡检节拍 | `DEFAULT_HEART_BEAT_INTERVAL = 5s`（`Constants`、`SwitchDomain`） | `CHECK_INTERVAL_MS = 5_000`（`HealthCheckManager`） |
-| 不健康阈值（保留但标记） | `DEFAULT_HEART_BEAT_TIMEOUT = 15s`（`Constants`、`UnhealthyInstanceChecker`） | `INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000`（`HealthCheckManager`） |
-| 副本回收阈值（owner 静默） | `DEFAULT_CLIENT_EXPIRED_TIME = 3min`（`ClientConstants`） | `SYNCED_SESSION_TIMEOUT_MS = 180_000`（`HealthCheckManager`；A1 已移除 per-instance 180s 过期档，死连接由 90s 看门狗注销） |
+| 巡检节拍 | `DEFAULT_HEART_BEAT_INTERVAL = 5s`（`Constants`、`SwitchDomain`） | `CHECK_INTERVAL_MS = 5_000`（`HealthCheckScheduler`） |
+| 不健康阈值（保留但标记） | `DEFAULT_HEART_BEAT_TIMEOUT = 15s`（`Constants`、`UnhealthyInstanceChecker`） | `INSTANCE_UNHEALTHY_TIMEOUT_MS = 15_000`（`HealthCheckScheduler`） |
+| 副本回收阈值（owner 静默） | `DEFAULT_CLIENT_EXPIRED_TIME = 3min`（`ClientConstants`） | `SYNCED_SESSION_TIMEOUT_MS = 180_000`（`HealthCheckScheduler`；A1 已移除 per-instance 180s 过期档，死连接由 90s 看门狗注销） |
 | verify 周期 | `DEFAULT_DATA_VERIFY_INTERVAL_MILLISECONDS = 5000`（`DistroConstants`） | `VERIFY_INTERVAL_MS = 5000`（`DistroProtocol`） |
 | 启动加载重试 | `DEFAULT_DATA_LOAD_RETRY_DELAY_MILLISECONDS = 30000`（`DistroConstants`） | `LOAD_RETRY_DELAY_MS = 30_000`（`DistroProtocol`） |
 | 推送失败重试固定延迟（非指数） | `DEFAULT_PUSH_TASK_RETRY_DELAY = 1000`（`PushConstants`） | `RETRY_DELAY_MS = 1000`（`PushDelayTaskEngine`） |
@@ -47,7 +47,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | verify 不一致 → **owner 定向重推**（不是去 peer 拉） | `DistroClientDataProcessor.syncToTarget(distroKey, ADD, targetServer, 0L)` | `resyncToPeer(peer, clientIds)`（`DistroProtocol`） |
 | 健康判定权只属于持有连接的节点，副本只显示不判定 | `ConnectionBasedClientManager.isResponsibleClient(client)` 随两个事件外发 | `reconcileHealth` 只遍历本节点持有的 `ConnectionRecord`（副本无记录 → 天然不判定），翻转经 `healthFlipHandler` 外发（`ServiceStorage`） |
 | 广播「当前全量 + 幂等收敛」，无应用层 ack | `NotifySubscriberResponse extends Response`，**无任何字段** | 每次重读当前全量，不缓存旧 payload（`PushDelayTaskEngine` 类注释） |
-| 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`DefaultGrpcClientConfig`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`RpcClient`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckManager`） |
+| 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`DefaultGrpcClientConfig`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`RpcClient`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckScheduler`） |
 | HTTP/2 PING 只是「无应用层心跳时」的兜底 | `channelKeepAlive = 6*60*1000`（`DefaultGrpcClientConfig`，用于 `GrpcClient`） | 不依赖 PING 做活性判定，PING strike 语义归 core |
 | 只有 owner 才对外 advertise 对账数据 | `getVerifyData()` 内 `if (clientManager.isResponsibleClient(client))` 才入列（`DistroClientDataProcessor`） | `runVerifyTask` 只遍历 `allNativeClientSessions()`（`DistroProtocol`） |
 | 只有 ephemeral，不做持久实例 | 持久实例走 Raft CP（`consistency` 模块），naming v2 的 `ConnectionBasedClient.isEphemeral()` 恒 true；快照与对账构造时 `!client.isEphemeral()` 直接跳过（`DistroClientDataProcessor`） | 只实现 AP 线，见 §5 |
@@ -68,7 +68,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 
 于是基数关系是确定的：`|connections| = 我的 shard 大小`，而 `|clientSessions| = 全集群连接数 ≥ 前者`——两张表共用 `connectionId` 键空间，**域却不同**。
 
-结构上有一条能坐实这两类分界的构造性铁证：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `refreshActiveTime` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckManager`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
+结构上有一条能坐实这两类分界的构造性铁证：`register` 既写连接表也写会话表，而 `putClientSession` **只写会话表**，并且 `refreshActiveTime` 对非本地持有的连接直接跳过。好处是分片归属永不被备份污染（绝不会把别人的连接误当成自己的去推送）；代价是活性层看不见副本——owner 节点一旦死掉，它那批备份没人能按活性收掉，只能由 `reapStaleSyncedClients`（`ServiceStorage`）配 `SYNCED_SESSION_TIMEOUT_MS`（`HealthCheckScheduler`）用「owner 沉默满一个过期窗」单独立一档收尸。这笔账在 §3.9 里也记了一次。
 
 两条边界值得钉住，免得「备份型」被误读成多主可写：**写只发生在 owner**，同步方向永远是 owner 外推，副本只读；**分片键是 TCP 落点而不是 `hash(clientId) % members`**，所以没有 rebalance——客户端重连即自然迁移 shard，其账单由上面那档收尸机制偿还。
 
@@ -92,7 +92,7 @@ A1 起 harbor 不再有 `Instance.lastBeat`：ephemeral 健康**派生自持有�
 
 Distro 同步延迟 Nacos 默认 `1000ms`、推送延迟 `500ms`。harbor 起初两处都取 `200ms` 抢收敛（注册中心 SLA 是「变更多快被看到」、client 级全量载荷小），属刻意偏离；后按口径回归 Nacos 默认——现 `SYNC_DELAY_MS = 1000`、`PushDelayTaskEngine.MERGE_DELAY_MS = 500`，与对端一致。
 
-同一条「回归」还带走了一个 Nacos 本就没有的机制：早期 harbor 另设 owner 每 30s 全量重推自有 client（曾名 `CLIENT_REFRESH`）来给副本续背书时钟。核对后确认副本的 `lastRenewTime` 由 5s verify 在 revision 匹配时推进即已足够，正对应 Nacos `ConnectionBasedClientManager.verifyClient` 命中即 `setLastRenewTime`——owner 沉默即 verify 停摆、副本时钟自然老化、由 `reapStaleSyncedClients`（`ServiceStorage`）配 `SYNCED_SESSION_TIMEOUT_MS = 180s`（`HealthCheckManager`）那档兜底，无需额外重推，故删。回归测试见 `SyncedSessionReclamationTest`（零变更副本仅靠 verify 续期即跨窗存活）。
+同一条「回归」还带走了一个 Nacos 本就没有的机制：早期 harbor 另设 owner 每 30s 全量重推自有 client（曾名 `CLIENT_REFRESH`）来给副本续背书时钟。核对后确认副本的 `lastRenewTime` 由 5s verify 在 revision 匹配时推进即已足够，正对应 Nacos `ConnectionBasedClientManager.verifyClient` 命中即 `setLastRenewTime`——owner 沉默即 verify 停摆、副本时钟自然老化、由 `reapStaleSyncedClients`（`ServiceStorage`）配 `SYNCED_SESSION_TIMEOUT_MS = 180s`（`HealthCheckScheduler`）那档兜底，无需额外重推，故删。回归测试见 `SyncedSessionReclamationTest`（零变更副本仅靠 verify 续期即跨窗存活）。
 
 此条保留以记录「偏离→回归」的来龙，免得读者以为 200ms 或那条周期重推仍是现状；编号不动以免打断 §3.9/§3.10 的交叉引用。
 
@@ -139,7 +139,7 @@ harbor 把四样东西装进一个类：连接记录（`ConnectionManager.connec
 
 **判断是不拆**。harbor 只有约 50 个 Java 文件，模块边界已经能由类名表达，再拆一层 `ClientSessionManager` 换来的是类图相似而非正确性，代价是要动 `DistroProtocol`/`ServiceStorage`/`HarborServer` 三处引用面。
 
-但这条偏离的代价不是零，而且要分清哪一半已经还了。原来活性戳存放在与连接表并列的第二张 map 里，`putClientSession` 从不写它——两张表必须同步是条隐形契约，漏一处就泄漏。现已把时钟并进 `ConnectionRecord`，只剩一张表，**这条漂移由构造消灭了**。没消掉的是另一半：副本压根没有 `ConnectionRecord`，所以看门狗（只看活性）结构性地看不见副本——「owner 死后副本无人收」那个漏正是这个形状长出来的，今天靠 `reapStaleSyncedClients` + `SYNCED_SESSION_TIMEOUT_MS` 单独立一档兜住（`HealthCheckManager`）。留此记录，是为了下次有人想说「顺手再加一张表」时能看到：合层的账是按档叠加还的。
+但这条偏离的代价不是零，而且要分清哪一半已经还了。原来活性戳存放在与连接表并列的第二张 map 里，`putClientSession` 从不写它——两张表必须同步是条隐形契约，漏一处就泄漏。现已把时钟并进 `ConnectionRecord`，只剩一张表，**这条漂移由构造消灭了**。没消掉的是另一半：副本压根没有 `ConnectionRecord`，所以看门狗（只看活性）结构性地看不见副本——「owner 死后副本无人收」那个漏正是这个形状长出来的，今天靠 `reapStaleSyncedClients` + `SYNCED_SESSION_TIMEOUT_MS` 单独立一档兜住（`HealthCheckScheduler`）。留此记录，是为了下次有人想说「顺手再加一张表」时能看到：合层的账是按档叠加还的。
 
 **同构之处也值得记一笔**：`removeStaleConnections` 只摘活性层、把 session 留给 `ConnectionCleanup` 单入口收尾，与 Nacos「`doEject` 只处理连接、语义清理走 `clientDisconnected`」是同一个分层判断。
 
@@ -188,6 +188,16 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 代价与边界：退役不推，意味着「服务被回收」这件事对客户端不可**单独**观测——但客户端其实无需观测它，它早在收到那份空列表时就知道该服务没有可用实例了；真掉线漏推的订阅者，重连时按 `SubscribeService` 拉全量自愈。
 
 这套语义的回归锁在 `NotifyOnChangeOnlyTest` 与 `SyncedSessionReclamationTest`，二者对 listener 计的是 `onServiceChange` 的**调用次数**、不是真实投递——所以断言「有存活订阅者的移除恰好一次、无存活订阅者的移除（含退役）零次」才是这套出口的真锁；改这些分支务必跑全模块（别只跑同名测试）。
+
+### 3.14 空服务清理：即时 both-empty 退役 vs Nacos 惰性 publisher-only + 宽限
+
+判"一个服务空了该回收"，harbor 和 Nacos `EmptyServiceAutoCleanerV2` 走两条路：**候选集等价，但判据和时机都不同**。
+
+- **候选集（等价）**：Nacos 遍历 `ServiceManager` 的 per-namespace 服务单例全集；harbor 没有 ServiceManager 这张表，用 `publisherIndexes ∪ subscriberIndexes` 的 keyset 并集枚举——一个服务只要还有 publisher 或 subscriber 就还在索引里，所以两者都是"枚举当前存在的服务"，语义对齐。
+- **空判定谓词（刻意不同）**：Nacos 只看 `getAllClientsRegisteredService(service)` 为空——**只数 publisher**，不管还有没有订阅者；harbor 的 `retireIfEmpty` 要 **publisher 与 subscriber 都空**才退役。后果：一个"0 实例但仍有人订阅"的服务，Nacos 到期照清，harbor 会留着——这与 §3.8「订阅不出网、`subscriberIndexes` 是分片本地」自洽：留着才能让存活订阅者继续持有那份空列表，退役时机交给"最后一个订阅者退订"（见 §3.13）。
+- **宽限与触发时机（刻意不同）**：Nacos 纯惰性——`isTimeExpired` 要求空状态持续超过 `emptyServiceExpiredTime`（默认 60s），且由后台 cleaner 每 `emptyServiceCleanInterval`（默认 60s）扫一次，**deregister 当下不删**，空服务带着空状态驻留至少一个过期窗。harbor 即时——`deregisterInstance / removeSyncedClient / removeSubscriber` 当场调 `retireIfEmpty`，both-empty 立刻清；`cleanEmptyServices()`（HealthCheckScheduler 每 5s 巡检后）只是**兜底扫**（补漏 + 竞态）。harbor 没有 per-service 的"空满 N 秒才清"宽限。
+
+一句话：harbor 把"回收空服务"从 Nacos 的**惰性 + 宽限**改成**即时 + 兜底扫**，并把判据从"无 publisher"收紧到"无 publisher 且无 subscriber"——两处都服务同一目标：让存活订阅者的视图收敛由推送驱动、即时且幂等，而不是靠一个后台定时器去追平。
 
 ## 4. 测试即语义注解
 

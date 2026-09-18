@@ -1,4 +1,4 @@
-# Jaws 全链路异步解剖：一个 CompletableFuture 如何贯穿 RPC 的六层
+# Jaws 全链路异步解剖：一个 CompletableFuture 如何贯穿 RPC 的七层
 
 > 本文基于 jaws 源码撰写。jaws 是一个核心 2.9 万多行的轻量级 RPC 框架，目标是用可读完的代码量完整呈现工业级 RPC 的核心机制。
 
@@ -10,7 +10,7 @@
 
 （别把「翻倍」记到异步头上——那条演进线里近乎翻倍的那一跃是**零拷贝改造**，异步化对应的是上面这 +34%。）但更重要的收获不是具体涨幅，而是：**异步不是加一个异步接口的事，它是一根从消费端代理穿到传输层再穿回 Provider 业务实现的线，任何一层断了都是同步阻塞。**
 
-这篇文章自顶向下拆解 jaws 的异步全链路，六层，每层都有真实代码。
+这篇文章自顶向下拆解 jaws 的异步全链路，七层，每层都有真实代码。
 
 ## 1. 消费端代理：方法签名即异步
 
@@ -89,7 +89,31 @@ CompletableFuture<Object> invokeAsync(Request request, Class<?> returnType) {
 
 关键细节：`cluster.call(request)` 返回的是 `DefaultResponseFuture`——它此时还没有值，但已经注册了超时调度。`addListener` 在响应到达或超时时被回调，把结果传递给 `CompletableFuture`。消费端业务代码拿到 `CompletableFuture` 后可以自由地 `.thenApply`、`.whenComplete`，完全不阻塞。
 
-## 2. 传输层契约：MessageHandler 是一等公民的异步
+## 2. Filter 链：异步是接口的硬契约
+
+消费端代理发出调用、Provider 端执行业务，中间横着一条 Filter 链（鉴权、访问日志、指标、链路追踪……）。如果 Filter 是同步的，它就成了全链路异步的一个断点——所以 jaws 把**异步直接写进 `Filter` 的返回类型**：
+
+```java
+// filter/Filter.java
+@Spi
+public interface Filter {
+    CompletableFuture<Response> filter(Caller<?> caller, Request request);
+}
+```
+
+接口 javadoc 把契约写死：实现方应当调 `caller.callAsync(request)` 拿下游 Future，再用 `thenApply` / `whenComplete` 挂前后逻辑，而不是 `.get()` 等结果。两个内置 filter 就是范例：
+
+```java
+// filter/AccessLogFilter.java —— 后置逻辑挂在 whenComplete，不阻塞
+return caller.callAsync(request).whenComplete((response, throwable) -> { /* 记访问日志 */ });
+
+// filter/TokenAuthFilter.java —— 鉴权失败用 failedFuture 短路，同样不抛同步异常
+return CompletableFuture.failedFuture(...);
+```
+
+`FilterChainBuilder` 把一串 filter 织成 `FilterProviderWrapper` / `FilterReferenceWrapper`，逐层 `callAsync` 组合出完整的 Invoker。**只要有一个 filter 在链里对下游结果 `.get()`，整条异步链就在这一层断掉**——所以异步是 `Filter` 的接口契约，不是可选实现细节。它和 §3 的 `MessageHandler` 是同一条原则的两个落点：当异步是一等公民，同步签名反而是多余的负担。
+
+## 3. 传输层契约：MessageHandler 是一等公民的异步
 
 很多 RPC 框架的传输层接口是同步的——收到消息、处理、返回结果，异步是在上层包装出来的。jaws 走了一条不同的路：**传输层的 `MessageHandler` 接口本身就是异步的**。
 
@@ -134,7 +158,7 @@ protected CompletableFuture<Object> doHandleAsync(Request request, Provider<?> p
 
 `callAsync` 调 `provider.callAsync(request)`，拿到 `CompletableFuture<Response>`，用 `thenApply` 链式地补上序列化号。全程没有 `.get()`，没有阻塞。
 
-## 3. Provider 端：业务方法可以是异步的
+## 4. Provider 端：业务方法可以是异步的
 
 [DefaultProvider.invoke()](https://github.com/javahongxi/jaws/blob/main/jaws-core/src/main/java/org/hongxi/jaws/rpc/DefaultProvider.java) 返回 `CompletableFuture<Response>`，是 Provider 端异步的核心。它处理两种情况：业务方法返回普通值，或业务方法返回 `CompletableFuture`。
 
@@ -219,7 +243,7 @@ public abstract class AbstractProvider<T> implements Provider<T> {
 
 `call()` 用 `.join()` 阻塞等待——这是给 Filter 链和 Cluster 层用的，它们在消费端需要拿到结果值；`callAsync()` 直接透传 Future——这是给 Provider 端的 `NettyChannelHandler` 用的，它不需要阻塞。
 
-## 4. Netty IO 线程零阻塞：whenComplete 写回响应
+## 5. Netty IO 线程零阻塞：whenComplete 写回响应
 
 前面三层的异步最终要在 Netty 的 IO 线程上落地。[NettyChannelHandler.processRequest()](https://github.com/javahongxi/jaws/blob/main/jaws-core/src/main/java/org/hongxi/jaws/transport/netty/NettyChannelHandler.java) 是异步链的"最后一公里"：
 
@@ -298,7 +322,7 @@ public void channelRead(ChannelHandlerContext ctx, Object msg) {
 
 线程池满时直接返回错误响应，不排队不等待——这和 Dubbo 的 `RejectedExecutionException` 处理策略一致。但 jaws 更简洁的地方在于：即使请求进了线程池，`processRequest` 里的 `handleAsync` + `whenComplete` 也保证了**线程池线程不会被阻塞等待业务完成**——如果业务方法返回 `CompletableFuture`，线程池线程在 `handleAsync` 返回后就释放了，`whenComplete` 回调在 CompletableFuture 完成的线程上执行。
 
-## 5. 消费端响应回调：DefaultResponseFuture 与超时调度
+## 6. 消费端响应回调：DefaultResponseFuture 与超时调度
 
 请求从消费端发出后，响应在 Netty event loop 上异步到达。[NettyClient](https://github.com/javahongxi/jaws/blob/main/jaws-core/src/main/java/org/hongxi/jaws/transport/netty/NettyClient.java) 在初始化 pipeline 时注册了一个 lambda 作为消息处理器：
 
@@ -359,63 +383,31 @@ public void registerCallback(long requestId, ResponseFuture responseFuture) {
 
 **过载保护**。`MAX_INFLIGHT_REQUESTS = 20000`，超过直接拒绝，防 OOM。这个保护必须在基类做——TCP 和 HTTP/2 两个客户端共享同一套记账逻辑，放在基类是最不容易漏的位置。
 
-## 6. 容错层：FailbackCluster 异步重试
+## 7. 容错层：FailbackRegistry 异步重试
 
-异步不仅体现在单次调用上，还体现在容错策略上。[FailbackCluster](https://github.com/javahongxi/jaws/blob/main/jaws-core/src/main/java/org/hongxi/jaws/cluster/support/FailbackCluster.java) 把失败的请求放入队列，由后台线程定时重试：
+异步不仅体现在单次调用上，也体现在容错上——但 jaws 把"异步重试"收敛到了**注册中心层**这一处。`FailbackRegistry` 是所有具体注册中心（ZooKeeper / Nacos）的基类，给 register/unregister/subscribe/unsubscribe 加了失败补偿语义：失败的操作入队，由一个后台守护线程按固定周期重试；发现（lookup）在注册中心不可达时降级到上一次成功的结果。
 
 ```java
-@Extension("failback")
-public class FailbackCluster<T> extends AbstractCluster<T> {
-    private static final ScheduledExecutorService RETRY_EXECUTOR =
-            Executors.newScheduledThreadPool(1, r -> {
-                Thread t = new Thread(r, "jaws-failback-retry");
-                t.setDaemon(true);
-                return t;
-            });
-
-    private final Queue<FailbackTask<T>> failedTasks = new ConcurrentLinkedQueue<>();
-    private volatile boolean retryScheduled = false;
-
-    @Override
-    public Response call(Request request) {
-        Reference<T> refer = loadBalance.select(request);
-        try {
-            RpcContext.getContext().setServerUrl(refer.getUrl());
-            return refer.call(request);
-        } catch (RuntimeException e) {
-            if (ExceptionUtils.isBizException(e)) {
-                throw e;  // 业务异常不重试
-            }
-            log.warn("FailbackCluster call failed, recording for retry: {}", request, e);
-            addTask(request);
-            DefaultResponse response = new DefaultResponse(request.getRequestId());
-            response.setException(e);
-            return response;
-        }
-    }
-
-    private void ensureRetryScheduled() {
-        if (!retryScheduled) {
-            synchronized (this) {
-                if (!retryScheduled) {
-                    retryScheduled = true;
-                    int period = url.getIntParameter(UrlParam.Registry.FAILBACK_PERIOD);
-                    RETRY_EXECUTOR.scheduleAtFixedRate(
-                            this::retry, period, period, TimeUnit.MILLISECONDS);
-                }
-            }
-        }
-    }
-}
+// registry/FailbackRegistry.java —— 单线程守护重试 + 失败集合 + 发现降级缓存
+private static final ScheduledExecutorService retryExecutor =
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "jaws-registry-failback-retry");
+            t.setDaemon(true);
+            return t;
+        });
+private final Set<URL> failedRegistered = ConcurrentHashMap.newKeySet();
+private final ConcurrentMap<URL, Set<NotifyListener>> failedSubscribed = new ConcurrentHashMap<>();
+/** Last successful discovery result per service URL, used as fallback when the registry is unreachable. */
+private final ConcurrentMap<URL, List<URL>> discoveryCache = new ConcurrentHashMap<>();
 ```
 
-失败请求不阻塞调用方——立即返回带异常的 Response，后台 `ScheduledExecutorService` 按固定间隔重试。适合通知推送、日志上报等"最终一致"场景。
+构造时按 `RETRY_PERIOD` 起一个 `scheduleAtFixedRate(this::retry, ...)`；`register()` 失败就把 URL 塞进 `failedRegistered` 交给后台重试，调用方不阻塞——适合"注册最终会成功、但不该拖慢这一次业务调用"的场景。
 
-同样的模式出现在 [FailbackRegistry](https://github.com/javahongxi/jaws/blob/main/jaws-core/src/main/java/org/hongxi/jaws/registry/FailbackRegistry.java)：注册/注销/订阅失败时放入失败队列，定时重试。**异步重试是 jaws 容错体系的通用模式**。
+> 注：集群层曾有一个 Dubbo 式的 `FailbackCluster`（调用失败入队、后台定时重投），已随 commit `913f799a` 移除——failover/failfast 改持 `callAsync` 后，异步重试统一收敛到 registry 层这一处，避免在调用热路径上再养一个后台队列。所以 jaws 的"容错异步"是**注册补偿**级别的，不是**调用重投**级别的。
 
-## 7. 全链路数据流：一次异步调用的一生
+## 8. 全链路数据流：一次异步调用的一生
 
-把六层串起来，一次异步 RPC 调用的完整数据流：
+把七层串起来，一次异步 RPC 调用的完整数据流：
 
 ```
 Consumer 业务线程
@@ -471,9 +463,9 @@ Consumer Netty Event Loop
        .thenApply / .whenComplete 回调执行
 ```
 
-六层之间，**没有任何一层在 IO 线程上执行 `.get()` 或 `.join()`**。同步等待只发生在消费端业务线程主动调 `future.get()` 的场景——但异步模式下，业务代码拿到的是 `CompletableFuture`，根本不需要 `get()`。
+七层之间，**没有任何一层在 IO 线程上执行 `.get()` 或 `.join()`**。同步等待只发生在消费端业务线程主动调 `future.get()` 的场景——但异步模式下，业务代码拿到的是 `CompletableFuture`，根本不需要 `get()`。（消费端 `cluster.call` 与 Provider 端 handler 外层都已织入 Filter 链，见 §2。）
 
-## 8. 与 Dubbo 异步模型的对比
+## 9. 与 Dubbo 异步模型的对比
 
 Dubbo 的异步演进经历了三个阶段：
 
@@ -489,19 +481,20 @@ Provider 端的差异更明显。Dubbo 的 `AsyncRpcResult` 是一个专门的�
 
 传输层方面，Dubbo 的 `ExchangeHandler.reply()` 返回 `CompletableFuture<Object>`，与 jaws 的 `MessageHandler.handleAsync()` 设计同构。两者都认识到：**传输层接口必须是异步的，否则上层异步会被 IO 线程的同步调用链打断**。
 
-## 9. 写在最后：异步是一种架构决策，不是一个 API
+## 10. 写在最后：异步是一种架构决策，不是一个 API
 
 回顾 jaws 的异步全链路，最深刻的体会是：**异步不是加一个 `async` 关键字或返回一个 `Future` 的事，它是一个贯穿消费端代理、Cluster 层、传输层、Provider 端、业务实现的架构决策**。任何一层用了同步模型，整条链路的异步就被打断。
 
 jaws 的选择是：
 
 - **消费端**：返回类型即调用模式，`CompletableFuture` = 异步，`StreamSource` = 流式，其余 = 同步
+- **Filter 链**：`Filter.filter()` 返回 `CompletableFuture`，约定 `callAsync` + `thenApply`/`whenComplete` 组合，异步是接口硬契约
 - **传输层**：`MessageHandler.handleAsync()` 是一等公民的异步契约
 - **Provider 端**：`invoke()` 返回 `CompletableFuture<Response>`，自动适配同步/异步业务方法
 - **IO 层**：`whenComplete` 写回响应，event loop 零阻塞
 - **响应回调**：`DefaultResponseFuture` + `HashedWheelTimer` 超时调度，传输无关
-- **容错层**：`FailbackCluster` / `FailbackRegistry` 异步重试
+- **容错层**：`FailbackRegistry` 注册补偿异步重试（集群层 `FailbackCluster` 已移除，异步重试收敛到 registry 层）
 
-六层，每层都是异步的，所以全链路才是异步的。
+七层，每层都是异步的，所以全链路才是异步的。
 
 > jaws 源码：[github.com/javahongxi/jaws](https://github.com/javahongxi/jaws)（核心 2.9 万多行，欢迎 star 交流）

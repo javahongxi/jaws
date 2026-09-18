@@ -175,18 +175,23 @@ public class MyRunner implements CommandLineRunner {
 
 ## 深入了解更多
 
-| 主题                                       | 说明                                     |
-|--------------------------------------------|------------------------------------------|
-| [泛化调用](doc/generic-invocation.md)      | 无需接口 JAR 包即可发起 RPC 调用         |
-| [优雅停机](doc/graceful-shutdown.md)       | 四阶段零损伤发布                         |
-| [服务鉴权](doc/token-auth.md)              | 基于 Token 的服务认证                    |
-| [连接预热](doc/warm-up.md)                 | Provider 冷启动权重渐增                  |
-| [可观测性](doc/observability.md)           | Micrometer 指标 + OpenTelemetry 链路追踪 |
-| [动态配置](doc/dynamic-config.md)          | 全局/服务级/方法级三层热更新             |
-| [与 Dubbo 对比](doc/dubbo-comparison.md)   | 八个维度的系统性能力对比                 |
-| [注册中心对比](doc/registry-comparison.md) | Nacos 与 ZooKeeper 实现对比              |
-| [编解码设计](doc/codec-comparison.md)      | Jaws 与 Dubbo 编解码架构对比分析         |
-| [性能测试](doc/benchmark.md)               | Benchmark 环境变量与参数选择建议         |
+| 主题                                          | 说明                                            |
+|-----------------------------------------------|-------------------------------------------------|
+| [架构总览](doc/architecture.md)               | 10 个 Maven 模块地图 + core 六层骨架 + 门面口径 |
+| [泛化调用](doc/generic-invocation.md)         | 无需接口 JAR 包即可发起 RPC 调用                |
+| [优雅停机](doc/graceful-shutdown.md)          | 四阶段零损伤发布                                |
+| [服务鉴权](doc/token-auth.md)                 | 基于 Token 的服务认证                           |
+| [连接预热](doc/warm-up.md)                    | Provider 冷启动权重渐增                         |
+| [可观测性](doc/observability.md)              | Micrometer 指标 + OpenTelemetry 链路追踪        |
+| [动态配置](doc/dynamic-config.md)             | 全局/服务级/方法级三层热更新                    |
+| [全链路异步](doc/async-full-chain.md)         | 一根 CompletableFuture 贯穿七层                 |
+| [gRPC 线格式兼容](doc/wire-grpc-compat.md)    | jaws-wire 零 grpc-java 实现与双向互通           |
+| [编解码设计](doc/codec-comparison.md)         | Jaws 与 Dubbo 编解码架构对比分析                |
+| [Netty 性能](doc/netty-performance.md)        | 传输层性能实践与踩坑                            |
+| [与 Dubbo 对比](doc/dubbo-comparison.md)      | 八个维度的系统性能力对比                        |
+| [注册中心对比](doc/registry-comparison.md)    | Nacos 与 ZooKeeper 实现对比                     |
+| [Harbor ↔ Nacos 字帖](doc/harbor-vs-nacos.md) | 内置注册中心与 Nacos 的详细设计对比             |
+| [性能测试](doc/benchmark.md)                  | Benchmark 环境变量与参数选择建议                |
 
 
 &copy; [hongxi.org](http://hongxi.org)
