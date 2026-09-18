@@ -17,7 +17,7 @@ Jaws 是一个**核心 2.9 万多行、可以从头读到尾**的轻量级 RPC �
 - **REST 支持** — 注解驱动 REST 路由映射，兼容 Spring Web 与 JAX-RS 注解体系，泛化调用兜底
 - **多种序列化** — 内置 fastjson2、hessian2、protostuff、fury，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
-- **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持心跳续约与失败重连
+- **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持会话保活与失败重连
 - **多种负载均衡** — random、roundRobin、leastActive、leastLoad、adaptive、consistentHash
 - **高可用容错** — failover（失败重试）、failfast（快速失败）、failsafe（故障安全）
 - **路由链 / Router** — 可扩展的调用时路由过滤链，内置标签路由（灰度发布）与动态配置路由
@@ -35,7 +35,7 @@ Jaws 是一个**核心 2.9 万多行、可以从头读到尾**的轻量级 RPC �
 - ZooKeeper 3.9+（ZooKeeper 注册中心模式需要）
 - Nacos 3.x（Nacos 注册中心模式需要）
 
-> 运行示例可使用内置轻量注册中心 Harbor，兼容 nacos-client，示例见下文
+> 运行示例可使用内置轻量注册中心 Harbor（无需外部依赖，兼容 nacos-client），示例见下文
 
 ### 编译
 
@@ -70,7 +70,8 @@ Jaws 是一个**核心 2.9 万多行、可以从头读到尾**的轻量级 RPC �
 # 使用内置轻量注册中心（jaws-harbor）
 ./run-sample.sh harbor-standalone  # 启动内置轻量注册中心（单机模式）
 ./run-sample.sh harbor-cluster     # 启动内置轻量注册中心（集群模式）
-./run-sample.sh harbor             # 运行示例（sample-harbor-provider/consumer）
+./run-sample.sh harbor             # 运行示例（sample-harbor-provider/consumer，使用原生 client）
+./run-sample.sh harborx            # 运行示例（sample-harborx-provider/consumer，使用 nacos-client）
 ./run-sample.sh stop               # 停止注册中心
 
 # 性能测试（8 核实测约 14 万 QPS，详见 doc/benchmark.md）

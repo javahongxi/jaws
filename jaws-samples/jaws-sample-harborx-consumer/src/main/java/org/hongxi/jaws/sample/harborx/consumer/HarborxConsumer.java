@@ -1,4 +1,4 @@
-package org.hongxi.jaws.sample.harbor.consumer;
+package org.hongxi.jaws.sample.harborx.consumer;
 
 import com.google.common.collect.Lists;
 import org.hongxi.jaws.common.JawsConstants;
@@ -19,33 +19,37 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Service consumer that discovers services from the HarborServer started by
- * {@code HarborProvider}, through harbor's native client.
+ * Consumer that discovers services from HarborServer through the **nacos leg**
+ * (a real nacos-client against harbor), started by {@code HarborxProvider}.
  *
  * <pre>
  * Demo scenarios:
- * 1. harbor registry (native client, no nacos-client) pointing at HarborServer (port 19848)
- *    — the nacos-leg counterpart is jaws-sample-harborx-consumer
+ * 1. Nacos registry pointing at HarborServer (port 19848), no jaws-harbor client
  * 2. Multi-service reference — DemoService + OrderService
  * 3. Calls with various parameter types — String, POJO, List, Map, nested objects
  * 4. group/version configuration
  * </pre>
  *
- * <p>Start {@code jaws-sample-harbor} (HarborBootstrap) and HarborProvider first.</p>
+ * <p>Start {@code ./run-sample.sh harbor-standalone} and {@code HarborxProvider}
+ * first — or start the native {@code HarborProvider} as well: discovering a
+ * provider registered by the other leg is the point of this pair.</p>
  */
-public class HarborConsumer {
+public class HarborxConsumer {
 
     private static final int HARBOR_PORT = Integer.parseInt(System.getProperty("harbor.port", "19848"));
 
     public static void main(String[] args) {
+        // nacos-client reads the gRPC port as HTTP port + offset; HarborServer listens
+        // on one port, so the offset must be zeroed for this leg.
+        System.setProperty("nacos.server.grpc.port.offset", "0");
         ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
-        RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_HARBOR);
+        RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_NACOS);
 
         /* Reference DemoService */
         ReferenceConfig<DemoService> demoRef = new ReferenceConfig<>();
         demoRef.setInterface(DemoService.class);
-        demoRef.setApplication("sample-harbor-consumer");
-        demoRef.setModule("sample-harbor");
+        demoRef.setApplication("sample-harborx-consumer");
+        demoRef.setModule("sample-harborx");
         demoRef.setGroup("test");
         demoRef.setRequestTimeout(2000);
         demoRef.setVersion("2.0");
@@ -101,8 +105,8 @@ public class HarborConsumer {
         System.out.println("\n--- OrderService Calls ---");
         ReferenceConfig<OrderService> orderRef = new ReferenceConfig<>();
         orderRef.setInterface(OrderService.class);
-        orderRef.setApplication("sample-harbor-consumer");
-        orderRef.setModule("sample-harbor");
+        orderRef.setApplication("sample-harborx-consumer");
+        orderRef.setModule("sample-harborx");
         orderRef.setGroup("test");
         orderRef.setVersion("2.0");
         orderRef.setCheck(false);

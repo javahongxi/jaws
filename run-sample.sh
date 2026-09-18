@@ -29,6 +29,9 @@ ADAPTIVE_CONSUMER_MODULE="jaws-samples/jaws-sample-adaptive-consumer"
 HARBOR_BOOTSTRAP_MODULE="jaws-harbor"
 HARBOR_PROVIDER_MODULE="jaws-samples/jaws-sample-harbor-provider"
 HARBOR_CONSUMER_MODULE="jaws-samples/jaws-sample-harbor-consumer"
+# The same HarborServer, reached through the nacos leg (real nacos-client).
+HARBORX_PROVIDER_MODULE="jaws-samples/jaws-sample-harborx-provider"
+HARBORX_CONSUMER_MODULE="jaws-samples/jaws-sample-harborx-consumer"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -54,6 +57,8 @@ ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsume
 HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.harbor.HarborBootstrap"
 HARBOR_PROVIDER_MAIN="org.hongxi.jaws.sample.harbor.provider.HarborProvider"
 HARBOR_CONSUMER_MAIN="org.hongxi.jaws.sample.harbor.consumer.HarborConsumer"
+HARBORX_PROVIDER_MAIN="org.hongxi.jaws.sample.harborx.provider.HarborxProvider"
+HARBORX_CONSUMER_MAIN="org.hongxi.jaws.sample.harborx.consumer.HarborxConsumer"
 
 usage() {
     cat <<'EOF'
@@ -122,6 +127,7 @@ usage() {
     ./run-sample.sh harbor-provider    # Start HarborProvider port 20000 (foreground, Ctrl+C to stop)
     ./run-sample.sh harbor-provider 10001  # Start HarborProvider port 10001
     ./run-sample.sh harbor             # One-shot Provider + Consumer (requires HarborServer)
+    ./run-sample.sh harborx            # Same, but the registry leg is jaws-registry-nacos
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -459,6 +465,25 @@ cmd_harbor_cluster() {
     wait "${pids[0]}" 2>/dev/null || true
 }
 
+# Point the shared harbor one-shot at the nacos-leg sample modules, so the two
+# legs are exercised by the same script rather than by a copy of it.
+_use_harborx_leg() {
+    HARBOR_PROVIDER_MODULE="$HARBORX_PROVIDER_MODULE"
+    HARBOR_CONSUMER_MODULE="$HARBORX_CONSUMER_MODULE"
+    HARBOR_PROVIDER_MAIN="$HARBORX_PROVIDER_MAIN"
+    HARBOR_CONSUMER_MAIN="$HARBORX_CONSUMER_MAIN"
+}
+
+cmd_harborx() {
+    _use_harborx_leg
+    cmd_harbor "$@"
+}
+
+cmd_harborx_provider() {
+    _use_harborx_leg
+    cmd_harbor_provider "$@"
+}
+
 cmd_harbor_provider() {
     ensure_built
     local provider_port="${1:-20000}"
@@ -785,6 +810,8 @@ case "${1:-}" in
     harbor-standalone) shift; cmd_harbor_standalone "$@" ;;
     harbor-cluster)  cmd_harbor_cluster ;;
     harbor-provider) shift; cmd_harbor_provider "$@" ;;
+    harborx)         shift; cmd_harborx "$@" ;;
+    harborx-provider) shift; cmd_harborx_provider "$@" ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;

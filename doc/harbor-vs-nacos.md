@@ -243,7 +243,9 @@ harbor 的定位决定了它不能只靠自证。**自测全绿 ≠ 协议互通
 - **harbor 的端到端反验**：让 `spacecloud` 里那套**真 Dubbo 的 Nacos 注册实现**（官方 Dubbo 生态的 nacos 注册，非 harbor 自带的测试替身）去连 harbor。它若能把 harbor 当 Nacos 完成注册 / 发现 / 订阅，就是比单测更硬的证据——真 Dubbo 生态的 nacos 客户端行为最接近生产。反过来，jaws 里任何 registry 语义的纠结（退役要不要推、副本靠什么续期、订阅出不出网）都能拿 `spacecloud` 的真 Dubbo + Nacos 表现当**参考答案**来定口径。
 - **wire 的端到端反验**：`spacecloud` 的 gRPC 那根齿可当 jaws-wire 的互通对端，比只跟 `grpcurl` 验更真——真 grpc-java stub 的双向调用能顺带压出 `grpc-status` 富错误、deadline、压缩这些 wire 级约定。
 
-**这一节记方向，不记已完成**：上面两条反验目前是计划中的联调靶子，尚未落成 `run-sample.sh` 里的固定用例，真正接起来之前别把它们当现状读。它也顺手给「注册中心只对齐 Nacos、不加 ZK / Consul」补了体系自洽这条硬理由——同向锚点在你自己的多仓体系里已经是 Nacos，再钉一根对不上的齿是拆自己的台。
+已经落成的一条是**两条注册腿的互相可见**：`./run-sample.sh harborx`（jaws-registry-nacos ＋ 真 nacos-client 连 HarborServer）与 `harbor`（原生 client）跑在同一条 `harbor-standalone` 上时，原生腿的 consumer 会调用到 nacos 腿 provider 导出的端口（实测 `server => 192.168.10.120:20001`，服务端同时留着 `version=Nacos-Java-Client:v3.2.3` 与 `version=jaws-harbor-client/1.0` 两类会话）。这条不是"两家自测"，而是两个**不同实现**在同一份 wire 契约上互操作——也正是 `HarborPathUtils` 要求两条腿 URL↔实例映射逐字一致的原因。它仍不替代下面 spacecloud 那条：那是拿"你不控制的第三方实现"来验。
+
+**这一节其余部分记方向，不记已完成**：上面两条反验目前是计划中的联调靶子，尚未落成 `run-sample.sh` 里的固定用例，真正接起来之前别把它们当现状读。它也顺手给「注册中心只对齐 Nacos、不加 ZK / Consul」补了体系自洽这条硬理由——同向锚点在你自己的多仓体系里已经是 Nacos，再钉一根对不上的齿是拆自己的台。
 
 ## 7. 维护纪律
 
