@@ -4,17 +4,15 @@ import org.hongxi.jaws.harbor.model.Response;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
 
 /**
- * Response to {@link org.hongxi.jaws.harbor.model.request.SubscribeServiceRequest}
- * and {@link org.hongxi.jaws.harbor.model.request.ServiceQueryRequest}.
- * Shared because both carry identical {@link ServiceInfo} payload.
+ * Reply to a one-off service query, used by clients that do not subscribe.
  *
  * @author shenhongxi
  */
-public class ServiceInfoResponse extends Response {
+public class QueryServiceResponse extends Response {
 
     private ServiceInfo serviceInfo;
 
-    public ServiceInfoResponse() {
+    public QueryServiceResponse() {
     }
 
     public ServiceInfo getServiceInfo() {

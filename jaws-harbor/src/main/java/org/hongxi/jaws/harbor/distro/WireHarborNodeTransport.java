@@ -1,17 +1,15 @@
 package org.hongxi.jaws.harbor.distro;
 
-import com.alibaba.fastjson2.JSON;
-import com.google.protobuf.Any;
-import com.google.protobuf.ByteString;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.harbor.HarborProtocol;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
+import org.hongxi.jaws.harbor.model.Request;
 import org.hongxi.jaws.harbor.model.request.DistroSnapshotRequest;
 import org.hongxi.jaws.harbor.model.request.DistroSyncRequest;
 import org.hongxi.jaws.harbor.model.request.DistroVerifyRequest;
 import org.hongxi.jaws.harbor.model.response.DistroSnapshotResponse;
 import org.hongxi.jaws.harbor.model.response.DistroSyncResponse;
 import org.hongxi.jaws.harbor.model.response.DistroVerifyResponse;
-import org.hongxi.jaws.harbor.proto.Metadata;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Response;
@@ -20,7 +18,6 @@ import org.hongxi.jaws.wire.WireClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -35,21 +32,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * that stays open for the lifetime of the transport.
  * <p>
  * All three Distro operations target the {@code Request.request} unary RPC
- * on the peer, with Payload types {@code DistroSyncRequest},
- * {@code DistroVerifyRequest}, and {@code DistroSnapshotRequest}.
+ * on the peer; {@link HarborProtocol} owns the envelope, so this class names
+ * no wire token of its own.
  *
  * @author shenhongxi
  */
 public class WireHarborNodeTransport implements HarborNodeTransport {
 
     private static final Logger log = LoggerFactory.getLogger(WireHarborNodeTransport.class);
-
-    private static final String SERVICE_NAME = "Request";
-    private static final String METHOD_NAME = "request";
-
-    private static final String TYPE_DISTRO_SYNC_REQUEST = "DistroSyncRequest";
-    private static final String TYPE_DISTRO_VERIFY_REQUEST = "DistroVerifyRequest";
-    private static final String TYPE_DISTRO_SNAPSHOT_REQUEST = "DistroSnapshotRequest";
 
     private static final int DEFAULT_REQUEST_TIMEOUT_MS = 5000;
     private static final int DEFAULT_CONNECT_TIMEOUT_MS = 3000;
@@ -63,12 +53,12 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
         request.setOperation(operation);
         request.setContent(content != null ? Base64.getEncoder().encodeToString(content) : "");
 
-        Payload responsePayload = sendRequest(targetAddress,
-                TYPE_DISTRO_SYNC_REQUEST, JSON.toJSONBytes(request));
+        Payload responsePayload = sendRequest(targetAddress, request);
         if (responsePayload == null) {
             return false;
         }
-        DistroSyncResponse response = parseBody(responsePayload, DistroSyncResponse.class);
+        DistroSyncResponse response =
+                HarborProtocol.parseBody(responsePayload, DistroSyncResponse.class);
         return response.getResultCode() == 200;
     }
 
@@ -77,13 +67,13 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
         DistroVerifyRequest request = new DistroVerifyRequest();
         request.setVerifyInfos(verifyInfos);
 
-        Payload responsePayload = sendRequest(targetAddress,
-                TYPE_DISTRO_VERIFY_REQUEST, JSON.toJSONBytes(request));
+        Payload responsePayload = sendRequest(targetAddress, request);
         if (responsePayload == null) {
             log.warn("[harbor] verify to {} failed: no response", targetAddress);
             return List.of();
         }
-        DistroVerifyResponse response = parseBody(responsePayload, DistroVerifyResponse.class);
+        DistroVerifyResponse response =
+                HarborProtocol.parseBody(responsePayload, DistroVerifyResponse.class);
         if (response.getResultCode() != 200) {
             log.warn("[harbor] verify to {} returned code {}", targetAddress, response.getResultCode());
             List<String> mismatched = response.getMismatchedConnectionIds();
@@ -96,12 +86,12 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
     public byte[] getSnapshot(String targetAddress) {
         DistroSnapshotRequest request = new DistroSnapshotRequest();
 
-        Payload responsePayload = sendRequest(targetAddress,
-                TYPE_DISTRO_SNAPSHOT_REQUEST, JSON.toJSONBytes(request));
+        Payload responsePayload = sendRequest(targetAddress, request);
         if (responsePayload == null) {
             return null;
         }
-        DistroSnapshotResponse response = parseBody(responsePayload, DistroSnapshotResponse.class);
+        DistroSnapshotResponse response =
+                HarborProtocol.parseBody(responsePayload, DistroSnapshotResponse.class);
         if (response.getResultCode() != 200) {
             log.warn("[harbor] snapshot from {} failed: {}", targetAddress, response);
             return null;
@@ -135,22 +125,19 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
      * Send a unary Distro request to a peer Harbor server and return the
      * response Payload, or null if the call failed.
      */
-    private Payload sendRequest(String targetAddress, String type, byte[] jsonBody) {
+    private Payload sendRequest(String targetAddress, Request request) {
+        String type = HarborProtocol.typeToken(request.getClass());
         try {
             WireClient client = getOrCreateClient(targetAddress);
-            Payload requestPayload = Payload.newBuilder()
-                    .setMetadata(Metadata.newBuilder().setType(type).build())
-                    .setBody(Any.newBuilder()
-                            .setValue(ByteString.copyFrom(jsonBody))
-                            .build())
-                    .build();
+            Payload requestPayload = HarborProtocol.encodeRequest(request);
 
-            DefaultRequest request = new DefaultRequest();
-            request.setInterfaceName(SERVICE_NAME);
-            request.setMethodName(METHOD_NAME);
-            request.setArguments(new Object[]{requestPayload});
+            DefaultRequest rpcRequest = new DefaultRequest();
+            rpcRequest.setInterfaceName(HarborProtocol.RPC_UNARY_SERVICE);
+            rpcRequest.setMethodName(HarborProtocol.RPC_UNARY_METHOD);
+            rpcRequest.setArguments(new Object[]{requestPayload});
 
-            Response response = client.request(request, Payload.getDefaultInstance().getParserForType());
+            Response response = client.request(rpcRequest,
+                    Payload.getDefaultInstance().getParserForType());
             Object value = response.getValue();
             if (value instanceof Payload payload) {
                 return payload;
@@ -174,7 +161,7 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
             String host = parts[0].trim();
             int port = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 19848;
 
-            URL url = new URL("wire", host, port, SERVICE_NAME);
+            URL url = new URL("wire", host, port, HarborProtocol.RPC_UNARY_SERVICE);
             url.addParameter(UrlParam.Transport.REQUEST_TIMEOUT.getName(),
                     String.valueOf(DEFAULT_REQUEST_TIMEOUT_MS));
             url.addParameter(UrlParam.Transport.CONNECT_TIMEOUT.getName(),
@@ -188,17 +175,5 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
             log.info("[harbor] peer client opened: {}", addr);
             return client;
         });
-    }
-
-    private static <T> T parseBody(Payload payload, Class<T> clazz) {
-        byte[] bytes = payload.getBody().getValue().toByteArray();
-        if (bytes.length == 0) {
-            try {
-                return clazz.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to create empty " + clazz.getSimpleName(), e);
-            }
-        }
-        return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), clazz);
     }
 }

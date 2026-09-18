@@ -1,8 +1,5 @@
 package org.hongxi.jaws.harbor;
 
-import com.alibaba.fastjson2.JSON;
-import com.google.protobuf.Any;
-import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 import io.netty.channel.ChannelPipeline;
@@ -14,11 +11,8 @@ import org.hongxi.jaws.harbor.distro.WireHarborNodeTransport;
 import org.hongxi.jaws.harbor.distro.HarborNodeTransport;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Instance;
-import org.hongxi.jaws.harbor.model.Request;
-import org.hongxi.jaws.harbor.model.Response;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
 import org.hongxi.jaws.harbor.model.ServiceKey;
-import org.hongxi.jaws.harbor.proto.Metadata;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.harbor.model.request.*;
 import org.hongxi.jaws.harbor.model.response.*;
@@ -30,8 +24,8 @@ import org.hongxi.jaws.wire.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,44 +53,6 @@ public class HarborServer {
 
     private static final Logger log = LoggerFactory.getLogger(HarborServer.class);
 
-    private static final String SERVICE_NAME_REQUEST = "Request";
-    private static final String SERVICE_NAME_BI_STREAM = "BiRequestStream";
-    private static final String METHOD_REQUEST = "request";
-    private static final String METHOD_BI_STREAM = "requestBiStream";
-
-    // Nacos naming request and response types
-    private static final String TYPE_SERVER_CHECK_REQUEST = "ServerCheckRequest";
-    private static final String TYPE_SERVER_CHECK_RESPONSE = "ServerCheckResponse";
-    private static final String TYPE_INSTANCE_REQUEST = "InstanceRequest";
-    private static final String TYPE_BATCH_INSTANCE_REQUEST = "BatchInstanceRequest";
-    private static final String TYPE_INSTANCE_RESPONSE = "InstanceResponse";
-    private static final String TYPE_SUBSCRIBE_SERVICE_REQUEST = "SubscribeServiceRequest";
-    private static final String TYPE_SUBSCRIBE_SERVICE_RESPONSE = "SubscribeServiceResponse";
-    private static final String TYPE_SERVICE_QUERY_REQUEST = "ServiceQueryRequest";
-    private static final String TYPE_QUERY_SERVICE_RESPONSE = "QueryServiceResponse";
-    private static final String TYPE_SERVICE_LIST_REQUEST = "ServiceListRequest";
-    private static final String TYPE_SERVICE_LIST_RESPONSE = "ServiceListResponse";
-    private static final String TYPE_HEALTH_CHECK_REQUEST = "HealthCheckRequest";
-    private static final String TYPE_HEALTH_CHECK_RESPONSE = "HealthCheckResponse";
-
-    // Nacos naming bidi request types
-    private static final String TYPE_CONNECTION_SETUP_REQUEST = "ConnectionSetupRequest";
-    private static final String TYPE_SETUP_ACK_REQUEST = "SetupAckRequest";
-    private static final String TYPE_NOTIFY_SUBSCRIBER_RESPONSE = "NotifySubscriberResponse";
-
-    // Nacos naming instance request types
-    private static final String REGISTER_INSTANCE = "registerInstance";
-    private static final String DEREGISTER_INSTANCE = "deregisterInstance";
-    private static final String BATCH_REGISTER_INSTANCE = "batchRegisterInstance";
-
-    // Distro inter-node request and response types
-    private static final String TYPE_DISTRO_SYNC_REQUEST = "DistroSyncRequest";
-    private static final String TYPE_DISTRO_SYNC_RESPONSE = "DistroSyncResponse";
-    private static final String TYPE_DISTRO_VERIFY_REQUEST = "DistroVerifyRequest";
-    private static final String TYPE_DISTRO_VERIFY_RESPONSE = "DistroVerifyResponse";
-    private static final String TYPE_DISTRO_SNAPSHOT_REQUEST = "DistroSnapshotRequest";
-    private static final String TYPE_DISTRO_SNAPSHOT_RESPONSE = "DistroSnapshotResponse";
-
     /**
      * URL parameter for specifying initial cluster members.
      * Format: comma-separated {@code host:port} pairs,
@@ -112,6 +68,9 @@ public class HarborServer {
     private final HealthCheckScheduler healthCheckScheduler;
     private final PushDelayTaskEngine pushEngine;
     private final WireServer wireServer;
+
+    /** Unary dispatch table, keyed by the wire token of each request DTO. */
+    private final Map<String, UnaryRequestHandler> unaryHandlers;
 
     private HarborHttpApi httpApi;
 
@@ -141,9 +100,13 @@ public class HarborServer {
         this.healthCheckScheduler = new HealthCheckScheduler(
                 this.connectionManager, this.serviceStorage, this.connectionCleanup);
 
+        this.unaryHandlers = buildUnaryHandlers();
+
         WireHandlerRegistry registry = new WireHandlerRegistry();
-        registry.register(SERVICE_NAME_REQUEST, METHOD_REQUEST, new RequestHandler());
-        registry.register(SERVICE_NAME_BI_STREAM, METHOD_BI_STREAM, new BiStreamHandler());
+        registry.register(HarborProtocol.RPC_UNARY_SERVICE, HarborProtocol.RPC_UNARY_METHOD,
+                new RequestHandler());
+        registry.register(HarborProtocol.RPC_STREAM_SERVICE, HarborProtocol.RPC_STREAM_METHOD,
+                new BiStreamHandler());
 
         this.wireServer = new WireServer(url, registry) {
             @Override
@@ -258,6 +221,45 @@ public class HarborServer {
     // Request.request handler (unary)
     // ========================================================================
 
+    /** A single unary operation, given its envelope and the caller's identity. */
+    @FunctionalInterface
+    private interface UnaryRequestHandler {
+        Payload handle(Payload payload, String clientIp, String connectionId);
+    }
+
+    /**
+     * The whole unary contract in one table: every request DTO this server
+     * answers, keyed by its wire token. Adding an operation means adding a DTO
+     * and a line here, so a token can never disagree with a class name.
+     */
+    private Map<String, UnaryRequestHandler> buildUnaryHandlers() {
+        Map<String, UnaryRequestHandler> handlers = new LinkedHashMap<>();
+        handlers.put(HarborProtocol.typeToken(ServerCheckRequest.class),
+                (payload, clientIp, connectionId) -> handleServerCheck(clientIp, connectionId));
+        handlers.put(HarborProtocol.typeToken(InstanceRequest.class), this::handleInstanceRequest);
+        handlers.put(HarborProtocol.typeToken(BatchInstanceRequest.class),
+                this::handleBatchInstanceRequest);
+        handlers.put(HarborProtocol.typeToken(SubscribeServiceRequest.class), this::handleSubscribe);
+        handlers.put(HarborProtocol.typeToken(ServiceQueryRequest.class),
+                (payload, clientIp, connectionId) -> handleServiceQuery(payload));
+        handlers.put(HarborProtocol.typeToken(ServiceListRequest.class),
+                (payload, clientIp, connectionId) -> handleServiceList(payload));
+        handlers.put(HarborProtocol.typeToken(HealthCheckRequest.class),
+                (payload, clientIp, connectionId) -> handleHealthCheck());
+        handlers.put(HarborProtocol.typeToken(DistroSyncRequest.class),
+                (payload, clientIp, connectionId) -> handleDistroSync(payload));
+        handlers.put(HarborProtocol.typeToken(DistroVerifyRequest.class),
+                (payload, clientIp, connectionId) -> handleDistroVerify(payload));
+        handlers.put(HarborProtocol.typeToken(DistroSnapshotRequest.class),
+                (payload, clientIp, connectionId) -> handleDistroSnapshot());
+        // Config center is out of scope for a naming registry; answer silently
+        // so that nacos-client does not keep retrying the listen.
+        handlers.put(HarborProtocol.CONFIG_LISTEN_REQUEST,
+                (payload, clientIp, connectionId) ->
+                        HarborProtocol.encodeResponse(ConfigBatchListenResponse.ok()));
+        return handlers;
+    }
+
     /**
      * Handles all unary {@code Request.request(Payload)} calls.
      * Dispatches based on {@code Payload.metadata.type} to the appropriate
@@ -282,32 +284,16 @@ public class HarborServer {
             // always the precise path; the old clientIp fallback has been removed.
             connectionManager.refreshActiveTime(connectionId);
 
+            UnaryRequestHandler handler = unaryHandlers.get(type);
+            if (handler == null) {
+                log.warn("[harbor] unknown request type: {}", type);
+                return HarborProtocol.encodeError(type, "Unknown request type: " + type);
+            }
             try {
-                return switch (type) {
-                    // Naming
-                    case TYPE_SERVER_CHECK_REQUEST -> handleServerCheck(clientIp, connectionId);
-                    case TYPE_INSTANCE_REQUEST -> handleInstanceRequest(payload, clientIp, connectionId);
-                    case TYPE_BATCH_INSTANCE_REQUEST -> handleBatchInstanceRequest(payload, clientIp, connectionId);
-                    case TYPE_SUBSCRIBE_SERVICE_REQUEST -> handleSubscribe(payload, clientIp, connectionId);
-                    case TYPE_SERVICE_QUERY_REQUEST -> handleServiceQuery(payload);
-                    case TYPE_SERVICE_LIST_REQUEST -> handleServiceList(payload);
-                    case TYPE_HEALTH_CHECK_REQUEST -> handleHealthCheck();
-                    // Distro inter-node
-                    case TYPE_DISTRO_SYNC_REQUEST -> handleDistroSync(payload);
-                    case TYPE_DISTRO_VERIFY_REQUEST -> handleDistroVerify(payload);
-                    case TYPE_DISTRO_SNAPSHOT_REQUEST -> handleDistroSnapshot();
-                    // Config requests — Harbor does not support config center;
-                    // return silent success to prevent nacos-client from retrying.
-                    case "ConfigBatchListenRequest" ->
-                            buildPayload("ConfigBatchListenResponse", ConfigBatchListenResponse.ok());
-                    default -> {
-                        log.warn("[harbor] unknown request type: {}", type);
-                        yield buildErrorResponse(type, "Unknown request type: " + type);
-                    }
-                };
+                return handler.handle(payload, clientIp, connectionId);
             } catch (Exception e) {
                 log.error("[harbor] error handling request type={}", type, e);
-                return buildErrorResponse(type, e.getMessage());
+                return HarborProtocol.encodeError(type, e.getMessage());
             }
         }
 
@@ -363,33 +349,32 @@ public class HarborServer {
                     // the beat (lastActiveTime is the sole health/watchdog clock).
                     connectionManager.refreshActiveTime(connectionId);
 
-                    switch (type) {
-                        case TYPE_CONNECTION_SETUP_REQUEST -> {
-                            ConnectionSetupRequest setup = parseBody(payload, ConnectionSetupRequest.class);
-                            String version = setup.getClientVersion();
-                            Map<String, String> labels = setup.getLabels();
-                            if (labels == null) {
-                                labels = Map.of();
-                            }
-                            connectionManager.register(connectionId, ip, version, labels, pushSubject);
-                            // Always send SetupAckRequest back through the bi-stream.
-                            // The nacos-client expects this ack to confirm the connection
-                            // is established. Not sending it causes the client to think
-                            // the connection is bad and trigger GOAWAY → reconnect loop.
-                            // The nacos-client bi-stream observer casts every incoming
-                            // payload to Request, NOT Response. Sending a Response subclass
-                            // causes ClassCastException → onError → switchServerAsync →
-                            // infinite reconnection loop (~10s cycle).
-                            Payload setupAck = buildPushPayload(TYPE_SETUP_ACK_REQUEST,
-                                    new SetupAckRequest(Map.of()));
-                            log.debug("[harbor] sending SetupAckRequest to connId={}, clientIp={}",
-                                    connectionId, ip);
-                            pushSubject.onNext(setupAck);
+                    if (HarborProtocol.typeToken(ConnectionSetupRequest.class).equals(type)) {
+                        ConnectionSetupRequest setup =
+                                HarborProtocol.parseBody(payload, ConnectionSetupRequest.class);
+                        String version = setup.getClientVersion();
+                        Map<String, String> labels = setup.getLabels();
+                        if (labels == null) {
+                            labels = Map.of();
                         }
-                        case TYPE_NOTIFY_SUBSCRIBER_RESPONSE ->
-                            // Client ack for a NotifySubscriberRequest — no action needed
-                                log.debug("[harbor] received NotifySubscriberResponse ack");
-                        default -> log.debug("[harbor] bi-stream received type={}", type);
+                        connectionManager.register(connectionId, ip, version, labels, pushSubject);
+                        // Always send SetupAckRequest back through the bi-stream.
+                        // The nacos-client expects this ack to confirm the connection
+                        // is established. Not sending it causes the client to think
+                        // the connection is bad and trigger GOAWAY → reconnect loop.
+                        // The nacos-client bi-stream observer casts every incoming
+                        // payload to Request, NOT Response. Sending a Response subclass
+                        // causes ClassCastException → onError → switchServerAsync →
+                        // infinite reconnection loop (~10s cycle).
+                        Payload setupAck = HarborProtocol.encodePush(new SetupAckRequest(Map.of()));
+                        log.debug("[harbor] sending SetupAckRequest to connId={}, clientIp={}",
+                                connectionId, ip);
+                        pushSubject.onNext(setupAck);
+                    } else if (HarborProtocol.typeToken(NotifySubscriberResponse.class).equals(type)) {
+                        // Client ack for a NotifySubscriberRequest — no action needed
+                        log.debug("[harbor] received NotifySubscriberResponse ack");
+                    } else {
+                        log.debug("[harbor] bi-stream received type={}", type);
                     }
                 }
 
@@ -447,11 +432,11 @@ public class HarborServer {
         response.setSuccess(true);
         response.setConnectionId(connectionId);
         response.setSupportAbilityNegotiation(false);
-        return buildPayload(TYPE_SERVER_CHECK_RESPONSE, response, clientIp);
+        return HarborProtocol.encodeResponse(response, clientIp);
     }
 
     private Payload handleInstanceRequest(Payload payload, String clientIp, String connectionId) {
-        InstanceRequest request = parseBody(payload, InstanceRequest.class);
+        InstanceRequest request = HarborProtocol.parseBody(payload, InstanceRequest.class);
         String namespace = request.getNamespace();
         String groupName = request.getGroupName();
         String serviceName = request.getServiceName();
@@ -459,7 +444,7 @@ public class HarborServer {
 
         Instance instance = request.getInstance();
         if (instance == null) {
-            return buildErrorResponse(TYPE_INSTANCE_RESPONSE, "Missing instance");
+            return instanceError("Missing instance");
         }
 
         // Set default instanceId if not provided
@@ -468,31 +453,41 @@ public class HarborServer {
             instance.setInstanceId(instance.getIp() + "#" + instance.getPort() + "#" + groupedName);
         }
 
-        if (REGISTER_INSTANCE.equals(type)) {
+        if (HarborProtocol.REGISTER_INSTANCE.equals(type)) {
             serviceStorage.registerInstance(namespace, groupName, serviceName, instance, connectionId);
             // Sync full client state to peers (client-level granularity)
             syncClientDataToPeers(connectionId);
-        } else if (DEREGISTER_INSTANCE.equals(type)) {
+        } else if (HarborProtocol.DEREGISTER_INSTANCE.equals(type)) {
             serviceStorage.deregisterInstance(namespace, groupName, serviceName, instance, connectionId);
             // Deregister is also a CHANGE (full client state replacement), not DELETE.
             // DELETE is only used when the entire connection goes away.
             syncClientDataToPeers(connectionId);
         } else {
-            return buildErrorResponse(TYPE_INSTANCE_RESPONSE,
-                    "Unknown instance operation type: " + type);
+            return instanceError("Unknown instance operation type: " + type);
         }
 
         InstanceResponse response = new InstanceResponse();
         response.setResultCode(200);
         response.setSuccess(true);
         response.setType(type);
-        return buildPayload(TYPE_INSTANCE_RESPONSE, response, clientIp);
+        return HarborProtocol.encodeResponse(response, clientIp);
+    }
+
+    /**
+     * Instance replies are shared by the single and batch paths, but the token
+     * must name the class actually being sent, so failures go out under the
+     * reply type the caller planned for.
+     */
+    private Payload instanceError(String message) {
+        return HarborProtocol.encodeError(
+                HarborProtocol.typeToken(InstanceResponse.class), message);
     }
 
     private Payload handleBatchInstanceRequest(Payload payload, String clientIp, String connectionId) {
-        BatchInstanceRequest request = parseBody(payload, BatchInstanceRequest.class);
-        if (!BATCH_REGISTER_INSTANCE.equals(request.getType())) {
-            return buildErrorResponse(TYPE_INSTANCE_RESPONSE,
+        BatchInstanceRequest request = HarborProtocol.parseBody(payload, BatchInstanceRequest.class);
+        if (!HarborProtocol.BATCH_REGISTER_INSTANCE.equals(request.getType())) {
+            return HarborProtocol.encodeError(
+                    HarborProtocol.typeToken(BatchInstanceResponse.class),
                     "Unsupported request type: " + request.getType());
         }
 
@@ -502,7 +497,8 @@ public class HarborServer {
 
         List<Instance> instances = request.getInstances();
         if (instances == null || instances.isEmpty()) {
-            return buildErrorResponse(TYPE_INSTANCE_RESPONSE, "Missing instances");
+            return HarborProtocol.encodeError(
+                    HarborProtocol.typeToken(BatchInstanceResponse.class), "Missing instances");
         }
 
         for (Instance instance : instances) {
@@ -517,15 +513,15 @@ public class HarborServer {
         // Sync full client state to peers after batch registration
         syncClientDataToPeers(connectionId);
 
-        InstanceResponse response = new InstanceResponse();
+        BatchInstanceResponse response = new BatchInstanceResponse(request.getType());
         response.setResultCode(200);
         response.setSuccess(true);
-        response.setType(request.getType());
-        return buildPayload(TYPE_INSTANCE_RESPONSE, response, clientIp);
+        return HarborProtocol.encodeResponse(response, clientIp);
     }
 
     private Payload handleSubscribe(Payload payload, String clientIp, String connectionId) {
-        SubscribeServiceRequest request = parseBody(payload, SubscribeServiceRequest.class);
+        SubscribeServiceRequest request =
+                HarborProtocol.parseBody(payload, SubscribeServiceRequest.class);
         String namespace = request.getNamespace();
         String groupName = request.getGroupName();
         String serviceName = request.getServiceName();
@@ -540,15 +536,15 @@ public class HarborServer {
         ServiceInfo serviceInfo = serviceStorage.buildServiceInfo(
                 namespace, groupName, serviceName);
 
-        ServiceInfoResponse response = new ServiceInfoResponse();
+        SubscribeServiceResponse response = new SubscribeServiceResponse();
         response.setResultCode(200);
         response.setSuccess(true);
         response.setServiceInfo(serviceInfo);
-        return buildPayload(TYPE_SUBSCRIBE_SERVICE_RESPONSE, response, clientIp);
+        return HarborProtocol.encodeResponse(response, clientIp);
     }
 
     private Payload handleServiceQuery(Payload payload) {
-        ServiceQueryRequest request = parseBody(payload, ServiceQueryRequest.class);
+        ServiceQueryRequest request = HarborProtocol.parseBody(payload, ServiceQueryRequest.class);
         String namespace = request.getNamespace();
         String groupName = request.getGroupName();
         String serviceName = request.getServiceName();
@@ -556,15 +552,15 @@ public class HarborServer {
         ServiceInfo serviceInfo = serviceStorage.buildServiceInfo(
                 namespace, groupName, serviceName);
 
-        ServiceInfoResponse response = new ServiceInfoResponse();
+        QueryServiceResponse response = new QueryServiceResponse();
         response.setResultCode(200);
         response.setSuccess(true);
         response.setServiceInfo(serviceInfo);
-        return buildPayload(TYPE_QUERY_SERVICE_RESPONSE, response);
+        return HarborProtocol.encodeResponse(response);
     }
 
     private Payload handleServiceList(Payload payload) {
-        ServiceListRequest request = parseBody(payload, ServiceListRequest.class);
+        ServiceListRequest request = HarborProtocol.parseBody(payload, ServiceListRequest.class);
         String namespace = request.getNamespace();
         String groupName = request.getGroupName();
         if (groupName == null || groupName.isEmpty()) {
@@ -578,7 +574,7 @@ public class HarborServer {
         response.setSuccess(true);
         response.setCount(services.size());
         response.setServiceNames(services);
-        return buildPayload(TYPE_SERVICE_LIST_RESPONSE, response);
+        return HarborProtocol.encodeResponse(response);
     }
 
     private Payload handleHealthCheck() {
@@ -586,7 +582,7 @@ public class HarborServer {
         response.setResultCode(200);
         response.setSuccess(true);
         response.setStatus("SERVING");
-        return buildPayload(TYPE_HEALTH_CHECK_RESPONSE, response);
+        return HarborProtocol.encodeResponse(response);
     }
 
     // ========================================================================
@@ -594,7 +590,7 @@ public class HarborServer {
     // ========================================================================
 
     private Payload handleDistroSync(Payload payload) {
-        DistroSyncRequest request = parseBody(payload, DistroSyncRequest.class);
+        DistroSyncRequest request = HarborProtocol.parseBody(payload, DistroSyncRequest.class);
         String resourceKey = request.getResourceKey();
         String operation = request.getOperation();
         String contentStr = request.getContent();
@@ -607,11 +603,11 @@ public class HarborServer {
         DistroSyncResponse response = new DistroSyncResponse();
         response.setResultCode(ok ? 200 : 500);
         response.setSuccess(ok);
-        return buildPayload(TYPE_DISTRO_SYNC_RESPONSE, response);
+        return HarborProtocol.encodeResponse(response);
     }
 
     private Payload handleDistroVerify(Payload payload) {
-        DistroVerifyRequest request = parseBody(payload, DistroVerifyRequest.class);
+        DistroVerifyRequest request = HarborProtocol.parseBody(payload, DistroVerifyRequest.class);
         List<ClientVerifyInfo> verifyInfos = request.getVerifyInfos();
         if (verifyInfos == null) {
             verifyInfos = List.of();
@@ -628,7 +624,7 @@ public class HarborServer {
             response.setSuccess(false);
             response.setMismatchedConnectionIds(mismatched);
         }
-        return buildPayload(TYPE_DISTRO_VERIFY_RESPONSE, response);
+        return HarborProtocol.encodeResponse(response);
     }
 
     private Payload handleDistroSnapshot() {
@@ -639,7 +635,7 @@ public class HarborServer {
         response.setSuccess(true);
         response.setContent(snapshot != null
                 ? Base64.getEncoder().encodeToString(snapshot) : "");
-        return buildPayload(TYPE_DISTRO_SNAPSHOT_RESPONSE, response);
+        return HarborProtocol.encodeResponse(response);
     }
 
     // ========================================================================
@@ -659,86 +655,5 @@ public class HarborServer {
         // snapshot is cached: caching and resending a snapshot is exactly what risked
         // regressing a client to stale state when retries arrived out of order.
         pushEngine.requestPush(service);
-    }
-
-    // ========================================================================
-    // Payload helpers
-    // ========================================================================
-
-    /**
-     * Deserialize the Payload body into a typed request object.
-     */
-    static <T extends Request> T parseBody(Payload payload, Class<T> clazz) {
-        byte[] bytes = payload.getBody().getValue().toByteArray();
-        if (bytes.length == 0) {
-            try {
-                return clazz.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to create empty " + clazz.getSimpleName(), e);
-            }
-        }
-        return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), clazz);
-    }
-
-    /**
-     * Build a Payload envelope wrapping a typed response object.
-     */
-    static Payload buildPayload(String type, Response response) {
-        byte[] jsonBytes = JSON.toJSONBytes(response);
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(type)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
-    }
-
-    /**
-     * Build a Payload envelope wrapping a typed response object with clientIp.
-     */
-    static Payload buildPayload(String type, Response response, String clientIp) {
-        byte[] jsonBytes = JSON.toJSONBytes(response);
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(type)
-                        .setClientIp(clientIp)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
-    }
-
-    /**
-     * Build a Payload envelope wrapping a typed push request object.
-     */
-    static Payload buildPushPayload(String type, Request pushRequest) {
-        byte[] jsonBytes = JSON.toJSONBytes(pushRequest);
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(type)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
-    }
-
-    /**
-     * Build an error response
-     */
-    static Payload buildErrorResponse(String responseType, String message) {
-        record ErrorResponse(String message) {}
-        byte[] jsonBytes = JSON.toJSONBytes(new ErrorResponse(message));
-        return Payload.newBuilder()
-                .setMetadata(Metadata.newBuilder()
-                        .setType(responseType)
-                        .build())
-                .setBody(Any.newBuilder()
-                        .setValue(ByteString.copyFrom(jsonBytes))
-                        .build())
-                .build();
     }
 }

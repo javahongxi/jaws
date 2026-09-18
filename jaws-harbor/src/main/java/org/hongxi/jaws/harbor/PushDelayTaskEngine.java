@@ -35,9 +35,6 @@ public class PushDelayTaskEngine {
 
     private static final Logger log = LoggerFactory.getLogger(PushDelayTaskEngine.class);
 
-    /** payload {@code metadata.type} for a naming change notification. */
-    private static final String TYPE_NOTIFY_SUBSCRIBER_REQUEST = "NotifySubscriberRequest";
-
     /**
      * Coalescing window: bursts on the same service collapse into one push.
      * Matching Nacos {@code DEFAULT_PUSH_TASK_DELAY = 500ms}.
@@ -112,8 +109,9 @@ public class PushDelayTaskEngine {
             push.setGroupName(service.group());
             push.setServiceInfo(latest);
 
-            Payload payload = HarborServer.buildPushPayload(
-                    TYPE_NOTIFY_SUBSCRIBER_REQUEST, push);
+            // The token is the class's simple name, so a client that resolves
+            // NotifySubscriberRequest can trust it without a second registry.
+            Payload payload = HarborProtocol.encodePush(push);
 
             for (String connId : serviceStorage.getSubscriberConnections(service)) {
                 // pushToConnection returns false only when the connection is gone;
