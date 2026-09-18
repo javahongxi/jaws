@@ -143,37 +143,48 @@ class HarborClientTest {
     }
 
     /**
-     * The redo pass, not the caller, collects a spent entry — Nacos defers it the
-     * same way. Asserting both halves matters: removal at call time would leak
-     * nothing but also prove nothing about the pass, while a pass that never runs
-     * turns every deregister into a permanent table entry.
+     * A confirmed deregister leaves its entry in the table: the pass, not the caller,
+     * collects it (Nacos defers the same way). A redo period long enough to never fire
+     * during the test is what makes "it is still there" a statement about the code
+     * rather than about who won the race.
      */
     @Test
-    void redoPassCollectsSpentEntries() throws Exception {
-        try (HarborClient client = new HarborClient(
-                HarborClientConfig.of("127.0.0.1", port).withRedoDelayMillis(1_000))) {
+    void spentRegistrationIsLeftForThePassInsteadOfRemovedInline() throws Exception {
+        try (HarborClient client = new HarborClient(HarborClientConfig
+                .of("127.0.0.1", port).withRedoDelayMillis(60_000))) {
             client.registerInstance("spent-entry", instance("127.0.0.1", 9900));
             awaitTrue(() -> !nacosInstances("spent-entry").isEmpty(), 5_000);
 
             client.deregisterInstance("spent-entry", instance("127.0.0.1", 9900));
             awaitTrue(() -> nacosInstances("spent-entry").isEmpty(), 5_000);
-            assertEquals(1, client.registrationCount(),
-                    "a confirmed deregister leaves the entry for the pass, it does not remove it");
+            assertEquals(1, client.registrationCount(), "deferred, not inline");
 
-            awaitTrue(() -> client.registrationCount() == 0, 5_000);
-
-            // And it stays gone across a recovery: nothing was left owed.
+            // And a recovery must not turn that spent entry back into a registration.
             client.connection().recover();
-            Thread.sleep(1_500);
+            Thread.sleep(1_200);
             assertTrue(nacosInstances("spent-entry").isEmpty());
-            assertEquals(0, client.registrationCount());
+            assertEquals(0, client.registrationCount(),
+                    "recovery walks the same table, so it collects the REMOVE entry");
+        }
+    }
+
+    /** The pass really runs: with a short period the spent entry disappears by itself. */
+    @Test
+    void thePassCollectsSpentRegistrationsOnItsOwn() throws Exception {
+        try (HarborClient client = new HarborClient(HarborClientConfig
+                .of("127.0.0.1", port).withRedoDelayMillis(300))) {
+            client.registerInstance("collected", instance("127.0.0.1", 9910));
+            awaitTrue(() -> !nacosInstances("collected").isEmpty(), 5_000);
+
+            client.deregisterInstance("collected", instance("127.0.0.1", 9910));
+            awaitTrue(() -> client.registrationCount() == 0, 5_000);
         }
     }
 
     @Test
     void redoPassCollectsSpentSubscriptions() throws Exception {
         try (HarborClient client = new HarborClient(
-                HarborClientConfig.of("127.0.0.1", port).withRedoDelayMillis(1_000))) {
+                HarborClientConfig.of("127.0.0.1", port).withRedoDelayMillis(400))) {
             Consumer<ServiceInfo> listener = info -> { };
             client.subscribe("spent-subscription", listener);
             assertEquals(1, client.subscriptionCount());
@@ -219,24 +230,29 @@ class HarborClientTest {
     }
 
     /**
-     * Harbor's health tiers are calibrated against a 5s beat
-     * (unhealthy past ~3 beats, connection retired past ~18), and a v2 client
-     * sends no beat — so the keep-alive message is what holds an idle provider's
-     * instances up. The window here is deliberately longer than the 15s tier.
+     * Keep-alive traffic is what holds an idle provider's instances up: harbor's
+     * health tiers are calibrated against a beat (unhealthy past 3×5s of silence,
+     * session retired past ~18) while a v2 client sends no beat at all.
+     * <p>
+     * The idle budget is injected through {@code reconcileHealth(timeoutMs)} rather
+     * than waited out — asking the sweep "would you call this connection idle at 1s?"
+     * is the same verdict as the production 15s tier, and does not spend 20 seconds of
+     * wall clock to observe it.
      */
     @Test
-    void keepAliveHoldsEphemeralInstancesHealthyAcrossIdleWindow() throws Exception {
-        try (HarborClient client = new HarborClient(
-                HarborClientConfig.of("127.0.0.1", port).withKeepAliveMillis(1_000))) {
+    void keepAliveKeepsTheConnectionInsideTheIdleBudget() throws Exception {
+        try (HarborClient client = new HarborClient(HarborClientConfig
+                .of("127.0.0.1", port).withKeepAliveMillis(300))) {
             client.registerInstance("idle-provider", instance("127.0.0.1", 9500));
-            awaitTrue(() -> !client.getInstances("idle-provider").isEmpty(), 5_000);
+            awaitTrue(() -> !client.getInstances("idle-provider", true).isEmpty(), 5_000);
 
-            Thread.sleep(20_000);
+            // Silent apart from keep-alive, for five of its ticks.
+            Thread.sleep(1_600);
+            harborServer.getServiceStorage().reconcileHealth(1_000);
 
-            List<Instance> healthy = client.getInstances("idle-provider", true);
-            assertEquals(1, healthy.size());
-            assertTrue(healthy.get(0).isHealthy(),
-                    "keep-alive failed to hold the instance past the unhealthy tier");
+            assertEquals(1, client.getInstances("idle-provider", true).size(),
+                    "a 300ms keep-alive must clear a 1s idle budget; if it does not, the"
+                            + " sweep below will mark the instance unhealthy");
         }
     }
 
@@ -266,7 +282,7 @@ class HarborClientTest {
 
             // A spent entry must not come back as a registration on replay.
             client.connection().recover();
-            Thread.sleep(1_500);
+            Thread.sleep(1_200);
             assertTrue(nacosInstances("dereg-then-recover").isEmpty(),
                     "a deregistered instance was resurrected by the replay");
         }
@@ -294,7 +310,7 @@ class HarborClientTest {
             nacosNaming.registerInstance("unwatch-then-recover", "DEFAULT_GROUP", later);
             // Past the 500ms push coalescing window: had the subscription survived
             // the replay, the notification would be in by now.
-            Thread.sleep(2_000);
+            Thread.sleep(1_200);
             assertTrue(received.isEmpty(), "an unsubscribed service was re-subscribed");
         }
     }

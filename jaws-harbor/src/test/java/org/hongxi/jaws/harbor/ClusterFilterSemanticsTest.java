@@ -73,7 +73,8 @@ class ClusterFilterSemanticsTest extends HarborRegistryFixture {
 
         // A change in a cluster this watcher did not ask for must not reach it.
         register(service, "127.0.0.1", 9102, "b", true);
-        Thread.sleep(2_000);
+        // Past the 500ms push coalescing window: a leaking push would be in by now.
+        Thread.sleep(1_200);
         assertTrue(seen.stream().allMatch(each -> hostsOf(each).contains(9101)
                         && !hostsOf(each).contains(9102)),
                 "a push leaked an instance from a cluster outside the filter");

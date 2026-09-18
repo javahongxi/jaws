@@ -46,7 +46,7 @@ abstract class HarborRegistryFixture {
         System.setProperty("nacos.server.grpc.port.offset", "0");
         harborServer = new HarborServer(new URL("harbor", "0.0.0.0", port, ""));
         harborServer.start();
-        Thread.sleep(500);
+        awaitListening(port);
 
         Properties properties = new Properties();
         properties.setProperty("serverAddr", "127.0.0.1:" + port);
@@ -133,4 +133,22 @@ abstract class HarborRegistryFixture {
         }
         fail("condition not satisfied within " + timeoutMs + "ms");
     }
+    /**
+     * Wait until the port accepts a connection instead of sleeping a fixed guess:
+     * {@code HarborServer.start()} binds before it returns, so any blind delay here is
+     * either wasted on a fast machine or too short on a loaded one.
+     */
+    private static void awaitListening(int listenPort) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (System.currentTimeMillis() < deadline) {
+            try (java.net.Socket socket = new java.net.Socket()) {
+                socket.connect(new java.net.InetSocketAddress("127.0.0.1", listenPort), 200);
+                return;
+            } catch (Exception e) {
+                Thread.sleep(20);
+            }
+        }
+        fail("harbor port " + listenPort + " never accepted a connection");
+    }
+
 }

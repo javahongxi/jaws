@@ -159,4 +159,22 @@ class HarborServerIntegrationTest {
         props.setProperty(PropertyKeyConst.SERVER_ADDR, "127.0.0.1:" + port);
         return NacosFactory.createNamingService(props);
     }
+    /**
+     * Wait until the port accepts a connection instead of sleeping a fixed guess:
+     * {@code HarborServer.start()} binds before it returns, so any blind delay here is
+     * either wasted on a fast machine or too short on a loaded one.
+     */
+    private static void awaitListening(int listenPort) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (System.currentTimeMillis() < deadline) {
+            try (java.net.Socket socket = new java.net.Socket()) {
+                socket.connect(new java.net.InetSocketAddress("127.0.0.1", listenPort), 200);
+                return;
+            } catch (Exception e) {
+                Thread.sleep(20);
+            }
+        }
+        fail("harbor port " + listenPort + " never accepted a connection");
+    }
+
 }
