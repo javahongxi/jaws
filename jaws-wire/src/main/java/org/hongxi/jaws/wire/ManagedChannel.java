@@ -19,6 +19,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -85,6 +87,13 @@ public class ManagedChannel implements Closeable {
     /** Current preferred index for PICK_FIRST policy. */
     private volatile int pickFirstIndex = 0;
 
+    /** Set by shutdown()/shutdownNow(): no new calls, no new backends. */
+    private volatile boolean shutdown;
+    /** Set once the resolver and all backends have been released. */
+    private volatile boolean terminated;
+    /** Released when {@link #terminated} becomes true; backs {@link #awaitTermination}. */
+    private final CountDownLatch terminationLatch = new CountDownLatch(1);
+
     ManagedChannel(NameResolver resolver, LoadBalancePolicy policy, ClientConfig config,
                    List<WireClientInterceptor> interceptors) {
         this.resolver = resolver;
@@ -128,7 +137,8 @@ public class ManagedChannel implements Closeable {
     public <Req extends Message, Resp extends Message> Response unaryCall(
             String serviceName, String methodName,
             Req request, Parser<Resp> responseParser) {
-        return unaryCall(serviceName, methodName, request, responseParser, null);
+        return unaryCall(serviceName, methodName, request, responseParser, null,
+                WireCallOptions.DEFAULT);
     }
 
     /**
@@ -139,7 +149,20 @@ public class ManagedChannel implements Closeable {
             String serviceName, String methodName,
             Req request, Parser<Resp> responseParser,
             Map<String, String> metadata) {
-        return doUnaryCall(serviceName, methodName, request, responseParser, metadata);
+        return unaryCall(serviceName, methodName, request, responseParser, metadata,
+                WireCallOptions.DEFAULT);
+    }
+
+    /**
+     * Send a unary gRPC call with per-call metadata and per-call options
+     * (deadline / compressor override). Mirrors grpc-java's
+     * {@code ClientCall.start(headers, CallOptions)} pairing.
+     */
+    public <Req extends Message, Resp extends Message> Response unaryCall(
+            String serviceName, String methodName,
+            Req request, Parser<Resp> responseParser,
+            Map<String, String> metadata, WireCallOptions options) {
+        return doUnaryCall(serviceName, methodName, request, responseParser, metadata, options);
     }
 
     // ========================================================================
@@ -149,7 +172,8 @@ public class ManagedChannel implements Closeable {
     public <Req extends Message, Resp extends Message> StreamSource<Resp> streamingCall(
             String serviceName, String methodName,
             Req request, Parser<Resp> responseParser) {
-        return streamingCall(serviceName, methodName, request, responseParser, null);
+        return streamingCall(serviceName, methodName, request, responseParser, null,
+                WireCallOptions.DEFAULT);
     }
 
     /**
@@ -159,9 +183,20 @@ public class ManagedChannel implements Closeable {
             String serviceName, String methodName,
             Req request, Parser<Resp> responseParser,
             Map<String, String> metadata) {
+        return streamingCall(serviceName, methodName, request, responseParser, metadata,
+                WireCallOptions.DEFAULT);
+    }
+
+    /**
+     * Send a server-streaming gRPC call with per-call metadata and per-call options.
+     */
+    public <Req extends Message, Resp extends Message> StreamSource<Resp> streamingCall(
+            String serviceName, String methodName,
+            Req request, Parser<Resp> responseParser,
+            Map<String, String> metadata, WireCallOptions options) {
         //noinspection unchecked
         return (StreamSource<Resp>) (StreamSource<?>) doStreamingCall(
-                serviceName, methodName, request, responseParser, metadata);
+                serviceName, methodName, request, responseParser, metadata, options);
     }
 
     // ========================================================================
@@ -192,14 +227,119 @@ public class ManagedChannel implements Closeable {
         return false;
     }
 
+    /**
+     * Begin graceful shutdown: no new calls are accepted and no new backends are
+     * opened, but in-flight calls on existing backends are drained up to the
+     * channel's request timeout before their connections close. Returns
+     * immediately; poll {@link #isTerminated()} or {@link #awaitTermination} for
+     * completion. Idempotent.
+     *
+     * @return this channel
+     */
+    public ManagedChannel shutdown() {
+        return beginShutdown(false);
+    }
+
+    /**
+     * Begin immediate shutdown: cancel in-flight calls, close all backends at
+     * once and tear down the resolver. Returns once resources are released
+     * ({@code close(0)} does not block on a drain), so the channel is already
+     * {@linkplain #isTerminated() terminated} on return. Idempotent.
+     *
+     * @return this channel
+     */
+    public ManagedChannel shutdownNow() {
+        return beginShutdown(true);
+    }
+
+    private ManagedChannel beginShutdown(boolean now) {
+        if (terminated) {
+            return this;
+        }
+        List<WireClient> snapshot;
+        // Take the backend snapshot under the same monitor syncAddresses uses, so
+        // a concurrent reconcile cannot open a backend that this drain misses.
+        synchronized (this) {
+            if (shutdown) {
+                return this;   // a prior shutdown already owns the drain
+            }
+            shutdown = true;
+            snapshot = clients;
+            clients = List.of();
+        }
+        resolver.shutdown();
+
+        if (now) {
+            for (WireClient client : snapshot) {
+                closeQuietly(client);   // close(0): cancels pending requests, no drain
+            }
+            markTerminated();
+        } else {
+            final int graceMs = config.requestTimeout + config.connectTimeout;
+            Thread drainer = new Thread(() -> {
+                for (WireClient client : snapshot) {
+                    client.close(graceMs);   // keeps connection open, drains in-flight
+                }
+                markTerminated();
+            }, "jaws-managed-channel-shutdown");
+            drainer.setDaemon(true);
+            drainer.start();
+        }
+        return this;
+    }
+
+    private void markTerminated() {
+        if (terminated) {
+            return;
+        }
+        terminated = true;
+        clients = List.of();
+        terminationLatch.countDown();
+        log.info("ManagedChannel terminated");
+    }
+
+    /**
+     * @return true if {@link #shutdown()} or {@link #shutdownNow()} has been called
+     */
+    public boolean isShutdown() {
+        return shutdown;
+    }
+
+    /**
+     * @return true if shutdown has completed and all backends and the resolver
+     *         have been released; calls made after this point fail fast
+     */
+    public boolean isTerminated() {
+        return terminated;
+    }
+
+    /**
+     * Block until the channel is {@linkplain #isTerminated() terminated} or the
+     * timeout elapses. Mirrors grpc-java's {@code ManagedChannel.awaitTermination}.
+     *
+     * @param timeout how long to wait
+     * @param unit    the unit of {@code timeout}
+     * @return true if terminated within the timeout, false if it elapsed first
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+        return terminationLatch.await(timeout, unit);
+    }
+
+    /**
+     * Release all resources immediately (equivalent to {@link #shutdownNow()}).
+     * Suitable for try-with-resources; blocks until the channel is terminated.
+     */
     @Override
     public void close() {
-        resolver.shutdown();
-        for (WireClient client : clients) {
-            closeQuietly(client);
+        shutdownNow();
+    }
+
+    private void checkActive() {
+        if (shutdown) {
+            throw new IllegalStateException(
+                    "ManagedChannel has been shut down; no new calls are accepted");
         }
-        clients = List.of();
-        log.info("ManagedChannel closed");
     }
 
     // ========================================================================
@@ -213,6 +353,11 @@ public class ManagedChannel implements Closeable {
      * skipped (best-effort) and retried on the next update.
      */
     private synchronized void syncAddresses(List<InetSocketAddress> addresses) {
+        // After shutdown the resolver is torn down, but an in-flight callback may
+        // still land here; opening a backend then would leak it past termination.
+        if (shutdown) {
+            return;
+        }
         // Key by the NUMERIC endpoint, not the hostname: a resolved DNS name can
         // map to several IPs (e.g. localhost -> 127.0.0.1 and ::1) whose
         // InetSocketAddress.getHostString() all report the same hostname, which
@@ -325,12 +470,13 @@ public class ManagedChannel implements Closeable {
 
     private Response doUnaryCall(String serviceName, String methodName,
                                 Message request, Parser<? extends Message> responseParser,
-                                Map<String, String> metadata) {
+                                Map<String, String> metadata, WireCallOptions options) {
+        checkActive();
         Request jawsRequest = buildRequest(serviceName, methodName, request, metadata);
         List<WireClient> snapshot = clients;
 
         if (policy == LoadBalancePolicy.PICK_FIRST) {
-            return doPickFirstUnary(jawsRequest, responseParser, snapshot);
+            return doPickFirstUnary(jawsRequest, responseParser, snapshot, options);
         }
 
         // ROUND_ROBIN: try the selected client, fail over to others
@@ -344,7 +490,7 @@ public class ManagedChannel implements Closeable {
                 continue;
             }
             try {
-                return client.request(jawsRequest, responseParser);
+                return client.request(jawsRequest, responseParser, options);
             } catch (Exception e) {
                 lastException = e;
                 log.warn("ManagedChannel round-robin call failed: address={}:{}, error={}",
@@ -358,7 +504,7 @@ public class ManagedChannel implements Closeable {
     }
 
     private Response doPickFirstUnary(Request jawsRequest, Parser<? extends Message> responseParser,
-                                      List<WireClient> snapshot) {
+                                      List<WireClient> snapshot, WireCallOptions options) {
         int n = snapshot.size();
         for (int i = 0; i < n; i++) {
             int idx = (pickFirstIndex + i) % n;
@@ -367,7 +513,7 @@ public class ManagedChannel implements Closeable {
                 continue;
             }
             try {
-                Response response = client.request(jawsRequest, responseParser);
+                Response response = client.request(jawsRequest, responseParser, options);
                 pickFirstIndex = idx;   // success: prefer this client next time
                 return response;
             } catch (Exception e) {
@@ -383,11 +529,12 @@ public class ManagedChannel implements Closeable {
 
     private StreamSource<Object> doStreamingCall(String serviceName, String methodName,
                                                     Message request, Parser<? extends Message> responseParser,
-                                                    Map<String, String> metadata) {
+                                                    Map<String, String> metadata, WireCallOptions options) {
+        checkActive();
         Request jawsRequest = buildRequest(serviceName, methodName, request, metadata);
         // For streaming, pick one client (no fail-over mid-stream)
         WireClient client = selectClient();
-        return client.requestStream(jawsRequest, responseParser);
+        return client.requestStream(jawsRequest, responseParser, options);
     }
 
     private WireClient selectClient() {

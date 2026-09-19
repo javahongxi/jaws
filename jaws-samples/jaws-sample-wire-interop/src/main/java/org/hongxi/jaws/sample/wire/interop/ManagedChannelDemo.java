@@ -10,10 +10,12 @@ import org.hongxi.jaws.wire.ManagedChannel;
 import org.hongxi.jaws.wire.WireClientCall;
 import org.hongxi.jaws.wire.WireClientCallHandler;
 import org.hongxi.jaws.wire.WireClientInterceptor;
+import org.hongxi.jaws.wire.WireCallOptions;
 
 import org.hongxi.jaws.rpc.Response;
 
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Demonstrates {@link ManagedChannel} load-balancing calls across multiple
@@ -241,6 +243,52 @@ public class ManagedChannelDemo {
                     HelloReply reply = (HelloReply) response.getValue();
                     System.out.println("  Call " + i + " (post-keepalive) -> " + reply.getMessage());
                 }
+            }
+
+            // ---- 6. Per-call options + graceful shutdown lifecycle ----
+            // P1: unaryCall now takes a per-call WireCallOptions (deadline /
+            // compressor), and the channel exposes shutdown()/awaitTermination().
+            // Both are exercised against the live grpc-java backends.
+            System.out.println("\n=== 6. Per-call deadline + graceful shutdown ===");
+            ManagedChannel channel = ManagedChannel.builder()
+                    .addAddress("127.0.0.1:" + PORTS[0])
+                    .addAddress("127.0.0.1:" + PORTS[1])
+                    .addAddress("127.0.0.1:" + PORTS[2])
+                    .roundRobin()
+                    .requestTimeout(5000)
+                    .build();
+
+            // Per-call options on a live call: a 3s deadline (tighter than the 5s
+            // channel timeout) plus metadata, proving the overload threads through.
+            Response optsResponse = channel.unaryCall(
+                    "interop.Greeter", "SayHello",
+                    HelloRequest.newBuilder().setName("opts-user").build(),
+                    HelloReply.parser(),
+                    Map.of("x-trace-id", "opts-demo"),
+                    WireCallOptions.DEFAULT.withDeadlineMs(3000));
+            System.out.println("  per-call options -> "
+                    + ((HelloReply) optsResponse.getValue()).getMessage());
+
+            // Graceful shutdown: new calls rejected, in-flight drained, await returns.
+            channel.shutdown();
+            System.out.println("  isShutdown=" + channel.isShutdown());
+            boolean rejected;
+            try {
+                channel.unaryCall("interop.Greeter", "SayHello",
+                        HelloRequest.newBuilder().setName("after-shutdown").build(),
+                        HelloReply.parser());
+                rejected = false;
+            } catch (IllegalStateException e) {
+                rejected = true;
+            }
+            System.out.println("  call-after-shutdown rejected=" + rejected
+                    + " (expected true)");
+            boolean terminated = channel.awaitTermination(5, TimeUnit.SECONDS);
+            System.out.println("  awaitTermination=" + terminated
+                    + ", isTerminated=" + channel.isTerminated());
+            if (!terminated || !channel.isTerminated() || !rejected) {
+                throw new AssertionError(
+                        "graceful shutdown lifecycle did not behave as expected");
             }
 
             System.out.println("\n=== ManagedChannel Load Balancing Demo Passed ===");
