@@ -1,0 +1,2 @@
+org.hongxi.jaws.wire.DnsNameResolverProvider
+org.hongxi.jaws.wire.PassthroughNameResolverProvider

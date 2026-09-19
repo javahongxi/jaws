@@ -50,7 +50,7 @@ gRPC 用 trailer 而非 HTTP 状态码表达业务结果。wire 把 **0–16 全
 gRPC 把"从一个 target 字符串解析出地址列表"抽象成 `NameResolver`，wire 照做了同构抽象，但不引 grpc-java：
 
 - `ManagedChannel.Builder.target("dns:///host:port")` → `DnsNameResolver`；
-- `addAddress(...)` → `StaticNameResolver`（等价 grpc 的 `passthrough:///`）；
+- `addAddress(...)` → `PassthroughNameResolver`（等价 grpc 的 `passthrough:///`）；
 - `nameResolver(...)` → 自定义。
 
 `NameResolver.start(Listener)` 推送地址列表，`ManagedChannel` 据此**对每个地址 reconcile 出一个 `WireClient`**，再按 `LoadBalancePolicy` 选：**`ROUND_ROBIN`（轮转 + 失败切换到其他地址）** 或 **`PICK_FIRST`（粘住第一个）**。

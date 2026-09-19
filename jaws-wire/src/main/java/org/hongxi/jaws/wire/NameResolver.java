@@ -54,4 +54,15 @@ public interface NameResolver {
      * Stop resolution and release resources. Idempotent.
      */
     void shutdown();
+
+    /**
+     * Construction context handed to a {@link NameResolverProvider} when it builds
+     * a resolver from a target. Keeps the provider signature stable as new options
+     * are added.
+     *
+     * @param dnsRefreshIntervalMs how often a {@code dns}-backed resolver
+     *                             re-resolves, in milliseconds
+     */
+    record Args(long dnsRefreshIntervalMs) {
+    }
 }

@@ -1,0 +1,2 @@
+org.hongxi.jaws.wire.RoundRobinLoadBalancer$Provider
+org.hongxi.jaws.wire.PickFirstLoadBalancer$Provider

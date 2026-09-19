@@ -11,11 +11,13 @@ import org.hongxi.jaws.wire.WireClientCall;
 import org.hongxi.jaws.wire.WireClientCallHandler;
 import org.hongxi.jaws.wire.WireClientInterceptor;
 import org.hongxi.jaws.wire.WireCallOptions;
+import org.hongxi.jaws.wire.WireConnectivityState;
 
 import org.hongxi.jaws.rpc.Response;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Demonstrates {@link ManagedChannel} load-balancing calls across multiple
@@ -289,6 +291,36 @@ public class ManagedChannelDemo {
             if (!terminated || !channel.isTerminated() || !rejected) {
                 throw new AssertionError(
                         "graceful shutdown lifecycle did not behave as expected");
+            }
+
+            // ---- 7. Pluggable resolution + load balancing + connectivity view (P2) ----
+            // The target is resolved through NameResolverRegistry (passthrough
+            // provider) and the balancer selected through LoadBalancerRegistry by
+            // name, and the channel exposes an aggregate connectivity view.
+            System.out.println("\n=== 7. Registry-resolved target + connectivity state ===");
+            ManagedChannel p2 = ManagedChannel.builder()
+                    .target("passthrough:///127.0.0.1:" + PORTS[0])   // via NameResolverRegistry
+                    .loadBalancer("round_robin")                      // via LoadBalancerRegistry
+                    .build();
+
+            Response p2Response = p2.unaryCall("interop.Greeter", "SayHello",
+                    HelloRequest.newBuilder().setName("p2-user").build(),
+                    HelloReply.parser());
+            System.out.println("  passthrough-target call -> "
+                    + ((HelloReply) p2Response.getValue()).getMessage());
+            System.out.println("  getState = " + p2.getState());
+            if (p2.getState() != WireConnectivityState.READY) {
+                throw new AssertionError("connected channel should report READY, got " + p2.getState());
+            }
+
+            AtomicInteger stateFired = new AtomicInteger();
+            p2.notifyWhenStateChanged(WireConnectivityState.READY, stateFired::incrementAndGet);
+            p2.shutdown();
+            p2.awaitTermination(5, TimeUnit.SECONDS);
+            System.out.println("  state-change callback fired=" + stateFired.get()
+                    + ", getState after shutdown=" + p2.getState());
+            if (stateFired.get() != 1 || p2.getState() != WireConnectivityState.SHUTDOWN) {
+                throw new AssertionError("P2 connectivity view did not behave as expected");
             }
 
             System.out.println("\n=== ManagedChannel Load Balancing Demo Passed ===");

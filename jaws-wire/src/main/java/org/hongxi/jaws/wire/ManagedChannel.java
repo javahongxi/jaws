@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A standalone gRPC channel that manages connections to a set of backend
@@ -34,7 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * The backend set is driven by a {@link NameResolver}: one {@link WireClient}
  * per resolved address, reconciled live. {@link DnsNameResolver} resolves a
  * DNS name (e.g. a Kubernetes headless Service) to its current pod IPs and
- * re-resolves to track scale in/out; {@link StaticNameResolver} serves a
+ * re-resolves to track scale in/out; {@link PassthroughNameResolver} serves a
  * fixed set (what {@link Builder#addAddress} produces). On every address update
  * the channel opens clients for new addresses and closes ones that disappeared,
  * so calls always balance across the live set.
@@ -75,17 +74,12 @@ public class ManagedChannel implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(ManagedChannel.class);
 
     private final NameResolver resolver;
-    private final LoadBalancePolicy policy;
+    private final LoadBalancer loadBalancer;
     private final ClientConfig config;
     private final List<WireClientInterceptor> interceptors;
 
     /** Immutable snapshot of the live backends; replaced on each address sync. */
     private volatile List<WireClient> clients = List.of();
-
-    /** Round-robin counter for ROUND_ROBIN policy. */
-    private final AtomicInteger counter = new AtomicInteger(0);
-    /** Current preferred index for PICK_FIRST policy. */
-    private volatile int pickFirstIndex = 0;
 
     /** Set by shutdown()/shutdownNow(): no new calls, no new backends. */
     private volatile boolean shutdown;
@@ -94,10 +88,17 @@ public class ManagedChannel implements Closeable {
     /** Released when {@link #terminated} becomes true; backs {@link #awaitTermination}. */
     private final CountDownLatch terminationLatch = new CountDownLatch(1);
 
-    ManagedChannel(NameResolver resolver, LoadBalancePolicy policy, ClientConfig config,
+    /**
+     * Aggregate channel connectivity, recomputed from every backend's own
+     * {@link WireConnectivityTracker}. Mirrors grpc-java's channel-level
+     * {@code ConnectivityState}.
+     */
+    private final WireConnectivityTracker channelTracker = new WireConnectivityTracker();
+
+    ManagedChannel(NameResolver resolver, LoadBalancer loadBalancer, ClientConfig config,
                    List<WireClientInterceptor> interceptors) {
         this.resolver = resolver;
-        this.policy = policy;
+        this.loadBalancer = loadBalancer;
         this.config = config;
         this.interceptors = List.copyOf(interceptors);
         // start() delivers the initial address set synchronously (passthrough and
@@ -119,8 +120,9 @@ public class ManagedChannel implements Closeable {
             throw new JawsServiceException(
                     "ManagedChannel: no backend reachable for resolver " + resolver);
         }
-        log.info("ManagedChannel created: {} backend(s), policy={}, timeout={}ms, interceptors={}",
-                clients.size(), policy, config.requestTimeout, interceptors.size());
+        log.info("ManagedChannel created: {} backend(s), loadBalancer={}, timeout={}ms, interceptors={}",
+                clients.size(), loadBalancer.getClass().getSimpleName(),
+                config.requestTimeout, interceptors.size());
     }
 
     /**
@@ -228,6 +230,117 @@ public class ManagedChannel implements Closeable {
     }
 
     /**
+     * The channel's aggregate connectivity, derived from its backends. Mirrors
+     * grpc-java's {@code ManagedChannel.getState(requestConnection)}.
+     * <ul>
+     *   <li>{@link WireConnectivityState#READY} — at least one backend is READY</li>
+     *   <li>{@link WireConnectivityState#CONNECTING} — none READY but one is connecting</li>
+     *   <li>{@link WireConnectivityState#TRANSIENT_FAILURE} — none READY/connecting,
+     *       at least one failed</li>
+     *   <li>{@link WireConnectivityState#IDLE} — no backends</li>
+     *   <li>{@link WireConnectivityState#SHUTDOWN} — shut down / terminated</li>
+     * </ul>
+     *
+     * @param requestConnection if true and the aggregate is {@code IDLE}, nudge the
+     *                          resolver to re-resolve (best-effort; a no-op for a
+     *                          static/passthrough resolver)
+     * @return the current aggregate connectivity state
+     */
+    public WireConnectivityState getState(boolean requestConnection) {
+        WireConnectivityState current = recomputeAggregate();
+        if (requestConnection && current == WireConnectivityState.IDLE && !shutdown) {
+            resolver.refresh();
+        }
+        return current;
+    }
+
+    /**
+     * @see #getState(boolean) with {@code requestConnection == false}
+     */
+    public WireConnectivityState getState() {
+        return getState(false);
+    }
+
+    /**
+     * Invoke {@code callback} once when the aggregate state moves away from
+     * {@code source}. If the state already differs, the callback runs promptly on
+     * the calling thread; otherwise it fires on the next transition that leaves
+     * {@code source}, then deregisters. Analogous to grpc-java's
+     * {@code notifyWhenStateChanged}.
+     *
+     * @param source   the state to watch for departure from
+     * @param callback run (once) when the current state is not {@code source}
+     */
+    public void notifyWhenStateChanged(WireConnectivityState source, Runnable callback) {
+        if (getState(false) != source) {
+            callback.run();
+            return;
+        }
+        java.util.concurrent.atomic.AtomicBoolean fired =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        Runnable once = () -> {
+            if (fired.compareAndSet(false, true)) {
+                callback.run();
+            }
+        };
+        WireConnectivityTracker.Listener[] holder = new WireConnectivityTracker.Listener[1];
+        holder[0] = (prev, cur) -> {
+            if (cur != source) {
+                channelTracker.removeListener(holder[0]);
+                try {
+                    once.run();
+                } catch (Exception e) {
+                    log.warn("ManagedChannel state-change callback threw", e);
+                }
+            }
+        };
+        channelTracker.addListener(holder[0]);
+        // Re-check after registering to avoid a lost update if the state changed
+        // between the first read and addListener; the once-guard prevents a double
+        // run if the listener already fired.
+        if (getState(false) != source) {
+            channelTracker.removeListener(holder[0]);
+            once.run();
+        }
+    }
+
+    /**
+     * Recompute the aggregate from the live backends and publish it to the
+     * channel tracker (firing any registered state-change listeners on a change).
+     *
+     * @return the newly computed aggregate state
+     */
+    private WireConnectivityState recomputeAggregate() {
+        WireConnectivityState agg;
+        if (terminated) {
+            agg = WireConnectivityState.SHUTDOWN;
+        } else {
+            boolean anyReady = false;
+            boolean anyConnecting = false;
+            boolean anyFailed = false;
+            for (WireClient client : clients) {
+                switch (client.getConnectivityTracker().getState()) {
+                    case READY -> anyReady = true;
+                    case CONNECTING -> anyConnecting = true;
+                    case TRANSIENT_FAILURE -> anyFailed = true;
+                    default -> { }
+                }
+            }
+            if (anyReady) {
+                agg = WireConnectivityState.READY;
+            } else if (anyConnecting) {
+                agg = WireConnectivityState.CONNECTING;
+            } else if (anyFailed) {
+                agg = WireConnectivityState.TRANSIENT_FAILURE;
+            } else {
+                agg = WireConnectivityState.IDLE;
+            }
+        }
+        channelTracker.transitionTo(agg);
+        return agg;
+    }
+
+    /**
      * Begin graceful shutdown: no new calls are accepted and no new backends are
      * opened, but in-flight calls on existing backends are drained up to the
      * channel's request timeout before their connections close. Returns
@@ -268,6 +381,7 @@ public class ManagedChannel implements Closeable {
             clients = List.of();
         }
         resolver.shutdown();
+        loadBalancer.shutdown();
 
         if (now) {
             for (WireClient client : snapshot) {
@@ -294,6 +408,7 @@ public class ManagedChannel implements Closeable {
         }
         terminated = true;
         clients = List.of();
+        recomputeAggregate();   // → SHUTDOWN, firing state-change listeners
         terminationLatch.countDown();
         log.info("ManagedChannel terminated");
     }
@@ -399,6 +514,8 @@ public class ManagedChannel implements Closeable {
             }
         }
         this.clients = List.copyOf(next);
+        loadBalancer.resolvedAddresses(this.clients);
+        recomputeAggregate();
     }
 
     /**
@@ -452,6 +569,9 @@ public class ManagedChannel implements Closeable {
         for (WireClientInterceptor interceptor : interceptors) {
             client.addInterceptor(interceptor);
         }
+        // Recompute the aggregate whenever this backend's connectivity changes;
+        // register before open() so the CONNECTING → READY transition is seen.
+        client.getConnectivityTracker().addListener((prev, cur) -> recomputeAggregate());
         client.open();
         return client;
     }
@@ -473,19 +593,12 @@ public class ManagedChannel implements Closeable {
                                 Map<String, String> metadata, WireCallOptions options) {
         checkActive();
         Request jawsRequest = buildRequest(serviceName, methodName, request, metadata);
-        List<WireClient> snapshot = clients;
-
-        if (policy == LoadBalancePolicy.PICK_FIRST) {
-            return doPickFirstUnary(jawsRequest, responseParser, snapshot, options);
-        }
-
-        // ROUND_ROBIN: try the selected client, fail over to others
-        int n = snapshot.size();
-        int startIdx = Math.abs(counter.getAndIncrement() % n);
+        // The load balancer returns the attempt order; skip unavailable backends
+        // and fail over down the list.
+        List<WireClient> order = loadBalancer.picker().pick();
         Exception lastException = null;
 
-        for (int i = 0; i < n; i++) {
-            WireClient client = snapshot.get((startIdx + i) % n);
+        for (WireClient client : order) {
             if (!client.isAvailable()) {
                 continue;
             }
@@ -493,38 +606,14 @@ public class ManagedChannel implements Closeable {
                 return client.request(jawsRequest, responseParser, options);
             } catch (Exception e) {
                 lastException = e;
-                log.warn("ManagedChannel round-robin call failed: address={}:{}, error={}",
+                log.warn("ManagedChannel call failed, failing over: address={}:{}, error={}",
                         client.getUrl().getHost(), client.getUrl().getPort(), e.getMessage());
             }
         }
 
         throw new JawsServiceException(
-                "ManagedChannel all " + n + " backend(s) failed for "
+                "ManagedChannel all " + order.size() + " backend(s) failed for "
                         + serviceName + "/" + methodName, lastException);
-    }
-
-    private Response doPickFirstUnary(Request jawsRequest, Parser<? extends Message> responseParser,
-                                      List<WireClient> snapshot, WireCallOptions options) {
-        int n = snapshot.size();
-        for (int i = 0; i < n; i++) {
-            int idx = (pickFirstIndex + i) % n;
-            WireClient client = snapshot.get(idx);
-            if (!client.isAvailable()) {
-                continue;
-            }
-            try {
-                Response response = client.request(jawsRequest, responseParser, options);
-                pickFirstIndex = idx;   // success: prefer this client next time
-                return response;
-            } catch (Exception e) {
-                log.warn("ManagedChannel pick-first call failed: address={}:{}, error={}",
-                        client.getUrl().getHost(), client.getUrl().getPort(), e.getMessage());
-            }
-        }
-
-        throw new JawsServiceException(
-                "ManagedChannel all " + n + " backend(s) failed for "
-                        + jawsRequest.getInterfaceName() + "/" + jawsRequest.getMethodName());
     }
 
     private StreamSource<Object> doStreamingCall(String serviceName, String methodName,
@@ -538,22 +627,9 @@ public class ManagedChannel implements Closeable {
     }
 
     private WireClient selectClient() {
-        List<WireClient> snapshot = clients;
-        int n = snapshot.size();
-        if (policy == LoadBalancePolicy.PICK_FIRST) {
-            for (int i = 0; i < n; i++) {
-                WireClient client = snapshot.get((pickFirstIndex + i) % n);
-                if (client.isAvailable()) {
-                    return client;
-                }
-            }
-        } else {
-            int idx = Math.abs(counter.getAndIncrement() % n);
-            for (int i = 0; i < n; i++) {
-                WireClient client = snapshot.get((idx + i) % n);
-                if (client.isAvailable()) {
-                    return client;
-                }
+        for (WireClient client : loadBalancer.picker().pick()) {
+            if (client.isAvailable()) {
+                return client;
             }
         }
         throw new JawsServiceException("ManagedChannel: no available backend address");
@@ -586,7 +662,8 @@ public class ManagedChannel implements Closeable {
         private final List<String> addresses = new ArrayList<>();
         private String target;
         private NameResolver nameResolver;
-        private LoadBalancePolicy policy = LoadBalancePolicy.ROUND_ROBIN;
+        private String policyName = LoadBalancerRegistry.DEFAULT_POLICY;
+        private LoadBalancer customLoadBalancer;
         private int requestTimeout = 5000;
         private int connectTimeout = 3000;
         private int maxInboundMessageSize = 4 * 1024 * 1024;
@@ -636,21 +713,48 @@ public class ManagedChannel implements Closeable {
             return this;
         }
 
-        /** Set the load balance policy. Defaults to {@link LoadBalancePolicy#ROUND_ROBIN}. */
+        /**
+         * Select the load balance policy by enum. Kept for convenience and
+         * back-compat; equivalent to {@link #loadBalancer(String) loadBalancer}
+         * with the matching registry name. Defaults to {@code ROUND_ROBIN}.
+         */
         public Builder loadBalancePolicy(LoadBalancePolicy policy) {
-            this.policy = policy;
+            this.policyName = switch (policy) {
+                case ROUND_ROBIN -> "round_robin";
+                case PICK_FIRST -> "pick_first";
+            };
+            this.customLoadBalancer = null;
             return this;
         }
 
         /** Use round-robin load balancing. */
         public Builder roundRobin() {
-            this.policy = LoadBalancePolicy.ROUND_ROBIN;
-            return this;
+            return loadBalancePolicy(LoadBalancePolicy.ROUND_ROBIN);
         }
 
         /** Use pick-first load balancing. */
         public Builder pickFirst() {
-            this.policy = LoadBalancePolicy.PICK_FIRST;
+            return loadBalancePolicy(LoadBalancePolicy.PICK_FIRST);
+        }
+
+        /**
+         * Select a load balancer by registry name (e.g. {@code "round_robin"},
+         * {@code "pick_first"}, or any policy contributed via
+         * {@link LoadBalancerProvider}). Resolved through
+         * {@link LoadBalancerRegistry} at {@link #build()}.
+         */
+        public Builder loadBalancer(String name) {
+            this.policyName = name;
+            this.customLoadBalancer = null;
+            return this;
+        }
+
+        /**
+         * Supply a {@link LoadBalancer} instance directly, bypassing the registry.
+         * Useful for tests or a bespoke policy without an SPI registration.
+         */
+        public Builder loadBalancer(LoadBalancer loadBalancer) {
+            this.customLoadBalancer = loadBalancer;
             return this;
         }
 
@@ -773,8 +877,11 @@ public class ManagedChannel implements Closeable {
          */
         public ManagedChannel build() {
             NameResolver resolver = resolveNameResolver();
+            LoadBalancer lb = customLoadBalancer != null
+                    ? customLoadBalancer
+                    : LoadBalancerRegistry.getDefault().newLoadBalancer(policyName);
             TlsConfig tls = new TlsConfig(sslCertChain, sslPrivateKey, sslTrustCert);
-            return new ManagedChannel(resolver, policy,
+            return new ManagedChannel(resolver, lb,
                     new ClientConfig(requestTimeout, connectTimeout, maxInboundMessageSize,
                             compression, keepalive, retry, tls),
                     interceptors);
@@ -792,31 +899,21 @@ public class ManagedChannel implements Closeable {
                 for (String a : addresses) {
                     addrs.add(parseHostPort(a));
                 }
-                return new StaticNameResolver(addrs);
+                return new PassthroughNameResolver(addrs);
             }
             throw new IllegalArgumentException(
                     "ManagedChannel requires addAddress(...), target(...), or nameResolver(...)");
         }
 
+        /**
+         * Turn a {@code target(...)} into a resolver by delegating to the
+         * {@link NameResolverRegistry}, which selects a {@link NameResolverProvider}
+         * from the target's scheme. A bare {@code host:port} uses the default
+         * (dns) scheme.
+         */
         private NameResolver fromTarget(String t) {
-            String scheme = "dns";
-            String authority = t;
-            int schemeIdx = t.indexOf("://");
-            if (schemeIdx >= 0) {
-                scheme = t.substring(0, schemeIdx);
-                authority = t.substring(schemeIdx + 3);
-                while (authority.startsWith("/")) {
-                    authority = authority.substring(1);
-                }
-            }
-            InetSocketAddress addr = parseHostPort(authority);
-            if ("passthrough".equalsIgnoreCase(scheme)) {
-                return new StaticNameResolver(List.of(addr));
-            }
-            if (!"dns".equalsIgnoreCase(scheme)) {
-                throw new IllegalArgumentException("unsupported target scheme: " + scheme);
-            }
-            return new DnsNameResolver(addr.getHostString(), addr.getPort(), dnsRefreshIntervalMs);
+            return NameResolverRegistry.getDefault()
+                    .newNameResolver(t, new NameResolver.Args(dnsRefreshIntervalMs));
         }
     }
 
