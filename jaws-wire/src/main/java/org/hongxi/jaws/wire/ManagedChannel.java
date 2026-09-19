@@ -277,6 +277,32 @@ public class ManagedChannel implements Closeable {
         url.addParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE.getName(),
                 String.valueOf(config.maxInboundMessageSize));
         url.addParameter(UrlParam.Transport.COMPRESSION.getName(), config.compression);
+
+        // Keepalive: the transport only installs the PING handler when timeMs > 0,
+        // so writing a zero here is equivalent to leaving it unset.
+        url.addParameter(UrlParam.Transport.KEEPALIVE_TIME_MS.getName(),
+                String.valueOf(config.keepalive.timeMs()));
+        url.addParameter(UrlParam.Transport.KEEPALIVE_TIMEOUT_MS.getName(),
+                String.valueOf(config.keepalive.timeoutMs()));
+
+        // Retry: maxAttempts <= 1 makes WireRetryPolicy.fromUrl return null.
+        url.addParameter(UrlParam.Transport.RETRY_MAX_ATTEMPTS.getName(),
+                String.valueOf(config.retry.maxAttempts()));
+        url.addParameter(UrlParam.Transport.RETRY_INITIAL_BACKOFF_MS.getName(),
+                String.valueOf(config.retry.initialBackoffMs()));
+        url.addParameter(UrlParam.Transport.RETRY_MAX_BACKOFF_MS.getName(),
+                String.valueOf(config.retry.maxBackoffMs()));
+        url.addParameter(UrlParam.Transport.RETRY_BACKOFF_MULTIPLIER_PCT.getName(),
+                String.valueOf(config.retry.backoffMultiplierPct()));
+        url.addParameter(UrlParam.Transport.RETRY_JITTER_PCT.getName(),
+                String.valueOf(config.retry.jitterPct()));
+
+        // TLS: the transport enables TLS only when trustCert (one-way) or
+        // certChain+privateKey (mutual) is a non-empty path; empty values keep h2c.
+        url.addParameter(UrlParam.Transport.SSL_TRUST_CERT.getName(), config.tls.trustCert());
+        url.addParameter(UrlParam.Transport.SSL_CERT_CHAIN.getName(), config.tls.certChain());
+        url.addParameter(UrlParam.Transport.SSL_PRIVATE_KEY.getName(), config.tls.privateKey());
+
         WireClient client = new WireClient(url);
         for (WireClientInterceptor interceptor : interceptors) {
             client.addInterceptor(interceptor);
@@ -419,6 +445,11 @@ public class ManagedChannel implements Closeable {
         private int maxInboundMessageSize = 4 * 1024 * 1024;
         private String compression = WireConstants.ENCODING_IDENTITY;
         private long dnsRefreshIntervalMs = 30_000L;
+        private KeepaliveConfig keepalive = KeepaliveConfig.DISABLED;
+        private RetryConfig retry = RetryConfig.DEFAULT;
+        private String sslTrustCert = "";
+        private String sslCertChain = "";
+        private String sslPrivateKey = "";
         private final List<WireClientInterceptor> interceptors = new ArrayList<>();
 
         private Builder() {
@@ -507,6 +538,69 @@ public class ManagedChannel implements Closeable {
         }
 
         /**
+         * Enable client keepalive: send an HTTP/2 PING every {@code timeMs} and
+         * close the connection if no ACK arrives within {@code timeoutMs}.
+         * Mirrors grpc-java's {@code keepAliveTime} / {@code keepAliveTimeout}.
+         */
+        public Builder keepAlive(long timeMs, long timeoutMs) {
+            if (timeMs < 0 || timeoutMs < 0) {
+                throw new IllegalArgumentException("keepalive durations must not be negative");
+            }
+            this.keepalive = new KeepaliveConfig(timeMs, timeoutMs);
+            return this;
+        }
+
+        /** Disable client keepalive (the default). */
+        public Builder keepAliveDisabled() {
+            this.keepalive = KeepaliveConfig.DISABLED;
+            return this;
+        }
+
+        /**
+         * Configure gRPC client retry: up to {@code maxAttempts} total attempts
+         * (1 disables retry), backing off exponentially from {@code initialMs}
+         * capped at {@code maxMs}, grown by {@code multiplierPct} percent with
+         * {@code jitterPct} percent random jitter. Defaults match the transport.
+         */
+        public Builder retry(int maxAttempts, long initialMs, long maxMs,
+                             int multiplierPct, int jitterPct) {
+            this.retry = new RetryConfig(maxAttempts, initialMs, maxMs, multiplierPct, jitterPct);
+            return this;
+        }
+
+        /** Disable client retry (initial call only). */
+        public Builder retryDisabled() {
+            this.retry = new RetryConfig(1, 0L, 0L, 100, 0);
+            return this;
+        }
+
+        /**
+         * Enable one-way TLS: trust the server certificate anchored at
+         * {@code trustCertPath} (PEM file). Calls use {@code https} scheme.
+         */
+        public Builder trustCert(String trustCertPath) {
+            this.sslTrustCert = requireNonBlank(trustCertPath, "trustCertPath");
+            return this;
+        }
+
+        /**
+         * Enable mutual TLS in addition to {@link #trustCert}: present the client
+         * certificate chain and private key (PEM files) during the handshake.
+         */
+        public Builder mutualTls(String certChainPath, String privateKeyPath) {
+            this.sslCertChain = requireNonBlank(certChainPath, "certChainPath");
+            this.sslPrivateKey = requireNonBlank(privateKeyPath, "privateKeyPath");
+            return this;
+        }
+
+        private static String requireNonBlank(String value, String name) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(name + " must not be blank");
+            }
+            return value.trim();
+        }
+
+        /**
          * Add a client interceptor applied to all calls through this channel.
          * Interceptors execute in registration order (first added = outermost).
          * <p>
@@ -532,8 +626,10 @@ public class ManagedChannel implements Closeable {
          */
         public ManagedChannel build() {
             NameResolver resolver = resolveNameResolver();
+            TlsConfig tls = new TlsConfig(sslCertChain, sslPrivateKey, sslTrustCert);
             return new ManagedChannel(resolver, policy,
-                    new ClientConfig(requestTimeout, connectTimeout, maxInboundMessageSize, compression),
+                    new ClientConfig(requestTimeout, connectTimeout, maxInboundMessageSize,
+                            compression, keepalive, retry, tls),
                     interceptors);
         }
 
@@ -589,6 +685,23 @@ public class ManagedChannel implements Closeable {
 
     /** Immutable per-backend connection settings applied to every resolved address. */
     record ClientConfig(int requestTimeout, int connectTimeout,
-                        int maxInboundMessageSize, String compression) {
+                        int maxInboundMessageSize, String compression,
+                        KeepaliveConfig keepalive, RetryConfig retry, TlsConfig tls) {
+    }
+
+    /** gRPC client keepalive (gRFC A8). {@code timeMs == 0} disables probing. */
+    record KeepaliveConfig(long timeMs, long timeoutMs) {
+        static final KeepaliveConfig DISABLED = new KeepaliveConfig(0L, 20_000L);
+    }
+
+    /** gRPC client retry (gRFC A6). {@code maxAttempts <= 1} disables retry. */
+    record RetryConfig(int maxAttempts, long initialBackoffMs, long maxBackoffMs,
+                       int backoffMultiplierPct, int jitterPct) {
+        static final RetryConfig DEFAULT = new RetryConfig(2, 100L, 1000L, 200, 20);
+    }
+
+    /** TLS material as file paths. Empty {@code trustCert} disables TLS (h2c). */
+    record TlsConfig(String certChain, String privateKey, String trustCert) {
+        static final TlsConfig DISABLED = new TlsConfig("", "", "");
     }
 }

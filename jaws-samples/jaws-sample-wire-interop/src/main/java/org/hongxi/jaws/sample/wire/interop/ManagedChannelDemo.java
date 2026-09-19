@@ -201,6 +201,48 @@ public class ManagedChannelDemo {
                 System.out.println("Interceptor fired on every call across all backends.");
             }
 
+            // ---- 5. Keepalive + retry configured through the channel ----
+            // P0 made these reachable via the builder (previously openClient only
+            // forwarded timeouts/compression, silently leaving keepalive off and
+            // retry unconfigurable). This exercises a live connection with the
+            // client keepalive PING handler installed and retry armed, proving the
+            // propagated settings don't break real traffic end-to-end.
+            System.out.println("\n=== 5. Round-Robin + Keepalive + Retry ===");
+            try (ManagedChannel channel = ManagedChannel.builder()
+                    .addAddress("127.0.0.1:" + PORTS[0])
+                    .addAddress("127.0.0.1:" + PORTS[1])
+                    .addAddress("127.0.0.1:" + PORTS[2])
+                    .roundRobin()
+                    .requestTimeout(5000)
+                    .keepAlive(2000, 10000)   // PING every 2s, ACK timeout 10s
+                    .retry(3, 50, 1000, 200, 20)
+                    .build()) {
+
+                System.out.println("ManagedChannel created with keepAlive(2s)+retry(3) "
+                        + "across " + channel.size() + " backends");
+
+                for (int i = 1; i <= 3; i++) {
+                    Response response = channel.unaryCall(
+                            "interop.Greeter", "SayHello",
+                            HelloRequest.newBuilder().setName("ka-" + i).build(),
+                            HelloReply.parser());
+                    HelloReply reply = (HelloReply) response.getValue();
+                    System.out.println("  Call " + i + " -> " + reply.getMessage());
+                }
+                // Hold the connection open past one keepalive interval so the
+                // client PING handler actually fires, then confirm calls still work.
+                System.out.println("  Holding 3s to emit at least one keepalive PING...");
+                Thread.sleep(3000);
+                for (int i = 4; i <= 6; i++) {
+                    Response response = channel.unaryCall(
+                            "interop.Greeter", "SayHello",
+                            HelloRequest.newBuilder().setName("ka-" + i).build(),
+                            HelloReply.parser());
+                    HelloReply reply = (HelloReply) response.getValue();
+                    System.out.println("  Call " + i + " (post-keepalive) -> " + reply.getMessage());
+                }
+            }
+
             System.out.println("\n=== ManagedChannel Load Balancing Demo Passed ===");
         } finally {
             for (io.grpc.Server server : servers) {
