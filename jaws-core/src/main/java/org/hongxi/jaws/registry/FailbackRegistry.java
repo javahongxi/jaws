@@ -6,7 +6,6 @@ import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -171,32 +170,6 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         listeners = failedUnsubscribed.get(url);
         if (listeners != null) {
             listeners.remove(listener);
-        }
-    }
-
-    /**
-     * Recover all registered and subscribed services after registry reconnection.
-     * <p>
-     * Re-queues all tracked registrations and subscriptions into the failback retry mechanism,
-     * so they will be retried by the periodic retry executor.
-     * Subclasses should call this method in their reconnection callback.
-     */
-    protected void recover() {
-        // Re-queue all registered URLs
-        Set<URL> registered = new HashSet<>(getRegistered());
-        if (!registered.isEmpty()) {
-            log.info("[{}] Recover registered urls: {}", registryClassName, registered);
-            failedRegistered.addAll(registered);
-        }
-        // Re-queue all subscribed url-listener pairs
-        Map<URL, Set<NotifyListener>> subscribed = new HashMap<>(getSubscribed());
-        if (!subscribed.isEmpty()) {
-            log.info("[{}] Recover subscribed urls: {}", registryClassName, subscribed.keySet());
-            for (Map.Entry<URL, Set<NotifyListener>> entry : subscribed.entrySet()) {
-                for (NotifyListener listener : entry.getValue()) {
-                    addFailedSubscribed(entry.getKey(), listener);
-                }
-            }
         }
     }
 

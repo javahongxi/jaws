@@ -207,23 +207,4 @@ class FailbackRegistryTest {
         url.addParameter(UrlParam.Client.CHECK.getName(), "true");
         assertThrows(JawsFrameworkException.class, () -> checked.register(url));
     }
-
-    @Test
-    void recoverRequeuesRegisteredAndSubscribed() {
-        URL url = serviceUrl("serviceA");
-        NotifyListener listener = (registryUrl, urls) -> { };
-        registry.register(url);
-        registry.subscribe(url, listener);
-        assertTrue(registry.getRegistered().contains(url));
-        assertTrue(registry.getSubscribed().containsKey(url));
-
-        registry.failAll = true;
-        registry.recover();
-        registry.failAll = false;
-        registry.retry();
-
-        // register: initial + retry; subscribe: initial + retry
-        assertEquals(2, registry.registerAttempts.get("serviceA").get());
-        assertEquals(2, registry.subscribeAttempts.get());
-    }
 }
