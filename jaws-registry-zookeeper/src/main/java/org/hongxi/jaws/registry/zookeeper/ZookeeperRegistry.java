@@ -56,7 +56,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * A JVM shutdown hook closes the Curator client on exit.
  *
  * @see ZookeeperRegistryFactory
- * @see ZkUtils
+ * @see ZkPathUtils
  *
  * Created by shenhongxi on 2021/4/24.
  */
@@ -136,7 +136,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
     private void subscribeServiceInternal(final URL url, final NotifyListener listener) {
         Map<NotifyListener, Subscription> childChangeListeners = serviceListeners.computeIfAbsent(url, k -> new HashMap<>());
         if (childChangeListeners.get(listener) == null) {
-            final String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
+            final String serverTypePath = ZkPathUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
             CuratorCache curatorCache = CuratorCache.build(curator, serverTypePath);
             // Coalesce a child-churn burst into a single re-fetch + notify: the flush
             // does the getChildren/getData then delivers the freshest list. <= 0 delay
@@ -171,10 +171,10 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
             removeNode(url, ZkNodeType.CLIENT);
             createNode(url, ZkNodeType.CLIENT);
         } catch (Exception e) {
-            log.warn("subscribe service: create node error, path={}", ZkUtils.toNodePath(url, ZkNodeType.CLIENT), e);
+            log.warn("subscribe service: create node error, path={}", ZkPathUtils.toNodePath(url, ZkNodeType.CLIENT), e);
         }
 
-        log.info("subscribe service: path={}, info={}", ZkUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr());
+        log.info("subscribe service: path={}, info={}", ZkPathUtils.toNodePath(url, ZkNodeType.AVAILABLE_SERVER), url.toFullStr());
     }
 
     @Override
@@ -198,7 +198,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
     @Override
     protected List<URL> doDiscover(URL url) {
         try {
-            String parentPath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
+            String parentPath = ZkPathUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
             List<String> currentChildren = new ArrayList<>();
             if (curator.checkExists().forPath(parentPath) != null) {
                 currentChildren = curator.getChildren().forPath(parentPath);
@@ -270,12 +270,12 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     private void createNode(URL url, ZkNodeType nodeType) {
         try {
-            String nodeTypePath = ZkUtils.toNodeTypePath(url, nodeType);
+            String nodeTypePath = ZkPathUtils.toNodeTypePath(url, nodeType);
             if (curator.checkExists().forPath(nodeTypePath) == null) {
                 curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(nodeTypePath);
             }
             curator.create().withMode(CreateMode.EPHEMERAL)
-                    .forPath(ZkUtils.toNodePath(url, nodeType), url.toFullStr().getBytes(StandardCharsets.UTF_8));
+                    .forPath(ZkPathUtils.toNodePath(url, nodeType), url.toFullStr().getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new JawsFrameworkException("Failed to create node for " + url.getIdentity(), e);
         }
@@ -283,7 +283,7 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     private void removeNode(URL url, ZkNodeType nodeType) {
         try {
-            String nodePath = ZkUtils.toNodePath(url, nodeType);
+            String nodePath = ZkPathUtils.toNodePath(url, nodeType);
             if (curator.checkExists().forPath(nodePath) != null) {
                 curator.delete().forPath(nodePath);
             }

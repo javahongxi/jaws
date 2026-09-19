@@ -7,7 +7,7 @@ package org.hongxi.jaws.registry.zookeeper;
  * written on subscription. Both are created as ephemeral nodes by
  * {@link ZookeeperRegistry}.
  *
- * @see ZkUtils#toNodeTypePath
+ * @see ZkPathUtils#toNodeTypePath
  *
  * Created by shenhongxi on 2021/4/24.
  */

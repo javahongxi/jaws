@@ -11,7 +11,7 @@
 | **数据存储** | URL 参数全部存入 Instance 的 `metadata` Map | URL 完整字符串作为 ZK 节点的 data（byte[]） |
 | **节点类型** | 无区分，instance 只有 ephemeral 属性 | 区分 `AVAILABLE_SERVER` 和 `CLIENT` 两种节点类型 |
 
-**ZK 路径层级**（见 `ZkUtils`）：
+**ZK 路径层级**（见 `ZkPathUtils`）：
 
 ```
 /jaws/{group}/{servicePath}/server/{host:port}   ← 服务提供者

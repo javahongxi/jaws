@@ -16,7 +16,7 @@ import org.hongxi.jaws.rpc.URL;
  *
  * Created by shenhongxi on 2021/4/24.
  */
-public class ZkUtils {
+public class ZkPathUtils {
 
     public static String toGroupPath(URL url) {
         return JawsConstants.ZOOKEEPER_REGISTRY_NAMESPACE + JawsConstants.PATH_SEPARATOR + url.getGroup();
