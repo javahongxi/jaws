@@ -73,6 +73,9 @@ public class HarborServer {
     private final PushDelayTaskEngine pushEngine;
     private final WireServer wireServer;
 
+    /** Keeps a refused request type from being logged once per retry. */
+    private final RefusalMeter refusals = new RefusalMeter();
+
     /** Outstanding connect-reset orders, by connection id, awaiting the client ack. */
     private final Map<String, CompletableFuture<Void>> resetAcks = new ConcurrentHashMap<>();
 
@@ -354,13 +357,23 @@ public class HarborServer {
      * unsupported feature from a handler that went missing.
      */
     private Payload refuseUnroutable(String type) {
-        if (HarborProtocol.UNSUPPORTED_REQUEST_TYPES.contains(type)) {
-            log.warn("[harbor] refused a request outside harbor's scope: {}", type);
-            return HarborProtocol.encodeError(type,
-                    type + " is not supported: " + HarborProtocol.UNSUPPORTED_BOUNDARY);
+        boolean unsupported = HarborProtocol.UNSUPPORTED_REQUEST_TYPES.contains(type);
+        if (refusals.shouldLog(type)) {
+            // Named once per window, with the volume behind it: a client that
+            // retries a refused request (a real Dubbo provider does) would
+            // otherwise bury the log in identical lines.
+            int swallowed = refusals.suppressedSince(type);
+            String suffix = swallowed > 0
+                    ? " (+" + swallowed + " more since the last line)" : "";
+            if (unsupported) {
+                log.warn("[harbor] refused a request outside harbor's scope: {}{}", type, suffix);
+            } else {
+                log.warn("[harbor] unknown request type: {}{}", type, suffix);
+            }
         }
-        log.warn("[harbor] unknown request type: {}", type);
-        return HarborProtocol.encodeError(type, "Unknown request type: " + type);
+        return HarborProtocol.encodeError(type, unsupported
+                ? type + " is not supported: " + HarborProtocol.UNSUPPORTED_BOUNDARY
+                : "Unknown request type: " + type);
     }
 
     // ========================================================================
