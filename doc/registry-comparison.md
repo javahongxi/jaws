@@ -140,7 +140,8 @@ if (connectionState == ConnectionState.RECONNECTED) {
 上面的活性/重连机制两腿其实**结构同构**（活性即会话/连接，断了靠 ephemeral 消失 + 重连重放），所以"选谁"不取决于保活方式，而取决于**写模型**与**推送模型**：
 
 - **写成本**：ZK 是 CP，注册/注销/健康翻转每次变更都走 ZAB 共识、写穿 quorum——而注册中心是**高频写**场景，ZAB 为协调而非高频写而生。Nacos 临时实例走 AP（Distro），先落本机再异步复制，写很便宜，才撑得起大注册表。
-- **变更通知的形态（根因在 §一 存储模型）**：Nacos 扁平地按 `serviceName → 实例集合` 在服务端整体持有，变更时把**最新全量实例列表**一次性主动**推**给订阅者（§三，注意仍是全量快照、非 diff 增量，只是省掉"通知后再拉"）；ZK 树形、一个实例一个 znode，watch 到子节点变化只能 `getChildren` + 逐个 `getData` **回捞全量**，且 ZK watch 一次性、处理完须重挂。消费者 × 服务数一大，ZK 这种"每次抖动 → 各 watcher 各自再拉一遍"的放大更明显。
+- **变更通知的形态（根因在 §一 存储模型）**：Nacos 扁平地按 `serviceName → 实例集合` 在服务端整体持有，变更时把**最新全量实例列表**主动**推**给订阅者（§三，注意仍是全量快照、非 diff 增量，只是省掉"通知后再拉"）；ZK 树形、一个实例一个 znode，jaws 用 `CuratorCache` 常驻监听 `/server` 子树（`start()` 一次即可，无需每次事件重挂 watch），但 ZK 无 diff 推送，拿最新列表只能重新 `getChildren` + 逐个 `getData` **回捞全量**（§三）。消费者 × 服务数一大，这种"每次抖动都全量回捞"若不合并就会被放大——jaws 用去抖窗口合并（见下条）。
+- **通知节奏：谁做去抖**：ZK 只负责"子节点变了通知你一次"，**去抖该由客户端补**。Nacos 服务端推送按 service 为 key 去抖合并（`DEFAULT_PUSH_TASK_DELAY=500ms`，窗口内多次变更 merge 成一次推）。工业参照 Dubbo 对同样的 ZK watch 默认加 **5s 去抖**（`delay-notification`，`RegistryNotifier` latest-wins / `ZookeeperRegistryNotifier` 最小间隔节流）。**jaws 也已补上这层**：`CuratorCache` 每个增删事件只做一次轻量的 `offer`，真正的 `getChildren`+`getData`+`notify` 推迟到 `NotifyDebouncer` 的 flush 里做，突发窗口内合并成一次回捞+通知（默认 `registryNotifyDelay=500ms`，`<=0` 退化为逐事件即时、等价旧行为）。相较 Dubbo 的 5s，jaws 取 500ms 与 Nacos 同档、偏低延迟。
 - **一致性换扩展上限——ZK 的被低估优点**：CP 下节点下线经共识提交后才让 watch 生效，消费者几乎不会拿到"已死实例"的窗口；Nacos 的 AP 路径在收敛前可能短暂推到一个刚挂的实例。中小规模，这笔"用一致性换扩展上限"的交换很划算。
 
 **取舍结论**：中小规模选 ZK 完全够用，且存活语义更严格；规模一大则 Nacos 的 AP 写 + 主动推全量快照 + namespace/权重/健康面板成套治理是硬需求。一个现实前提——**只在"本来就在运维 ZK"（Kafka/Hadoop/Dubbo 生态）时复用 ZK 当注册中心最划算**；若没有，单为注册去维护一套 ZK，不如直接上功能更全的 Nacos。jaws 两腿都实现，正是让你按"已有什么 + 要多强存活一致性 + 规模多大"来选，而不被框架绑定。

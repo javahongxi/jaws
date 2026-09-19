@@ -251,6 +251,14 @@ public final class UrlParam {
         public static final Def<Boolean> LOCAL_FILE_CACHE_ENABLED = new Def<>("cacheEnabled", true);
         public static final Def<String> CACHE_FILE = new Def<>("cacheFile", "");
 
+        /**
+         * Debounce window (ms) for coalescing rapid registry change notifications into
+         * a single delivery, e.g. a ZooKeeper child-churn burst on one watched service.
+         * {@code <= 0} disables coalescing (notify per event). Mirrors Dubbo's
+         * {@code delay-notification} (client-side) and Nacos server push's 500ms merge.
+         */
+        public static final Def<Long> NOTIFY_DELAY = new Def<>("registryNotifyDelay", 500L);
+
         private Registry() {
         }
     }

@@ -8,6 +8,7 @@ import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.framework.state.ConnectionState;
 import org.apache.curator.framework.state.ConnectionStateListener;
 import org.apache.zookeeper.CreateMode;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.lifecycle.Closeable;
 import org.hongxi.jaws.common.lifecycle.ShutdownHook;
 import org.hongxi.jaws.common.JawsConstants;
@@ -24,6 +25,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -63,11 +67,23 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
     private final ReentrantLock clientLock = new ReentrantLock();
     private final ReentrantLock serverLock = new ReentrantLock();
     private final CuratorFramework curator;
-    private final Map<URL, Map<NotifyListener, CuratorCache>> serviceListeners = new HashMap<>();
+    private final Map<URL, Map<NotifyListener, Subscription>> serviceListeners = new HashMap<>();
+
+    /** Delay time (ms) for coalescing child-churn notifications; <= 0 disables it. */
+    private final long notifyDelayMs;
+
+    /** Shared daemon scheduler backing every subscription's {@link NotifyDebouncer}. */
+    private static final ScheduledExecutorService NOTIFY_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "jaws-zk-notify");
+                t.setDaemon(true);
+                return t;
+            });
 
     public ZookeeperRegistry(URL url, CuratorFramework client) {
         super(url);
         this.curator = client;
+        this.notifyDelayMs = url.getLongParameter(UrlParam.Registry.NOTIFY_DELAY);
         ConnectionStateListener connectionStateListener = (curatorFramework, connectionState) -> {
             if (connectionState == ConnectionState.RECONNECTED) {
                 log.info("zkRegistry get reconnected notify.");
@@ -118,27 +134,35 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
     }
 
     private void subscribeServiceInternal(final URL url, final NotifyListener listener) {
-        Map<NotifyListener, CuratorCache> childChangeListeners = serviceListeners.computeIfAbsent(url, k -> new HashMap<>());
-        CuratorCache curatorCache = childChangeListeners.get(listener);
-        if (curatorCache == null) {
-            String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
-            curatorCache = CuratorCache.build(curator, serverTypePath);
+        Map<NotifyListener, Subscription> childChangeListeners = serviceListeners.computeIfAbsent(url, k -> new HashMap<>());
+        if (childChangeListeners.get(listener) == null) {
+            final String serverTypePath = ZkUtils.toNodeTypePath(url, ZkNodeType.AVAILABLE_SERVER);
+            CuratorCache curatorCache = CuratorCache.build(curator, serverTypePath);
+            // Coalesce a child-churn burst into a single re-fetch + notify: the flush
+            // does the getChildren/getData then delivers the freshest list. <= 0 delay
+            // delivers (and re-fetches) per event, i.e. legacy behaviour.
+            NotifyDebouncer<String> debouncer = new NotifyDebouncer<>(
+                    notifyDelayMs,
+                    (task, delayMs) -> NOTIFY_SCHEDULER.schedule(task, delayMs, TimeUnit.MILLISECONDS),
+                    path -> {
+                        try {
+                            List<String> currentChildren = curator.getChildren().forPath(path);
+                            List<URL> urls = nodeChildrenToUrls(url, path, currentChildren);
+                            listener.notify(getUrl(), urls);
+                            log.info("service list change: path={}, size={}", path, urls.size());
+                        } catch (Exception e) {
+                            log.warn("failed to get children for path {}", path, e);
+                        }
+                    });
             curatorCache.listenable().addListener(new CuratorCacheListener() {
                 @Override
                 public void event(Type type, ChildData oldData, ChildData data) {
                     if (type == Type.NODE_CREATED || type == Type.NODE_DELETED) {
-                        try {
-                            List<String> currentChildren = curator.getChildren().forPath(serverTypePath);
-                            List<URL> urls = nodeChildrenToUrls(url, serverTypePath, currentChildren);
-                            listener.notify(getUrl(), urls);
-                            log.info("service list change: path={}, currentChildren={}", serverTypePath, currentChildren);
-                        } catch (Exception e) {
-                            log.warn("failed to get children for path {}", serverTypePath, e);
-                        }
+                        debouncer.offer(serverTypePath);
                     }
                 }
             });
-            childChangeListeners.put(listener, curatorCache);
+            childChangeListeners.put(listener, new Subscription(curatorCache, debouncer));
             curatorCache.start();
         }
 
@@ -157,11 +181,11 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
     protected void doUnsubscribe(URL url, NotifyListener listener) {
         try {
             clientLock.lock();
-            Map<NotifyListener, CuratorCache> childChangeListeners = serviceListeners.get(url);
+            Map<NotifyListener, Subscription> childChangeListeners = serviceListeners.get(url);
             if (childChangeListeners != null) {
-                CuratorCache curatorCache = childChangeListeners.remove(listener);
-                if (curatorCache != null) {
-                    curatorCache.close();
+                Subscription subscription = childChangeListeners.remove(listener);
+                if (subscription != null) {
+                    subscription.close();
                 }
             }
         } catch (Throwable e) {
@@ -289,9 +313,9 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
         if (!serviceListeners.isEmpty()) {
             try {
                 clientLock.lock();
-                for (Map.Entry<URL, Map<NotifyListener, CuratorCache>> entry : serviceListeners.entrySet()) {
+                for (Map.Entry<URL, Map<NotifyListener, Subscription>> entry : serviceListeners.entrySet()) {
                     URL url = entry.getKey();
-                    Map<NotifyListener, CuratorCache> childChangeListeners = entry.getValue();
+                    Map<NotifyListener, Subscription> childChangeListeners = entry.getValue();
                     for (NotifyListener listener : childChangeListeners.keySet()) {
                         subscribeServiceInternal(url, listener);
                     }
@@ -310,9 +334,9 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
         // so that close is mutually exclusive with subscription operations.
         try {
             clientLock.lock();
-            for (Map<NotifyListener, CuratorCache> listeners : serviceListeners.values()) {
-                for (CuratorCache cache : listeners.values()) {
-                    cache.close();
+            for (Map<NotifyListener, Subscription> listeners : serviceListeners.values()) {
+                for (Subscription subscription : listeners.values()) {
+                    subscription.close();
                 }
             }
             serviceListeners.clear();
@@ -320,5 +344,26 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
             clientLock.unlock();
         }
         curator.close();
+    }
+
+    /**
+     * A live subscription: the {@link CuratorCache} watching the provider path plus
+     * the {@link NotifyDebouncer} coalescing its change events. Closing releases both,
+     * so a pending debounce flush cannot deliver a stale list after unsubscribe.
+     */
+    private static final class Subscription implements Closeable {
+        private final CuratorCache cache;
+        private final NotifyDebouncer<String> debouncer;
+
+        Subscription(CuratorCache cache, NotifyDebouncer<String> debouncer) {
+            this.cache = cache;
+            this.debouncer = debouncer;
+        }
+
+        @Override
+        public void close() {
+            debouncer.close();
+            cache.close();
+        }
     }
 }
