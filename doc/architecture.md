@@ -1,6 +1,6 @@
 # Jaws 架构总览：模块地图与六层骨架
 
-> 这是读 Jaws 源码的**第一站**：先讲清 10 个 Maven 模块各自负责什么、`jaws-core` 内部怎么分层、以及贯穿全框架的几条设计主张。每个专题再深入哪一层，文末有文档地图。**模块边界就是设计取舍留下的物理证据**——看懂了切分，就看懂了它为什么"约 Dubbo 1/10 代码量"。
+> 这是读 Jaws 源码的**第一站**：先讲清 11 个 Maven 模块各自负责什么、`jaws-core` 内部怎么分层、以及贯穿全框架的几条设计主张。每个专题再深入哪一层，文末有文档地图。**模块边界就是设计取舍留下的物理证据**——看懂了切分，就看懂了它为什么"约 Dubbo 1/10 代码量"。
 
 ## 1. 定位与门面口径
 
@@ -17,7 +17,7 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 
 ```
 jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
-     → jaws-registry-zookeeper / jaws-registry-nacos
+     → jaws-registry-zookeeper / jaws-registry-nacos / jaws-registry-harbor
      → jaws-spring-boot → jaws-extensions → jaws-harbor → jaws-samples
 ```
 
@@ -25,10 +25,11 @@ jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
 |---|---|---|---|
 | `jaws-stream-api` | ~95 行 | 流式收发的中立契约（push-only） | 契约 |
 | `jaws-core` | ~20.5k | RPC 骨架六层 + 扩展机制 | 骨架 |
-| `jaws-wire` | ~7.9k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
+| `jaws-wire` | ~9k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
 | `jaws-wire-proto` | 生成码 | protoc 生成物（health/reflection/rpc.Status）隔离 | 对外协议 |
 | `jaws-registry-zookeeper` | ~670 | Registry SPI 的 ZooKeeper 实现（Curator） | 注册发现 |
 | `jaws-registry-nacos` | ~490 | Registry SPI 的 Nacos 薄封装 | 注册发现 |
+| `jaws-registry-harbor` | ~270 | Registry SPI 的 Harbor 客户端（对接 `jaws-harbor` 注册中心） | 注册发现 |
 | `jaws-harbor` | ~4.6k 手码 | 兼容 nacos-client 的轻量注册中心（服务端） | 注册发现 |
 | `jaws-spring-boot` | 聚合 + ~1.6k | 两个 starter：声明式接入 + 可观测装配 | 集成 |
 | `jaws-extensions` | ~280 | 指标 / 链路追踪 Filter | 集成 |

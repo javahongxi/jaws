@@ -95,4 +95,4 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 
 wire 的价值有两层：一层是**能力**——Jaws 因此能进 gRPC 生态当一等公民；另一层是**认知**——它逼着把 gRPC 线格式的每一条约定都实现并读懂，于是这个模块本身成了"gRPC over HTTP/2 到底规定了什么"的可读参考。它和 jaws 二进制协议是同一套骨架（core 六层）之上的两种对外齿形：一个对等 gRPC，一个对等 Dubbo。
 
-> 源码：`jaws-wire`（约 7.9k 行）+ `jaws-wire-proto`（生成码）。运行：`./run-sample.sh wire`（直连，兼容 grpcurl）、`./run-sample.sh interop`（grpc-java ↔ jaws-wire 双向互操作）。
+> 源码：`jaws-wire`（约 9k 行）+ `jaws-wire-proto`（生成码）。运行：`./run-sample.sh wire`（直连，兼容 grpcurl）、`./run-sample.sh interop`（grpc-java ↔ jaws-wire 双向互操作）。

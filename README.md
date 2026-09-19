@@ -178,7 +178,7 @@ public class MyRunner implements CommandLineRunner {
 
 | 主题                                          | 说明                                            |
 |-----------------------------------------------|-------------------------------------------------|
-| [架构总览](doc/architecture.md)               | 10 个 Maven 模块地图 + core 六层骨架 + 门面口径 |
+| [架构总览](doc/architecture.md)               | 11 个 Maven 模块地图 + core 六层骨架 + 门面口径 |
 | [泛化调用](doc/generic-invocation.md)         | 无需接口 JAR 包即可发起 RPC 调用                |
 | [优雅停机](doc/graceful-shutdown.md)          | 四阶段零损伤发布                                |
 | [服务鉴权](doc/token-auth.md)                 | 基于 Token 的服务认证                           |
