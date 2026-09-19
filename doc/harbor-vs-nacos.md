@@ -232,7 +232,7 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 - **已订正**：`ConnectionCleanup` 的 Javadoc 曾把对标对象写作 Nacos 的 `ConnectionManager` + `ClientConnectionUnregisterEvent`（该符号在 Nacos 不存在）。本文改为真实的 `ConnectionBasedClientManager.clientDisconnected(String)`（`clients.remove` → `release()` → 以 `isResponsible` 发 `ClientReleaseEvent`/`ClientDisconnectEvent`），并点明 Nacos 自己的看门狗 `ExpiredClientCleaner` 也复用这同一个入口——正是本类要编码的性质。
 
 - **空列表保护归消费层，注册中心两层都不做（已决）**：健康是按**连接**判的，静默过 `INSTANCE_UNHEALTHY_TIMEOUT_MS=15s` 就把该 client 在所有服务上的实例**一起**标 unhealthy，活动回来再一起翻回——余量只有 3 拍（客户端 keepalive 5s ÷ 15s）。所以一次超过 15s 的客户端停顿（长 GC、合盖、NAT 静默丢包而 TCP 未断）在消费侧表现为"服务突然空了"，而 90s 看门狗之后实例是被**删除**而非降级，那时任何阈值都无从回退。Nacos 的两个开关都不解决这个问题：服务端 `protectThreshold` 默认 0.0（等于没开），客户端 `namingPushEmptyProtection` 默认 false 且判据是 `ServiceInfo.validate()`——"列表里还有没有一个 healthy 且 weight>0 的实例"，一旦开启连**正常清空**也会被当错误推送忽略，客户端死抱旧地址；nacos-client 也**没有**"忽略后延迟反查"这回事，恢复只靠下一次有效推送、显式 `subscribe=false` 查询，或重连时 redo 重投订阅带回新快照。harbor 的兜底因此只放在消费层，且已经在那儿：`RegistryDirectory.notify` 收到空列表**保留既有引用**并 warn，`AbstractRegistry` 另有本地文件缓存。既然职责划到消费层，服务端就不实现 `protectThreshold`，**原生 `HarborClient` 也不加 nacos 那套 `namingPushEmptyProtection` 的等价物（更不做「忽略＋延迟反查」）**——否则同一个判断会在服务端、客户端、消费层各存一份，而三者的"空"含义还不一样。代价要说清：裸用 nacos-client / HarborClient 而不经 jaws registry 层的调用方没有这层保护，它得自己决定拿到空列表时是否切流量。可观测性补上了：翻转与恢复各一行日志（unhealthy 为 WARN，带静默毫秒数与受影响的实例/服务数）。
-- **元数据/服务编辑面不做**：`NacosNamingMaintainService` 走 HTTP（`NamingHttpClientProxy`），服务端 `NamingMetadataOperateService` 把 `ServiceMetadata` 变更提交给 **CP 协议（JRaft，group=`SERVICE_METADATA`）**；`ServiceMetadata` 还携带 `selector` 与 `clusters: Map<String, ClusterMetadata>`（内含服务端主动探活 tcp/http/mysql）。这三样各自撞上 harbor 的立身前提：没有 CP 层、健康权威只有"连接即活性"、gRPC 面上不存在元数据写入请求类型。故 harbor 不做元数据写面，README 也不宣称支持。
+- **元数据/服务编辑面不做**：`NacosNamingMaintainService` 走 HTTP（`NamingHttpClientProxy`），服务端 `NamingMetadataOperateService` 把 `ServiceMetadata` 变更提交给 **CP 协议（JRaft，group=`SERVICE_METADATA`）**；`ServiceMetadata` 还携带 `selector` 与 `clusters: Map<String, ClusterMetadata>`（内含服务端主动探活 tcp/http/mysql）。这三样各自撞上 harbor 的立身前提：没有 CP 层、健康权威只有"连接即活性"、gRPC 面上不存在元数据写入请求类型。故 harbor 不做元数据写面，README 也不宣称支持。**这不做是有代价的，且代价已被实测**：真 Dubbo 客户端会因 registry 派生的 config-center 持续写入元数据/映射而报错（详见 §6 M3 记录），接入方必须显式关掉 `use-as-config-center` / `use-as-metadata-center`；关掉之后 Dubbo 的调用链路可用，但接口级服务发现与元数据总线在 Harbor 上不存在。
 
 ## 6. 对外咬合的可验证性：拿同栈的 spacecloud 当第三方反验
 
@@ -262,6 +262,21 @@ harbor 的定位决定了它不能只靠自证。**自测全绿 ≠ 协议互通
 - GOAWAY 计数 1 : 2，两端关闭路径细节（先 GOAWAY 再断 vs 直接断链）不同，无功能含义。
 
 两条**已被排除的解释**，留此免得被重复试探：① 为消掉配置中心噪声而把 `NacosDynamicConfiguration.init()` 短路，结果开关两种状态下服务端都**没有任何 config 流量**（`ConfigService` 建了但无人注册 listener，就不发长轮询）——这个开关对本比对是多余的，两腿日志本来就干净可比；② 第一段里那条 `no peers to load from — running as single node` 不是腿间差异，是 server 启动后 +1s 的 Distro 一次性加载恰好落在分段线上。
+
+**M3 已跑：真 Dubbo 生态反验**（`/Users/hongxi/dev/spacecloud`，Dubbo 3.3.6 ＋ Spring Cloud Alibaba 2025.1.0.0 ＋ nacos-client 3.2.2，只改环境变量与 JVM 参数、不改它一行代码）：
+
+- **能调用**：`cloud-provider-dubbo-sample`（tri 50051）与 `cloud-consumer-reactive-sample`（8763）经 Harbor 完成跨进程调用（`Hello, m3, Here is 50051`，consumer 0 错误）。走通的是**应用级发现**——Harbor 里的实例 metadata 带着 `dubbo.metadata-service.url-params`；**接口级 `providers:` 注册一次都没发生**（服务端日志 0 条）。
+- **撞边界的方式很有代表性**：Dubbo 3.x 默认把 registry 地址同时当 config-center 与 metadata-center 派生（yml 里查不到，行为上存在），于是一分钟内 `ConfigQueryRequest` 被拒 298 次、`ConfigPublishRequest` 269 次，provider 侧 115 行 `publish nacos metadata failed`（error code 1-37）。**不是配置写错，是我们声明不做的那一面被默认路径踩到了**。
+- **接入覆写清单**（逐项实测过）：
+
+  | 覆写 | 为什么 |
+  |---|---|
+  | `NACOS_SERVER_ADDR=127.0.0.1:19848` ＋ `-Dnacos.server.grpc.port.offset=0` | Harbor 只有一个端口，没有 Nacos 的「HTTP 口 ＋1000 = gRPC 口」约定 |
+  | `-Ddubbo.registry.use-as-config-center=false` `-Ddubbo.registry.use-as-metadata-center=false` | **只有这组有效**：实测把拒绝从 246 次/40s 打到 **0**、provider 错误 115→2 行 |
+  | `-Ddubbo.application.metadata-type=local` ＋ `-Ddubbo.metadata-report.report-*=false` | **不够**：实测 40s 内仍 246 次拒绝——洪峰来自 registry 派生的 config-center，不是 metadata-report |
+  | `-Dspring.cloud.sentinel.enabled=false`、`-Dspring.cloud.nacos.username=`/`password=` | Sentinel 会以 `data-id` 去拉配置规则；带 username/password 会让 nacos-client 周期性请求 HTTP 登录接口，而 Harbor 没有 HTTP 面 |
+
+- Harbor 侧因此补了一条**日志聚合**（`RefusalMeter`）：同一被拒类型首条 WARN、窗口（60s）内只计数，下一条带上被吞的次数。实测同样不加 use-as 覆写的洪峰下，55s 内服务端日志从 ~570 行降到 **2 行**。这是"响亮拒绝"与"可运维"的取舍：边界说一次并给出量，而不是每秒重复一遍。
 
 **这一节其余部分记方向，不记已完成**：上面两条反验目前是计划中的联调靶子，尚未落成 `run-sample.sh` 里的固定用例，真正接起来之前别把它们当现状读。它也顺手给「注册中心只对齐 Nacos、不加 ZK / Consul」补了体系自洽这条硬理由——同向锚点在你自己的多仓体系里已经是 Nacos，再钉一根对不上的齿是拆自己的台。
 
