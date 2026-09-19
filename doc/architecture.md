@@ -4,11 +4,11 @@
 
 ## 1. 定位与门面口径
 
-Jaws 是一个**核心 2.9 万多行、可以从头读到尾**的轻量级 RPC 框架，用约 Dubbo 1/10 的代码量，把工业级 RPC 的核心机制走了一遍（多协议传输、序列化、注册发现、六种负载均衡、容错、路由、gRPC 线格式对等、HTTP/2 三种流式、自适应传输、全链路异步、优雅停机、可观测性），实测约 14 万 QPS。目标是做 **RPC 骨架的标杆**：每层薄到能读完，读完再去啃 Dubbo 会快很多。
+Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框架，用约 Dubbo 1/10 的代码量，把工业级 RPC 的核心机制走了一遍（多协议传输、序列化、注册发现、六种负载均衡、容错、路由、gRPC 线格式对等、HTTP/2 三种流式、自适应传输、全链路异步、优雅停机、可观测性），实测约 14 万 QPS。目标是做 **RPC 骨架的标杆**：每层薄到能读完，读完再去啃 Dubbo 会快很多。
 
 **门面数字口径**（钝表述、防过时，与"约 Dubbo 1/10 / 约 14 万 QPS"同一套算法）：
 
-- "核心 2.9 万多行" = `jaws-core` + `jaws-wire` + `jaws-stream-api` + `jaws-registry-nacos`/`jaws-registry-zookeeper` 两个客户端。
+- "核心 3 万余行" = `jaws-core` + `jaws-wire` + `jaws-stream-api` + `jaws-registry-nacos`/`jaws-registry-zookeeper` 两个客户端。
 - **不计入**：`jaws-wire-proto`（protoc 生成码）、整个 `jaws-harbor`（服务端件，手码与内嵌生成码一并剔除）、`jaws-samples`、`jaws-spring-boot`、`jaws-extensions`。
 
 ## 2. 模块地图

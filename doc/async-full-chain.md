@@ -1,6 +1,6 @@
 # Jaws 全链路异步解剖：一个 CompletableFuture 如何贯穿 RPC 的七层
 
-> 本文基于 jaws 源码撰写。jaws 是一个核心 2.9 万多行的轻量级 RPC 框架，目标是用可读完的代码量完整呈现工业级 RPC 的核心机制。
+> 本文基于 jaws 源码撰写。jaws 是一个核心 3 万余行的轻量级 RPC 框架，目标是用可读完的代码量完整呈现工业级 RPC 的核心机制。
 
 ## 0. 从一个问题开始
 
@@ -497,4 +497,4 @@ jaws 的选择是：
 
 七层，每层都是异步的，所以全链路才是异步的。
 
-> jaws 源码：[github.com/javahongxi/jaws](https://github.com/javahongxi/jaws)（核心 2.9 万多行，欢迎 star 交流）
+> jaws 源码：[github.com/javahongxi/jaws](https://github.com/javahongxi/jaws)（核心 3 万余行，欢迎 star 交流）
