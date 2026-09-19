@@ -60,7 +60,13 @@ instance metadata = {protocol, path, ...所有URL参数}
 
 **核心区别**：ZK 是**被动通知**（只告诉你节点变了，需要自己去拉最新数据）；Nacos 是**主动推送**（直接给你最新实例列表）。
 
-## 四、断线重连机制
+## 四、会话保活与断线重连
+
+先分层澄清两件事，避免"失败重连"被读成"操作层重试"：
+
+- **会话保活**：由**注册中心那条长连接的 transport 层**维持——ZK 客户端按约 `sessionTimeout/3` 周期发 ping（Curator `sessionTimeoutMs`，jaws 默认 60s），Nacos 3.x 靠 gRPC 长连接本身的活性（v2/v3 **无应用层 beat**；1.x 的 `BeatReactor` 只在遗留 `NamingHttpClientProxy` 路径存在）。jaws **都不**自己发心跳。
+- **断线重连 + 重放登记**：保活失败 → 客户端自动重连 → 新连接建立后**必须重放注册/订阅**（旧 session/connection 关联的临时节点/临时实例已被服务端清掉）。ZK 由 `ZookeeperRegistry` 挂 Curator `ConnectionStateListener` 显式做；Nacos 由 nacos-client 内部 `NamingGrpcRedoService` 做，**jaws 侧不实现**。
+- **别混淆**：jaws 基类 `FailbackRegistry.retry()` 是"**API 调用抛错后的操作层定时重试**"（默认每 30s，`registryRetryPeriod`），且只在 `check=false` 才生效——`check=true`（生产默认）时 doRegister/doSubscribe 抛异常直接 fail-fast 退出。这条路径与"连接层重连"正交，README 里那句"掉线重连后自动重建登记"专指前者（连接层）。
 
 ### ZooKeeper — 显式重连
 

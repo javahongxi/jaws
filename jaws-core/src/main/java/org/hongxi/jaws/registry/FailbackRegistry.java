@@ -21,6 +21,18 @@ import java.util.concurrent.TimeUnit;
  * registry implementation: failed register/unregister/subscribe/unsubscribe
  * operations are tracked and periodically retried, and discovery degrades
  * to the last successful result when the registry is unreachable.
+ * <p>
+ * This is <b>operation-layer</b> recovery: it reacts only when a call into
+ * the underlying registry client throws, and (for register/unregister/
+ * subscribe/unsubscribe) only under {@code check=false}. Production defaults
+ * to {@code check=true}, in which case a failed register surfaces as a
+ * startup exception and the retry queue never fills.
+ * <p>
+ * Connection-layer recovery (detecting a dropped session or gRPC connection
+ * and replaying registrations on reconnect) is a separate concern handled
+ * by subclasses / client libraries: {@code ZookeeperRegistry} hooks Curator's
+ * {@code ConnectionStateListener} on {@code RECONNECTED}, and Nacos delegates
+ * it entirely to {@code nacos-client}'s {@code NamingGrpcRedoService}.
  */
 public abstract class FailbackRegistry extends AbstractRegistry {
 

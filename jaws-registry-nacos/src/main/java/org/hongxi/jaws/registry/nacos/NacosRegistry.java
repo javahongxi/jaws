@@ -29,6 +29,27 @@ import java.util.concurrent.locks.ReentrantLock;
  *   <li>Service discovery: query all instances and convert back to URLs</li>
  * </ul>
  * <p>
+ * Both session keepalive and reconnect-replay are delegated to
+ * {@code nacos-client} (v3, gRPC), not implemented here:
+ * <ul>
+ *   <li><b>Keepalive</b>: instances are registered with
+ *       {@code ephemeral=true}; under Nacos v2/v3 gRPC an ephemeral instance's
+ *       liveness <em>is</em> the client's gRPC connection (server keys it by
+ *       {@code connectionId}) — no application-level ClientBeat. The 1.x
+ *       {@code BeatReactor} heartbeat path exists only in the legacy
+ *       {@code NamingHttpClientProxy}.</li>
+ *   <li><b>Reconnect &amp; rebuild</b>: nacos-client's
+ *       {@code NamingGrpcRedoService} (a {@code ConnectionEventListener})
+ *       replays pending register/subscribe on reconnect, with deregister
+ *       taking precedence so a removed instance is never resurrected.
+ *       This class intentionally does not hook a second reconnection path —
+ *       see {@code doc/nacos-client-internals.md} §4–§5.</li>
+ * </ul>
+ * <p>
+ * This is orthogonal to {@link FailbackRegistry}'s periodic {@code retry()},
+ * which is an API-call failure queue active only under {@code check=false}
+ * and does not observe connection events.
+ * <p>
  * Created by shenhongxi on 2026/7/17.
  */
 public class NacosRegistry extends FailbackRegistry implements Closeable {

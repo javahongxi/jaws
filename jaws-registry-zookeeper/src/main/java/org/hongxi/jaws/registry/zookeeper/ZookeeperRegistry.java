@@ -33,8 +33,23 @@ import java.util.concurrent.locks.ReentrantLock;
  * a {@code CuratorCache} to push service-list changes to
  * {@link NotifyListener}s.
  * <p>
- * On reconnection the registry re-registers all services and re-subscribes
- * all listeners, and it closes the Curator client via a shutdown hook.
+ * Two independent mechanisms govern connection health here:
+ * <ul>
+ *   <li><b>Session keepalive</b>: the ZooKeeper client (not this class) pings
+ *       the ensemble about every {@code sessionTimeoutMs / 3} (jaws default
+ *       60s, see {@link ZookeeperRegistryFactory#createCurator}); ephemeral
+ *       nodes live exactly as long as that session.</li>
+ *   <li><b>Reconnect &amp; rebuild</b>: when Curator reports
+ *       {@code ConnectionState.RECONNECTED} the previous session is gone with
+ *       its ephemeral nodes, so {@link #reRegisterServices()} and
+ *       {@link #reSubscribeServices()} replay both sides. This is the
+ *       connection-layer recovery referenced in the README bullet.</li>
+ * </ul>
+ * Neither is the {@link FailbackRegistry}'s periodic {@code retry()} path —
+ * that one only reacts to failed registry <em>API calls</em> under
+ * {@code check=false}, orthogonal to session liveness.
+ * <p>
+ * A JVM shutdown hook closes the Curator client on exit.
  *
  * @see ZookeeperRegistryFactory
  * @see ZkUtils
