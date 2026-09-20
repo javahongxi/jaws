@@ -3,6 +3,7 @@ package org.hongxi.jaws.registry.zookeeper;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.registry.Registry;
@@ -23,7 +24,7 @@ import java.nio.charset.StandardCharsets;
  *
  * Created by shenhongxi on 2021/4/24.
  */
-@Extension("zookeeper")
+@Extension(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER)
 public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
 
     private static final Logger log = LoggerFactory.getLogger(ZookeeperRegistryFactory.class);

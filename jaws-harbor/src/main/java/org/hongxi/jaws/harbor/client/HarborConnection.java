@@ -8,6 +8,7 @@ import org.hongxi.jaws.harbor.model.Request;
 import org.hongxi.jaws.harbor.model.Response;
 import org.hongxi.jaws.harbor.model.request.ConnectResetRequest;
 import org.hongxi.jaws.harbor.model.request.ConnectionSetupRequest;
+import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
 import org.hongxi.jaws.harbor.model.request.HealthCheckRequest;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
 import org.hongxi.jaws.harbor.model.request.SetupAckRequest;
@@ -53,7 +54,7 @@ final class HarborConnection implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(HarborConnection.class);
 
     /** Sent in the setup frame; also how tests recognise our sessions server-side. */
-    static final String CLIENT_VERSION = "jaws-harbor-client/1.0";
+    static final String CLIENT_VERSION = HarborProtocol.NATIVE_CLIENT_VERSION;
 
     private final HarborClientConfig config;
     private final String clientIp;
@@ -74,6 +75,7 @@ final class HarborConnection implements Closeable {
     private volatile int port;
     private volatile WireClient wireClient;
     private final Consumer<Payload> pushSink;
+    private final Consumer<Payload> configSink;
     private final Runnable replayHook;
     private final AtomicLong lastActivity = new AtomicLong(System.currentTimeMillis());
 
@@ -87,10 +89,12 @@ final class HarborConnection implements Closeable {
 
     HarborConnection(HarborClientConfig config,
                      Consumer<Payload> pushSink,
+                     Consumer<Payload> configSink,
                      Runnable replayHook) {
         this.config = config;
         this.clientIp = resolveClientIp();
         this.pushSink = pushSink;
+        this.configSink = configSink;
         this.replayHook = replayHook;
         this.targets = config.allAddresses();
         this.cursor = startCursor(targets.size());
@@ -375,6 +379,13 @@ final class HarborConnection implements Closeable {
         if (HarborProtocol.typeToken(NotifySubscriberRequest.class).equals(type)) {
             markActive();
             pushSink.accept(payload);
+            return;
+        }
+        if (HarborProtocol.typeToken(DynamicConfigChangeRequest.class).equals(type)) {
+            // A config broadcast is control traffic, not instance traffic: it does
+            // not prove the server is answering naming calls, so it deliberately
+            // does not refresh the liveness clock.
+            configSink.accept(payload);
             return;
         }
         if (HarborProtocol.typeToken(ConnectResetRequest.class).equals(type)) {

@@ -2,9 +2,11 @@ package org.hongxi.jaws.harbor.client;
 
 import com.alibaba.nacos.api.NacosFactory;
 import com.alibaba.nacos.api.naming.NamingService;
+import org.hongxi.jaws.harbor.HarborProtocol;
 import org.hongxi.jaws.harbor.HarborServer;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
+import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
 import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -402,6 +404,37 @@ class HarborClientTest {
                     List.of(instance("127.0.0.1", 9930)));
             awaitTrue(() -> nacosInstances("native-batch-drop").size() == 1, 8_000);
             assertEquals(9931, nacosInstances("native-batch-drop").get(0).getPort());
+        }
+    }
+
+    /**
+     * The demo dynamic-config channel end to end: a server broadcast reaches a
+     * native client over its bi-stream and surfaces to the listener the registry leg
+     * would wire (here we capture the frame; applying it to the process config is
+     * the registry-harbor leg's job, kept out of this pure-protocol client test).
+     */
+    @Test
+    void broadcastConfigChangeReachesNativeClientListener() throws Exception {
+        try (HarborClient client = newClient()) {
+            List<DynamicConfigChangeRequest> received = new CopyOnWriteArrayList<>();
+            client.setDynamicConfigListener(received::add);
+
+            // The broadcast only targets registered native clients; wait until the
+            // server has this one (setup completed) in its connection table.
+            awaitTrue(() -> harborServer.getConnectionManager().allConnections().stream()
+                    .anyMatch(c -> HarborProtocol.NATIVE_CLIENT_VERSION.equals(c.clientVersion())),
+                    5_000);
+
+            assertTrue(harborServer.broadcastConfigChange("jaws.requestTimeout", "888", false) >= 1,
+                    "the connected native client should be counted");
+            awaitTrue(() -> received.stream().anyMatch(
+                    c -> "jaws.requestTimeout".equals(c.getKey())
+                            && "888".equals(c.getValue()) && !c.isDeleted()), 5_000);
+
+            // Removal is an explicit flag, never a null value.
+            harborServer.broadcastConfigChange("jaws.requestTimeout", null, true);
+            awaitTrue(() -> received.stream().anyMatch(
+                    c -> "jaws.requestTimeout".equals(c.getKey()) && c.isDeleted()), 5_000);
         }
     }
 

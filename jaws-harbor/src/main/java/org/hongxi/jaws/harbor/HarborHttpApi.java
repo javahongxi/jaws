@@ -30,6 +30,9 @@ import java.util.stream.Collectors;
  *   <li>{@code GET /api/connections} — active connection count</li>
  *   <li>{@code POST /api/connections/reset} — ask one client to reconnect, optionally
  *       elsewhere; the load-shedding hook Nacos has on its loader endpoint</li>
+ *   <li>{@code POST /api/config} — broadcast a dynamic-config change to every
+ *       connected {@code jaws} client over its bi-stream (demo: harbor stores no
+ *       config, it only relays; see {@link HarborServer#broadcastConfigChange})</li>
  * </ul>
  * Runs on {@code grpcPort + 10}, zero external dependencies (JDK HttpServer only).
  *
@@ -50,6 +53,7 @@ public class HarborHttpApi {
         this.httpServer.createContext("/api/connections", new ConnectionsHandler());
         // Longer path wins in JDK HttpServer, so this shadows the read-only listing.
         this.httpServer.createContext("/api/connections/reset", new ConnectionResetHandler());
+        this.httpServer.createContext("/api/config", new ConfigChangeHandler());
         this.httpServer.setExecutor(null); // use daemon threads
     }
 
@@ -151,6 +155,34 @@ public class HarborHttpApi {
             result.put("connectionId", connectionId);
             result.put("acked", acked);
             sendJson(exchange, acked ? 200 : 504, result.toJSONString());
+        }
+    }
+
+    private class ConfigChangeHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
+                return;
+            }
+            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+            String key = query.get("key");
+            if (key == null || key.isEmpty()) {
+                sendJson(exchange, 400, "{\"error\":\"key is required\"}");
+                return;
+            }
+            boolean deleted = "true".equalsIgnoreCase(query.get("remove"));
+            String value = deleted ? null : query.get("value");
+            if (!deleted && value == null) {
+                sendJson(exchange, 400, "{\"error\":\"value is required unless remove=true\"}");
+                return;
+            }
+            int pushed = harborServer.broadcastConfigChange(key, value, deleted);
+            JSONObject result = new JSONObject();
+            result.put("key", key);
+            result.put("deleted", deleted);
+            result.put("pushed", pushed);
+            sendJson(exchange, 200, result.toJSONString());
         }
     }
 

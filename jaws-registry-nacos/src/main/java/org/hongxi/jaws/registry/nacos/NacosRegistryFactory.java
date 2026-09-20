@@ -3,6 +3,7 @@ package org.hongxi.jaws.registry.nacos;
 import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.naming.NamingFactory;
 import com.alibaba.nacos.api.naming.NamingService;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.AbstractRegistryFactory;
@@ -17,7 +18,7 @@ import java.util.Properties;
  * <p>
  * Created by shenhongxi on 2026/7/17.
  */
-@Extension("nacos")
+@Extension(JawsConstants.REGISTRY_PROTOCOL_NACOS)
 public class NacosRegistryFactory extends AbstractRegistryFactory {
 
     private static final Logger log = LoggerFactory.getLogger(NacosRegistryFactory.class);

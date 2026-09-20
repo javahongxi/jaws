@@ -7,6 +7,7 @@ import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
 import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.harbor.model.request.BatchInstanceRequest;
+import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
 import org.hongxi.jaws.harbor.model.request.InstanceRequest;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
 import org.hongxi.jaws.harbor.model.request.ServiceListRequest;
@@ -70,7 +71,8 @@ public class HarborClient implements Closeable {
 
     public HarborClient(HarborClientConfig config) {
         this.config = config;
-        this.connection = new HarborConnection(config, this::onPushFrame, this::replayOwnedState);
+        this.connection = new HarborConnection(config, this::onPushFrame,
+                this::onConfigPush, this::replayOwnedState);
         this.connection.start();
         this.notifier = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "harbor-client-notifier");
@@ -457,6 +459,33 @@ public class HarborClient implements Closeable {
         subscription.cache(latest);
         List<Consumer<ServiceInfo>> listeners = new ArrayList<>(subscription.listeners());
         notifier.execute(() -> listeners.forEach(each -> each.accept(latest)));
+    }
+
+    /**
+     * Where a server-broadcast dynamic-config change is handed off. The client is a
+     * pure protocol SDK (see the source guard that keeps it so): it parses the frame
+     * it speaks and emits it, and the embedding layer decides what to do. Wired by
+     * the registry-harbor leg to update this process's dynamic configuration; left a
+     * no-op for a bare client that never opted in.
+     */
+    private volatile Consumer<DynamicConfigChangeRequest> dynamicConfigListener =
+            change -> {
+            };
+
+    public void setDynamicConfigListener(Consumer<DynamicConfigChangeRequest> listener) {
+        this.dynamicConfigListener = listener == null ? change -> {
+        } : listener;
+    }
+
+    /**
+     * A server-broadcast dynamic-config change arrives on the bi-stream. Harbor does
+     * not store config; this client only decodes the frame it speaks and hands it to
+     * {@link #dynamicConfigListener} — applying it to the process's configuration is
+     * the embedding layer's decision, not this SDK's.
+     */
+    private void onConfigPush(Payload payload) {
+        dynamicConfigListener.accept(
+                HarborProtocol.parseBody(payload, DynamicConfigChangeRequest.class));
     }
 
     /**

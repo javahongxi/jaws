@@ -35,6 +35,13 @@ public final class HarborProtocol {
     public static final String RPC_STREAM_METHOD = "requestBiStream";
 
     /**
+     * Version string our own {@code HarborClient} reports at setup. The server
+     * uses it to tell native clients from Nacos clients and Distro peers when it
+     * broadcasts a {@code DynamicConfigChangeRequest} (which only jaws speaks).
+     */
+    public static final String NATIVE_CLIENT_VERSION = "jaws-harbor-client/1.0";
+
+    /**
      * The one token with no DTO of its own: config listens are answered
      * without their body ever being deserialized, so there is no class to
      * name. Kept here so the exception is stated once, in words.

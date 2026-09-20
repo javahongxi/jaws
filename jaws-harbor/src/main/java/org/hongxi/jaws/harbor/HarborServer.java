@@ -274,6 +274,31 @@ public class HarborServer {
                 address, clusterManager.size());
     }
 
+    /**
+     * Broadcast one dynamic-config change to every connected {@code jaws} client
+     * over its bi-stream. Harbor stores no configuration — this is a demo channel:
+     * each live client applies it to its own in-process configuration. Only native
+     * clients receive it (matched by {@link HarborProtocol#NATIVE_CLIENT_VERSION});
+     * a real nacos-client would misread a jaws-proprietary frame as bad naming
+     * traffic and reconnect-loop, and Distro peers do not consume config at all.
+     *
+     * @return the number of native clients the change was pushed to
+     */
+    public int broadcastConfigChange(String key, String value, boolean deleted) {
+        Payload frame = HarborProtocol.encodePush(
+                new DynamicConfigChangeRequest(key, value, deleted));
+        int pushed = 0;
+        for (ConnectionManager.ConnectionRecord each : connectionManager.allConnections()) {
+            if (HarborProtocol.NATIVE_CLIENT_VERSION.equals(each.clientVersion())
+                    && connectionManager.pushToConnection(each.connectionId(), frame)) {
+                pushed++;
+            }
+        }
+        log.info("[harbor] broadcast config change key={} deleted={} to {} native client(s)",
+                key, deleted, pushed);
+        return pushed;
+    }
+
     // ========================================================================
     // Request.request handler (unary)
     // ========================================================================
