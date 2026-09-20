@@ -5,6 +5,7 @@ import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.config.ConfigService;
 import com.alibaba.nacos.api.config.listener.Listener;
 import com.alibaba.nacos.api.exception.NacosException;
+import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.common.extension.Extension;
 import org.hongxi.jaws.configcenter.ConfigurationListener;
 import org.hongxi.jaws.configcenter.DynamicConfiguration;
@@ -33,7 +34,7 @@ import java.util.concurrent.Executor;
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
-@Extension("nacos")
+@Extension(JawsConstants.REGISTRY_PROTOCOL_NACOS)
 public class NacosDynamicConfiguration implements DynamicConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(NacosDynamicConfiguration.class);

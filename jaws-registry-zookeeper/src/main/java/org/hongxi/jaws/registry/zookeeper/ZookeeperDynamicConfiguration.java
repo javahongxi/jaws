@@ -35,7 +35,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <p>
  * Created by shenhongxi on 2026/8/11.
  */
-@Extension("zookeeper")
+@Extension(JawsConstants.REGISTRY_PROTOCOL_ZOOKEEPER)
 public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(ZookeeperDynamicConfiguration.class);
