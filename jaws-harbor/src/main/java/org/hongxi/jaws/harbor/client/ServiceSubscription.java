@@ -47,17 +47,8 @@ final class ServiceSubscription extends RedoData {
         return listeners.add(listener);
     }
 
-    /**
-     * @return true when the last listener left and the server-side subscription
-     *         should be dropped too
-     */
-    boolean removeListener(Consumer<ServiceInfo> listener) {
+    void removeListener(Consumer<ServiceInfo> listener) {
         listeners.remove(listener);
-        return listeners.isEmpty();
-    }
-
-    boolean hasListeners() {
-        return !listeners.isEmpty();
     }
 
     List<Consumer<ServiceInfo>> listeners() {

@@ -3,6 +3,7 @@ package org.hongxi.jaws.transport.netty;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
+import org.hongxi.jaws.common.VisibleForTesting;
 import org.hongxi.jaws.serialization.ObjectInput;
 import org.hongxi.jaws.serialization.ObjectOutput;
 import org.hongxi.jaws.serialization.Serialization;
@@ -106,6 +107,7 @@ public final class JawsCodec {
      * Netty path parses the header once in {@link NettyDecoder} and calls
      * {@code decodeBody} directly to avoid redundant header parsing.
      */
+    @VisibleForTesting
     public static Object decode(ByteBuf in) throws IOException {
         if (in.readableBytes() <= HEADER_LENGTH) {
             throw new JawsFrameworkException("decode error: invalid frame format");

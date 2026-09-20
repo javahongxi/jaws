@@ -1,6 +1,7 @@
 package org.hongxi.jaws.transport.http2;
 
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.common.VisibleForTesting;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.MessageHandler;
 
@@ -57,11 +58,7 @@ public class Http2Server extends AbstractHttp2Server {
                 serializationName, inflightRequests, maxContentLength));
     }
 
-    /**
-     * Package-private: lets same-package tests submit probe tasks onto the
-     * business executor (e.g. to verify per-thread lifecycle pairing of
-     * RpcContext init/destroy around a unary call).
-     */
+    @VisibleForTesting
     java.util.concurrent.ExecutorService serverExecutor() {
         return serverExecutor;
     }
