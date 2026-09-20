@@ -64,6 +64,11 @@ public class HarborServer {
      */
     public static final String PARAM_CLUSTER_MEMBERS = "clusterMembers";
 
+    /** The URL this server was built from; its parameters are the config surface. */
+    private final URL url;
+    /** Peers parsed once from {@link #PARAM_CLUSTER_MEMBERS}, joined at {@link #start()}. */
+    private final ClusterSpec cluster;
+
     private final ServiceStorage serviceStorage;
     private final ConnectionManager connectionManager;
     private final ClusterManager clusterManager;
@@ -92,6 +97,8 @@ public class HarborServer {
     }
 
     public HarborServer(URL url, HarborNodeTransport transport) {
+        this.url = url;
+        this.cluster = ClusterSpec.fromServerAddr(url.getParameter(PARAM_CLUSTER_MEMBERS));
         this.connectionManager = new ConnectionManager();
         // Health verdicts are replicated data: the node that judges one must
         // re-publish the client, so reuse the coalesced outbound sync path that
@@ -152,38 +159,40 @@ public class HarborServer {
     }
 
     public void start() {
-        // Auto-join cluster members from URL parameter
-        String clusterMembersParam = wireServer.getUrl().getParameter(PARAM_CLUSTER_MEMBERS);
-        if (clusterMembersParam != null && !clusterMembersParam.isEmpty()) {
-            for (String addr : clusterMembersParam.split(",")) {
-                String trimmed = addr.trim();
-                if (!trimmed.isEmpty()) {
-                    addClusterMember(trimmed);
-                }
-            }
-            log.info("[harbor] auto-joined cluster with {} members", clusterManager.size());
-        }
-
+        joinCluster();
         wireServer.open();
         distroProtocol.start();
         healthCheckScheduler.start();
-
-        // Start HTTP/1.1 management API (port from URL param, default grpcPort + 10)
-        int grpcPort = wireServer.getUrl().getPort();
-        String httpApiPortStr = wireServer.getUrl().getParameter("httpApiPort");
-        int httpApiPort = httpApiPortStr != null ? Integer.parseInt(httpApiPortStr) : grpcPort + 10;
-        if (httpApiPort > 0) {
-            try {
-                httpApi = new HarborHttpApi(this, httpApiPort);
-                httpApi.start();
-            } catch (Exception e) {
-                log.warn("[harbor] failed to start HTTP management API on port {}: {}",
-                        httpApiPort, e.getMessage());
-            }
-        }
+        startHttpApi();
 
         log.info("[harbor] server started on port {} (cluster size={})",
-                wireServer.getUrl().getPort(), clusterManager.size());
+                url.getPort(), clusterManager.size());
+    }
+
+    /** Adopt the peers parsed from {@link #PARAM_CLUSTER_MEMBERS} before serving. */
+    private void joinCluster() {
+        if (cluster.isEmpty()) {
+            return;
+        }
+        cluster.serverList().forEach(this::addClusterMember);
+        log.info("[harbor] auto-joined cluster with {} members", clusterManager.size());
+    }
+
+    /** Management API binds {@code httpApiPort} from the URL, defaulting to {@code grpcPort + 10}. */
+    private void startHttpApi() {
+        int grpcPort = url.getPort();
+        String httpApiPortStr = url.getParameter("httpApiPort");
+        int httpApiPort = httpApiPortStr != null ? Integer.parseInt(httpApiPortStr) : grpcPort + 10;
+        if (httpApiPort <= 0) {
+            return;
+        }
+        try {
+            httpApi = new HarborHttpApi(this, httpApiPort);
+            httpApi.start();
+        } catch (Exception e) {
+            log.warn("[harbor] failed to start HTTP management API on port {}: {}",
+                    httpApiPort, e.getMessage());
+        }
     }
 
     public void close() {
