@@ -343,11 +343,83 @@ class HarborClientTest {
     }
 
     // ========================================================================
+    // Batch registration = whole-set replace (nacos-client compatibility)
+    // ========================================================================
+
+    /**
+     * The compatibility contract that drove harbor's batch to a replace: a real
+     * nacos-client expresses a batch deregistration by re-sending a smaller batch
+     * (retain + batchRegister), because Nacos's server replaces the whole set a client
+     * owns. That only works if harbor treats a batch the same way — so drive it with
+     * {@code nacosNaming} itself and read the result back from the native client.
+     */
+    @Test
+    void nacosClientBatchDeregisterIsHonoredByHarbor() throws Exception {
+        try (HarborClient client = newClient()) {
+            nacosNaming.batchRegisterInstance("nacos-batch-drop", "DEFAULT_GROUP",
+                    List.of(nacosInstance("127.0.0.1", 9910), nacosInstance("127.0.0.1", 9911)));
+            awaitTrue(() -> client.getInstances("nacos-batch-drop").size() == 2, 8_000);
+
+            // nacos-client sends batchRegister([:9911]) here; harbor must drop :9910.
+            nacosNaming.batchDeregisterInstance("nacos-batch-drop", "DEFAULT_GROUP",
+                    List.of(nacosInstance("127.0.0.1", 9910)));
+            awaitTrue(() -> client.getInstances("nacos-batch-drop").size() == 1, 8_000);
+            assertEquals(9911, client.getInstances("nacos-batch-drop").get(0).getPort(),
+                    "harbor left the batch-deregistered instance registered (additive, not replace)");
+        }
+    }
+
+    /**
+     * Retaining nothing is how a nacos-client batch-deregisters every instance: it
+     * re-registers an empty batch. Harbor must read that as "clear", not reject it as
+     * a missing-instances request.
+     */
+    @Test
+    void nacosClientBatchDeregisterOfEveryInstanceClearsTheService() throws Exception {
+        try (HarborClient client = newClient()) {
+            nacosNaming.batchRegisterInstance("nacos-batch-clear", "DEFAULT_GROUP",
+                    List.of(nacosInstance("127.0.0.1", 9920), nacosInstance("127.0.0.1", 9921)));
+            awaitTrue(() -> client.getInstances("nacos-batch-clear").size() == 2, 8_000);
+
+            nacosNaming.batchDeregisterInstance("nacos-batch-clear", "DEFAULT_GROUP",
+                    List.of(nacosInstance("127.0.0.1", 9920), nacosInstance("127.0.0.1", 9921)));
+            awaitTrue(() -> client.getInstances("nacos-batch-clear").isEmpty(), 8_000);
+        }
+    }
+
+    /**
+     * The mirror direction: the native client's retain + batch-register path must be
+     * seen as a removal by a real nacos-client observer.
+     */
+    @Test
+    void nativeBatchDeregisterIsVisibleToNacosClient() throws Exception {
+        try (HarborClient client = newClient()) {
+            client.batchRegisterInstance("native-batch-drop", List.of(
+                    instance("127.0.0.1", 9930), instance("127.0.0.1", 9931)));
+            awaitTrue(() -> nacosInstances("native-batch-drop").size() == 2, 8_000);
+
+            client.batchDeregisterInstance("native-batch-drop",
+                    List.of(instance("127.0.0.1", 9930)));
+            awaitTrue(() -> nacosInstances("native-batch-drop").size() == 1, 8_000);
+            assertEquals(9931, nacosInstances("native-batch-drop").get(0).getPort());
+        }
+    }
+
+    // ========================================================================
     // Helpers
     // ========================================================================
 
     private static HarborClient newClient() {
         return new HarborClient("127.0.0.1", port);
+    }
+
+    private static com.alibaba.nacos.api.naming.pojo.Instance nacosInstance(String ip, int listenPort) {
+        com.alibaba.nacos.api.naming.pojo.Instance instance =
+                new com.alibaba.nacos.api.naming.pojo.Instance();
+        instance.setIp(ip);
+        instance.setPort(listenPort);
+        instance.setEphemeral(true);
+        return instance;
     }
 
     private static Instance instance(String ip, int listenPort) {

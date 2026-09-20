@@ -82,13 +82,14 @@ final class HarborConnection implements Closeable {
     /** Replaced on every attempt: a completed subject cannot be reopened. */
     private volatile StreamSubject<Object> outbound;
     private volatile CompletableFuture<Void> setupAck;
+
     private volatile boolean closed;
 
     HarborConnection(HarborClientConfig config,
                      Consumer<Payload> pushSink,
                      Runnable replayHook) {
         this.config = config;
-        this.clientIp = NetUtils.getLocalAddress(Map.of(config.host(), config.port())).getHostAddress();
+        this.clientIp = resolveClientIp();
         this.pushSink = pushSink;
         this.replayHook = replayHook;
         this.targets = config.allAddresses();
@@ -101,6 +102,18 @@ final class HarborConnection implements Closeable {
             thread.setDaemon(true);
             return thread;
         });
+    }
+
+    /**
+     * The local address the registry should see us on: probe which NIC can reach the
+     * primary, so a multi-homed host reports the right one rather than a loopback
+     * default. Configured as data on the client; the probe belongs here, with the
+     * endpoint it resolves.
+     */
+    private String resolveClientIp() {
+        String[] primary = config.primary().split(":");
+        return NetUtils.getLocalAddress(Map.of(primary[0], Integer.parseInt(primary[1])))
+                .getHostAddress();
     }
 
     void start() {

@@ -180,6 +180,53 @@ public class ServiceStorage {
         log.debug("[harbor] instance deregister (no match): {} -> {}:{}", key, ip, port);
     }
 
+    /**
+     * Apply a batch registration as the authoritative instance set this connection
+     * owns for one service: every instance in {@code desired} is (re-)registered, and
+     * any instance the connection previously held for the service that is <em>absent</em>
+     * from the batch is deregistered. An empty {@code desired} therefore clears the
+     * connection's registrations for the service.
+     * <p>
+     * This is what makes harbor compatible with nacos-client, whose
+     * {@code batchRegisterInstance} Nacos's server treats as a whole-set replace — the
+     * only reason a nacos-client can express a batch deregistration by re-sending a
+     * smaller batch (its {@code getRetainInstance}). Harbor's batch was previously a
+     * plain merge, so a shrinking batch silently added the survivors back while leaving
+     * the dropped ones registered; an instance-level {@code deregisterInstance} would
+     * also be unable to clear a whole service, since nacos sends no batch-remove verb.
+     * <p>
+     * Removal is keyed by address + port, matching {@link #deregisterInstance} and
+     * Nacos's {@code getRetainInstance}. Instances are held per {@link ClientSession}
+     * (source of truth) with only the connectionId in the publisher index, so the
+     * reconcile is scoped to this connection and never touches siblings'.
+     */
+    public void batchReconcile(String namespace, String group, String serviceName,
+                                String connectionId, List<Instance> desired) {
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
+        Set<String> keep = new HashSet<>();
+        for (Instance each : desired) {
+            keep.add(addressKey(each));
+        }
+
+        // Deregister the dropped instances first so a shrinking batch cannot be undone
+        // by the re-registration that follows; snapshot the held set before mutating it.
+        ClientSession session = connectionManager.getClientSession(connectionId);
+        if (session != null) {
+            for (Instance held : new ArrayList<>(session.getInstances(key))) {
+                if (!keep.contains(addressKey(held))) {
+                    deregisterInstance(namespace, group, serviceName, held, connectionId);
+                }
+            }
+        }
+        for (Instance each : desired) {
+            registerInstance(namespace, group, serviceName, each, connectionId);
+        }
+    }
+
+    private static String addressKey(Instance instance) {
+        return instance.getIp() + "#" + instance.getPort();
+    }
+
     // ========================================================================
     // Instance query — aggregated from ClientSession (Nacos-style)
     // ========================================================================

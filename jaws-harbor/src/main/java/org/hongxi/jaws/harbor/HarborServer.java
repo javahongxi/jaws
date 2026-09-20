@@ -583,8 +583,9 @@ public class HarborServer {
         String groupName = request.getGroupName();
         String serviceName = request.getServiceName();
 
-        List<Instance> instances = request.getInstances();
-        for (Instance each : instances == null ? List.<Instance>of() : instances) {
+        List<Instance> instances =
+                request.getInstances() == null ? List.of() : request.getInstances();
+        for (Instance each : instances) {
             if (!each.isEphemeral()) {
                 return HarborProtocol.encodeError(
                         HarborProtocol.typeToken(BatchInstanceResponse.class),
@@ -592,19 +593,18 @@ public class HarborServer {
                                 + HarborProtocol.UNSUPPORTED_BOUNDARY);
             }
         }
-        if (instances == null || instances.isEmpty()) {
-            return HarborProtocol.encodeError(
-                    HarborProtocol.typeToken(BatchInstanceResponse.class), "Missing instances");
-        }
 
+        // The batch is the complete set this connection owns for the service, so an
+        // empty list is meaningful, not an error: it is a nacos-client's batch
+        // deregistration of every instance (retain + re-register the empty remainder).
+        String groupedName = groupName + "@@" + serviceName;
         for (Instance instance : instances) {
             // Set default instanceId if not provided
             if (instance.getInstanceId() == null || instance.getInstanceId().isEmpty()) {
-                String groupedName = groupName + "@@" + serviceName;
                 instance.setInstanceId(instance.getIp() + "#" + instance.getPort() + "#" + groupedName);
             }
-            serviceStorage.registerInstance(namespace, groupName, serviceName, instance, connectionId);
         }
+        serviceStorage.batchReconcile(namespace, groupName, serviceName, connectionId, instances);
 
         // Sync full client state to peers after batch registration
         syncClientDataToPeers(connectionId);

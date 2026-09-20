@@ -1,5 +1,6 @@
 package org.hongxi.jaws.harbor.client;
 
+import org.hongxi.jaws.common.VisibleForTesting;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.harbor.HarborProtocol;
 import org.hongxi.jaws.harbor.model.Instance;
@@ -22,9 +23,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
@@ -56,11 +58,11 @@ public class HarborClient implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(HarborClient.class);
 
     private final HarborClientConfig config;
+    private final HarborConnection connection;
     private final Map<ServiceKey, InstanceRedoData> registrations = new ConcurrentHashMap<>();
     private final Map<ServiceKey, ServiceSubscription> subscriptions = new ConcurrentHashMap<>();
     private final ExecutorService notifier;
     private final ScheduledExecutorService redoScheduler;
-    private final HarborConnection connection;
 
     public HarborClient(String host, int port) {
         this(HarborClientConfig.of(host, port));
@@ -68,13 +70,13 @@ public class HarborClient implements Closeable {
 
     public HarborClient(HarborClientConfig config) {
         this.config = config;
+        this.connection = new HarborConnection(config, this::onPushFrame, this::replayOwnedState);
+        this.connection.start();
         this.notifier = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "harbor-client-notifier");
             thread.setDaemon(true);
             return thread;
         });
-        this.connection = new HarborConnection(config, this::onPushFrame, this::replayOwnedState);
-        this.connection.start();
         this.redoScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "harbor-client-redo");
             thread.setDaemon(true);
@@ -92,10 +94,12 @@ public class HarborClient implements Closeable {
      * collection. Exposed for this package's tests: deferred removal is only safe if
      * the pass really collects.
      */
+    @VisibleForTesting
     int registrationCount() {
         return registrations.size();
     }
 
+    @VisibleForTesting
     int subscriptionCount() {
         return subscriptions.size();
     }
@@ -145,6 +149,16 @@ public class HarborClient implements Closeable {
         // collects it, exactly as Nacos defers collection to its RedoScheduledTask.
     }
 
+    private void sendInstanceRequest(ServiceKey key, Instance instance, String operation) {
+        InstanceRequest request = new InstanceRequest();
+        request.setNamespace(key.namespace());
+        request.setGroupName(key.group());
+        request.setServiceName(key.name());
+        request.setType(operation);
+        request.setInstance(instance);
+        connection.call(request, InstanceResponse.class);
+    }
+
     /**
      * Register several instances of one service in a single request, as Nacos's
      * {@code batchRegisterInstance} does.
@@ -168,28 +182,36 @@ public class HarborClient implements Closeable {
         }
         BatchInstanceRedoData entry = new BatchInstanceRedoData(instances);
         registrations.put(key, entry);
-        sendBatchRequest(key, instances, HarborProtocol.BATCH_REGISTER_INSTANCE);
+        sendBatchRegisterRequest(key, instances);
         entry.registered();
     }
 
-    private void sendBatchRequest(ServiceKey key, List<Instance> instances, String operation) {
+    private void sendBatchRegisterRequest(ServiceKey key, List<Instance> instances) {
         BatchInstanceRequest request = new BatchInstanceRequest();
         request.setNamespace(key.namespace());
         request.setGroupName(key.group());
         request.setServiceName(key.name());
-        request.setType(operation);
+        request.setType(HarborProtocol.BATCH_REGISTER_INSTANCE);
         request.setInstances(instances);
         connection.call(request, BatchInstanceResponse.class);
     }
 
     /**
-     * Drop several instances of one service.
+     * Drop several instances of one service, expressed the way Nacos expresses it:
+     * as a batch re-registration of the instances that survive.
      * <p>
-     * Nacos expresses this as {@code retain + batchRegister}, because a batch there
-     * replaces the whole instance set its client owns for that service. Harbor's
-     * deregister is already instance-level, so the calls go one by one — what still
-     * has to be done is to shrink the redo entry to the remainder, otherwise a later
-     * replay would dutifully register the ones we were asked to remove.
+     * Harbor's {@code batchRegisterInstance} is a replace — the batch is the whole
+     * set this connection owns for the service, exactly like Nacos — so a batch has
+     * no "remove" verb of its own. We take the redo entry's current instances, drop
+     * the addressed ones, and send the remainder back as one batch request. The redo
+     * is rewritten to the remainder <em>before</em> the request goes out, so a failed
+     * send leaves the removal owed and the next replay converges instead of
+     * resurrecting what we dropped. An empty remainder is still sent: it is how a
+     * full batch deregistration clears the service.
+     * <p>
+     * As in Nacos, a batch may only be shrunk from another batch — a service first
+     * registered instance-by-instance has no {@link BatchInstanceRedoData} to retain
+     * from, and is rejected rather than silently converted.
      */
     public void batchDeregisterInstance(String serviceName, List<Instance> instances) {
         batchDeregisterInstance(serviceName, config.defaultGroup(), instances);
@@ -201,42 +223,37 @@ public class HarborClient implements Closeable {
             throw new IllegalArgumentException("no instances to deregister for " + serviceName);
         }
         ServiceKey key = keyOf(serviceName, groupName);
+        Set<String> removals = new HashSet<>();
         for (Instance each : instances) {
             requireEphemeral(key, each);
-            sendInstanceRequest(key, each, HarborProtocol.DEREGISTER_INSTANCE);
+            removals.add(addressKey(each));
         }
         InstanceRedoData entry = registrations.get(key);
         if (entry == null) {
             return;
         }
-        List<Instance> remainder = new ArrayList<>(entry.instances());
-        for (Instance removal : instances) {
-            remainder.removeIf(held -> sameInstance(held, removal));
+        if (!(entry instanceof BatchInstanceRedoData batch)) {
+            throw new IllegalArgumentException(
+                    "batch deregister requires a batch registration: " + serviceName);
         }
-        if (remainder.isEmpty()) {
-            registrations.remove(key);
-            return;
+        List<Instance> retain = new ArrayList<>();
+        for (Instance held : batch.instances()) {
+            if (!removals.contains(addressKey(held))) {
+                retain.add(held);
+            }
         }
-        // Rebuild the entry from the remainder: a batch entry's own list is what the
-        // replay reads, so shrinking it by writing the single-instance field would
-        // leave the removed instance owed. The remainder is still held by the server,
-        // so the rebuilt entry carries that confirmation — dropping it would make the
-        // next pass re-register what nothing asked for.
-        InstanceRedoData shrunk = remainder.size() > 1
-                ? new BatchInstanceRedoData(remainder)
-                : new InstanceRedoData(remainder.get(0));
-        shrunk.registered();
+        // Local truth becomes the remainder first (Nacos does the same under its redo
+        // lock): the replay reads this entry, so it must already exclude the removed
+        // set before the request leaves, or a lost reply re-registers what we dropped.
+        BatchInstanceRedoData shrunk = new BatchInstanceRedoData(retain);
         registrations.put(key, shrunk);
+        sendBatchRegisterRequest(key, retain);
+        shrunk.registered();
     }
 
-    private void sendInstanceRequest(ServiceKey key, Instance instance, String operation) {
-        InstanceRequest request = new InstanceRequest();
-        request.setNamespace(key.namespace());
-        request.setGroupName(key.group());
-        request.setServiceName(key.name());
-        request.setType(operation);
-        request.setInstance(instance);
-        connection.call(request, InstanceResponse.class);
+    /** Address + port identity, matching {@code ServiceStorage} deregistration and Nacos {@code getRetainInstance}. */
+    private static String addressKey(Instance instance) {
+        return instance.getIp() + "#" + instance.getPort();
     }
 
     // ========================================================================
@@ -332,20 +349,6 @@ public class HarborClient implements Closeable {
                 pageNo, pageSize);
     }
 
-    public boolean serverHealthy() {
-        return connection.serverHealthy();
-    }
-
-    /**
-     * The connection behind this client. Package-private rather than public:
-     * recovery is driven by call failures and by the keep-alive, so callers have
-     * nothing to do here — it exists so this package's tests can exercise the
-     * reconnect path without a fake transport.
-     */
-    HarborConnection connection() {
-        return connection;
-    }
-
     // ========================================================================
     // Subscription
     // ========================================================================
@@ -380,7 +383,7 @@ public class HarborClient implements Closeable {
         ServiceKey key = keyOf(serviceName, groupName);
         ServiceSubscription subscription = subscriptions.computeIfAbsent(key,
                 found -> new ServiceSubscription(found, clusters));
-        boolean first = !subscription.hasListeners();
+        boolean first = subscription.listeners().isEmpty();
         subscription.addListener(listener);
         if (!first) {
             // Already watched: hand over what we believe without another round trip.
@@ -412,16 +415,16 @@ public class HarborClient implements Closeable {
         if (subscription == null) {
             return;
         }
-        if (!subscription.removeListener(listener)) {
-            return;
+        subscription.removeListener(listener);
+        if (subscription.listeners().isEmpty()) {
+            // Same order as a deregister: owed until the server confirms it is gone,
+            // so a lost reply leaves the removal for the next replay pass rather than
+            // silently re-subscribing an unwatched service.
+            subscription.expectUnregistered();
+            sendSubscribe(key, subscription.clusters(), false);
+            subscription.unregistered();
+            // Collected by the redo pass, not here.
         }
-        // Same order as a deregister: owed until the server confirms it is gone,
-        // so a lost reply leaves the removal for the next replay pass rather than
-        // silently re-subscribing an unwatched service.
-        subscription.expectUnregistered();
-        sendSubscribe(key, subscription.clusters(), false);
-        subscription.unregistered();
-        // Collected by the redo pass, not here.
     }
 
     private SubscribeServiceResponse sendSubscribe(ServiceKey key, String clusters,
@@ -551,22 +554,23 @@ public class HarborClient implements Closeable {
      */
     private void sendRegistration(ServiceKey key, InstanceRedoData entry) {
         if (entry instanceof BatchInstanceRedoData batch) {
-            sendBatchRequest(key, batch.instances(), HarborProtocol.BATCH_REGISTER_INSTANCE);
+            sendBatchRegisterRequest(key, batch.instances());
             return;
         }
         sendInstanceRequest(key, entry.instance(), HarborProtocol.REGISTER_INSTANCE);
     }
 
     /**
-     * Complete an owed removal. A batch entry is taken down instance by instance:
-     * Nacos has no batch-deregister action constant, so its redo pass would hand a
-     * null instance to the single path here — we do the obvious thing instead.
+     * Complete an owed removal. A batch is taken down the same way the live API
+     * shrinks one — a batch register of the empty remainder. A batch is a whole-set
+     * replace, so the empty set clears every instance this connection holds for the
+     * service in a single round trip (and a single peer sync), instead of a
+     * per-instance deregister each. Only a single-instance entry uses the
+     * instance-level verb.
      */
     private void deregisterEntry(ServiceKey key, InstanceRedoData entry) {
-        if (entry instanceof BatchInstanceRedoData batch) {
-            for (Instance each : batch.instances()) {
-                sendInstanceRequest(key, each, HarborProtocol.DEREGISTER_INSTANCE);
-            }
+        if (entry instanceof BatchInstanceRedoData) {
+            sendBatchRegisterRequest(key, List.of());
             return;
         }
         sendInstanceRequest(key, entry.instance(), HarborProtocol.DEREGISTER_INSTANCE);
@@ -609,19 +613,6 @@ public class HarborClient implements Closeable {
         }
     }
 
-    /**
-     * Whether a caller's handle refers to this instance. An instance is identified
-     * by where it listens — address, port and cluster — not by the rest of its
-     * fields: weight, health and metadata are properties that change while the
-     * instance stays the same one. Nacos compares these objects by toString(), which
-     * silently stops matching the moment any of those properties move.
-     */
-    private static boolean sameInstance(Instance held, Instance other) {
-        return held.getPort() == other.getPort()
-                && Objects.equals(held.getIp(), other.getIp())
-                && Objects.equals(held.getClusterName(), other.getClusterName());
-    }
-
     private static void requireEphemeral(ServiceKey key, Instance instance) {
         if (!instance.isEphemeral()) {
             throw new IllegalArgumentException(key.toKeyString()
@@ -633,6 +624,21 @@ public class HarborClient implements Closeable {
         return ServiceKey.of(config.namespace(),
                 groupName == null || groupName.isEmpty() ? config.defaultGroup() : groupName,
                 serviceName);
+    }
+
+    public boolean serverHealthy() {
+        return connection.serverHealthy();
+    }
+
+    /**
+     * The connection behind this client. Package-private rather than public:
+     * recovery is driven by call failures and by the keep-alive, so callers have
+     * nothing to do here — it exists so this package's tests can exercise the
+     * reconnect path without a fake transport.
+     */
+    @VisibleForTesting
+    HarborConnection connection() {
+        return connection;
     }
 
     /**

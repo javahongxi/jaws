@@ -1,5 +1,7 @@
 package org.hongxi.jaws.harbor.client;
 
+import org.hongxi.jaws.common.VisibleForTesting;
+
 /**
  * Redo bookkeeping of one thing this client wants the registry to hold.
  * <p>
@@ -47,22 +49,6 @@ abstract class RedoData {
         return expectedRegistered ? RedoType.REGISTER : RedoType.REMOVE;
     }
 
-    boolean isExpectedRegistered() {
-        return expectedRegistered;
-    }
-
-    void setExpectedRegistered(boolean expectedRegistered) {
-        this.expectedRegistered = expectedRegistered;
-    }
-
-    boolean isRegistered() {
-        return registered;
-    }
-
-    boolean isUnregistering() {
-        return unregistering;
-    }
-
     /**
      * Confirm the entry is held by the registry.
      */
@@ -102,5 +88,15 @@ abstract class RedoData {
      */
     void markDirty() {
         this.registered = false;
+    }
+
+    @VisibleForTesting
+    boolean isExpectedRegistered() {
+        return expectedRegistered;
+    }
+
+    @VisibleForTesting
+    void setExpectedRegistered(boolean expectedRegistered) {
+        this.expectedRegistered = expectedRegistered;
     }
 }
