@@ -104,21 +104,37 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
 
     @Override
     public void setConfig(String key, String value) {
+        if (value == null) {
+            throw new IllegalArgumentException("value must not be null; use removeConfig(key) to delete");
+        }
         if (configService == null) {
             log.warn("configService not initialized, cannot set key={}", key);
             return;
         }
         try {
-            if (value == null) {
-                configService.removeConfig(key, DEFAULT_GROUP);
-                localCache.remove(key);
-            } else {
-                configService.publishConfig(key, DEFAULT_GROUP, value);
-                localCache.put(key, value);
-                ensureNacosListener(key);
-            }
+            configService.publishConfig(key, DEFAULT_GROUP, value);
+            localCache.put(key, value);
+            ensureNacosListener(key);
         } catch (NacosException e) {
             log.warn("failed to set config: key={}", key, e);
+        }
+    }
+
+    @Override
+    public boolean removeConfig(String key) {
+        if (configService == null) {
+            log.warn("configService not initialized, cannot remove key={}", key);
+            return false;
+        }
+        try {
+            boolean removed = configService.removeConfig(key, DEFAULT_GROUP);
+            localCache.remove(key);
+            // The registered Nacos listener fires onConfigChanged(null) on its own,
+            // matching how publish-driven changes propagate; no manual notify here.
+            return removed;
+        } catch (NacosException e) {
+            log.warn("failed to remove config: key={}", key, e);
+            return false;
         }
     }
 

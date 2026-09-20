@@ -44,6 +44,10 @@ public class DynamicConfigurationUtils {
         dynamicConfiguration.setConfig(key, value);
     }
 
+    public static boolean removeConfig(String key) {
+        return dynamicConfiguration.removeConfig(key);
+    }
+
     public static boolean isEnabled(String key) {
         return dynamicConfiguration.isEnabled(key);
     }

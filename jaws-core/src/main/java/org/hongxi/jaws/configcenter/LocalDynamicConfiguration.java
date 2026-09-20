@@ -35,11 +35,17 @@ public class LocalDynamicConfiguration implements DynamicConfiguration {
     @Override
     public void setConfig(String key, String value) {
         if (value == null) {
-            configs.remove(key);
-        } else {
-            configs.put(key, value);
+            throw new IllegalArgumentException("value must not be null; use removeConfig(key) to delete");
         }
+        configs.put(key, value);
         notifyListeners(key, value);
+    }
+
+    @Override
+    public boolean removeConfig(String key) {
+        boolean removed = configs.remove(key) != null;
+        notifyListeners(key, null);
+        return removed;
     }
 
     @Override

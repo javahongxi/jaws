@@ -122,31 +122,47 @@ public class ZookeeperDynamicConfiguration implements DynamicConfiguration {
 
     @Override
     public void setConfig(String key, String value) {
+        if (value == null) {
+            throw new IllegalArgumentException("value must not be null; use removeConfig(key) to delete");
+        }
         if (curator == null) {
             log.warn("curator not initialized, cannot set key={}", key);
             return;
         }
         try {
             String path = toConfigPath(key);
-            byte[] data = value != null ? value.getBytes(StandardCharsets.UTF_8) : null;
+            byte[] data = value.getBytes(StandardCharsets.UTF_8);
             if (curator.checkExists().forPath(path) == null) {
-                if (data != null) {
-                    curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(path, data);
-                    localCache.put(key, value);
-                    ensureCacheListener(key);
-                }
+                curator.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(path, data);
             } else {
-                if (data != null) {
-                    curator.setData().forPath(path, data);
-                    localCache.put(key, value);
-                    ensureCacheListener(key);
-                } else {
-                    curator.delete().forPath(path);
-                    localCache.remove(key);
-                }
+                curator.setData().forPath(path, data);
             }
+            localCache.put(key, value);
+            ensureCacheListener(key);
         } catch (Exception e) {
             log.warn("failed to set config: key={}", key, e);
+        }
+    }
+
+    @Override
+    public boolean removeConfig(String key) {
+        if (curator == null) {
+            log.warn("curator not initialized, cannot remove key={}", key);
+            return false;
+        }
+        try {
+            String path = toConfigPath(key);
+            if (curator.checkExists().forPath(path) == null) {
+                return false;
+            }
+            curator.delete().forPath(path);
+            localCache.remove(key);
+            // The CuratorCache watcher emits NODE_DELETED -> updateCacheFromRemote(key, null),
+            // which notifies listeners; no manual notify here.
+            return true;
+        } catch (Exception e) {
+            log.warn("failed to remove config: key={}", key, e);
+            return false;
         }
     }
 

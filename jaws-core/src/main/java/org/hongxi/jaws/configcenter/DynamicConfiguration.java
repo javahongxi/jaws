@@ -70,11 +70,28 @@ public interface DynamicConfiguration {
 
     /**
      * Set configuration value.
+     * <p>
+     * A {@code null} value is rejected: deletion is an explicit
+     * {@link #removeConfig(String)}, not an overload of "set" — so a caller can
+     * never accidentally delete by passing {@code null}.
      *
      * @param key   the configuration key
-     * @param value the value to set
+     * @param value the value to set; must not be {@code null}
      */
     void setConfig(String key, String value);
+
+    /**
+     * Remove a configuration value.
+     * <p>
+     * Distinct from {@code setConfig(key, "")} or disabling a toggle: removal
+     * deletes this layer's override so resolution falls through to the next-broadest
+     * scope (method &rarr; service &rarr; global), and the key stops existing.
+     *
+     * @param key the configuration key to remove
+     * @return {@code true} only if a value was present and got removed; {@code false}
+     *         if nothing was set for the key (an actual deletion happened, not a no-op)
+     */
+    boolean removeConfig(String key);
 
     /**
      * Get integer configuration value by key with a default.
