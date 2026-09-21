@@ -54,7 +54,7 @@ NamingGrpcClientProxy.doRegisterService
 | `getServiceList` | `ServiceListRequest` | — | `ServiceListResponse` |
 | 服务端推送 | `NotifySubscriberRequest`（server→client） | — | 客户端回 `NotifySubscriberResponse` |
 
-**两级分派**：`metadata.type` 只定位到"哪个类"，**动作（register/deregister/batch）在 JSON body 的 `type` 字段**（`NamingRemoteConstants`）。所以 `InstanceRequest` 既承载注册也承载注销，靠 payload.type 区分。
+**两级分派**：`metadata.type` 只定位到"哪个类"（`GrpcUtils` 取 `getClass().getSimpleName()`），动作在 JSON body 的 `type` 字段（`NamingRemoteConstants`）。注意 batch 走的是独立类 `BatchInstanceRequest`，在 `metadata.type` 一级就分开了；**只有 register/deregister 共用 `InstanceRequest`，才靠 payload.type 区分。**
 
 **推送落地**：`start()` 注册 `NamingPushRequestHandler` 为 server-request handler；收到 `NotifySubscriberRequest` 时调 `serviceInfoHolder.processServiceInfo(...)` 更新本地缓存，并回一个空的 `NotifySubscriberResponse` 作 ack。
 
