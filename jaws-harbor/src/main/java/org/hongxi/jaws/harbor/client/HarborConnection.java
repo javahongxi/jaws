@@ -11,9 +11,11 @@ import org.hongxi.jaws.harbor.model.request.ConnectionSetupRequest;
 import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
 import org.hongxi.jaws.harbor.model.request.HealthCheckRequest;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
+import org.hongxi.jaws.harbor.model.request.ServerCheckRequest;
 import org.hongxi.jaws.harbor.model.request.SetupAckRequest;
 import org.hongxi.jaws.harbor.model.response.ConnectResetResponse;
 import org.hongxi.jaws.harbor.model.response.HealthCheckResponse;
+import org.hongxi.jaws.harbor.model.response.ServerCheckResponse;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.URL;
@@ -73,6 +75,15 @@ final class HarborConnection implements Closeable {
     /** The address we are attached to; a redirect or a failover moves it. */
     private volatile String host;
     private volatile int port;
+
+    /**
+     * The id the node assigned us for the current connection, minted per TCP link at
+     * {@link #establish()}. Kept purely as our half of the log correlation the server
+     * does under {@code connId=}: every later recovery and the close name the same id,
+     * so one connection can be traced end to end across both sides' logs.
+     */
+    private volatile String connectionId;
+
     private volatile WireClient wireClient;
     private final Consumer<Payload> pushSink;
     private final Consumer<Payload> configSink;
@@ -201,6 +212,7 @@ final class HarborConnection implements Closeable {
         if (closed) {
             return;
         }
+        log.info("[harbor-client] recovering connection connId={}", connectionId);
         // End the old request stream first. Its absence is how harbor learns the
         // previous connection is gone; skipping it would leave that session — and
         // everything registered under its id — to age out in the watchdog instead.
@@ -227,9 +239,10 @@ final class HarborConnection implements Closeable {
     }
 
     /**
-     * Attach to the first node that answers and open its notification stream: the one
-     * we are on first, then the rest of the list from the cursor. Failing all of them
-     * is reported as one event listing every address tried.
+     * Attach to the first node that answers — TCP up, server check passed — and open
+     * its notification stream: the one we are on first, then the rest of the list
+     * from the cursor. Failing all of them is reported as one event listing every
+     * address tried.
      */
     private void establish() {
         List<String> candidates = candidateOrder();
@@ -238,10 +251,14 @@ final class HarborConnection implements Closeable {
         for (String candidate : candidates) {
             try {
                 attachTo(candidate);
+                serverCheck();
                 openNotificationStream();
-                if (!candidate.equals(attachedBefore)) {
-                    log.warn("[harbor-client] attached to {} instead of {}", candidate,
-                            attachedBefore);
+                if (candidate.equals(attachedBefore)) {
+                    log.info("[harbor-client] attached to {} as connId={}", candidate,
+                            connectionId);
+                } else {
+                    log.warn("[harbor-client] attached to {} as connId={} instead of {}",
+                            candidate, connectionId, attachedBefore);
                 }
                 return;
             } catch (Exception e) {
@@ -251,6 +268,37 @@ final class HarborConnection implements Closeable {
         }
         throw new JawsServiceException("no harbor node reachable out of " + candidates.size()
                 + " (" + candidates + ")", last);
+    }
+
+    /**
+     * The unary handshake nacos-client performs before it opens a stream: a node
+     * must answer {@link ServerCheckRequest} with a connection id before we commit
+     * to it. Run from {@link #establish()} only, once per fresh TCP connection —
+     * the recover fast path reopens a stream on a channel that already passed this.
+     * A rejection is what moves the candidate walk on, so a port that is open but
+     * not harbor is turned away here rather than at the slower setup-ack timeout. A
+     * passing check records the assigned id on {@link #connectionId}, which the rest
+     * of this connection's logs then carry.
+     */
+    private void serverCheck() {
+        // doCall, not call: a failed check must surface as an exception the
+        // establish loop can catch, not trigger a nested recover().
+        ServerCheckResponse check = doCall(new ServerCheckRequest(), ServerCheckResponse.class);
+        if (!check.isSuccess()) {
+            throw new JawsServiceException("harbor server check rejected: resultCode="
+                    + check.getResultCode());
+        }
+        String assigned = check.getConnectionId();
+        if (assigned == null || assigned.isEmpty()) {
+            throw new JawsServiceException("harbor server check returned no connectionId");
+        }
+        this.connectionId = assigned;
+        if (check.isSupportAbilityNegotiation()) {
+            // Our own server always answers false; a client pointed at a negotiating
+            // node is told plainly instead of silently skipping the negotiation.
+            log.warn("[harbor-client] {}:{} requested ability negotiation, which the native"
+                    + " client does not implement", host, port);
+        }
     }
 
     /**
@@ -474,6 +522,7 @@ final class HarborConnection implements Closeable {
             return;
         }
         closed = true;
+        log.info("[harbor-client] closing connection connId={}", connectionId);
         keepAliveScheduler.shutdownNow();
         // Ending the request stream is what tells harbor we are gone: it runs the
         // same closure transaction as a dropped channel, so no explicit

@@ -33,6 +33,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Jaws Harbor — a Nacos-compatible service registry server.
@@ -80,6 +81,14 @@ public class HarborServer {
 
     /** Keeps a refused request type from being logged once per retry. */
     private final RefusalMeter refusals = new RefusalMeter();
+
+    /**
+     * Answered {@link ServerCheckRequest} handshakes. The client opens its
+     * notification stream under the same per-TCP id regardless, so a skipped
+     * handshake would otherwise pass a black-box test unnoticed; this counter is
+     * the one signal that pins the handshake itself onto the connection path.
+     */
+    private final AtomicLong serverChecks = new AtomicLong();
 
     /** Outstanding connect-reset orders, by connection id, awaiting the client ack. */
     private final Map<String, CompletableFuture<Void>> resetAcks = new ConcurrentHashMap<>();
@@ -212,6 +221,11 @@ public class HarborServer {
 
     public ServiceStorage getServiceStorage() {
         return serviceStorage;
+    }
+
+    /** How many {@link ServerCheckRequest} handshakes this node has answered. */
+    public long answeredServerChecks() {
+        return serverChecks.get();
     }
 
     public ConnectionManager getConnectionManager() {
@@ -541,6 +555,7 @@ public class HarborServer {
     // ========================================================================
 
     private Payload handleServerCheck(String clientIp, String connectionId) {
+        serverChecks.incrementAndGet();
         ServerCheckResponse response = new ServerCheckResponse();
         response.setResultCode(200);
         response.setSuccess(true);
