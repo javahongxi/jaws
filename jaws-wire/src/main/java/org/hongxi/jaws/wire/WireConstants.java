@@ -74,6 +74,17 @@ public final class WireConstants {
      * connections from the same client IP must be distinguished.
      */
     public static final String CONNECTION_ID = "x-wire-connection-id";
+
+    /**
+     * Call-context attachment carrying the peer host of the TCP connection a
+     * request arrived on, as the transport saw it. No registration is needed to
+     * get it, and no port: a source port is ephemeral and says nothing about who
+     * the caller is. Unlike the {@code clientIp} a sender writes into its own
+     * request body — which costs nothing to forge — this is the one peer identity
+     * the caller does not control.
+     */
+    public static final String CONNECTION_PEER = "x-wire-connection-peer";
+
     public static final CharSequence TE_TRAILERS = "trailers";
     public static final CharSequence HEADER_USER_AGENT = "user-agent";
     public static final String USER_AGENT = userAgent();

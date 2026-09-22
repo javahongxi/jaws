@@ -17,6 +17,7 @@ import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +57,10 @@ sealed interface WireCallDispatcher
      * simply reads them.  The wire layer does not interpret any specific key
      * — it is the application's responsibility to register the keys it needs
      * (e.g. {@link WireConstants#CONNECTION_ID}).
+     * <p>
+     * One key needs no registration: {@link WireConstants#CONNECTION_PEER}. The
+     * transport always knows who it accepted, and an application cannot register
+     * a fact only the transport can see, so the peer host is always merged in.
      *
      * @param ctx                    the stream channel context
      * @param baseAttachments        the base attachments (from gRPC headers)
@@ -67,14 +72,16 @@ sealed interface WireCallDispatcher
             ChannelHandlerContext ctx,
             Map<String, String> baseAttachments,
             Set<String> connectionAttributeKeys) {
-        if (connectionAttributeKeys.isEmpty()) {
-            return baseAttachments;
-        }
         io.netty.channel.Channel parent = ctx.channel().parent();
         if (parent == null) {
             return baseAttachments;
         }
         Map<String, String> merged = null;
+        String peerHost = peerHost(parent);
+        if (peerHost != null) {
+            merged = new HashMap<>(baseAttachments);
+            merged.put(WireConstants.CONNECTION_PEER, peerHost);
+        }
         for (String key : connectionAttributeKeys) {
             String value = parent.attr(AttributeKey.<String>valueOf(key)).get();
             if (value != null) {
@@ -85,6 +92,18 @@ sealed interface WireCallDispatcher
             }
         }
         return merged != null ? merged : baseAttachments;
+    }
+
+    /**
+     * @return the parent channel's remote host as the transport saw it, or
+     *         {@code null} when the connection has no addressable peer
+     */
+    private static String peerHost(io.netty.channel.Channel parent) {
+        if (parent.remoteAddress() instanceof InetSocketAddress address
+                && address.getAddress() != null) {
+            return address.getAddress().getHostAddress();
+        }
+        return null;
     }
 
     /**

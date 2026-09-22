@@ -50,7 +50,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * jaws-harbor using the standard {@code nacos-client} SDK.
  * <p>
  * Multi-node replication of service naming data runs over the Distro AP protocol
- * (see {@code doc/harbor-vs-nacos.md}).
+ * (see {@code doc/harbor-vs-nacos.md}). Unlike Nacos, which puts the naming face
+ * and the cluster face on two servers and two ports, this one answers both on a
+ * single port — so the request type is all that tells them apart, and the Distro
+ * handlers guard their own entrance instead: a cluster call is served only when
+ * the address the transport saw its connection arrive from belongs to a known
+ * member ({@link #refuseUnlessClusterMember}). Trust the peer address, never the
+ * {@code clientIp} inside a request body — the sender writes that one itself.
  *
  * @author shenhongxi
  */
@@ -317,10 +323,19 @@ public class HarborServer {
     // Request.request handler (unary)
     // ========================================================================
 
-    /** A single unary operation, given its envelope and the caller's identity. */
+    /**
+     * A single unary operation, given its envelope, the address the caller claims,
+     * and the call context — which carries what the transport knows about the
+     * caller (connection id, peer host) and cannot be forged by it.
+     */
     @FunctionalInterface
     private interface UnaryRequestHandler {
-        Payload handle(Payload payload, String clientIp, String connectionId);
+        Payload handle(Payload payload, String clientIp, WireCallContext context);
+    }
+
+    /** @return the id this TCP connection was minted, as the transport propagated it */
+    private static String connectionIdOf(WireCallContext context) {
+        return context.getAttachment(WireConstants.CONNECTION_ID);
     }
 
     /**
@@ -331,27 +346,28 @@ public class HarborServer {
     private Map<String, UnaryRequestHandler> buildUnaryHandlers() {
         Map<String, UnaryRequestHandler> handlers = new LinkedHashMap<>();
         handlers.put(HarborProtocol.typeToken(ServerCheckRequest.class),
-                (payload, clientIp, connectionId) -> handleServerCheck(clientIp, connectionId));
+                (payload, clientIp, context) -> handleServerCheck(clientIp,
+                        connectionIdOf(context)));
         handlers.put(HarborProtocol.typeToken(InstanceRequest.class), this::handleInstanceRequest);
         handlers.put(HarborProtocol.typeToken(BatchInstanceRequest.class),
                 this::handleBatchInstanceRequest);
         handlers.put(HarborProtocol.typeToken(SubscribeServiceRequest.class), this::handleSubscribe);
         handlers.put(HarborProtocol.typeToken(ServiceQueryRequest.class),
-                (payload, clientIp, connectionId) -> handleServiceQuery(payload));
+                (payload, clientIp, context) -> handleServiceQuery(payload));
         handlers.put(HarborProtocol.typeToken(ServiceListRequest.class),
-                (payload, clientIp, connectionId) -> handleServiceList(payload));
+                (payload, clientIp, context) -> handleServiceList(payload));
         handlers.put(HarborProtocol.typeToken(HealthCheckRequest.class),
-                (payload, clientIp, connectionId) -> handleHealthCheck());
+                (payload, clientIp, context) -> handleHealthCheck());
         handlers.put(HarborProtocol.typeToken(DistroSyncRequest.class),
-                (payload, clientIp, connectionId) -> handleDistroSync(payload));
+                (payload, clientIp, context) -> handleDistroSync(payload, context));
         handlers.put(HarborProtocol.typeToken(DistroVerifyRequest.class),
-                (payload, clientIp, connectionId) -> handleDistroVerify(payload));
+                (payload, clientIp, context) -> handleDistroVerify(payload, context));
         handlers.put(HarborProtocol.typeToken(DistroSnapshotRequest.class),
-                (payload, clientIp, connectionId) -> handleDistroSnapshot());
+                (payload, clientIp, context) -> handleDistroSnapshot(context));
         // Config center is out of scope for a naming registry; answer silently
         // so that nacos-client does not keep retrying the listen.
         handlers.put(HarborProtocol.CONFIG_LISTEN_REQUEST,
-                (payload, clientIp, connectionId) ->
+                (payload, clientIp, context) ->
                         HarborProtocol.encodeResponse(ConfigBatchListenResponse.ok()));
         return handlers;
     }
@@ -369,23 +385,17 @@ public class HarborServer {
             String type = payload.getMetadata().getType();
             String clientIp = payload.getMetadata().getClientIp();
 
-            // Resolve the connectionId from the wire call context (injected by
-            // the wire layer from the parent channel attribute).  This is the
-            // per-TCP-connection unique ID, safe even when multiple processes
-            // from the same clientIp connect simultaneously.
-            String connectionId = context.getAttachment(WireConstants.CONNECTION_ID);
-
             // Refresh the specific connection's active time. connectionId is minted per
             // TCP connection at setup (#5) and propagated via WireCallContext, so this is
             // always the precise path; the old clientIp fallback has been removed.
-            connectionManager.refreshActiveTime(connectionId);
+            connectionManager.refreshActiveTime(connectionIdOf(context));
 
             UnaryRequestHandler handler = unaryHandlers.get(type);
             if (handler == null) {
                 return refuseUnroutable(type);
             }
             try {
-                return handler.handle(payload, clientIp, connectionId);
+                return handler.handle(payload, clientIp, context);
             } catch (Exception e) {
                 log.error("[harbor] error handling request type={}", type, e);
                 return HarborProtocol.encodeError(type, e.getMessage());
@@ -564,7 +574,9 @@ public class HarborServer {
         return HarborProtocol.encodeResponse(response, clientIp);
     }
 
-    private Payload handleInstanceRequest(Payload payload, String clientIp, String connectionId) {
+    private Payload handleInstanceRequest(Payload payload, String clientIp,
+                                          WireCallContext context) {
+        String connectionId = connectionIdOf(context);
         InstanceRequest request = HarborProtocol.parseBody(payload, InstanceRequest.class);
         String namespace = request.getNamespace();
         String groupName = request.getGroupName();
@@ -620,7 +632,9 @@ public class HarborServer {
                 HarborProtocol.typeToken(InstanceResponse.class), message);
     }
 
-    private Payload handleBatchInstanceRequest(Payload payload, String clientIp, String connectionId) {
+    private Payload handleBatchInstanceRequest(Payload payload, String clientIp,
+                                               WireCallContext context) {
+        String connectionId = connectionIdOf(context);
         BatchInstanceRequest request = HarborProtocol.parseBody(payload, BatchInstanceRequest.class);
         if (!HarborProtocol.BATCH_REGISTER_INSTANCE.equals(request.getType())) {
             return HarborProtocol.encodeError(
@@ -664,7 +678,8 @@ public class HarborServer {
         return HarborProtocol.encodeResponse(response, clientIp);
     }
 
-    private Payload handleSubscribe(Payload payload, String clientIp, String connectionId) {
+    private Payload handleSubscribe(Payload payload, String clientIp, WireCallContext context) {
+        String connectionId = connectionIdOf(context);
         SubscribeServiceRequest request =
                 HarborProtocol.parseBody(payload, SubscribeServiceRequest.class);
         String namespace = request.getNamespace();
@@ -763,7 +778,33 @@ public class HarborServer {
     // Distro inter-node handlers
     // ========================================================================
 
-    private Payload handleDistroSync(Payload payload) {
+    /**
+     * Harbor answers the naming face and the cluster face on one port, so the
+     * request type is all that tells them apart — which means an ordinary client
+     * could send a Distro request and rewrite the service view, or read all of it.
+     * Cluster calls are therefore accepted only from an address this node knows as
+     * a member, taken from what the transport saw rather than the {@code clientIp}
+     * the sender chose to write into its own body.
+     *
+     * @return {@code null} when the call may proceed, else the refusal to return
+     */
+    private Payload refuseUnlessClusterMember(Class<?> requestType, WireCallContext context) {
+        String peer = context.getAttachment(WireConstants.CONNECTION_PEER);
+        if (clusterManager.isMemberHost(peer)) {
+            return null;
+        }
+        String type = HarborProtocol.typeToken(requestType);
+        log.warn("[harbor] refused {} from peer {}: cluster traffic requires a"
+                + " known member address", type, peer);
+        return HarborProtocol.encodeError(type,
+                type + " must come from a known harbor cluster member");
+    }
+
+    private Payload handleDistroSync(Payload payload, WireCallContext context) {
+        Payload refusal = refuseUnlessClusterMember(DistroSyncRequest.class, context);
+        if (refusal != null) {
+            return refusal;
+        }
         DistroSyncRequest request = HarborProtocol.parseBody(payload, DistroSyncRequest.class);
         String resourceKey = request.getResourceKey();
         String operation = request.getOperation();
@@ -780,7 +821,11 @@ public class HarborServer {
         return HarborProtocol.encodeResponse(response);
     }
 
-    private Payload handleDistroVerify(Payload payload) {
+    private Payload handleDistroVerify(Payload payload, WireCallContext context) {
+        Payload refusal = refuseUnlessClusterMember(DistroVerifyRequest.class, context);
+        if (refusal != null) {
+            return refusal;
+        }
         DistroVerifyRequest request = HarborProtocol.parseBody(payload, DistroVerifyRequest.class);
         List<ClientVerifyInfo> verifyInfos = request.getVerifyInfos();
         if (verifyInfos == null) {
@@ -801,7 +846,11 @@ public class HarborServer {
         return HarborProtocol.encodeResponse(response);
     }
 
-    private Payload handleDistroSnapshot() {
+    private Payload handleDistroSnapshot(WireCallContext context) {
+        Payload refusal = refuseUnlessClusterMember(DistroSnapshotRequest.class, context);
+        if (refusal != null) {
+            return refusal;
+        }
         byte[] snapshot = distroProtocol.onSnapshot();
 
         DistroSnapshotResponse response = new DistroSnapshotResponse();

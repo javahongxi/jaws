@@ -92,6 +92,23 @@ public class ClusterManager {
         return members.size();
     }
 
+    /**
+     * Whether {@code host} is an address this node's peers are expected to
+     * connect from. Compared on host, not host:port: the port in a member's
+     * address is where it listens, while its connections arrive from an
+     * ephemeral source port.
+     * <p>
+     * Hosts are matched as literally as they are listed in {@code clusterMembers},
+     * so a peer recorded by name only trusts sources presenting that same name.
+     * Record addresses where this gates traffic.
+     */
+    public boolean isMemberHost(String host) {
+        if (host == null || host.isEmpty()) {
+            return false;
+        }
+        return members.stream().anyMatch(member -> member.host().equals(host));
+    }
+
     public boolean isEmpty() {
         return members.isEmpty();
     }
