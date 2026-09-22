@@ -9,6 +9,7 @@ import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
+import org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -195,6 +196,28 @@ public class DistroProtocol {
                 }
             } catch (Exception e) {
                 log.warn("[harbor] distro sync error: {} -> {}", connectionId, peer.address(), e);
+            }
+        }
+    }
+
+    /**
+     * Relays a dynamic-config broadcast to all peer nodes, each of which pushes
+     * it to the clients attached to itself and never relays further.
+     *
+     * @param request the relayed broadcast, carrying the change itself
+     */
+    public void syncConfigBroadcast(ConfigBroadcastSyncRequest request) {
+        Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
+        if (peers.isEmpty()) {
+            return;
+        }
+        for (ClusterMember peer : peers) {
+            try {
+                if (!transport.syncConfigBroadcast(peer.address(), request)) {
+                    log.warn("[harbor] config broadcast relay failed: -> {}", peer.address());
+                }
+            } catch (Exception e) {
+                log.warn("[harbor] config broadcast relay error: -> {}", peer.address(), e);
             }
         }
     }

@@ -309,7 +309,12 @@ class HarborDistroClusterTest {
             return List.of();
         }
 
-        @Override
+                @Override
+        public boolean syncConfigBroadcast(String targetAddress, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest request) {
+            return true;
+        }
+
+@Override
         public byte[] getSnapshot(String targetAddress) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {

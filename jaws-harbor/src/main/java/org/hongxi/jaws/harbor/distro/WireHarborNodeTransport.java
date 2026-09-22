@@ -4,9 +4,11 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.harbor.HarborProtocol;
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
 import org.hongxi.jaws.harbor.model.Request;
+import org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest;
 import org.hongxi.jaws.harbor.model.request.DistroSnapshotRequest;
 import org.hongxi.jaws.harbor.model.request.DistroSyncRequest;
 import org.hongxi.jaws.harbor.model.request.DistroVerifyRequest;
+import org.hongxi.jaws.harbor.model.response.ConfigBroadcastSyncResponse;
 import org.hongxi.jaws.harbor.model.response.DistroSnapshotResponse;
 import org.hongxi.jaws.harbor.model.response.DistroSyncResponse;
 import org.hongxi.jaws.harbor.model.response.DistroVerifyResponse;
@@ -101,6 +103,17 @@ public class WireHarborNodeTransport implements HarborNodeTransport {
             return new byte[0];
         }
         return Base64.getDecoder().decode(base64Content);
+    }
+
+    @Override
+    public boolean syncConfigBroadcast(String targetAddress, ConfigBroadcastSyncRequest request) {
+        Payload responsePayload = sendRequest(targetAddress, request);
+        if (responsePayload == null) {
+            return false;
+        }
+        ConfigBroadcastSyncResponse response =
+                HarborProtocol.parseBody(responsePayload, ConfigBroadcastSyncResponse.class);
+        return response.getResultCode() == 200;
     }
 
     @Override

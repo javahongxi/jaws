@@ -220,6 +220,7 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 | `CapabilityBoundaryTest` | 范围外的请求要读成「能力边界」而不是「handler 丢了」：`PersistentInstanceRequest`/fuzzy watch 走显式不支持，未知 token 仍报 unknown；持久实例在 client 侧与 server 侧都先拒后写，拒了就不留任何状态 |
 | `ClusterGuardSemanticsTest` | 单端口下集群面只认成员地址（§5）：三个 Distro 入口对非成员来源一律拒，且**断言拒因文本而非只断言失败**（无守卫时畸形 body 也会回 `success=false`，只看标志会为错误的理由变绿）；同一来源在命名面必须照旧放行——只挡集群面才叫守卫，全挡就成了防火墙 |
 | `HandshakeSemanticsTest` | 原生 client 建连必须先做 `ServerCheckRequest` 一元握手：黑盒测不出它被跳过（bidi 的 setup 用同一个 per-TCP id 顺带就把连接注册了），所以钉在 `HarborServer.answeredServerChecks()` 这个计数上——新鲜节点从 0 到 1 |
+| `ConfigBroadcastClusterTest` | 配置广播是节点本地推送 + 集群转发：A 触发一次，挂 B 的客户端必须收到且**恰好一次**（对端只本地推不回转，防环）；删除广播同样转发。转发带正文——与 nacos 的元数据门铃不同，harbor 演示广播没有共享权威可读回 |
 | `StaleStreamClosureTest` | 关闭事务按**流身份**守卫：连接标识是 TCP 连接，同通道重连会复用同一个 id，迟到的旧流 END 不许拆掉刚建立的新会话（否则客户端重放回来的实例被莫名抹掉） |
 | `client/NodeSelectionTest` | 起点在节点列表里**随机**（对齐 `NamingServerListManager.start()` 的 `currentIndex.set(random)`）：上百个 provider 进程不该全压列表第一项、等它挂了才散开；候选顺序从游标走而非从顶部重数 |
 | `ClientFailoverSemanticsTest` | 恢复先探活当前节点（`HealthCheckRequest`，同 `RpcClient.reconnect` 请求失败前的 `healthCheck()` 短路）：节点还活着就只在那条通道上重开通知流、**不换 TCP 连接**，身份因此不变；探不到才按游标轮转换节点。挂掉的节点被接替后**重放自己的状态**：两个节点故意不 join 集群，所以第二台之所以有数据只可能是客户端自己搬过去的；只有一个地址且不可达时当场报错并点出那个地址（此处与 Nacos 有意不同：它 `while(!switchSuccess)` 无上限退避重试，harbor 选择响亮失败，长驻恢复交给 keepalive 下一轮） |

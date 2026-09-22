@@ -300,11 +300,27 @@ public class HarborServer {
      * each live client applies it to its own in-process configuration. Only native
      * clients receive it (matched by {@link HarborProtocol#NATIVE_CLIENT_VERSION});
      * a real nacos-client would misread a jaws-proprietary frame as bad naming
-     * traffic and reconnect-loop, and Distro peers do not consume config at all.
+     * traffic and reconnect-loop.
+     * <p>
+     * Pushing to local clients is a per-node behaviour, matching nacos where a
+     * node only notifies listeners registered with it: this method pushes to the
+     * clients attached to <em>this</em> node and relays the change to distro
+     * peers, each of which pushes to its own clients and never relays further.
      *
-     * @return the number of native clients the change was pushed to
+     * @return the number of native clients the change was pushed to on this node
      */
     public int broadcastConfigChange(String key, String value, boolean deleted) {
+        int pushed = broadcastLocally(key, value, deleted);
+        distroProtocol.syncConfigBroadcast(new ConfigBroadcastSyncRequest(key, value, deleted));
+        return pushed;
+    }
+
+    /**
+     * Pushes to the native clients attached to this node only. The relayed
+     * broadcast handler calls this — and nothing else — which is what keeps the
+     * relay from looping.
+     */
+    private int broadcastLocally(String key, String value, boolean deleted) {
         Payload frame = HarborProtocol.encodePush(
                 new DynamicConfigChangeRequest(key, value, deleted));
         int pushed = 0;
@@ -364,6 +380,8 @@ public class HarborServer {
                 (payload, clientIp, context) -> handleDistroVerify(payload, context));
         handlers.put(HarborProtocol.typeToken(DistroSnapshotRequest.class),
                 (payload, clientIp, context) -> handleDistroSnapshot(context));
+        handlers.put(HarborProtocol.typeToken(ConfigBroadcastSyncRequest.class),
+                (payload, clientIp, context) -> handleConfigBroadcastSync(payload, context));
         // Config center is out of scope for a naming registry; answer silently
         // so that nacos-client does not keep retrying the listen.
         handlers.put(HarborProtocol.CONFIG_LISTEN_REQUEST,
@@ -858,6 +876,27 @@ public class HarborServer {
         response.setSuccess(true);
         response.setContent(snapshot != null
                 ? Base64.getEncoder().encodeToString(snapshot) : "");
+        return HarborProtocol.encodeResponse(response);
+    }
+
+    /**
+     * A relayed broadcast from a peer: push it to the clients attached to this
+     * node — and nothing else. Relaying again here would loop the broadcast
+     * around the cluster forever.
+     */
+    private Payload handleConfigBroadcastSync(Payload payload, WireCallContext context) {
+        Payload refusal = refuseUnlessClusterMember(ConfigBroadcastSyncRequest.class, context);
+        if (refusal != null) {
+            return refusal;
+        }
+        ConfigBroadcastSyncRequest request =
+                HarborProtocol.parseBody(payload, ConfigBroadcastSyncRequest.class);
+        int pushed = broadcastLocally(request.getKey(), request.getValue(), request.isDeleted());
+        log.info("[harbor] relayed config broadcast key={} deleted={} pushed to {} local"
+                        + " client(s)", request.getKey(), request.isDeleted(), pushed);
+        ConfigBroadcastSyncResponse response = new ConfigBroadcastSyncResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
         return HarborProtocol.encodeResponse(response);
     }
 

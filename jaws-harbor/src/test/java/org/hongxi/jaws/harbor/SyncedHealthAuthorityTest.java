@@ -74,7 +74,12 @@ class SyncedHealthAuthorityTest {
             return n == null ? List.of() : n.onVerify(v);
         }
 
-        @Override
+                @Override
+        public boolean syncConfigBroadcast(String targetAddress, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest request) {
+            return true;
+        }
+
+@Override
         public byte[] getSnapshot(String addr) {
             DistroProtocol n = nodes.get(addr);
             return n == null ? null : n.onSnapshot();

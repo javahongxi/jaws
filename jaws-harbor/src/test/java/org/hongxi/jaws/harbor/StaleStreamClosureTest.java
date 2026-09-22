@@ -97,6 +97,8 @@ class StaleStreamClosureTest {
         @Override public List<String> syncVerify(String addr, List<ClientVerifyInfo> infos) {
             return List.of();
         }
+        @Override public boolean syncConfigBroadcast(String a, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest r) { return true; }
+
         @Override public byte[] getSnapshot(String addr) {
             return new byte[0];
         }

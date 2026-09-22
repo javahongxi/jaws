@@ -1,6 +1,7 @@
 package org.hongxi.jaws.harbor.distro;
 
 import org.hongxi.jaws.harbor.model.ClientVerifyInfo;
+import org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest;
 
 import java.util.List;
 
@@ -42,6 +43,16 @@ public interface HarborNodeTransport {
      * @return the snapshot data, or null if failed
      */
     byte[] getSnapshot(String targetAddress);
+
+    /**
+     * Relay a dynamic-config broadcast to a peer node, which pushes it to the
+     * clients attached to itself and never relays further.
+     *
+     * @param targetAddress peer address
+     * @param request       the broadcast relay (carries the change itself)
+     * @return true if the peer acknowledged
+     */
+    boolean syncConfigBroadcast(String targetAddress, ConfigBroadcastSyncRequest request);
 
     /**
      * Shut down the transport and release resources.

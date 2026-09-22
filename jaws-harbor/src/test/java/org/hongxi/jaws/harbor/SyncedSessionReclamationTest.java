@@ -58,6 +58,8 @@ class SyncedSessionReclamationTest {
     private static class NoopTransport implements HarborNodeTransport {
         @Override public boolean syncData(String a, String c, String op, byte[] b) { return false; }
         @Override public List<String> syncVerify(String a, List<ClientVerifyInfo> v) { return List.of(); }
+        @Override public boolean syncConfigBroadcast(String a, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest r) { return true; }
+
         @Override public byte[] getSnapshot(String a) { return null; }
         @Override public void shutdown() { }
     }

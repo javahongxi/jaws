@@ -62,12 +62,18 @@ Harbor 定位为**注册中心**，不提供配置存储、不是配置中心。
 ```
 POST /api/config?key=..&value=..            # Harbor HTTP 管理端点（grpcPort + 10）
         │
-HarborServer.broadcastConfigChange          # 只推给 native 客户端（按 clientVersion 过滤）
-        │  bi-stream push: DynamicConfigChangeRequest
+HarborServer.broadcastConfigChange          # 推给本节点 native 客户端（按 clientVersion 过滤）
+        │  bi-stream push: DynamicConfigChangeRequest        ＋ 经 Distro 转发给 peers
 HarborClient                                  # 纯协议 SDK：只解析该帧并 emit 给 listener
         │  setDynamicConfigListener
 HarborRegistryFactory (jaws-registry-harbor)  # 胶水层：落到 DynamicConfigurationUtils
 ```
+
+**集群行为**：广播只需对任意一个节点调用一次——该节点推给本地客户端后，经
+`ConfigBroadcastSyncRequest` 转发给 distro peers，每个 peer 推给挂在自己身上的客户端
+且**不再回转**（防环）。与 nacos 的集群同步不同：nacos 的跨节点通知只带元数据（对端从
+共享 DB 读正文），harbor 没有共享权威，转发本身就携带变更内容。转发属集群面流量，同样
+受成员地址守卫约束。
 
 与配置中心的关键区别，都是「演示用」这一取舍的直接结果：
 
