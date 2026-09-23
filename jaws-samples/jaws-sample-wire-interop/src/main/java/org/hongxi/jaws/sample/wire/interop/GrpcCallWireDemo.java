@@ -8,6 +8,7 @@ import io.grpc.Metadata;
 import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.wire.ServerStreamTracer;
 import org.hongxi.jaws.wire.WireCallContext;
 import org.hongxi.jaws.wire.WireMethodHandler;
 import org.hongxi.jaws.wire.WireMethodHandler.MethodType;
@@ -43,6 +44,10 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>A grpc-java client sends unary calls with {@code x-trace-id} attached
  *       via {@link MetadataUtils} and a server-streaming call with an async
  *       stub</li>
+ *   <li>One unary call is sent with {@code withCompression("gzip")}, and the
+ *       server-side {@link ServerStreamTracer} prints the frame sizes, so the
+ *       inbound {@code wire < raw} is the evidence a compressed request from a
+ *       foreign client was really decompressed here</li>
  * </ol>
  * <p>
  * This demonstrates the reverse-direction metadata path and server-streaming:
@@ -212,6 +217,29 @@ public class GrpcCallWireDemo {
 
         URL url = new URL("wire", "localhost", WIRE_PORT, "interop.Greeter", Map.of());
         WireServer wireServer = new WireServer(url, registry);
+        // One tracer per stream printing the bytes as framed: on the compressed
+        // leg below, wire < raw for an inbound message is direct proof that jaws
+        // deframed a gzip payload a foreign client produced, not a plain one
+        wireServer.setStreamTracerFactory(new ServerStreamTracer.Factory() {
+            @Override
+            public ServerStreamTracer newServerStreamTracer(String path) {
+                return new ServerStreamTracer() {
+                    @Override
+                    public void inboundMessageRead(int seqNo, long wireSize, long uncompressedSize) {
+                        System.out.printf("[tracer] %s in #%d wire=%dB raw=%dB%s%n", path, seqNo,
+                                wireSize, uncompressedSize,
+                                wireSize == uncompressedSize ? "" : " <- compressed request");
+                    }
+
+                    @Override
+                    public void outboundMessageSent(int seqNo, long wireSize, long uncompressedSize) {
+                        System.out.printf("[tracer] %s out #%d wire=%dB raw=%dB%s%n", path, seqNo,
+                                wireSize, uncompressedSize,
+                                wireSize == uncompressedSize ? "" : " <- compressed response");
+                    }
+                };
+            }
+        });
         wireServer.open();
         System.out.println("jaws-wire server started on port " + WIRE_PORT
                 + " (business handler with WireCallContext)");
@@ -227,6 +255,25 @@ public class GrpcCallWireDemo {
                 HelloReply reply = stub.sayHello(
                         HelloRequest.newBuilder().setName("grpc-java-client").build());
                 System.out.println("Response: " + reply.getMessage());
+
+                // ---- 1b. Unary call with request compression ----
+                // grpc-java gzips the outgoing message; the tracer prints the
+                // frame sizes, so wire < raw is the evidence jaws decompressed a
+                // foreign client's compressed request
+                System.out.println("\n=== 1b. Unary Call + gzip Request Compression ===");
+                StringBuilder padded = new StringBuilder("compress-me-");
+                for (int i = 0; i < 24; i++) {
+                    padded.append("compress-me-");
+                }
+                HelloReply compressedReply = GreeterGrpc.newBlockingStub(channel)
+                        .withCompression("gzip")
+                        .sayHello(HelloRequest.newBuilder().setName(padded.toString()).build());
+                System.out.println("Response: " + compressedReply.getMessage());
+                if (!compressedReply.getMessage().contains(padded.toString())) {
+                    throw new AssertionError("compressed request was not echoed intact: "
+                            + compressedReply.getMessage());
+                }
+                System.out.println("  compressed request round-tripped intact");
 
                 // ---- 2. Unary call with metadata ----
                 System.out.println("\n=== 2. Unary Call + Metadata via WireCallContext ===");
