@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -473,6 +474,274 @@ class WireStreamTracerTest {
         return events.stream()
                 .filter(e -> e.startsWith("outboundMessageSent"))
                 .findFirst().orElseThrow(() -> new AssertionError("no outbound event: " + events));
+    }
+
+    private static final HealthCheckResponse RESPONSE =
+            HealthCheckResponse.newBuilder().setStatus(ServingStatus.SERVING).build();
+
+    /** A loopback server plus a client whose every stream reports into one tracer. */
+    private record TracedPair(WireServer server, WireClient client) {
+        void close() {
+            client.close();
+            server.close();
+        }
+    }
+
+    private static TracedPair tracedPair(WireHandlerRegistry registry,
+                                        RecordingClientTracer tracer) throws Exception {
+        int port;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            port = socket.getLocalPort();
+        }
+        WireServer server = new WireServer(new URL("wire", "0.0.0.0", port, ""), registry);
+        server.open();
+        WireClient client = new WireClient(new URL("wire", "127.0.0.1", port, "test.Health"));
+        client.setStreamTracerFactory(new ClientStreamTracer.Factory() {
+            @Override
+            public ClientStreamTracer newClientStreamTracer(String path) {
+                return tracer;
+            }
+        });
+        assertTrue(client.open(), "client should connect");
+        return new TracedPair(server, client);
+    }
+
+    private static DefaultRequest request(String method) {
+        DefaultRequest request = new DefaultRequest();
+        request.setInterfaceName("test.Health");
+        request.setMethodName(method);
+        request.setArguments(new Object[]{REQUEST});
+        return request;
+    }
+
+    /** Event names only, ignoring the numbers so assertions stay about order. */
+    private static List<String> namesOf(List<String> events) {
+        return events.stream().map(e -> e.split(" ")[0]).toList();
+    }
+
+    private static long count(List<String> events, String prefix) {
+        return events.stream().filter(e -> e.startsWith(prefix)).count();
+    }
+
+    /**
+     * Unary only ever sends and receives one message, so it cannot tell an
+     * off-by-one in the per-direction counters from a working counter. These
+     * three cover the shapes that actually number messages on the client side.
+     */
+    @Test
+    void serverStreamNumbersEveryInboundMessageOnTheClient() throws Exception {
+        WireHandlerRegistry registry = new WireHandlerRegistry();
+        registry.register("test.Health", "ServerStream", new WireMethodHandler() {
+            @Override
+            public MethodType methodType() {
+                return MethodType.SERVER_STREAM;
+            }
+
+            @Override
+            public StreamSource<Message> handleStream(Message request) {
+                StreamSubject<Message> out = new StreamSubject<>();
+                out.onNext(RESPONSE);
+                out.onNext(RESPONSE);
+                out.onNext(RESPONSE);
+                out.onCompleted();
+                return out;
+            }
+
+            @Override
+            public Parser<? extends Message> getRequestParser() {
+                return HealthCheckRequest.parser();
+            }
+        });
+        RecordingClientTracer tracer = new RecordingClientTracer();
+        TracedPair pair = tracedPair(registry, tracer);
+        try {
+            CountDownLatch done = new CountDownLatch(1);
+            pair.client().requestStream(request("ServerStream"), HealthCheckResponse.parser())
+                    .subscribe(new StreamObserver<>() {
+                        @Override
+                        public void onNext(Object item) {
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            done.countDown();
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            done.countDown();
+                        }
+                    });
+            assertTrue(done.await(10, TimeUnit.SECONDS), "the stream should terminate");
+
+            assertEquals(3, count(tracer.events, "inboundMessageRead"),
+                    "one numbered event per streamed response: " + tracer.events);
+            assertTrue(tracer.events.containsAll(List.of("inboundMessageRead 0 2 2",
+                    "inboundMessageRead 1 2 2", "inboundMessageRead 2 2 2")), "" + tracer.events);
+            // A server stream is one request message, sent before any reply
+            assertEquals(List.of("outboundHeaders", "outboundMessageSent", "inboundHeaders",
+                            "inboundMessageRead", "inboundMessageRead", "inboundMessageRead",
+                            "inboundTrailers", "streamClosed"),
+                    namesOf(tracer.events));
+        } finally {
+            pair.close();
+        }
+    }
+
+    @Test
+    void clientStreamNumbersEveryOutboundMessageOnTheClient() throws Exception {
+        WireHandlerRegistry registry = new WireHandlerRegistry();
+        registry.register("test.Health", "ClientStream", new WireMethodHandler() {
+            @Override
+            public MethodType methodType() {
+                return MethodType.CLIENT_STREAM;
+            }
+
+            @Override
+            public Message handleClientStream(StreamSource<Message> requestStream) {
+                CountDownLatch drained = new CountDownLatch(1);
+                requestStream.subscribe(new StreamObserver<>() {
+                    @Override
+                    public void onNext(Message item) {
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        drained.countDown();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        drained.countDown();
+                    }
+                });
+                try {
+                    drained.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return RESPONSE;
+            }
+
+            @Override
+            public Parser<? extends Message> getRequestParser() {
+                return HealthCheckRequest.parser();
+            }
+        });
+        RecordingClientTracer tracer = new RecordingClientTracer();
+        TracedPair pair = tracedPair(registry, tracer);
+        try {
+            StreamSubject<Object> outbound = new StreamSubject<>();
+            CountDownLatch done = new CountDownLatch(1);
+            pair.client().requestStream(request("ClientStream"), outbound,
+                            HealthCheckResponse.parser())
+                    .subscribe(new StreamObserver<>() {
+                        @Override
+                        public void onNext(Object item) {
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            done.countDown();
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            done.countDown();
+                        }
+                    });
+            outbound.onNext(REQUEST);
+            outbound.onNext(REQUEST);
+            outbound.onNext(REQUEST);
+            outbound.onCompleted();
+            assertTrue(done.await(10, TimeUnit.SECONDS), "the call should terminate");
+
+            assertTrue(tracer.events.containsAll(List.of("outboundMessageSent 0 6 6",
+                            "outboundMessageSent 1 6 6", "outboundMessageSent 2 6 6")),
+                    "one numbered event per item the caller pushed: " + tracer.events);
+            assertEquals(1, count(tracer.events, "outboundHeaders"),
+                    "HEADERS are written once, with the first item");
+            assertEquals(1, count(tracer.events, "streamClosed"), "closed exactly once");
+        } finally {
+            pair.close();
+        }
+    }
+
+    @Test
+    void bidiNumbersBothDirectionsOnTheClient() throws Exception {
+        WireHandlerRegistry registry = new WireHandlerRegistry();
+        registry.register("test.Health", "Bidi", new WireMethodHandler() {
+            @Override
+            public MethodType methodType() {
+                return MethodType.BIDIRECTIONAL;
+            }
+
+            @Override
+            public StreamSource<Message> handleBidiStream(StreamSource<Message> requestStream) {
+                StreamSubject<Message> out = new StreamSubject<>();
+                requestStream.subscribe(new StreamObserver<>() {
+                    @Override
+                    public void onNext(Message item) {
+                        out.onNext(RESPONSE);
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        out.onError(throwable);
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        out.onCompleted();
+                    }
+                });
+                return out;
+            }
+
+            @Override
+            public Parser<? extends Message> getRequestParser() {
+                return HealthCheckRequest.parser();
+            }
+        });
+        RecordingClientTracer tracer = new RecordingClientTracer();
+        TracedPair pair = tracedPair(registry, tracer);
+        try {
+            StreamSubject<Object> outbound = new StreamSubject<>();
+            CountDownLatch done = new CountDownLatch(1);
+            pair.client().requestBidiStream(request("Bidi"), outbound,
+                            HealthCheckResponse.parser())
+                    .subscribe(new StreamObserver<>() {
+                        @Override
+                        public void onNext(Object item) {
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            done.countDown();
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            done.countDown();
+                        }
+                    });
+            outbound.onNext(REQUEST);
+            outbound.onNext(REQUEST);
+            outbound.onCompleted();
+            assertTrue(done.await(10, TimeUnit.SECONDS), "the stream should terminate");
+
+            // The two directions interleave freely, so this asserts each one's
+            // numbering rather than a global order
+            assertTrue(tracer.events.containsAll(List.of("outboundMessageSent 0 6 6",
+                    "outboundMessageSent 1 6 6")), "" + tracer.events);
+            assertTrue(tracer.events.containsAll(List.of("inboundMessageRead 0 2 2",
+                    "inboundMessageRead 1 2 2")), "" + tracer.events);
+            assertEquals("outboundHeaders", namesOf(tracer.events).get(0));
+            assertEquals("streamClosed", namesOf(tracer.events).get(tracer.events.size() - 1));
+            assertEquals(1, count(tracer.events, "streamClosed"));
+        } finally {
+            pair.close();
+        }
     }
 
     /**
