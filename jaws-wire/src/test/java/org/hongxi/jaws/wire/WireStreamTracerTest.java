@@ -670,6 +670,10 @@ class WireStreamTracerTest {
     @Test
     void bidiNumbersBothDirectionsOnTheClient() throws Exception {
         WireHandlerRegistry registry = new WireHandlerRegistry();
+        // Counted on the server so a missing echo says which hop lost the item,
+        // not merely that one is missing
+        List<Message> serverSaw = new CopyOnWriteArrayList<>();
+        List<Object> clientSaw = new CopyOnWriteArrayList<>();
         registry.register("test.Health", "Bidi", new WireMethodHandler() {
             @Override
             public MethodType methodType() {
@@ -682,6 +686,7 @@ class WireStreamTracerTest {
                 requestStream.subscribe(new StreamObserver<>() {
                     @Override
                     public void onNext(Message item) {
+                        serverSaw.add(item);
                         out.onNext(RESPONSE);
                     }
 
@@ -713,6 +718,7 @@ class WireStreamTracerTest {
                     .subscribe(new StreamObserver<>() {
                         @Override
                         public void onNext(Object item) {
+                            clientSaw.add(item);
                         }
 
                         @Override
@@ -730,6 +736,9 @@ class WireStreamTracerTest {
             outbound.onCompleted();
             assertTrue(done.await(10, TimeUnit.SECONDS), "the stream should terminate");
 
+            assertEquals(2, serverSaw.size(),
+                    "both request items must reach the business handler");
+            assertEquals(2, clientSaw.size(), "both echoes must come back");
             // The two directions interleave freely, so this asserts each one's
             // numbering rather than a global order
             assertTrue(tracer.events.containsAll(List.of("outboundMessageSent 0 6 6",
