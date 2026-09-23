@@ -3,32 +3,24 @@ package org.hongxi.jaws.transport.adaptive;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.handler.codec.http.HttpServerCodec;
-import io.netty.handler.codec.http2.Http2MultiplexHandler;
-import org.hongxi.jaws.transport.netty.NettyChannelHandler;
-import org.hongxi.jaws.transport.netty.NettyDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
+
 /**
- * First-byte protocol detection handler that sits at the front of the pipeline
- * on an {@link AdaptiveServer} connection. It buffers inbound bytes until the
- * protocol can be determined, then inserts the protocol-specific handlers
- * before itself, replays the buffered data, and removes itself from the
- * pipeline — leaving zero overhead after detection.
+ * Protocol detection handler that sits at the front of the pipeline on an
+ * {@link AdaptiveServer} connection. It buffers inbound bytes until one of the
+ * registered {@link AdaptiveProtocol}s claims the connection, then installs that
+ * protocol's handlers, replays the buffered data, and removes itself — leaving
+ * zero overhead after detection.
  * <p>
- * Detection rules (applied on the first bytes of each TCP connection):
- * <ul>
- *   <li>{@code 0x16} — TLS ClientHello → {@code SslHandler} + ALPN
- *       negotiation to {@code h2} or {@code http/1.1}</li>
- *   <li>{@code 0x4A57} — Jaws binary protocol → {@link NettyDecoder} +
- *       {@link NettyChannelHandler}</li>
- *   <li>{@code PRI * HTTP/2.0} — HTTP/2 h2c prior-knowledge →
- *       {@code Http2FrameCodec} + {@link Http2MultiplexHandler}</li>
- *   <li>ASCII HTTP method start ({@code G}ET, {@code P}OST/UT/ATCH,
- *       {@code D}ELETE, {@code H}EAD) — HTTP/1.1 → {@link HttpServerCodec} +
- *       aggregator + {@code HttpRequestHandler}</li>
- * </ul>
+ * The handler holds <em>no protocol knowledge</em>: every magic byte, signature
+ * length and pipeline shape lives in the corresponding {@link AdaptiveProtocol}.
+ * Its own rules are only about the scan — ask the candidates in order, a
+ * {@code MATCH} installs, a {@code NEED_MORE} pauses the whole scan (so an
+ * ambiguous prefix is never grabbed by a candidate it would later fall through
+ * to), and an unclaimed connection fails fast.
  * <p>
  * This handler extends {@link ChannelInboundHandlerAdapter} (not
  * {@link io.netty.handler.codec.ByteToMessageDecoder}) so that the cumulation
@@ -37,23 +29,31 @@ import org.slf4j.LoggerFactory;
  *
  * @author shenhongxi
  * @see AdaptiveServer
+ * @see AdaptiveProtocol
  */
 class ProtocolDetectionHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(ProtocolDetectionHandler.class);
 
-    /** Length of the HTTP/2 connection preface ("PRI * HTTP/2.0\r\nSM\r\n\r\n" is 24 bytes). */
-    private static final int HTTP2_PREFACE_LENGTH = 24;
+    /**
+     * Minimum bytes before the scan starts: the longest window needed to make a
+     * first pass over the candidates without a guaranteed {@code NEED_MORE}
+     * (TLS 1, jaws magic 2). Signatures longer than this — the h2 preface —
+     * request more bytes themselves via {@link AdaptiveProtocol.Result#NEED_MORE}.
+     */
+    private static final int MIN_DETECTION_BYTES = 3;
 
-    private static final byte[] HTTP2_PREFACE_BYTES = {
-            'P', 'R', 'I', ' ', '*', ' ', 'H', 'T', 'T', 'P', '/', '2', '.', '0',
-            '\r', '\n', '\r', '\n', 'S', 'M', '\r', '\n', '\r', '\n'
-    };
-
-    private final AdaptiveServer adaptiveServer;
+    private final List<AdaptiveProtocol> protocols;
     private ByteBuf cumulation;
 
     ProtocolDetectionHandler(AdaptiveServer adaptiveServer) {
-        this.adaptiveServer = adaptiveServer;
+        // Ordered candidates: the first decisive MATCH wins. Order carries meaning
+        // only where signatures overlap — TLS and jaws magic are exclusive, the
+        // h2 preface must resolve before HTTP/1.1 may claim a leading 'P'.
+        this.protocols = List.of(
+                new TlsAdaptiveProtocol(adaptiveServer),
+                new JawsBinaryAdaptiveProtocol(adaptiveServer),
+                new Http2AdaptiveProtocol(adaptiveServer),
+                new Http1AdaptiveProtocol(adaptiveServer));
     }
 
     @Override
@@ -79,112 +79,30 @@ class ProtocolDetectionHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void detectAndConfigure(ChannelHandlerContext ctx) {
-        if (cumulation.readableBytes() < 3) {
-            return; // need at least 3 bytes for initial discrimination
+        if (cumulation.readableBytes() < MIN_DETECTION_BYTES) {
+            return;
         }
-
+        for (AdaptiveProtocol protocol : protocols) {
+            AdaptiveProtocol.Result result =
+                    protocol.detect(cumulation, ctx.channel().remoteAddress());
+            if (result == AdaptiveProtocol.Result.MATCH) {
+                protocol.install(ctx.pipeline());
+                forwardAndCleanup(ctx);
+                log.info("AdaptiveServer: detected {}, remote={}",
+                        protocol.name(), ctx.channel().remoteAddress());
+                return;
+            }
+            if (result == AdaptiveProtocol.Result.NEED_MORE) {
+                return; // wait for more bytes; do not ask the remaining candidates
+            }
+        }
+        // No candidate claimed the connection — fail fast rather than guess.
         byte b0 = cumulation.getByte(cumulation.readerIndex());
         byte b1 = cumulation.getByte(cumulation.readerIndex() + 1);
-
-        // TLS ClientHello: first byte is 0x16 (ContentType: Handshake)
-        if (b0 == (byte) 0x16) {
-            if (adaptiveServer.isTlsConfigured()) {
-                configureTls(ctx);
-                return;
-            }
-            // TLS detected but server has no SSL context configured — fail fast
-            throw new IllegalStateException(
-                    "AdaptiveServer: received TLS ClientHello but TLS is not configured, remote="
-                            + ctx.channel().remoteAddress());
-        }
-
-        // Jaws binary: 2-byte magic 0x4A57 ('J' = 0x4A, 'W' = 0x57)
-        if (b0 == (byte) 0x4A && b1 == (byte) 0x57) {
-            configureJawsBinary(ctx);
-            return;
-        }
-
-        // HTTP/2 h2c prior-knowledge: starts with 'P', full preface is 24 bytes
-        if (b0 == 'P') {
-            if (cumulation.readableBytes() < HTTP2_PREFACE_LENGTH) {
-                return; // wait for the full 24-byte preface
-            }
-            if (matchesHttp2Preface()) {
-                configureHttp2(ctx);
-                return;
-            }
-        }
-
-        // HTTP/1.1: first byte matches an ASCII HTTP method start character
-        if (isHttpMethodStart(b0)) {
-            configureHttp1(ctx);
-            return;
-        }
-
-        // Unknown protocol — fail fast
         throw new IllegalStateException(
                 "AdaptiveServer: cannot detect protocol from first bytes: 0x"
                         + Integer.toHexString(b0 & 0xFF) + " 0x" + Integer.toHexString(b1 & 0xFF)
                         + ", remote=" + ctx.channel().remoteAddress());
-    }
-
-    private boolean matchesHttp2Preface() {
-        int idx = cumulation.readerIndex();
-        for (int i = 0; i < HTTP2_PREFACE_LENGTH; i++) {
-            if (cumulation.getByte(idx + i) != HTTP2_PREFACE_BYTES[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isHttpMethodStart(byte b) {
-        // G=GET, P=POST/PUT/PATCH, D=DELETE, H=HEAD, O=OPTIONS, T=TRACE, C=CONNECT
-        return b == 'G' || b == 'P' || b == 'D' || b == 'H' || b == 'O' || b == 'T' || b == 'C';
-    }
-
-    // ========================================================================
-    // Pipeline configuration for each detected protocol
-    // ========================================================================
-
-    /**
-     * Jaws binary protocol: IdleStateHandler (optional) → HeartbeatHandler (optional)
-     * → NettyDecoder → NettyChannelHandler.
-     */
-    private void configureJawsBinary(ChannelHandlerContext ctx) {
-        adaptiveServer.addJawsBinaryPipeline(ctx.pipeline());
-        forwardAndCleanup(ctx);
-        log.info("AdaptiveServer: detected jaws binary protocol, remote={}", ctx.channel().remoteAddress());
-    }
-
-    /**
-     * TLS: SslHandler + ApplicationProtocolNegotiationHandler (ALPN).
-     * After the TLS handshake, ALPN determines whether h2 or http/1.1
-     * pipeline is installed.
-     */
-    private void configureTls(ChannelHandlerContext ctx) {
-        adaptiveServer.configureTlsPipeline(ctx.pipeline());
-        forwardAndCleanup(ctx);
-        log.info("AdaptiveServer: detected TLS ClientHello, ALPN pending, remote={}",
-                ctx.channel().remoteAddress());
-    }
-
-    /**
-     * HTTP/2 h2c: Http2FrameCodec → Http2MultiplexHandler with stream routing.
-     */
-    private void configureHttp2(ChannelHandlerContext ctx) {
-        adaptiveServer.addHttp2Pipeline(ctx.pipeline());
-        forwardAndCleanup(ctx);
-        log.info("AdaptiveServer: detected HTTP/2 h2c, remote={}", ctx.channel().remoteAddress());
-    }
-
-    /**
-     * HTTP/1.1: HttpServerCodec → HttpObjectAggregator → HttpRequestHandler.
-     */
-    private void configureHttp1(ChannelHandlerContext ctx) {
-        adaptiveServer.addHttp1Pipeline(ctx.pipeline());
-        forwardAndCleanup(ctx);
-        log.info("AdaptiveServer: detected HTTP/1.1, remote={}", ctx.channel().remoteAddress());
     }
 
     /**
