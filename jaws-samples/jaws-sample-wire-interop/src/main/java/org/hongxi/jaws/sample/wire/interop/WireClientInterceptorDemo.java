@@ -10,10 +10,21 @@ import io.grpc.ServerInterceptor;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.stream.StreamObserver;
+import org.hongxi.jaws.stream.StreamSource;
+import org.hongxi.jaws.transport.StreamSubject;
+import org.hongxi.jaws.transport.http2.Http2Constants;
+import org.hongxi.jaws.transport.http2.StreamType;
 import org.hongxi.jaws.wire.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Demonstrates the {@link WireClientInterceptor} chain on {@link WireClient}.
@@ -33,14 +44,25 @@ import java.util.Map;
  * {@link ServerInterceptor} that echoes received metadata into the response,
  * making the interceptor effect visible.
  * <p>
- * Three scenarios are exercised:
+ * Six scenarios are exercised:
  * <ul>
  *   <li>Basic call → AuthInjector auto-injects token, server confirms it</li>
  *   <li>Call with {@code x-trace-id} attachment → both token and trace-id
  *       arrive at the server</li>
  *   <li>Call without AuthInjector → a fresh WireClient without interceptors
  *       shows the server receives no token</li>
+ *   <li>Server-streaming → interceptor-injected token reaches the server and
+ *       rides back on every streamed reply; the chain observes the single
+ *       request send and the half-close</li>
+ *   <li>Client-streaming → the chain observes <em>each</em> outbound request
+ *       item and the trailing half-close, and all items aggregate into one
+ *       server reply</li>
+ *   <li>Bi-directional streaming → the chain observes each of the request
+ *       items echoed concurrently with the response stream</li>
  * </ul>
+ * The three streaming scenarios are the point of interest: unlike a metadata-
+ * only interceptor, the chain here sees <em>every</em> outbound message, because
+ * streaming routes each item through the wrapped {@link WireClientCall}.
  * <p>
  * Run:
  * <pre>
@@ -80,6 +102,71 @@ public class WireClientInterceptorDemo {
                         System.out.println("[grpc-java server] " + reply);
                         responseObserver.onNext(HelloReply.newBuilder().setMessage(reply).build());
                         responseObserver.onCompleted();
+                    }
+
+                    @Override
+                    public void sayHelloStream(HelloRequest request,
+                                               io.grpc.stub.StreamObserver<HelloReply> responseObserver) {
+                        // Server-streaming handler runs inside the intercepted call
+                        // context, so the metadata the client interceptor injected is
+                        // visible here and rides back on every streamed reply.
+                        String receivedMeta = RECEIVED_META_CTX.get();
+                        String suffix = receivedMeta != null
+                                ? " [server-saw: " + receivedMeta + "]" : " [server-saw: no metadata]";
+                        for (int i = 1; i <= 3; i++) {
+                            responseObserver.onNext(HelloReply.newBuilder()
+                                    .setMessage("Hello #" + i + ", " + request.getName() + "!" + suffix)
+                                    .build());
+                        }
+                        responseObserver.onCompleted();
+                    }
+
+                    @Override
+                    public io.grpc.stub.StreamObserver<HelloRequest> clientStreamGreet(
+                            io.grpc.stub.StreamObserver<HelloReply> responseObserver) {
+                        List<String> names = new CopyOnWriteArrayList<>();
+                        return new io.grpc.stub.StreamObserver<>() {
+                            @Override
+                            public void onNext(HelloRequest request) {
+                                names.add(request.getName());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("[grpc-java server] client-stream error: " + t.getMessage());
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                responseObserver.onNext(HelloReply.newBuilder()
+                                        .setMessage("Hello, " + String.join(", ", names) + "!")
+                                        .build());
+                                responseObserver.onCompleted();
+                            }
+                        };
+                    }
+
+                    @Override
+                    public io.grpc.stub.StreamObserver<HelloRequest> bidiGreet(
+                            io.grpc.stub.StreamObserver<HelloReply> responseObserver) {
+                        return new io.grpc.stub.StreamObserver<>() {
+                            @Override
+                            public void onNext(HelloRequest request) {
+                                responseObserver.onNext(HelloReply.newBuilder()
+                                        .setMessage("Hello, " + request.getName() + "!")
+                                        .build());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("[grpc-java server] bidi error: " + t.getMessage());
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                responseObserver.onCompleted();
+                            }
+                        };
                     }
                 })
                 .intercept(new ServerInterceptor() {
@@ -121,6 +208,12 @@ public class WireClientInterceptorDemo {
 
             // 2. Auth injector: automatically attaches x-auth-token
             wireClient.addInterceptor(new AuthInjectorInterceptor("secret-token-123"));
+
+            // 3. Innermost tally: counts each outbound sendMessage and the
+            //    half-close, so the streaming scenarios can assert the chain
+            //    really sees every item (not just the opening metadata).
+            StreamTallyInterceptor tally = new StreamTallyInterceptor();
+            wireClient.addInterceptor(tally);
 
             wireClient.open();
 
@@ -183,6 +276,127 @@ public class WireClientInterceptorDemo {
                     plainClient.close();
                 }
 
+                System.out.println("\n=== 4. Server-Streaming (interceptor sees the request + half-close) ===");
+                DefaultRequest serverStreamReq = new DefaultRequest();
+                serverStreamReq.setInterfaceName("interop.Greeter");
+                serverStreamReq.setMethodName("SayHelloStream");
+                serverStreamReq.setArguments(new Object[]{
+                        HelloRequest.newBuilder().setName("streamer").build()
+                });
+                CountDownLatch serverStreamDone = new CountDownLatch(1);
+                AtomicInteger serverStreamItems = new AtomicInteger();
+                AtomicBoolean tokenSeen = new AtomicBoolean();
+                wireClient.requestStream(serverStreamReq, HelloReply.parser())
+                        .subscribe(new StreamObserver<Object>() {
+                            @Override
+                            public void onNext(Object item) {
+                                serverStreamItems.incrementAndGet();
+                                HelloReply reply = (HelloReply) item;
+                                System.out.println("  server-stream item: " + reply.getMessage());
+                                if (reply.getMessage().contains("x-auth-token=secret-token-123")) {
+                                    tokenSeen.set(true);
+                                }
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("  server-stream error: " + t.getMessage());
+                                serverStreamDone.countDown();
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                serverStreamDone.countDown();
+                            }
+                        });
+                await(serverStreamDone, "server-streaming");
+                assertTrue(serverStreamItems.get() == 3,
+                        "expected 3 server-stream items, got " + serverStreamItems.get());
+                assertTrue(tokenSeen.get(), "interceptor token must ride back on server-stream replies");
+                assertTrue(tally.sends.get() == 1 && tally.halfClosed.get(),
+                        "chain must see the 1 request send and the half-close, saw sends="
+                                + tally.sends.get() + " halfClosed=" + tally.halfClosed.get());
+
+                System.out.println("\n=== 5. Client-Streaming (interceptor sees EVERY outbound item) ===");
+                DefaultRequest clientStreamReq = new DefaultRequest();
+                clientStreamReq.setInterfaceName("interop.Greeter");
+                clientStreamReq.setMethodName("ClientStreamGreet");
+                clientStreamReq.setArguments(new Object[0]);
+                clientStreamReq.setAttachment(Http2Constants.HEADER_STREAMING, StreamType.CLIENT.getValue());
+                StreamSubject<Object> clientOutbound = new StreamSubject<>();
+                CountDownLatch clientStreamDone = new CountDownLatch(1);
+                AtomicBoolean aggregated = new AtomicBoolean();
+                wireClient.requestStream(clientStreamReq, clientOutbound, HelloReply.parser())
+                        .subscribe(new StreamObserver<Object>() {
+                            @Override
+                            public void onNext(Object item) {
+                                HelloReply reply = (HelloReply) item;
+                                System.out.println("  client-stream response: " + reply.getMessage());
+                                if (reply.getMessage().contains("Alice")
+                                        && reply.getMessage().contains("Bob")
+                                        && reply.getMessage().contains("Charlie")) {
+                                    aggregated.set(true);
+                                }
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("  client-stream error: " + t.getMessage());
+                                clientStreamDone.countDown();
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                clientStreamDone.countDown();
+                            }
+                        });
+                clientOutbound.onNext(HelloRequest.newBuilder().setName("Alice").build());
+                clientOutbound.onNext(HelloRequest.newBuilder().setName("Bob").build());
+                clientOutbound.onNext(HelloRequest.newBuilder().setName("Charlie").build());
+                clientOutbound.onCompleted();
+                await(clientStreamDone, "client-streaming");
+                assertTrue(aggregated.get(), "all 3 request items must aggregate into one server reply");
+                assertTrue(tally.sends.get() == 3 && tally.halfClosed.get(),
+                        "chain must see all 3 outbound items + half-close, saw sends="
+                                + tally.sends.get() + " halfClosed=" + tally.halfClosed.get());
+
+                System.out.println("\n=== 6. Bi-directional Streaming (interceptor sees each item both ways) ===");
+                DefaultRequest bidiReq = new DefaultRequest();
+                bidiReq.setInterfaceName("interop.Greeter");
+                bidiReq.setMethodName("BidiGreet");
+                bidiReq.setArguments(new Object[0]);
+                StreamSubject<Object> bidiOutbound = new StreamSubject<>();
+                CountDownLatch bidiDone = new CountDownLatch(1);
+                AtomicInteger bidiItems = new AtomicInteger();
+                wireClient.requestBidiStream(bidiReq, bidiOutbound, HelloReply.parser())
+                        .subscribe(new StreamObserver<Object>() {
+                            @Override
+                            public void onNext(Object item) {
+                                bidiItems.incrementAndGet();
+                                System.out.println("  bidi response: " + ((HelloReply) item).getMessage());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("  bidi error: " + t.getMessage());
+                                bidiDone.countDown();
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                bidiDone.countDown();
+                            }
+                        });
+                bidiOutbound.onNext(HelloRequest.newBuilder().setName("Alice").build());
+                bidiOutbound.onNext(HelloRequest.newBuilder().setName("Bob").build());
+                bidiOutbound.onNext(HelloRequest.newBuilder().setName("Charlie").build());
+                bidiOutbound.onCompleted();
+                await(bidiDone, "bidi-streaming");
+                assertTrue(bidiItems.get() == 3, "expected 3 bidi replies, got " + bidiItems.get());
+                assertTrue(tally.sends.get() == 3 && tally.halfClosed.get(),
+                        "chain must see all 3 outbound items + half-close, saw sends="
+                                + tally.sends.get() + " halfClosed=" + tally.halfClosed.get());
+
                 System.out.println("\n=== WireClientInterceptor Demo Passed ===");
             } finally {
                 wireClient.close();
@@ -210,32 +424,23 @@ public class WireClientInterceptorDemo {
             String path = call.path();
             System.out.println("[ClientLoggingInterceptor] >>> " + path);
 
-            WireClientCall wrappedCall = new WireClientCall() {
-                @Override
-                public WireCallContext context() {
-                    return call.context();
-                }
-
-                @Override
-                public String path() {
-                    return call.path();
-                }
-
-                @Override
-                public void putAttachment(String key, String value) {
-                    call.putAttachment(key, value);
-                }
-
+            WireClientCall wrappedCall = new ForwardingClientCall(call) {
                 @Override
                 public void sendMessage(Message request) {
                     System.out.println("[ClientLoggingInterceptor] sending to " + path);
-                    call.sendMessage(request);
+                    super.sendMessage(request);
+                }
+
+                @Override
+                public void halfClose() {
+                    System.out.println("[ClientLoggingInterceptor] half-close " + path);
+                    super.halfClose();
                 }
 
                 @Override
                 public void cancel(String reason) {
                     System.out.println("[ClientLoggingInterceptor] cancel: " + reason);
-                    call.cancel(reason);
+                    super.cancel(reason);
                 }
             };
 
@@ -261,6 +466,53 @@ public class WireClientInterceptorDemo {
             System.out.println("[AuthInjectorInterceptor] injecting x-auth-token");
             call.putAttachment("x-auth-token", token);
             return next.newCall(call);
+        }
+    }
+
+    /**
+     * Innermost interceptor that tallies the outbound traffic of the most recent
+     * call: one increment per {@code sendMessage} and a flag when {@code halfClose}
+     * runs. It proves the streaming path routes every request item through the
+     * interceptor chain, not just the opening metadata.
+     */
+    private static class StreamTallyInterceptor implements WireClientInterceptor {
+        final AtomicInteger sends = new AtomicInteger();
+        final AtomicBoolean halfClosed = new AtomicBoolean();
+
+        @Override
+        public WireClientCall interceptCall(WireClientCall call, WireClientCallHandler next) {
+            sends.set(0);
+            halfClosed.set(false);
+            return next.newCall(new ForwardingClientCall(call) {
+                @Override
+                public void sendMessage(Message request) {
+                    sends.incrementAndGet();
+                    super.sendMessage(request);
+                }
+
+                @Override
+                public void halfClose() {
+                    halfClosed.set(true);
+                    super.halfClose();
+                }
+            });
+        }
+    }
+
+    private static void await(CountDownLatch latch, String what) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new AssertionError(what + " call timed out");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(what + " call interrupted", e);
+        }
+    }
+
+    private static void assertTrue(boolean condition, String message) {
+        if (!condition) {
+            throw new AssertionError(message);
         }
     }
 }

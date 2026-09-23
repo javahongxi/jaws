@@ -52,6 +52,8 @@ WIRE_INTEROP_GRPC_SERVER="org.hongxi.jaws.sample.wire.interop.GrpcServerMain"
 WIRE_INTEROP_HEALTH="org.hongxi.jaws.sample.wire.interop.WireHealthDemo"
 WIRE_INTEROP_MANAGED="org.hongxi.jaws.sample.wire.interop.ManagedChannelDemo"
 WIRE_INTEROP_KEEPALIVE="org.hongxi.jaws.sample.wire.interop.WireKeepaliveDemo"
+WIRE_INTEROP_SERVER_INTERCEPTOR="org.hongxi.jaws.sample.wire.interop.WireInterceptorDemo"
+WIRE_INTEROP_CLIENT_INTERCEPTOR="org.hongxi.jaws.sample.wire.interop.WireClientInterceptorDemo"
 ADAPTIVE_PROVIDER_MAIN="org.hongxi.jaws.sample.adaptive.provider.AdaptiveProvider"
 ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsumer"
 HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.harbor.HarborBootstrap"
@@ -650,7 +652,15 @@ cmd_wire_interop() {
     # 3. ManagedChannelDemo: load balancing (self-contained)
     run_interop_demo "ManagedChannelDemo (load balancing)" "$WIRE_INTEROP_MANAGED"
 
-    # 4. WireCallGrpcDemo: WireClient -> grpc-java server (needs GrpcServerMain)
+    # 4. WireInterceptorDemo: server interceptor chain (grpc-java client ->
+    #    jaws-wire server), self-contained
+    run_interop_demo "WireInterceptorDemo (server interceptors)" "$WIRE_INTEROP_SERVER_INTERCEPTOR"
+
+    # 5. WireClientInterceptorDemo: client interceptor chain across all four
+    #    call shapes against a self-contained grpc-java server (self-contained)
+    run_interop_demo "WireClientInterceptorDemo (client interceptors, 4 shapes)" "$WIRE_INTEROP_CLIENT_INTERCEPTOR"
+
+    # 6. WireCallGrpcDemo: WireClient -> grpc-java server (needs GrpcServerMain)
     total=$((total + 1))
     echo ""
     echo "================================================================"
@@ -687,7 +697,7 @@ cmd_wire_interop() {
     wait "$grpc_pid" 2>/dev/null || true
     rm -f /tmp/grpc-server-main.log
 
-    # 5. (Optional) WireKeepaliveDemo: keepalive policy verification (~55s)
+    # 7. (Optional) WireKeepaliveDemo: keepalive policy verification (~55s)
     if [ $run_keepalive -eq 1 ]; then
         run_interop_demo "WireKeepaliveDemo (keepalive policy, ~55s)" "$WIRE_INTEROP_KEEPALIVE"
     fi

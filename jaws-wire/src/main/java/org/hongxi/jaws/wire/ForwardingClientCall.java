@@ -57,6 +57,11 @@ public class ForwardingClientCall implements WireClientCall {
     }
 
     @Override
+    public void halfClose() {
+        delegate.halfClose();
+    }
+
+    @Override
     public void cancel(String reason) {
         delegate.cancel(reason);
     }
