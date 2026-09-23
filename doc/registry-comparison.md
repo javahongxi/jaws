@@ -40,7 +40,7 @@ instance metadata = {protocol, path, ...所有URL参数}
 2. **单实体**：只注册一个 `Instance` 对象，设置 `ephemeral=true, healthy=true`
 3. **数据载体**：URL 参数全部放入 `instance.metadata`，额外存储 `protocol` 和 `path`
 
-**核心区别**：v2 模型下两者其实都是**连接活性驱动**——ZK 靠临时节点 + 会话超时自动下线；Nacos 2.x 靠客户端与服务端之间的 **gRPC 连接**（连接断即临时实例消失），**已无 1.x 的 HTTP 心跳**（详见 [nacos-client-internals.md](nacos-client-internals.md) §4）。
+**核心区别**：v2 模型下两者其实都是**连接活性驱动**——ZK 靠临时节点 + 会话超时自动下线；Nacos 2.x 靠客户端与服务端之间的 **gRPC 连接**（连接断即临时实例消失），**已无 1.x 的 HTTP 心跳**（详见 [harbor-vs-nacos.md](harbor-vs-nacos.md) 附录 8.5）。
 
 ## 三、服务订阅与发现机制
 
@@ -83,7 +83,7 @@ if (connectionState == ConnectionState.RECONNECTED) {
 
 ### Nacos — 无显式重连
 
-`NacosRegistry` **没有**连接状态监听。Nacos 客户端 SDK 内部靠 **gRPC 连接活性 + 客户端 redo 重放**维护注册状态（v2 无 beat：断连只把 redo 数据标脏位，重连后由 `RedoScheduledTask` 重发注册/订阅）——详见 [nacos-client-internals.md](nacos-client-internals.md) §5。
+`NacosRegistry` **没有**连接状态监听。Nacos 客户端 SDK 内部靠 **gRPC 连接活性 + 客户端 redo 重放**维护注册状态（v2 无 beat：断连只把 redo 数据标脏位，重连后由 `RedoScheduledTask` 重发注册/订阅）——详见 [harbor-vs-nacos.md](harbor-vs-nacos.md) 附录 8.6。
 
 ## 五、服务发现（doDiscover）
 

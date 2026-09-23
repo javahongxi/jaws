@@ -43,7 +43,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *       replays pending register/subscribe on reconnect, with deregister
  *       taking precedence so a removed instance is never resurrected.
  *       This class intentionally does not hook a second reconnection path —
- *       see {@code doc/nacos-client-internals.md} §4–§5.</li>
+ *       see {@code doc/harbor-vs-nacos.md} appendix 8.5–8.6.</li>
  * </ul>
  * <p>
  * This is orthogonal to {@link FailbackRegistry}'s periodic {@code retry()},
