@@ -211,18 +211,21 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         // Custom metadata: non-reserved headers → call attachments
         attachments = WireMetadata.fromHeaders(headers);
 
-        // Downgrade the response encoding when the client does not accept it
+        // Downgrade the response encoding unless the client advertised it; an
+        // absent grpc-accept-encoding means "accepts nothing", not "accepts all"
         if (compression != null && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
             CharSequence acceptSeq = headers.get(WireConstants.GRPC_ACCEPT_ENCODING);
-            if (acceptSeq == null) {
-                compression = WireConstants.ENCODING_IDENTITY;
-            } else {
+            boolean advertised = false;
+            if (acceptSeq != null) {
                 for (String candidate : acceptSeq.toString().split(",")) {
                     if (candidate.trim().equals(compression)) {
-                        compression = WireConstants.ENCODING_IDENTITY;
+                        advertised = true;
                         break;
                     }
                 }
+            }
+            if (!advertised) {
+                compression = WireConstants.ENCODING_IDENTITY;
             }
         }
 

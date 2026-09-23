@@ -146,6 +146,12 @@ class WireServerStreamHandlerTest {
         }
     }
 
+    /** Pins the compressed-flag byte of a response DATA frame. */
+    private static void assertCompressedFlag(Http2DataFrame dataFrame, byte expectedFlag) {
+        assertEquals(expectedFlag, dataFrame.content().getByte(0),
+                "gRPC frame compressed flag");
+    }
+
     private static WireMethodHandler echoHandler() {
         return new WireMethodHandler() {
             @Override
@@ -287,6 +293,89 @@ class WireServerStreamHandlerTest {
         assertEquals(String.valueOf(WireConstants.STATUS_UNIMPLEMENTED),
                 trailersOnly.headers().get(WireConstants.GRPC_STATUS).toString());
         assertNull(ch.readOutbound());
+        ch.finishAndReleaseAll();
+    }
+
+    /**
+     * A server-configured response encoding survives only when the client
+     * advertised it in grpc-accept-encoding; otherwise it must be downgraded
+     * to identity.  All three cases of that matrix are pinned here.
+     */
+    private EmbeddedChannel gzipServerChannel(WireHandlerRegistry registry) {
+        registry.register("test.Health", "Echo", echoHandler());
+        return new EmbeddedChannel(
+                new WireStreamServerHandler(
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, WireConstants.ENCODING_GZIP));
+    }
+
+    @Test
+    void responseKeepsGzipWhenClientAdvertisesIt() throws Exception {
+        WireHandlerRegistry registry = new WireHandlerRegistry();
+        EmbeddedChannel ch = gzipServerChannel(registry);
+
+        Http2Headers extra = new DefaultHttp2Headers()
+                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ACCEPT_ENCODINGS);
+        ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
+        ch.writeInbound(new DefaultHttp2DataFrame(
+                WireFrameCodec.encode(REQUEST, ch.alloc()), true));
+
+        Http2HeadersFrame responseHeaders = ch.readOutbound();
+        CharSequence responseEncoding = responseHeaders.headers().get(WireConstants.GRPC_ENCODING);
+        assertNotNull(responseEncoding, "gzip must survive when the client advertises it");
+        assertEquals(WireConstants.ENCODING_GZIP, responseEncoding.toString());
+
+        Http2DataFrame dataFrame = ch.readOutbound();
+        assertCompressedFlag(dataFrame, WireConstants.COMPRESSED);
+
+        Http2HeadersFrame trailers = ch.readOutbound();
+        assertEquals("0", trailers.headers().get(WireConstants.GRPC_STATUS).toString());
+        ch.finishAndReleaseAll();
+    }
+
+    @Test
+    void responseDowngradesToIdentityWhenGzipIsNotAdvertised() throws Exception {
+        WireHandlerRegistry registry = new WireHandlerRegistry();
+        EmbeddedChannel ch = gzipServerChannel(registry);
+
+        Http2Headers extra = new DefaultHttp2Headers()
+                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ENCODING_IDENTITY);
+        ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
+        ch.writeInbound(new DefaultHttp2DataFrame(
+                WireFrameCodec.encode(REQUEST, ch.alloc()), true));
+
+        Http2HeadersFrame responseHeaders = ch.readOutbound();
+        assertNull(responseHeaders.headers().get(WireConstants.GRPC_ENCODING),
+                "an unadvertised encoding must be downgraded to identity");
+
+        Http2DataFrame dataFrame = ch.readOutbound();
+        assertCompressedFlag(dataFrame, WireConstants.NOT_COMPRESSED);
+        assertEquals(ServingStatus.SERVING, decodeResponseData(dataFrame).getStatus());
+
+        Http2HeadersFrame trailers = ch.readOutbound();
+        assertEquals("0", trailers.headers().get(WireConstants.GRPC_STATUS).toString());
+        ch.finishAndReleaseAll();
+    }
+
+    @Test
+    void responseDowngradesToIdentityWhenAcceptEncodingIsAbsent() throws Exception {
+        WireHandlerRegistry registry = new WireHandlerRegistry();
+        EmbeddedChannel ch = gzipServerChannel(registry);
+
+        // No grpc-accept-encoding at all: per the gRPC wire spec this means the
+        // client accepts nothing, not that it accepts anything.
+        ch.writeInbound(requestHeaders("/test.Health/Echo"));
+        ch.writeInbound(new DefaultHttp2DataFrame(
+                WireFrameCodec.encode(REQUEST, ch.alloc()), true));
+
+        Http2HeadersFrame responseHeaders = ch.readOutbound();
+        assertNull(responseHeaders.headers().get(WireConstants.GRPC_ENCODING));
+
+        Http2DataFrame dataFrame = ch.readOutbound();
+        assertCompressedFlag(dataFrame, WireConstants.NOT_COMPRESSED);
+
+        Http2HeadersFrame trailers = ch.readOutbound();
+        assertEquals("0", trailers.headers().get(WireConstants.GRPC_STATUS).toString());
         ch.finishAndReleaseAll();
     }
 
