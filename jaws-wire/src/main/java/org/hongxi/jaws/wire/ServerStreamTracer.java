@@ -8,6 +8,12 @@ package org.hongxi.jaws.wire;
  * request and outbound is the response. Header events are added here because
  * a server answers with either a HEADERS + DATA + trailers sequence or a
  * single trailers-only HEADERS, and monitoring wants to tell those apart.
+ * <p>
+ * These four events and {@link #callEnded()} are deliberately <em>not</em> a
+ * mirror of {@code io.grpc.ServerStreamTracer}, which only has
+ * {@code serverCallStarted}: they are named after the points a jaws stream
+ * actually reaches, and chosen for what a server-side metric needs over keeping
+ * the surface identical. Do not trim them toward grpc's shape.
  *
  * @author shenhongxi
  * @see WireServer#setStreamTracerFactory
