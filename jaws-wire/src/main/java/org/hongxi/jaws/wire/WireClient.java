@@ -441,19 +441,9 @@ public class WireClient extends AbstractHttp2Client {
             // reset and stops producing (gRPC cancellation semantics)
             observer.setOnCancel(() -> cancelStream(streamChannel0));
 
-            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
-            ByteBuf content = WireFrameCodec.encode(requestMessage, streamChannel0.alloc(), compressor);
-            streamChannel0.write(new DefaultHttp2HeadersFrame(headers));
-            streamChannel0.writeAndFlush(new DefaultHttp2DataFrame(content, true))
-                    .addListener(f -> {
-                        if (!f.isSuccess()) {
-                            observer.onError(
-                                    new JawsServiceException("Wire stream write failed: requestId=" + request.getRequestId()
-                                    + ", cause=" + f.cause(), f.cause()));
-                            incrErrorCount();
-                            streamChannel0.close();
-                        }
-                    });
+            // Run client interceptor chain for server-streaming call
+            runStreamingInterceptorChain(request, requestMessage, streamChannel0,
+                    grpcPath, timeout, compressor, observer, true);
 
             return observer;
         } catch (Exception e) {
@@ -544,23 +534,9 @@ public class WireClient extends AbstractHttp2Client {
                 }
             });
 
-            // Send HEADERS without END_STREAM (client-streaming: request items follow)
-            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
-            streamChannel0.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
-                    .addListener(f -> {
-                        if (!f.isSuccess()) {
-                            log.error("Wire client-stream HEADERS write failed", f.cause());
-                            ResponseFuture future = removeCallback(request.getRequestId());
-                            if (future != null) {
-                                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
-                                errorResponse.setThrowable(
-                                        new JawsServiceException("Wire client-stream HEADERS write failed", f.cause()));
-                                future.onFailure(errorResponse);
-                            }
-                            incrErrorCount();
-                            streamChannel0.close();
-                        }
-                    });
+            // Run client interceptor chain for client-streaming call (metadata only)
+            runStreamingInterceptorChain(request, null, streamChannel0,
+                    grpcPath, timeout, compressor, observer, true);
 
             // Subscribe to the caller's request stream and forward each item
             // to the network as it is produced.
@@ -677,17 +653,9 @@ public class WireClient extends AbstractHttp2Client {
             observer.setOnCancel(() -> cancelStream(streamChannel0));
 
             // Send HEADERS without END_STREAM (bidi: request stream follows)
-            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
-            streamChannel0.writeAndFlush(new DefaultHttp2HeadersFrame(headers))
-                    .addListener(f -> {
-                        if (!f.isSuccess()) {
-                            log.error("Wire bidi HEADERS write failed", f.cause());
-                            observer.onError(
-                                    new JawsServiceException("Wire bidi HEADERS write failed", f.cause()));
-                            incrErrorCount();
-                            cancelStream(streamChannel0);
-                        }
-                    });
+            // Run client interceptor chain for bidi-streaming call (metadata only)
+            runStreamingInterceptorChain(request, null, streamChannel0,
+                    grpcPath, timeout, compressor, observer, true);
 
             // Subscribe to the caller's request stream and forward each item
             // to the network as it is produced.
@@ -903,10 +871,43 @@ public class WireClient extends AbstractHttp2Client {
     }
 
     /**
-     * {@link WireClientCall} implementation that performs the actual gRPC
-     * request: builds headers (incorporating any interceptor-modified attachments),
-     * encodes the protobuf message, and writes HEADERS + DATA to the stream channel.
+     * Build the client interceptor chain and execute it for streaming calls.
+     * The first interceptor is outermost. Interceptors can observe or modify
+     * the call metadata (e.g. inject authentication tokens) before HEADERS are sent.
+     *
+     * @param request        the RPC request (attachments may be modified by interceptors)
+     * @param requestMessage the protobuf request message (null for client/bidi streaming)
+     * @param streamChannel  the open HTTP/2 stream channel
+     * @param grpcPath       the gRPC path
+     * @param timeout        the deadline in milliseconds
+     * @param compressor     the request compressor
+     * @param observer       the response observer (for error notification on write failure)
+     * @param endStream      whether to send END_STREAM with the first DATA frame
      */
+    private void runStreamingInterceptorChain(
+            Request request, Message requestMessage,
+            io.netty.channel.Channel streamChannel, String grpcPath,
+            int timeout, String compressor,
+            StreamSubject<Object> observer, boolean endStream) {
+        // Always create a mutable context so interceptors can add attachments
+        WireCallContext callContext = WireCallContext.mutableCopy(
+                WireCallContext.of(request.getAttachments()));
+        StreamingClientCall realCall = new StreamingClientCall(
+                streamChannel, request, grpcPath, timeout, compressor,
+                callContext, requestMessage, observer, endStream);
+        if (clientInterceptors.isEmpty()) {
+            realCall.sendMessage(requestMessage);
+            return;
+        }
+        WireClientCallHandler chain = call -> call;
+        for (int i = clientInterceptors.size() - 1; i >= 0; i--) {
+            WireClientInterceptor interceptor = clientInterceptors.get(i);
+            WireClientCallHandler next = chain;
+            chain = outerCall -> interceptor.interceptCall(outerCall, next);
+        }
+        WireClientCall finalCall = chain.newCall(realCall);
+        finalCall.sendMessage(requestMessage);
+    }
     private final class ClientCallImpl implements WireClientCall {
         private final io.netty.channel.Channel streamChannel;
         private final Request request;
@@ -943,12 +944,14 @@ public class WireClient extends AbstractHttp2Client {
 
         @Override
         public void sendMessage(Message message) {
-            // Sync interceptor-modified context back into request attachments
-            // so buildRequestHeaders propagates them as gRPC metadata
+            // Sync interceptor-modified context back into request attachments.
+            // getAttachments() returns the up-to-date snapshot taken at send time
+            // (after the interceptor chain has run); setAttachment() lazily creates
+            // the request's internal map, which may initially be an immutable empty map.
             for (Map.Entry<String, String> entry : callContext.getAttachments().entrySet()) {
                 request.setAttachment(entry.getKey(), entry.getValue());
             }
-            // Build headers from current context (interceptors may have modified attachments)
+            // Build headers from current context
             Http2Headers headers = buildRequestHeaders(request, grpcPath,
                     responseFuture.getTimeout(), compressor);
             ByteBuf content = WireFrameCodec.encode(message, streamChannel.alloc(), compressor);
@@ -963,6 +966,92 @@ public class WireClient extends AbstractHttp2Client {
                             responseFuture.onFailure(errorResponse);
                         }
                     });
+        }
+
+        @Override
+        public void cancel(String reason) {
+            cancelStream(streamChannel);
+        }
+    }
+
+    /**
+     * {@link WireClientCall} implementation for streaming calls that performs
+     * the actual gRPC request: builds headers (incorporating any interceptor-
+     * modified attachments), encodes the protobuf message (if present), and
+     * writes HEADERS + optional DATA to the stream channel.
+     */
+    private final class StreamingClientCall implements WireClientCall {
+        private final io.netty.channel.Channel streamChannel;
+        private final Request request;
+        private final String grpcPath;
+        private final int timeout;
+        private final String compressor;
+        private final WireCallContext callContext;
+        private final Message requestMessage;
+        private final StreamSubject<Object> observer;
+        private final boolean endStream;
+
+        StreamingClientCall(io.netty.channel.Channel streamChannel, Request request,
+                             String grpcPath, int timeout, String compressor,
+                             WireCallContext callContext, Message requestMessage,
+                             StreamSubject<Object> observer, boolean endStream) {
+            this.streamChannel = streamChannel;
+            this.request = request;
+            this.grpcPath = grpcPath;
+            this.timeout = timeout;
+            this.compressor = compressor;
+            this.callContext = callContext;
+            this.requestMessage = requestMessage;
+            this.observer = observer;
+            this.endStream = endStream;
+        }
+
+        @Override
+        public WireCallContext context() {
+            return callContext;
+        }
+
+        @Override
+        public String path() {
+            return grpcPath;
+        }
+
+        @Override
+        public void putAttachment(String key, String value) {
+            callContext.putAttachment(key, value);
+        }
+
+        @Override
+        public void sendMessage(Message message) {
+            // Sync interceptor-modified context back into request attachments.
+            // getAttachments() returns the up-to-date snapshot taken at send time
+            // (after the interceptor chain has run); setAttachment() lazily creates
+            // the request's internal map, which may initially be an immutable empty map.
+            for (Map.Entry<String, String> entry : callContext.getAttachments().entrySet()) {
+                request.setAttachment(entry.getKey(), entry.getValue());
+            }
+            // Build headers from current context
+            Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
+            streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+
+            // For server-streaming, send the request message as first DATA frame
+            Message dataMessage = (message != null) ? message : requestMessage;
+            if (dataMessage != null) {
+                ByteBuf content = WireFrameCodec.encode(dataMessage, streamChannel.alloc(), compressor);
+                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, endStream))
+                        .addListener(f -> {
+                            if (!f.isSuccess()) {
+                                observer.onError(
+                                        new JawsServiceException("Wire stream write failed: requestId=" + request.getRequestId()
+                                                + ", cause=" + f.cause(), f.cause()));
+                                incrErrorCount();
+                                streamChannel.close();
+                            }
+                        });
+            } else {
+                // Client/bidi streaming: no initial message, just flush HEADERS
+                streamChannel.flush();
+            }
         }
 
         @Override

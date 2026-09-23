@@ -10,10 +10,13 @@ import io.grpc.ServerInterceptor;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
+import org.hongxi.jaws.transport.StreamSubject;
 import org.hongxi.jaws.wire.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Demonstrates the {@link WireClientInterceptor} chain on {@link WireClient}.
@@ -80,6 +83,76 @@ public class WireClientInterceptorDemo {
                         System.out.println("[grpc-java server] " + reply);
                         responseObserver.onNext(HelloReply.newBuilder().setMessage(reply).build());
                         responseObserver.onCompleted();
+                    }
+
+                    @Override
+                    public void sayHelloStream(HelloRequest request,
+                                               io.grpc.stub.StreamObserver<HelloReply> responseObserver) {
+                        String receivedMeta = RECEIVED_META_CTX.get();
+                        String suffix = receivedMeta != null ? " [server-saw: " + receivedMeta + "]" : " [server-saw: no metadata]";
+                        for (int i = 1; i <= 3; i++) {
+                            String msg = "Hello #" + i + ", " + request.getName() + "!" + suffix;
+                            System.out.println("[grpc-java server] Streaming: " + msg);
+                            responseObserver.onNext(HelloReply.newBuilder().setMessage(msg).build());
+                        }
+                        responseObserver.onCompleted();
+                    }
+
+                    @Override
+                    public io.grpc.stub.StreamObserver<HelloRequest> clientStreamGreet(io.grpc.stub.StreamObserver<HelloReply> responseObserver) {
+                        return new io.grpc.stub.StreamObserver<>() {
+                            private int count = 0;
+                            private String lastMeta = null;
+
+                            @Override
+                            public void onNext(HelloRequest value) {
+                                count++;
+                                lastMeta = RECEIVED_META_CTX.get();
+                                System.out.println("[grpc-java server] Client stream item #" + count + ": " + value.getName()
+                                        + (lastMeta != null ? " [meta=" + lastMeta + "]" : ""));
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("[grpc-java server] Client stream error: " + t.getMessage());
+                                responseObserver.onError(t);
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                String suffix = lastMeta != null ? " [server-saw: " + lastMeta + "]" : " [server-saw: no metadata]";
+                                String reply = "Received " + count + " items." + suffix;
+                                System.out.println("[grpc-java server] Client stream completed: " + reply);
+                                responseObserver.onNext(HelloReply.newBuilder().setMessage(reply).build());
+                                responseObserver.onCompleted();
+                            }
+                        };
+                    }
+
+                    @Override
+                    public io.grpc.stub.StreamObserver<HelloRequest> bidiGreet(io.grpc.stub.StreamObserver<HelloReply> responseObserver) {
+                        return new io.grpc.stub.StreamObserver<>() {
+                            @Override
+                            public void onNext(HelloRequest value) {
+                                String receivedMeta = RECEIVED_META_CTX.get();
+                                String suffix = receivedMeta != null ? " [server-saw: " + receivedMeta + "]" : " [server-saw: no metadata]";
+                                String reply = "Echo: " + value.getName() + suffix;
+                                System.out.println("[grpc-java server] Bidi echo: " + reply);
+                                responseObserver.onNext(HelloReply.newBuilder().setMessage(reply).build());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                System.err.println("[grpc-java server] Bidi stream error: " + t.getMessage());
+                                responseObserver.onError(t);
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                System.out.println("[grpc-java server] Bidi stream completed");
+                                responseObserver.onCompleted();
+                            }
+                        };
                     }
                 })
                 .intercept(new ServerInterceptor() {
@@ -183,7 +256,145 @@ public class WireClientInterceptorDemo {
                     plainClient.close();
                 }
 
-                System.out.println("\n=== WireClientInterceptor Demo Passed ===");
+                // ---- 4. Server-streaming call with interceptors ----
+                System.out.println("\n=== 4. Server-Streaming Call (interceptors apply) ===");
+                DefaultRequest streamRequest = new DefaultRequest();
+                streamRequest.setInterfaceName("interop.Greeter");
+                streamRequest.setMethodName("SayHelloStream");
+                streamRequest.setArguments(new Object[]{
+                        HelloRequest.newBuilder().setName("stream-user").build()
+                });
+                CountDownLatch streamLatch = new CountDownLatch(1);
+                int[] itemCount = {0};
+                org.hongxi.jaws.stream.StreamSource<Object> streamSource = wireClient.requestStream(streamRequest, HelloReply.parser());
+                streamSource.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
+                    @Override
+                    public void onNext(Object item) {
+                        itemCount[0]++;
+                        HelloReply reply = (HelloReply) item;
+                        System.out.println("  Stream item #" + itemCount[0] + ": " + reply.getMessage());
+                        if (!reply.getMessage().contains("x-auth-token=secret-token-123")) {
+                            throw new AssertionError(
+                                    "expected token in streaming response, got: " + reply.getMessage());
+                        }
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        System.err.println("  Stream error: " + throwable.getMessage());
+                        streamLatch.countDown();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        System.out.println("  Stream completed (" + itemCount[0] + " items)");
+                        streamLatch.countDown();
+                    }
+                });
+                if (!streamLatch.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Server-streaming call timed out");
+                }
+                if (itemCount[0] != 3) {
+                    throw new AssertionError("Expected 3 stream items, got: " + itemCount[0]);
+                }
+                System.out.println("Interceptors fired for server-streaming call.");
+
+                // ---- 5. Client-streaming call with interceptors ----
+                System.out.println("\n=== 5. Client-Streaming Call (interceptors apply) ===");
+                DefaultRequest clientStreamRequest = new DefaultRequest();
+                clientStreamRequest.setInterfaceName("interop.Greeter");
+                clientStreamRequest.setMethodName("ClientStreamGreet");
+                clientStreamRequest.setArguments(new Object[0]);
+                org.hongxi.jaws.transport.StreamSubject<Object> clientStreamObserver = new org.hongxi.jaws.transport.StreamSubject<>();
+                CountDownLatch clientStreamLatch = new CountDownLatch(1);
+                org.hongxi.jaws.stream.StreamSource<Object> clientStreamResponse = wireClient.requestStream(
+                        clientStreamRequest, clientStreamObserver, HelloReply.parser());
+                clientStreamResponse.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
+                    @Override
+                    public void onNext(Object item) {
+                        HelloReply reply = (HelloReply) item;
+                        System.out.println("  Client-stream response: " + reply.getMessage());
+                        if (!reply.getMessage().contains("x-auth-token=secret-token-123")) {
+                            throw new AssertionError(
+                                    "expected token in client-streaming response, got: " + reply.getMessage());
+                        }
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        System.err.println("  Client-stream error: " + throwable.getMessage());
+                        clientStreamLatch.countDown();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        System.out.println("  Client-stream completed");
+                        clientStreamLatch.countDown();
+                    }
+                });
+                // Send items
+                Thread.sleep(100);
+                clientStreamObserver.onNext(HelloRequest.newBuilder().setName("Alice").build());
+                Thread.sleep(100);
+                clientStreamObserver.onNext(HelloRequest.newBuilder().setName("Bob").build());
+                Thread.sleep(100);
+                clientStreamObserver.onCompleted();
+                if (!clientStreamLatch.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Client-streaming call timed out");
+                }
+                System.out.println("Interceptors fired for client-streaming call.");
+
+                // ---- 6. Bidi-streaming call with interceptors ----
+                System.out.println("\n=== 6. Bidi-Streaming Call (interceptors apply) ===");
+                DefaultRequest bidiRequest = new DefaultRequest();
+                bidiRequest.setInterfaceName("interop.Greeter");
+                bidiRequest.setMethodName("BidiGreet");
+                bidiRequest.setArguments(new Object[0]);
+                org.hongxi.jaws.transport.StreamSubject<Object> bidiRequestObserver = new org.hongxi.jaws.transport.StreamSubject<>();
+                CountDownLatch bidiLatch = new CountDownLatch(1);
+                int[] bidiCount = {0};
+                org.hongxi.jaws.stream.StreamSource<Object> bidiResponse = wireClient.requestBidiStream(
+                        bidiRequest, bidiRequestObserver, HelloReply.parser());
+                bidiResponse.subscribe(new org.hongxi.jaws.stream.StreamObserver<>() {
+                    @Override
+                    public void onNext(Object item) {
+                        bidiCount[0]++;
+                        HelloReply reply = (HelloReply) item;
+                        System.out.println("  Bidi response #" + bidiCount[0] + ": " + reply.getMessage());
+                        if (!reply.getMessage().contains("x-auth-token=secret-token-123")) {
+                            throw new AssertionError(
+                                    "expected token in bidi-streaming response, got: " + reply.getMessage());
+                        }
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        System.err.println("  Bidi-stream error: " + throwable.getMessage());
+                        bidiLatch.countDown();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        System.out.println("  Bidi-stream completed (" + bidiCount[0] + " items)");
+                        bidiLatch.countDown();
+                    }
+                });
+                // Send items
+                Thread.sleep(100);
+                bidiRequestObserver.onNext(HelloRequest.newBuilder().setName("X").build());
+                Thread.sleep(100);
+                bidiRequestObserver.onNext(HelloRequest.newBuilder().setName("Y").build());
+                Thread.sleep(100);
+                bidiRequestObserver.onCompleted();
+                if (!bidiLatch.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Bidi-streaming call timed out");
+                }
+                if (bidiCount[0] != 2) {
+                    throw new AssertionError("Expected 2 bidi responses, got: " + bidiCount[0]);
+                }
+                System.out.println("Interceptors fired for bidi-streaming call.");
+
+                System.out.println("\n=== WireClientInterceptor Demo Passed (all modes) ===");
             } finally {
                 wireClient.close();
             }
