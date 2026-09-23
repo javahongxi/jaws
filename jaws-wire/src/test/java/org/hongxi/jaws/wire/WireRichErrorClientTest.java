@@ -53,7 +53,8 @@ class WireRichErrorClientTest {
         };
 
         EmbeddedChannel ch = new EmbeddedChannel(
-                new WireStreamStreamingHandler(null, observer, 4 * 1024 * 1024, 0));
+                new WireStreamStreamingHandler(null, observer, 4 * 1024 * 1024, 0,
+                        ClientStreamTracer.NOOP));
         // Trailers HEADERS with END_STREAM, no DATA — drives completeOrFail directly.
         ch.writeInbound(new DefaultHttp2HeadersFrame(trailers, true));
 
@@ -82,7 +83,8 @@ class WireRichErrorClientTest {
             @Override public void onCompleted() { }
         };
         EmbeddedChannel ch = new EmbeddedChannel(
-                new WireStreamStreamingHandler(null, observer, 4 * 1024 * 1024, 0));
+                new WireStreamStreamingHandler(null, observer, 4 * 1024 * 1024, 0,
+                        ClientStreamTracer.NOOP));
         ch.writeInbound(new DefaultHttp2HeadersFrame(trailers, true));
 
         Throwable t = seen.get();

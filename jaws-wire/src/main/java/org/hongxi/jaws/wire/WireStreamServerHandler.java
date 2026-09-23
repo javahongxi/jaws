@@ -26,6 +26,8 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Per-stream inbound handler for the gRPC server, owning the gRPC wire
@@ -121,16 +123,44 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
      */
     private boolean responseHeadersSent;
 
+    /**
+     * Factory creating the per-stream tracer once the method path is known;
+     * {@code null} when the server observes nothing, which keeps every stream
+     * on the {@link ServerStreamTracer#NOOP} singleton instead of null checks.
+     */
+    private final ServerStreamTracer.Factory tracerFactory;
+    /**
+     * Tracer for this stream. Written on the event loop when request headers
+     * are parsed and read by business-pool threads while the response is
+     * produced, hence {@code volatile}.
+     */
+    private volatile ServerStreamTracer tracer = ServerStreamTracer.NOOP;
+    /** Message counters, one per direction; mirrors gRPC's framer counters. */
+    private final AtomicInteger inboundSeq = new AtomicInteger();
+    private final AtomicInteger outboundSeq = new AtomicInteger();
+    /** Guards that {@link StreamTracer#streamClosed(int)} fires exactly once. */
+    private final AtomicBoolean streamClosedReported = new AtomicBoolean();
+
     WireStreamServerHandler(WireCallDispatcher dispatcher,
                             WireReflectionService reflectionService,
                             ExecutorService serverExecutor,
                             int maxMessageSize, int maxInboundMetadataSize, String compression) {
+        this(dispatcher, reflectionService, serverExecutor, maxMessageSize,
+                maxInboundMetadataSize, compression, null);
+    }
+
+    WireStreamServerHandler(WireCallDispatcher dispatcher,
+                            WireReflectionService reflectionService,
+                            ExecutorService serverExecutor,
+                            int maxMessageSize, int maxInboundMetadataSize, String compression,
+                            ServerStreamTracer.Factory tracerFactory) {
         this.dispatcher = dispatcher;
         this.reflectionService = reflectionService;
         this.serverExecutor = serverExecutor;
         this.maxMessageSize = maxMessageSize;
         this.maxInboundMetadataSize = maxInboundMetadataSize;
         this.compression = compression;
+        this.tracerFactory = tracerFactory;
     }
 
     @Override
@@ -183,6 +213,13 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, "Missing :path header");
             return;
         }
+
+        // The tracer is keyed on the method path, so a stream rejected above
+        // (unparseable or oversized headers) is deliberately not traced.
+        if (tracerFactory != null) {
+            tracer = tracerFactory.newServerStreamTracer(path);
+        }
+        tracer.inboundHeaders();
 
         // Parse the caller's deadline (gRPC timeout propagation)
         CharSequence timeoutSeq = headers.get(WireStatus.GRPC_TIMEOUT);
@@ -328,11 +365,14 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 break; // incomplete frame, wait for more data
             }
             try {
+                long wireSize = WireFrameCodec.payloadSize(frame);
                 ServerReflectionRequest request = WireFrameCodec.decode(
                         frame, WireReflectionService.getRequestParser(), requestEncoding);
+                traceInboundMessageRead(wireSize, request.getSerializedSize());
                 ServerReflectionResponse response = reflectionService.handleRequest(request);
                 sendResponseHeaders(ctx);
                 ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), compression);
+                traceOutboundMessageSent(responseFrame, response);
                 ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
             } catch (InvalidProtocolBufferException e) {
                 log.error("Reflection request decode failed", e);
@@ -460,6 +500,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 if (item instanceof Message msg) {
                     sendResponseHeaders(ctx);
                     ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc(), compression);
+                    traceOutboundMessageSent(responseFrame, msg);
                     ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
                 } else {
                     log.warn("streaming: expected protobuf Message but got: {}",
@@ -503,12 +544,15 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 // Decode the first frame and add it to the observer BEFORE
                 // dispatch so the handler receives ALL items through the stream
                 try {
+                    // Captured before decoding: decode consumes the frame's reader index
+                    long wireSize = WireFrameCodec.payloadSize(frame);
                     Object firstItem;
                     if (streamRequestParser != null) {
                         firstItem = WireFrameCodec.decode(frame, streamRequestParser, requestEncoding);
                     } else {
                         firstItem = WireFrameCodec.extractPayload(frame, requestEncoding);
                     }
+                    traceInboundMessageRead(wireSize, uncompressedSizeOf(firstItem));
                     streamRequestObserver.onNext(firstItem);
                 } catch (Exception e) {
                     log.error("Failed to decode first bidi stream item", e);
@@ -542,12 +586,14 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             } else {
                 // Feed subsequent frames to the request observer
                 try {
+                    long wireSize = WireFrameCodec.payloadSize(frame);
                     Object item;
                     if (streamRequestParser != null) {
                         item = WireFrameCodec.decode(frame, streamRequestParser, requestEncoding);
                     } else {
                         item = WireFrameCodec.extractPayload(frame, requestEncoding);
                     }
+                    traceInboundMessageRead(wireSize, uncompressedSizeOf(item));
                     streamRequestObserver.onNext(item);
                 } catch (Exception e) {
                     log.error("Failed to decode bidi stream item", e);
@@ -574,6 +620,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         }
         sendResponseHeaders(ctx);
         ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), compression);
+        traceOutboundMessageSent(responseFrame, response);
         ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
         sendTrailers(ctx, WireConstants.STATUS_OK, null);
     }
@@ -596,6 +643,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
             headers.set(WireConstants.GRPC_ENCODING, compression);
         }
+        tracer.outboundHeaders();
         ctx.write(new DefaultHttp2HeadersFrame(headers, false));
     }
 
@@ -615,6 +663,8 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             WireErrorDetails.writeToTrailers(trailers, status, message);
         }
         ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailers, true));
+        tracer.outboundTrailers();
+        reportStreamClosed(status);
     }
 
     /**
@@ -643,6 +693,11 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             WireErrorDetails.writeToTrailers(trailersOnly, status, message);
         }
         ctx.writeAndFlush(new DefaultHttp2HeadersFrame(trailersOnly, true));
+        // One frame carries both roles here, so the tracer sees the response
+        // HEADERS and the trailers it merges
+        tracer.outboundHeaders();
+        tracer.outboundTrailers();
+        reportStreamClosed(status);
     }
 
     /**
@@ -677,6 +732,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof Http2ResetFrame reset) {
             canceled = true;
+            reportStreamClosed(WireConstants.STATUS_CANCELED);
             log.info("gRPC stream cancelled by the caller: path={}, errorCode={}",
                     path, reset.errorCode());
             return;
@@ -688,6 +744,12 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     public void channelInactive(ChannelHandlerContext ctx) {
         canceled = true;
         notifyStreamClosed(ctx);
+        // Netty calls channelInactive exactly once per handler, so the
+        // tracer's end-of-life event needs no guard; the status does, because
+        // trailers or a reset usually reported it first. UNKNOWN here means the
+        // stream went away without this server ever writing a terminal status.
+        reportStreamClosed(WireConstants.STATUS_UNKNOWN);
+        tracer.callEnded();
         // Release accumulated buffer if the stream closed before dispatch
         if (accumulator != null && !dispatched) {
             accumulator.release();
@@ -758,5 +820,59 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
      */
     ChannelHandlerContext ctx() {
         return streamCtx;
+    }
+
+    // ---- Stream tracing -------------------------------------------------
+
+    /**
+     * Report a request message that has been fully read, deframed and
+     * decompressed. The dispatcher calls this because decoding lives there.
+     *
+     * @param wireSize         payload bytes as received, frame header excluded
+     * @param uncompressedSize payload bytes after decompression
+     */
+    void traceInboundMessageRead(long wireSize, long uncompressedSize) {
+        tracer.inboundMessageRead(inboundSeq.getAndIncrement(), wireSize, uncompressedSize);
+    }
+
+    /**
+     * Report the gRPC frame about to be written as a response message. Must be
+     * called before the buffer is handed to the pipeline: the event loop
+     * consumes and releases it asynchronously, so its readable bytes are only
+     * observable while this thread still owns it. Package-private because the
+     * health-check response is framed by {@link WireCallDispatcher}.
+     */
+    void traceOutboundMessageSent(ByteBuf responseFrame, Message message) {
+        tracer.outboundMessageSent(outboundSeq.getAndIncrement(),
+                WireFrameCodec.payloadSize(responseFrame), message.getSerializedSize());
+    }
+
+    /**
+     * Uncompressed size of a decoded request item, for the tracer. Streaming
+     * items reach this handler either as protobuf messages or, in provider
+     * mode, as raw bytes.
+     *
+     * @param item the decoded item
+     * @return the size in bytes, or -1 when the item is neither shape
+     */
+    private static long uncompressedSizeOf(Object item) {
+        if (item instanceof Message message) {
+            return message.getSerializedSize();
+        }
+        if (item instanceof byte[] rawBytes) {
+            return rawBytes.length;
+        }
+        return -1;
+    }
+
+    /**
+     * Record the status this stream ended with; the first caller wins. A
+     * response that reached trailers already reported it, so the fallbacks
+     * only cover a call that ended without any terminal status being written.
+     */
+    private void reportStreamClosed(int status) {
+        if (streamClosedReported.compareAndSet(false, true)) {
+            tracer.streamClosed(status);
+        }
     }
 }

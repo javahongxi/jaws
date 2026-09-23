@@ -314,12 +314,15 @@ sealed interface WireCallDispatcher
                 }
 
                 Message request;
+                // Captured before decoding: decode consumes the frame's reader index
+                long wireSize = WireFrameCodec.payloadSize(frame);
                 try {
                     request = WireFrameCodec.decode(frame, methodHandler.getRequestParser(), serverHandler.requestEncoding);
                 } catch (IllegalArgumentException e) {
                     serverHandler.sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, e.getMessage());
                     return;
                 }
+                serverHandler.traceInboundMessageRead(wireSize, request.getSerializedSize());
 
                 // Run the interceptor chain (if any) before invoking the handler.
                 // The chain supports all call types: unary and server-stream
@@ -697,12 +700,14 @@ sealed interface WireCallDispatcher
 
                 // Extract raw protobuf bytes, decompressing when the frame is compressed
                 byte[] protobufBytes;
+                long wireSize = WireFrameCodec.payloadSize(frame);
                 try {
                     protobufBytes = WireFrameCodec.extractPayload(frame, serverHandler.requestEncoding);
                 } catch (IllegalArgumentException e) {
                     serverHandler.sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, e.getMessage());
                     return;
                 }
+                serverHandler.traceInboundMessageRead(wireSize, protobufBytes.length);
 
                 // Build Jaws request with raw protobuf bytes as argument
                 DefaultRequest jawsRequest = new DefaultRequest();
@@ -828,8 +833,10 @@ sealed interface WireCallDispatcher
          */
         private void dispatchHealthCheck(ChannelHandlerContext ctx, ByteBuf frame, WireStreamServerHandler serverHandler) {
             try {
+                long wireSize = WireFrameCodec.payloadSize(frame);
                 HealthCheckRequest request = WireFrameCodec.decode(
                         frame, HealthCheckRequest.parser(), serverHandler.requestEncoding);
+                serverHandler.traceInboundMessageRead(wireSize, request.getSerializedSize());
                 HealthCheckResponse.ServingStatus status =
                         healthService.getStatus(request.getService());
                 if (status == null) {
@@ -842,6 +849,7 @@ sealed interface WireCallDispatcher
                 serverHandler.sendResponseHeaders(ctx);
                 ByteBuf responseFrame = WireFrameCodec.encode(
                         response, ctx.alloc(), serverHandler.compression);
+                serverHandler.traceOutboundMessageSent(responseFrame, response);
                 ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
                 serverHandler.sendTrailers(ctx, WireConstants.STATUS_OK, null);
             } catch (Exception e) {

@@ -239,6 +239,7 @@ public class WireClient extends AbstractHttp2Client {
         io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
+            ClientStreamTracer tracer = newStreamTracer(grpcPath);
 
             WireStreamResponseHandler handler = new WireStreamResponseHandler(
                     responseParser, responseFuture, maxMessageSize, maxInboundMetadataSize,
@@ -248,7 +249,8 @@ public class WireClient extends AbstractHttp2Client {
                         return response;
                     },
                     () -> removeCallback(responseFuture.getRequestId()),
-                    false /* retry loop manages the callback */);
+                    false /* retry loop manages the callback */,
+                    tracer);
 
             final io.netty.channel.Channel streamChannel0 = new Http2StreamChannelBootstrap(connChannel)
                     .handler(handler)
@@ -288,7 +290,7 @@ public class WireClient extends AbstractHttp2Client {
             // Run client interceptor chain, then drive the single request
             WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), failFuture(responseFuture)));
+                    mutableCallContext(request), failFuture(responseFuture), tracer));
             call.sendMessage(requestMessage);
             call.halfClose();
         } catch (Exception e) {
@@ -329,11 +331,12 @@ public class WireClient extends AbstractHttp2Client {
         io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
+            ClientStreamTracer tracer = newStreamTracer(grpcPath);
 
             // Open a new HTTP/2 stream; the handler completes the future
             // when the gRPC response END_STREAM arrives
             final io.netty.channel.Channel streamChannel0 = new Http2StreamChannelBootstrap(connChannel)
-                    .handler(newResponseHandler(responseParser, responseFuture))
+                    .handler(newResponseHandler(responseParser, responseFuture, tracer))
                     .open().syncUninterruptibly().getNow();
             streamChannel = streamChannel0;
 
@@ -353,7 +356,7 @@ public class WireClient extends AbstractHttp2Client {
             // Run client interceptor chain, then drive the single request
             WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), failFuture(responseFuture)));
+                    mutableCallContext(request), failFuture(responseFuture), tracer));
             call.sendMessage(requestMessage);
             call.halfClose();
         } catch (Exception e) {
@@ -384,7 +387,8 @@ public class WireClient extends AbstractHttp2Client {
      * wrapping the protobuf message and any trailer metadata.
      */
     private WireStreamResponseHandler newResponseHandler(
-            Parser<? extends Message> responseParser, DefaultResponseFuture responseFuture) {
+            Parser<? extends Message> responseParser, DefaultResponseFuture responseFuture,
+            ClientStreamTracer tracer) {
         return new WireStreamResponseHandler(responseParser, responseFuture, maxMessageSize,
                 maxInboundMetadataSize,
                 message -> {
@@ -393,7 +397,8 @@ public class WireClient extends AbstractHttp2Client {
                     return response;
                 },
                 () -> removeCallback(responseFuture.getRequestId()),
-                true);
+                true,
+                tracer);
     }
 
     /**
@@ -436,11 +441,13 @@ public class WireClient extends AbstractHttp2Client {
         io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
+            ClientStreamTracer tracer = newStreamTracer(grpcPath);
 
             final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new WireStreamStreamingHandler(
-                                    responseParser, observer, maxMessageSize, maxInboundMetadataSize))
+                                    responseParser, observer, maxMessageSize, maxInboundMetadataSize,
+                                    tracer))
                             .open().syncUninterruptibly().getNow();
             streamChannel = streamChannel0;
 
@@ -456,7 +463,7 @@ public class WireClient extends AbstractHttp2Client {
             };
             WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure));
+                    mutableCallContext(request), writeFailure, tracer));
             call.sendMessage(requestMessage);
             call.halfClose();
 
@@ -520,10 +527,11 @@ public class WireClient extends AbstractHttp2Client {
         io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
+            ClientStreamTracer tracer = newStreamTracer(grpcPath);
 
             final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
-                            .handler(newResponseHandler(responseParser, responseFuture))
+                            .handler(newResponseHandler(responseParser, responseFuture, tracer))
                             .open().syncUninterruptibly().getNow();
             streamChannel = streamChannel0;
 
@@ -561,7 +569,7 @@ public class WireClient extends AbstractHttp2Client {
             };
             final WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure));
+                    mutableCallContext(request), writeFailure, tracer));
 
             // Subscribe to the caller's request stream and forward each item
             // to the network as it is produced.
@@ -647,11 +655,13 @@ public class WireClient extends AbstractHttp2Client {
         io.netty.channel.Channel streamChannel = null;
         try {
             io.netty.channel.Channel connChannel = activeChannel();
+            ClientStreamTracer tracer = newStreamTracer(grpcPath);
 
             final io.netty.channel.Channel streamChannel0 =
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new WireStreamStreamingHandler(
-                                    responseParser, observer, maxMessageSize, maxInboundMetadataSize))
+                                    responseParser, observer, maxMessageSize, maxInboundMetadataSize,
+                                    tracer))
                             .open().syncUninterruptibly().getNow();
             streamChannel = streamChannel0;
 
@@ -669,7 +679,7 @@ public class WireClient extends AbstractHttp2Client {
             };
             final WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure));
+                    mutableCallContext(request), writeFailure, tracer));
 
             // Subscribe to the caller's request stream and forward each item
             // to the network as it is produced.
@@ -828,6 +838,34 @@ public class WireClient extends AbstractHttp2Client {
     }
 
     /**
+     * Creates the per-stream observer of outbound calls: message counts, byte
+     * sizes and terminal statuses. Configured programmatically rather than by
+     * URL because a tracer is code, not a deployment knob.
+     */
+    private volatile ClientStreamTracer.Factory streamTracerFactory;
+
+    /**
+     * Observe every outbound stream. {@code null} leaves each stream on
+     * {@link ClientStreamTracer#NOOP}, which costs nothing. A tracer is created
+     * per <em>attempt</em>, so a retried call reports one stream per try.
+     *
+     * @param streamTracerFactory the factory, or {@code null} to stop observing
+     */
+    public void setStreamTracerFactory(ClientStreamTracer.Factory streamTracerFactory) {
+        this.streamTracerFactory = streamTracerFactory;
+    }
+
+    /**
+     * The tracer for one outbound stream, shared by that stream's
+     * {@link ClientCallImpl} and its response handler so that both directions
+     * land on one observer.
+     */
+    private ClientStreamTracer newStreamTracer(String grpcPath) {
+        ClientStreamTracer.Factory factory = streamTracerFactory;
+        return factory != null ? factory.newClientStreamTracer(grpcPath) : ClientStreamTracer.NOOP;
+    }
+
+    /**
      * Context seeded from the request's attachments, always mutable so an
      * interceptor's {@code putAttachment} succeeds even when the request has no
      * initial attachments ({@link WireCallContext#of} returns the immutable
@@ -897,11 +935,20 @@ public class WireClient extends AbstractHttp2Client {
         private final String compressor;
         private final WireCallContext callContext;
         private final Consumer<Throwable> failureSink;
+        /** Observer shared with this stream's response handler; never {@code null}. */
+        private final ClientStreamTracer tracer;
         private boolean headersSent;
+        /**
+         * Outbound message counter. Not atomic: callers of {@link #sendMessage}
+         * are serialized by the contract of the API driving this call, exactly
+         * as in grpc-java's {@code ClientCallImpl}.
+         */
+        private int outboundMessageNumber;
 
         ClientCallImpl(io.netty.channel.Channel streamChannel, Request request,
                         String grpcPath, int timeout, String compressor,
-                        WireCallContext callContext, Consumer<Throwable> failureSink) {
+                        WireCallContext callContext, Consumer<Throwable> failureSink,
+                        ClientStreamTracer tracer) {
             this.streamChannel = streamChannel;
             this.request = request;
             this.grpcPath = grpcPath;
@@ -909,6 +956,7 @@ public class WireClient extends AbstractHttp2Client {
             this.compressor = compressor;
             this.callContext = callContext;
             this.failureSink = failureSink;
+            this.tracer = tracer;
         }
 
         @Override
@@ -933,6 +981,10 @@ public class WireClient extends AbstractHttp2Client {
             }
             writeHeadersIfNeeded();
             ByteBuf content = WireFrameCodec.encode(message, streamChannel.alloc(), compressor);
+            // Reported before the buffer is handed to the pipeline, which
+            // consumes and releases it asynchronously
+            tracer.outboundMessageSent(outboundMessageNumber++,
+                    WireFrameCodec.payloadSize(content), message.getSerializedSize());
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, false))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
@@ -974,6 +1026,7 @@ public class WireClient extends AbstractHttp2Client {
             }
             Http2Headers headers = buildRequestHeaders(request, grpcPath, timeout, compressor);
             streamChannel.write(new DefaultHttp2HeadersFrame(headers));
+            tracer.outboundHeaders();
         }
 
         private void reportWriteFailure(String frame, Throwable cause) {

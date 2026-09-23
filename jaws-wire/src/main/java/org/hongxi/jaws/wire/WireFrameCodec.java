@@ -148,6 +148,20 @@ public final class WireFrameCodec {
     }
 
     /**
+     * Size of the message payload carried by one complete gRPC frame, i.e. the
+     * length-prefixed bytes excluding the 5-byte frame header. This is the
+     * {@code wireSize} a {@link StreamTracer} reports: the compressed length
+     * when the frame is compressed.
+     *
+     * @param frame a buffer positioned at the frame header and holding exactly
+     *              one complete frame, as returned by {@link #tryExtractFrame}
+     * @return the payload size in bytes
+     */
+    public static int payloadSize(ByteBuf frame) {
+        return frame.readableBytes() - WireConstants.GRPC_HEADER_SIZE;
+    }
+
+    /**
      * Try to extract one complete gRPC frame from the accumulator buffer.
      * <p>
      * If the accumulator contains at least a full header (5 bytes) and the

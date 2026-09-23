@@ -46,15 +46,23 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     /** Decoded grpc-status-details-bin (rich error), or null when the server sent none. */
     private com.google.rpc.Status richStatus;
     private String responseEncoding = WireConstants.ENCODING_IDENTITY;
+    /** Observer shared with the {@code ClientCallImpl} of this stream; never {@code null}. */
+    private final ClientStreamTracer tracer;
+    /** Inbound message counter for this stream, starting at 0. */
+    private int inboundMessageNumber;
+    /** Guards that {@link StreamTracer#streamClosed(int)} fires exactly once. */
+    private boolean streamClosedReported;
 
     WireStreamStreamingHandler(Parser<? extends Message> responseParser,
                                StreamSubject<Object> observer,
                                int maxMessageSize,
-                               int maxInboundMetadataSize) {
+                               int maxInboundMetadataSize,
+                               ClientStreamTracer tracer) {
         this.responseParser = responseParser;
         this.observer = observer;
         this.maxMessageSize = maxMessageSize;
         this.maxInboundMetadataSize = maxInboundMetadataSize;
+        this.tracer = tracer;
     }
 
     @Override
@@ -65,6 +73,7 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
             } else if (msg instanceof Http2DataFrame dataFrame) {
                 onData(ctx, dataFrame);
             } else if (msg instanceof Http2ResetFrame resetFrame) {
+                reportStreamClosed(WireConstants.STATUS_CANCELED);
                 observer.onError(new RuntimeException(
                         "gRPC stream reset: errorCode=" + resetFrame.errorCode()));
             } else {
@@ -78,6 +87,7 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private void onHeaders(Http2HeadersFrame headersFrame) {
         // Defense-in-depth: reject oversized inbound metadata
         if (maxInboundMetadataSize > 0 && WireMetadata.estimateHeaderSize(headersFrame.headers()) > maxInboundMetadataSize) {
+            reportStreamClosed(WireConstants.STATUS_RESOURCE_EXHAUSTED);
             observer.onError(new RuntimeException(
                     "gRPC response metadata exceeds maxInboundMetadataSize: " + maxInboundMetadataSize));
             return;
@@ -91,12 +101,14 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
                 grpcMessage = messageSeq.toString();
             }
             richStatus = WireErrorDetails.fromTrailers(headersFrame.headers());
+            tracer.inboundTrailers();
         } else {
             // Initial response HEADERS: capture the response message encoding
             CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
             if (encodingSeq != null) {
                 responseEncoding = encodingSeq.toString();
             }
+            tracer.inboundHeaders();
         }
         if (headersFrame.isEndStream()) {
             completeOrFail();
@@ -114,6 +126,7 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
             // Guard against oversized responses: fail the stream and reset
             // instead of buffering unbounded data
             if (accumulator.readableBytes() > maxMessageSize + WireConstants.GRPC_HEADER_SIZE) {
+                reportStreamClosed(WireConstants.STATUS_RESOURCE_EXHAUSTED);
                 observer.onError(new RuntimeException(
                         "gRPC response exceeds maxInboundMessageSize: " + maxMessageSize));
                 ctx.writeAndFlush(new DefaultHttp2ResetFrame(Http2Error.CANCEL));
@@ -128,10 +141,15 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
                     break;
                 }
                 try {
+                    // Captured before decoding: decode consumes the frame's reader index
+                    long wireSize = WireFrameCodec.payloadSize(frame);
                     Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
+                    tracer.inboundMessageRead(inboundMessageNumber++, wireSize,
+                            response.getSerializedSize());
                     observer.onNext(response);
                 } catch (Exception e) {
                     log.error("Wire streaming decode failed", e);
+                    reportStreamClosed(WireStatus.fromThrowable(e));
                     observer.onError(e);
                 } finally {
                     frame.release();
@@ -150,15 +168,19 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
         if (grpcStatus != WireConstants.STATUS_OK && grpcStatus >= 0) {
             // Surface a semantically typed exception: DEADLINE_EXCEEDED carries the
             // jaws timeout error code, UNAVAILABLE is flagged retryable
+            reportStreamClosed(grpcStatus);
             observer.onError(
                     WireStatus.toException(grpcStatus, grpcMessage, richStatus));
             return;
         }
+        reportStreamClosed(WireConstants.STATUS_OK);
         observer.onCompleted();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
+        // Closed with no trailers and no reset: the connection went away mid-call
+        reportStreamClosed(WireConstants.STATUS_UNKNOWN);
         observer.onError(
                 new RuntimeException("gRPC stream closed before completion"));
     }
@@ -166,7 +188,17 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Wire client streaming error", cause);
+        reportStreamClosed(WireStatus.fromThrowable(cause));
         observer.onError(cause);
         ctx.close();
+    }
+
+    /** Record the terminal status; only the first reporter of a stream wins. */
+    private void reportStreamClosed(int status) {
+        if (streamClosedReported) {
+            return;
+        }
+        streamClosedReported = true;
+        tracer.streamClosed(status);
     }
 }

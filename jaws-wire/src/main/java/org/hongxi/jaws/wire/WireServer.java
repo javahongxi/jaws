@@ -157,6 +157,24 @@ public class WireServer extends AbstractHttp2Server {
                 ? compression : WireConstants.ENCODING_IDENTITY;
     }
 
+    /**
+     * Creates the per-stream observer of inbound calls: message counts, byte
+     * sizes and terminal statuses, i.e. the layer metrics are built on.
+     * Configured programmatically rather than by URL because a tracer is code,
+     * not a deployment knob.
+     */
+    private volatile ServerStreamTracer.Factory streamTracerFactory;
+
+    /**
+     * Observe every inbound stream. {@code null} leaves each stream on
+     * {@link ServerStreamTracer#NOOP}, which costs nothing.
+     *
+     * @param streamTracerFactory the factory, or {@code null} to stop observing
+     */
+    public void setStreamTracerFactory(ServerStreamTracer.Factory streamTracerFactory) {
+        this.streamTracerFactory = streamTracerFactory;
+    }
+
     @Override
     protected void addOptionalChannelHandlers(ChannelPipeline pipeline) {
         // gRPC keepalive guard: permit client PINGs no faster than
@@ -188,7 +206,8 @@ public class WireServer extends AbstractHttp2Server {
         }
         streamChannel.pipeline().addLast(
                 new WireStreamServerHandler(dispatcher, reflectionService,
-                        serverExecutor, maxMessageSize, maxInboundMetadataSize, compression));
+                        serverExecutor, maxMessageSize, maxInboundMetadataSize, compression,
+                        streamTracerFactory));
     }
 
     // ========================================================================

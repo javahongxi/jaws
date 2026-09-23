@@ -62,13 +62,20 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     /** Decoded grpc-status-details-bin (rich error), or null when the server sent none. */
     private com.google.rpc.Status richStatus;
     private String responseEncoding = WireConstants.ENCODING_IDENTITY;
+    /** Observer shared with the {@code ClientCallImpl} of this stream; never {@code null}. */
+    private final ClientStreamTracer tracer;
+    /** Inbound message counter for this stream, starting at 0. */
+    private int inboundMessageNumber;
+    /** Guards that {@link StreamTracer#streamClosed(int)} fires exactly once. */
+    private boolean streamClosedReported;
 
     WireStreamResponseHandler(Parser<? extends Message> responseParser,
                               DefaultResponseFuture responseFuture,
                               int maxMessageSize,
                               Function<Message, DefaultResponse> responseBuilder,
                               Runnable onCompletion) {
-        this(responseParser, responseFuture, maxMessageSize, 0, responseBuilder, onCompletion, true);
+        this(responseParser, responseFuture, maxMessageSize, 0, responseBuilder, onCompletion,
+                true, ClientStreamTracer.NOOP);
     }
 
     WireStreamResponseHandler(Parser<? extends Message> responseParser,
@@ -77,7 +84,8 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                               int maxInboundMetadataSize,
                               Function<Message, DefaultResponse> responseBuilder,
                               Runnable onCompletion,
-                              boolean autoRemoveCallback) {
+                              boolean autoRemoveCallback,
+                              ClientStreamTracer tracer) {
         this.responseParser = responseParser;
         this.responseFuture = responseFuture;
         this.maxMessageSize = maxMessageSize;
@@ -85,6 +93,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
         this.responseBuilder = responseBuilder;
         this.onCompletion = onCompletion;
         this.autoRemoveCallback = autoRemoveCallback;
+        this.tracer = tracer;
     }
 
     @Override
@@ -123,12 +132,14 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             // Rich error details (grpc-status-details-bin): decoded and carried onto
             // the thrown exception in completeOrFail (see WireStatusException).
             richStatus = WireErrorDetails.fromTrailers(headersFrame.headers());
+            tracer.inboundTrailers();
         } else {
             // Initial response HEADERS: capture the response message encoding
             CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
             if (encodingSeq != null) {
                 responseEncoding = encodingSeq.toString();
             }
+            tracer.inboundHeaders();
         }
 
         if (headersFrame.isEndStream()) {
@@ -170,6 +181,10 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 // jaws timeout error code, UNAVAILABLE is flagged retryable
                 DefaultResponse errorResponse = responseBuilder.apply(null);
                 errorResponse.setThrowable(WireStatus.toException(grpcStatus, grpcMessage, richStatus));
+                // The tracer is finished before the caller is woken, so code that
+                // reads what was observed after the call returns never sees a
+                // half-recorded stream
+                reportStreamClosed(grpcStatus);
                 responseFuture.onFailure(errorResponse);
                 maybeComplete();
                 return;
@@ -186,11 +201,16 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                 return;
             }
             try {
+                // Captured before decoding: decode consumes the frame's reader index
+                long wireSize = WireFrameCodec.payloadSize(frame);
                 Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
+                tracer.inboundMessageRead(inboundMessageNumber++, wireSize,
+                        response.getSerializedSize());
                 DefaultResponse successResponse = responseBuilder.apply(response);
                 if (!trailerMetadata.isEmpty()) {
                     successResponse.setAttachments(trailerMetadata);
                 }
+                reportStreamClosed(WireConstants.STATUS_OK);
                 responseFuture.onSuccess(successResponse);
             } finally {
                 frame.release();
@@ -235,7 +255,19 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
         DefaultResponse errorResponse = responseBuilder.apply(null);
         errorResponse.setThrowable(failure);
         responseFuture.onFailure(errorResponse);
+        // A call that failed locally never carried a grpc-status, so the
+        // tracer gets the code jaws hands the caller
+        reportStreamClosed(WireStatus.fromThrowable(failure));
         maybeComplete();
+    }
+
+    /** Record the terminal status; only the first reporter of a stream wins. */
+    private void reportStreamClosed(int status) {
+        if (streamClosedReported) {
+            return;
+        }
+        streamClosedReported = true;
+        tracer.streamClosed(status);
     }
 
     /**

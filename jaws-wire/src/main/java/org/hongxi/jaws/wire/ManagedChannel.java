@@ -77,6 +77,12 @@ public class ManagedChannel implements Closeable {
     private final LoadBalancer loadBalancer;
     private final ClientConfig config;
     private final List<WireClientInterceptor> interceptors;
+    /**
+     * Per-stream observer factory applied to every backend client; {@code null}
+     * leaves calls unobserved. Assigned before the resolver starts because that
+     * is what opens the first backends.
+     */
+    private final ClientStreamTracer.Factory streamTracerFactory;
 
     /** Immutable snapshot of the live backends; replaced on each address sync. */
     private volatile List<WireClient> clients = List.of();
@@ -96,11 +102,14 @@ public class ManagedChannel implements Closeable {
     private final WireConnectivityTracker channelTracker = new WireConnectivityTracker();
 
     ManagedChannel(NameResolver resolver, LoadBalancer loadBalancer, ClientConfig config,
-                   List<WireClientInterceptor> interceptors) {
+                   List<WireClientInterceptor> interceptors,
+                   ClientStreamTracer.Factory streamTracerFactory) {
         this.resolver = resolver;
         this.loadBalancer = loadBalancer;
         this.config = config;
         this.interceptors = List.copyOf(interceptors);
+        // Assigned before resolver.start() below, which opens the first backends
+        this.streamTracerFactory = streamTracerFactory;
         // start() delivers the initial address set synchronously (passthrough and
         // the first DNS resolve), then pushes updates on the resolver's schedule.
         resolver.start(new NameResolver.Listener() {
@@ -569,6 +578,7 @@ public class ManagedChannel implements Closeable {
         for (WireClientInterceptor interceptor : interceptors) {
             client.addInterceptor(interceptor);
         }
+        client.setStreamTracerFactory(streamTracerFactory);
         // Recompute the aggregate whenever this backend's connectivity changes;
         // register before open() so the CONNECTING → READY transition is seen.
         client.getConnectivityTracker().addListener((prev, cur) -> recomputeAggregate());
@@ -675,6 +685,7 @@ public class ManagedChannel implements Closeable {
         private String sslCertChain = "";
         private String sslPrivateKey = "";
         private final List<WireClientInterceptor> interceptors = new ArrayList<>();
+        private ClientStreamTracer.Factory streamTracerFactory;
 
         private Builder() {
         }
@@ -869,6 +880,24 @@ public class ManagedChannel implements Closeable {
         }
 
         /**
+         * Observe every outbound stream of this channel: message counts, byte
+         * sizes and terminal statuses, i.e. the layer metrics are built on.
+         * One tracer is created per attempt, so a retried call reports one
+         * stream per try.
+         * <p>
+         * Mirrors grpc-java's {@code ManagedChannelBuilder.intercept()} in
+         * registration shape; gRPC carries tracers on {@code CallOptions}
+         * instead, which jaws will do once per-call tracing has a consumer.
+         *
+         * @param streamTracerFactory the factory, or {@code null} to unobserve
+         * @return this builder
+         */
+        public Builder streamTracerFactory(ClientStreamTracer.Factory streamTracerFactory) {
+            this.streamTracerFactory = streamTracerFactory;
+            return this;
+        }
+
+        /**
          * Build the {@link ManagedChannel}: select the resolver, start it, and
          * open a client per resolved address.
          *
@@ -884,7 +913,7 @@ public class ManagedChannel implements Closeable {
             return new ManagedChannel(resolver, lb,
                     new ClientConfig(requestTimeout, connectTimeout, maxInboundMessageSize,
                             compression, keepalive, retry, tls),
-                    interceptors);
+                    interceptors, streamTracerFactory);
         }
 
         private NameResolver resolveNameResolver() {
