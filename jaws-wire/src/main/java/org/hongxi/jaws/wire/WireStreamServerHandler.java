@@ -76,17 +76,23 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     /** Max size of inbound HTTP/2 headers (metadata) in bytes. */
     private final int maxInboundMetadataSize;
     /**
-     * Server-configured compression (identity or gzip); downgraded to
-     * identity per call when the client's grpc-accept-encoding does not
-     * advertise it.
+     * What this server will compress responses with, once
+     * {@link #sendResponseHeaders} has checked it against the client's
+     * {@code grpc-accept-encoding}; starts out as the configured compressor and
+     * is downgraded to {@link Codec.Identity#NONE} when the client did not
+     * advertise it. Never {@code null}, so framing never has to ask.
      */
-    protected String compression;
+    protected Compressor responseCompressor;
+    /** What this server can decompress, and what it advertises in reply. */
+    private final DecompressorRegistry decompressorRegistry;
+    /** Raw {@code grpc-accept-encoding} from the client; {@code null} = sent none. */
+    private CharSequence requestAcceptEncoding;
 
     protected String path;
     /** Absolute caller deadline in epoch ms parsed from grpc-timeout; 0 = none. */
     protected long deadlineMs;
-    /** Inbound message encoding declared by the grpc-encoding header. */
-    protected String requestEncoding = WireConstants.ENCODING_IDENTITY;
+    /** Decompressor for the inbound {@code grpc-encoding}; identity = none declared. */
+    protected Decompressor requestDecompressor = Codec.Identity.NONE;
     /** Custom metadata (non-reserved request headers) for the current call. */
     protected Map<String, String> attachments = Map.of();
 
@@ -144,22 +150,47 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     WireStreamServerHandler(WireCallDispatcher dispatcher,
                             WireReflectionService reflectionService,
                             ExecutorService serverExecutor,
-                            int maxMessageSize, int maxInboundMetadataSize, String compression) {
+                            int maxMessageSize, int maxInboundMetadataSize,
+                            Compressor responseCompressor) {
         this(dispatcher, reflectionService, serverExecutor, maxMessageSize,
-                maxInboundMetadataSize, compression, null);
+                maxInboundMetadataSize, responseCompressor, null, null);
     }
 
     WireStreamServerHandler(WireCallDispatcher dispatcher,
                             WireReflectionService reflectionService,
                             ExecutorService serverExecutor,
-                            int maxMessageSize, int maxInboundMetadataSize, String compression,
+                            int maxMessageSize, int maxInboundMetadataSize,
+                            Compressor responseCompressor,
+                            ServerStreamTracer.Factory tracerFactory) {
+        this(dispatcher, reflectionService, serverExecutor, maxMessageSize,
+                maxInboundMetadataSize, responseCompressor, null, tracerFactory);
+    }
+
+    /**
+     * @param responseCompressor    what to compress responses with, or
+     *                              {@code null} for identity; may still be
+     *                              downgraded by the client's advertisement
+     * @param decompressorRegistry  what this server can decompress, and what it
+     *                              advertises back; {@code null} uses
+     *                              {@link DecompressorRegistry#getDefaultInstance()}
+     * @param tracerFactory         per-stream observer; {@code null} for none
+     */
+    WireStreamServerHandler(WireCallDispatcher dispatcher,
+                            WireReflectionService reflectionService,
+                            ExecutorService serverExecutor,
+                            int maxMessageSize, int maxInboundMetadataSize,
+                            Compressor responseCompressor,
+                            DecompressorRegistry decompressorRegistry,
                             ServerStreamTracer.Factory tracerFactory) {
         this.dispatcher = dispatcher;
         this.reflectionService = reflectionService;
         this.serverExecutor = serverExecutor;
         this.maxMessageSize = maxMessageSize;
         this.maxInboundMetadataSize = maxInboundMetadataSize;
-        this.compression = compression;
+        this.responseCompressor = responseCompressor != null
+                ? responseCompressor : Codec.Identity.NONE;
+        this.decompressorRegistry = decompressorRegistry != null
+                ? decompressorRegistry : DecompressorRegistry.getDefaultInstance();
         this.tracerFactory = tracerFactory;
     }
 
@@ -232,39 +263,31 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             }
         }
 
-        // Parse the inbound message encoding; an unsupported encoding must be
-        // rejected with UNIMPLEMENTED per the gRPC spec
+        // Resolve the inbound encoding against what this server can decompress;
+        // an unknown one is a hard failure with UNIMPLEMENTED per the gRPC spec
         CharSequence encodingSeq = headers.get(WireConstants.GRPC_ENCODING);
         if (encodingSeq != null) {
             String encoding = encodingSeq.toString();
-            if (!WireCompression.isSupported(encoding)) {
-                sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED,
-                        "Unsupported grpc-encoding: " + encoding);
-                return;
+            // Symmetric with the receive side: identity names the absence of a
+            // codec rather than one to look up, so even a server registered with
+            // nothing may be sent an uncompressed request
+            if (!WireConstants.ENCODING_IDENTITY.equals(encoding)) {
+                Decompressor decompressor = decompressorRegistry.lookupDecompressor(encoding);
+                if (decompressor == null) {
+                    sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED,
+                            "Can't find decompressor for " + encoding);
+                    return;
+                }
+                requestDecompressor = decompressor;
             }
-            requestEncoding = encoding;
         }
 
         // Custom metadata: non-reserved headers → call attachments
         attachments = WireMetadata.fromHeaders(headers);
 
-        // Downgrade the response encoding unless the client advertised it; an
-        // absent grpc-accept-encoding means "accepts nothing", not "accepts all"
-        if (compression != null && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
-            CharSequence acceptSeq = headers.get(WireConstants.GRPC_ACCEPT_ENCODING);
-            boolean advertised = false;
-            if (acceptSeq != null) {
-                for (String candidate : acceptSeq.toString().split(",")) {
-                    if (candidate.trim().equals(compression)) {
-                        advertised = true;
-                        break;
-                    }
-                }
-            }
-            if (!advertised) {
-                compression = WireConstants.ENCODING_IDENTITY;
-            }
-        }
+        // Remember the client's advertisement; the response encoding is
+        // negotiated against it when the response headers are written
+        requestAcceptEncoding = headers.get(WireConstants.GRPC_ACCEPT_ENCODING);
 
         // Reflection is a bidirectional stream handled at the stream-handler
         // level (like health check in Provider mode). It bypasses the
@@ -367,11 +390,11 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             try {
                 long wireSize = WireFrameCodec.payloadSize(frame);
                 ServerReflectionRequest request = WireFrameCodec.decode(
-                        frame, WireReflectionService.getRequestParser(), requestEncoding);
+                        frame, WireReflectionService.getRequestParser(), requestDecompressor);
                 traceInboundMessageRead(wireSize, request.getSerializedSize());
                 ServerReflectionResponse response = reflectionService.handleRequest(request);
                 sendResponseHeaders(ctx);
-                ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), compression);
+                ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), responseCompressor);
                 traceOutboundMessageSent(responseFrame, response);
                 ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
             } catch (InvalidProtocolBufferException e) {
@@ -499,7 +522,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 }
                 if (item instanceof Message msg) {
                     sendResponseHeaders(ctx);
-                    ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc(), compression);
+                    ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc(), responseCompressor);
                     traceOutboundMessageSent(responseFrame, msg);
                     ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
                 } else {
@@ -548,9 +571,9 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                     long wireSize = WireFrameCodec.payloadSize(frame);
                     Object firstItem;
                     if (streamRequestParser != null) {
-                        firstItem = WireFrameCodec.decode(frame, streamRequestParser, requestEncoding);
+                        firstItem = WireFrameCodec.decode(frame, streamRequestParser, requestDecompressor);
                     } else {
-                        firstItem = WireFrameCodec.extractPayload(frame, requestEncoding);
+                        firstItem = WireFrameCodec.extractPayload(frame, requestDecompressor);
                     }
                     traceInboundMessageRead(wireSize, uncompressedSizeOf(firstItem));
                     streamRequestObserver.onNext(firstItem);
@@ -589,9 +612,9 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                     long wireSize = WireFrameCodec.payloadSize(frame);
                     Object item;
                     if (streamRequestParser != null) {
-                        item = WireFrameCodec.decode(frame, streamRequestParser, requestEncoding);
+                        item = WireFrameCodec.decode(frame, streamRequestParser, requestDecompressor);
                     } else {
-                        item = WireFrameCodec.extractPayload(frame, requestEncoding);
+                        item = WireFrameCodec.extractPayload(frame, requestDecompressor);
                     }
                     traceInboundMessageRead(wireSize, uncompressedSizeOf(item));
                     streamRequestObserver.onNext(item);
@@ -619,7 +642,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             return;
         }
         sendResponseHeaders(ctx);
-        ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), compression);
+        ByteBuf responseFrame = WireFrameCodec.encode(response, ctx.alloc(), responseCompressor);
         traceOutboundMessageSent(responseFrame, response);
         ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
         sendTrailers(ctx, WireConstants.STATUS_OK, null);
@@ -637,14 +660,48 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         responseHeadersSent = true;
         Http2Headers headers = new DefaultHttp2Headers()
                 .status("200")
-                .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
-                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ACCEPT_ENCODINGS);
-        if (compression != null
-                && !WireConstants.ENCODING_IDENTITY.equals(compression)) {
-            headers.set(WireConstants.GRPC_ENCODING, compression);
+                .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC);
+        String advertised = decompressorRegistry.rawAdvertisedEncodings();
+        if (!advertised.isEmpty()) {
+            headers.set(WireConstants.GRPC_ACCEPT_ENCODING, advertised);
         }
+
+        // Negotiate here rather than when the headers were read: this is the
+        // last point before any payload is framed, so whatever the writers below
+        // use is already settled. The configured compressor survives only if the
+        // client advertised it — and an absent grpc-accept-encoding means
+        // "accepts nothing", not "accepts all".
+        if (responseCompressor != Codec.Identity.NONE && !clientAccepts(
+                requestAcceptEncoding, responseCompressor.getMessageEncoding())) {
+            responseCompressor = Codec.Identity.NONE;
+        }
+        // Name the compressor even when it is identity: the peer reads the frame
+        // flag against this value, and a one-sided codec is precisely the
+        // ambiguity grpc-java removes by always writing it
+        headers.set(WireConstants.GRPC_ENCODING, responseCompressor.getMessageEncoding());
         tracer.outboundHeaders();
         ctx.write(new DefaultHttp2HeadersFrame(headers, false));
+    }
+
+    /**
+     * Whether a {@code grpc-accept-encoding} value names the given encoding.
+     * Tokens are trimmed and compared exactly, as the wire format defines: no
+     * case folding, no {@code *} wildcard, no q-value preference.
+     *
+     * @param acceptSeq the raw header value, or {@code null} when absent
+     * @param encoding  the encoding this side would like to use
+     * @return true only when the header lists that exact token
+     */
+    private static boolean clientAccepts(CharSequence acceptSeq, String encoding) {
+        if (acceptSeq == null) {
+            return false;
+        }
+        for (String candidate : acceptSeq.toString().split(",")) {
+            if (candidate.trim().equals(encoding)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     protected void sendTrailers(ChannelHandlerContext ctx, int status, String message) {

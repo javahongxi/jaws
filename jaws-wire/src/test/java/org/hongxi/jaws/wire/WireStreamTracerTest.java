@@ -12,6 +12,7 @@ import io.netty.handler.codec.http2.Http2DataFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
@@ -47,6 +48,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WireStreamTracerTest {
 
     private static final int MAX_MESSAGE_SIZE = 4 * 1024 * 1024;
+
+    /** Framing and server configuration take negotiated codecs, not names. */
+    private static final Codec GZIP = new Codec.Gzip();
 
     /** Same-thread executor so dispatch runs inline with writeInbound. */
     private static final ExecutorService DIRECT_EXECUTOR = new AbstractExecutorService() {
@@ -160,12 +164,13 @@ class WireStreamTracerTest {
     }
 
     /** A server handler whose every stream reports into {@code recorder}. */
-    private static EmbeddedChannel tracedServer(RecordingServerTracer recorder, String compression) {
+    private static EmbeddedChannel tracedServer(RecordingServerTracer recorder,
+                                                Compressor responseCompressor) {
         WireHandlerRegistry registry = new WireHandlerRegistry();
         registry.register("test.Health", "Echo", echoHandler());
         return new EmbeddedChannel(new WireStreamServerHandler(
                 new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
-                null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, compression,
+                null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, responseCompressor,
                 new ServerStreamTracer.Factory() {
                     @Override
                     public ServerStreamTracer newServerStreamTracer(String path) {
@@ -206,7 +211,7 @@ class WireStreamTracerTest {
         Http2Headers extra = new DefaultHttp2Headers()
                 .set(WireConstants.GRPC_ENCODING, WireConstants.ENCODING_GZIP)
                 .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ENCODING_GZIP);
-        ByteBuf frame = WireFrameCodec.encode(REQUEST, ch.alloc(), WireConstants.ENCODING_GZIP);
+        ByteBuf frame = WireFrameCodec.encode(REQUEST, ch.alloc(), GZIP);
         int wireSize = frame.readableBytes() - WireConstants.GRPC_HEADER_SIZE;
         ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
         ch.writeInbound(new DefaultHttp2DataFrame(frame, true));
@@ -223,11 +228,11 @@ class WireStreamTracerTest {
     @Test
     void outboundWireSizeMatchesTheFrameActuallyWritten() throws Exception {
         RecordingServerTracer recorder = new RecordingServerTracer();
-        EmbeddedChannel ch = tracedServer(recorder, WireConstants.ENCODING_GZIP);
+        EmbeddedChannel ch = tracedServer(recorder, GZIP);
 
         // The client advertises gzip, so the negotiated response is compressed
         Http2Headers extra = new DefaultHttp2Headers()
-                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ACCEPT_ENCODINGS);
+                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ENCODING_GZIP);
         ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
         ch.writeInbound(new DefaultHttp2DataFrame(
                 WireFrameCodec.encode(REQUEST, ch.alloc()), true));
@@ -410,5 +415,84 @@ class WireStreamTracerTest {
             client.close();
             server.close();
         }
+    }
+
+    /**
+     * Drive a real client against a server configured with gzip and return what
+     * the server-side tracer recorded.
+     *
+     * @param advertiseGzip whether the client offers gzip; offering nothing at
+     *                      all is what a non-accepting peer looks like on the wire
+     * @return the recorded event lines
+     */
+    private static List<String> negotiateResponseEncoding(boolean advertiseGzip) throws Exception {
+        int port;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            port = socket.getLocalPort();
+        }
+        URL serverUrl = new URL("wire", "0.0.0.0", port, "");
+        serverUrl.addParameter(UrlParam.Transport.COMPRESSION.getName(), WireConstants.ENCODING_GZIP);
+
+        WireHandlerRegistry registry = new WireHandlerRegistry();
+        registry.register("test.Health", "Echo", echoHandler());
+        RecordingServerTracer serverTracer = new RecordingServerTracer();
+        WireServer server = new WireServer(serverUrl, registry);
+        server.setStreamTracerFactory(new ServerStreamTracer.Factory() {
+            @Override
+            public ServerStreamTracer newServerStreamTracer(String path) {
+                return serverTracer;
+            }
+        });
+        server.open();
+
+        WireClient client = new WireClient(new URL("wire", "127.0.0.1", port, "test.Health"));
+        if (!advertiseGzip) {
+            // No advertisement at all, not even identity: the server must treat
+            // this peer as accepting nothing
+            client.setDecompressorRegistry(DecompressorRegistry.emptyInstance());
+        }
+        assertTrue(client.open(), "client should connect");
+        try {
+            DefaultRequest request = new DefaultRequest();
+            request.setInterfaceName("test.Health");
+            request.setMethodName("Echo");
+            request.setArguments(new Object[]{REQUEST});
+            Response response = client.request(request, HealthCheckResponse.parser(),
+                    WireCallOptions.DEFAULT);
+            assertEquals(ServingStatus.SERVING,
+                    ((HealthCheckResponse) response.getValue()).getStatus(),
+                    "the call must succeed either way");
+            return serverTracer.events;
+        } finally {
+            client.close();
+            server.close();
+        }
+    }
+
+    private static String firstOutbound(List<String> events) {
+        return events.stream()
+                .filter(e -> e.startsWith("outboundMessageSent"))
+                .findFirst().orElseThrow(() -> new AssertionError("no outbound event: " + events));
+    }
+
+    /**
+     * The negotiation matrix over a real socket rather than an embedded channel:
+     * gzip costs about twenty bytes on a message this small, so a differing
+     * wire and raw size is positive evidence a codec actually ran.
+     */
+    @Test
+    void peerAdvertisingGzipIsServedCompressed() throws Exception {
+        String outbound = firstOutbound(negotiateResponseEncoding(true));
+        String[] parts = outbound.split(" ");
+        assertTrue(!parts[2].equals(parts[3]),
+                "wire and raw sizes must differ when gzip ran: " + outbound);
+    }
+
+    @Test
+    void peerAdvertisingNothingIsServedUncompressed() throws Exception {
+        String outbound = firstOutbound(negotiateResponseEncoding(false));
+        String[] parts = outbound.split(" ");
+        assertEquals(parts[2], parts[3],
+                "an unadvertised codec must be downgraded, not used: " + outbound);
     }
 }

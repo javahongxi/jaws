@@ -92,15 +92,29 @@ class WireCallOptionsTest {
     @Test
     void resolveCompressorInheritsClientDefault() {
         WireClient c = client("gzip");
-        assertEquals("gzip", c.resolveCompressor(WireCallOptions.DEFAULT));
-        assertEquals("gzip", c.resolveCompressor(null));
+        assertEquals(WireConstants.ENCODING_GZIP,
+                c.resolveCompressor(WireCallOptions.DEFAULT).getMessageEncoding());
+        assertEquals(WireConstants.ENCODING_GZIP,
+                c.resolveCompressor(null).getMessageEncoding());
     }
 
     @Test
     void resolveCompressorPerCallOverrideAndFallback() {
         WireClient c = client("gzip");
-        assertEquals("identity", c.resolveCompressor(WireCallOptions.DEFAULT.withCompressor("identity")));
-        // unsupported value falls back to the client default
-        assertSame("gzip", c.resolveCompressor(WireCallOptions.DEFAULT.withCompressor("snappy")));
+        // identity is the sentinel framing compares by reference, so it must be
+        // that exact object rather than an equal codec
+        assertSame(Codec.Identity.NONE,
+                c.resolveCompressor(WireCallOptions.DEFAULT.withCompressor("identity")));
+        // an unregistered per-call value falls back to the client default
+        assertEquals(WireConstants.ENCODING_GZIP, c.resolveCompressor(
+                WireCallOptions.DEFAULT.withCompressor("snappy")).getMessageEncoding());
+    }
+
+    @Test
+    void unregisteredClientCompressionFallsBackToIdentity() {
+        WireClient c = client("zstd");
+        assertSame(Codec.Identity.NONE, c.resolveCompressor(WireCallOptions.DEFAULT),
+                "a configured name nothing is registered under must not silently"
+                        + " look like it is compressing");
     }
 }

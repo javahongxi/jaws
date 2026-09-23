@@ -169,7 +169,7 @@ class WireMetadataSizeLimitTest {
                     return resp;
                 },
                 () -> {},
-                true, ClientStreamTracer.NOOP);
+                true, DecompressorRegistry.getDefaultInstance(), ClientStreamTracer.NOOP);
 
         EmbeddedChannel ch = new EmbeddedChannel(handler);
 

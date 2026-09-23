@@ -30,7 +30,7 @@ buf.writeInt(payload.length);
 buf.writeBytes(payload);
 ```
 
-解码侧 `tryExtractFrame(accumulator)` 负责处理 TCP/H2 的**粘包与半帧**：不足 `GRPC_HEADER_SIZE(=5) + length` 就攒着，凑齐才 `readRetainedSlice` 切出来——零拷贝，和 jaws 二进制协议的 body 处理同一套路。压缩标志为真时按 `content-encoding`（gzip）解压，与 §7 的压缩协商联动。
+解码侧 `tryExtractFrame(accumulator)` 负责处理 TCP/H2 的**粘包与半帧**：不足 `GRPC_HEADER_SIZE(=5) + length` 就攒着，凑齐才 `readRetainedSlice` 切出来——零拷贝，和 jaws 二进制协议的 body 处理同一套路。压缩标志为真时按本流协商出的 `grpc-encoding` 解码器解压，与 §7 的压缩协商联动。
 
 ## 4. 状态码与富错误：`grpc-status` + `grpc-status-details-bin`
 
@@ -60,7 +60,7 @@ gRPC 把"从一个 target 字符串解析出地址列表"抽象成 `NameResolver
 wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"的分水岭：
 
 - **deadline**：走 `grpc-timeout` header，服务端解析成绝对 `deadlineMs`，流式每帧吐出前检 `isDeadlineExceeded()`，超了直接 `sendTrailers(DEADLINE_EXCEEDED)`。
-- **压缩**：`WireCompression` 支持 identity + gzip，与帧头 compressed-flag 联动。
+- **压缩**：`CompressorRegistry`（出站选）+ `DecompressorRegistry`（入站解 + 决定 advertise）两张表驱动，内置 identity 与 gzip（`java.util.zip`，零外部依赖），注册一个 `Codec` 即可按名字启用第三种编码。入站未知编码 → `UNIMPLEMENTED`，出站未被客户端广告 → 降级 identity；响应头恒写 `grpc-encoding`（对齐 grpc-java 的 "Always put compressor, even if it's identity"），请求头只在真压缩时才写。
 - **keepalive（gRFC A8 服务端守卫）**：`WireKeepaliveHandler` 实现 gRPC 的"ping 过快"惩罚——PING 间隔小于许可值累计 strike，超过 `MAX_PING_STRIKES`（默认 **2**）才发 `GOAWAY` 带 `too_many_pings`，**不是第一次违规就踢**（和 grpc-java 服务端一致）。客户端 `WireClientKeepaliveHandler` 镜像 grpc-java 的 `KeepAliveManager` 状态机，无 ACK 即断连重连。
 - **GOAWAY**：`WireGoAwayHandler` 收到后置 IDLE、关连接、立即重连。
 - **retry**：`WireRetryPolicy` 指数退避 + 抖动，且**仅 `UNAVAILABLE` 可重试**（`WireStatus.isRetryable`）。

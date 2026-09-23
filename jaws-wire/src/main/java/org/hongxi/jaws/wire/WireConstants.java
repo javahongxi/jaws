@@ -57,8 +57,6 @@ public final class WireConstants {
     // Message compression encodings
     public static final String ENCODING_IDENTITY = "identity";
     public static final String ENCODING_GZIP = "gzip";
-    /** Value advertised for grpc-accept-encoding when both encodings are supported. */
-    public static final String ACCEPT_ENCODINGS = "identity,gzip";
 
     /** HTTP/2 header required by the gRPC protocol to allow trailer-based status. */
     public static final CharSequence HEADER_TE = "te";

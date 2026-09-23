@@ -47,6 +47,12 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     /** Removes the callback from the client's pending map after the future is completed. */
     private final Runnable onCompletion;
     /**
+     * What this client can decompress; the response's {@code grpc-encoding} is
+     * resolved against it, so a codec the server chose but this side cannot
+     * read fails the call instead of mis-parsing the payload.
+     */
+    private final DecompressorRegistry decompressorRegistry;
+    /**
      * When true (default), {@code onCompletion} runs on every completion path
      * (success and failure). When false (retry-enabled calls), it runs only on
      * success; failure paths leave the callback in the map so the retry loop
@@ -61,7 +67,8 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     private String grpcMessage;
     /** Decoded grpc-status-details-bin (rich error), or null when the server sent none. */
     private com.google.rpc.Status richStatus;
-    private String responseEncoding = WireConstants.ENCODING_IDENTITY;
+    /** Decompressor for the response encoding; identity until headers say otherwise. */
+    private Decompressor responseDecompressor = Codec.Identity.NONE;
     /** Observer shared with the {@code ClientCallImpl} of this stream; never {@code null}. */
     private final ClientStreamTracer tracer;
     /** Inbound message counter for this stream, starting at 0. */
@@ -75,7 +82,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                               Function<Message, DefaultResponse> responseBuilder,
                               Runnable onCompletion) {
         this(responseParser, responseFuture, maxMessageSize, 0, responseBuilder, onCompletion,
-                true, ClientStreamTracer.NOOP);
+                true, DecompressorRegistry.getDefaultInstance(), ClientStreamTracer.NOOP);
     }
 
     WireStreamResponseHandler(Parser<? extends Message> responseParser,
@@ -85,6 +92,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
                               Function<Message, DefaultResponse> responseBuilder,
                               Runnable onCompletion,
                               boolean autoRemoveCallback,
+                              DecompressorRegistry decompressorRegistry,
                               ClientStreamTracer tracer) {
         this.responseParser = responseParser;
         this.responseFuture = responseFuture;
@@ -93,6 +101,8 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
         this.responseBuilder = responseBuilder;
         this.onCompletion = onCompletion;
         this.autoRemoveCallback = autoRemoveCallback;
+        this.decompressorRegistry = decompressorRegistry != null
+                ? decompressorRegistry : DecompressorRegistry.getDefaultInstance();
         this.tracer = tracer;
     }
 
@@ -134,10 +144,24 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             richStatus = WireErrorDetails.fromTrailers(headersFrame.headers());
             tracer.inboundTrailers();
         } else {
-            // Initial response HEADERS: capture the response message encoding
+            // Initial response HEADERS: resolve the response message encoding
+            // against what this client can actually decompress
             CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
             if (encodingSeq != null) {
-                responseEncoding = encodingSeq.toString();
+                String encoding = encodingSeq.toString();
+                // identity names the absence of a codec, so it is never a
+                // registry lookup: the frame flag alone decides whether bytes
+                // need inflating, and a client that registered nothing can
+                // still read an uncompressed response
+                if (!WireConstants.ENCODING_IDENTITY.equals(encoding)) {
+                    Decompressor decompressor = decompressorRegistry.lookupDecompressor(encoding);
+                    if (decompressor == null) {
+                        failCall("Can't find decompressor for " + encoding
+                                + ", the server chose a codec this client cannot read", null);
+                        return;
+                    }
+                    responseDecompressor = decompressor;
+                }
             }
             tracer.inboundHeaders();
         }
@@ -203,7 +227,8 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             try {
                 // Captured before decoding: decode consumes the frame's reader index
                 long wireSize = WireFrameCodec.payloadSize(frame);
-                Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
+                Message response = WireFrameCodec.decode(frame, responseParser,
+                        responseDecompressor);
                 tracer.inboundMessageRead(inboundMessageNumber++, wireSize,
                         response.getSerializedSize());
                 DefaultResponse successResponse = responseBuilder.apply(response);

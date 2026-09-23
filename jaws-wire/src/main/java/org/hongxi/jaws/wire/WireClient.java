@@ -84,8 +84,14 @@ public class WireClient extends AbstractHttp2Client {
     private final int maxMessageSize;
     /** Max size of inbound HTTP/2 headers (metadata) in bytes. */
     private final int maxInboundMetadataSize;
-    /** Outbound message compression encoding: identity or gzip. */
+    /** Encoding name configured for outbound compression, resolved per call. */
     private final String compression;
+    /** Which encoding names {@link #compression} and call options may select. */
+    private volatile CompressorRegistry compressorRegistry =
+            CompressorRegistry.getDefaultInstance();
+    /** What this client can decompress, and what it advertises to servers. */
+    private volatile DecompressorRegistry decompressorRegistry =
+            DecompressorRegistry.getDefaultInstance();
     /** Client keepalive interval; 0 means disabled. */
     private final long keepaliveTimeMs;
     /** Client keepalive ACK timeout. */
@@ -115,13 +121,10 @@ public class WireClient extends AbstractHttp2Client {
         super(url, "WireClient");
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
         this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
-        String compression = url.getParameter(UrlParam.Transport.COMPRESSION);
-        if (compression != null && !WireConstants.ENCODING_IDENTITY.equals(compression)
-                && !WireCompression.isSupported(compression)) {
-            log.warn("Unsupported wire compression '{}', falling back to identity", compression);
-            compression = WireConstants.ENCODING_IDENTITY;
-        }
-        this.compression = compression;
+        // Kept as a name, not resolved here: the registries may still be
+        // replaced after construction, and resolveCompressor warns when a name
+        // it cannot honour is configured
+        this.compression = url.getParameter(UrlParam.Transport.COMPRESSION);
         this.keepaliveTimeMs = url.getLongParameter(UrlParam.Transport.KEEPALIVE_TIME_MS);
         this.keepaliveTimeoutMs = url.getLongParameter(UrlParam.Transport.KEEPALIVE_TIMEOUT_MS);
         this.retryPolicy = WireRetryPolicy.fromUrl(url);
@@ -200,7 +203,7 @@ public class WireClient extends AbstractHttp2Client {
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
         int timeout = resolveDeadline(request, options);
-        String compressor = resolveCompressor(options);
+        Compressor compressor = resolveCompressor(options);
 
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
 
@@ -233,7 +236,7 @@ public class WireClient extends AbstractHttp2Client {
      * stale value and no-op.
      */
     private void attemptRequest(Request request, Parser<? extends Message> responseParser,
-                                Message requestMessage, String grpcPath, int timeout, String compressor,
+                                Message requestMessage, String grpcPath, int timeout, Compressor compressor,
                                 DefaultResponseFuture responseFuture, AtomicInteger attemptCounter) {
         int attempt = attemptCounter.get();
         io.netty.channel.Channel streamChannel = null;
@@ -250,6 +253,7 @@ public class WireClient extends AbstractHttp2Client {
                     },
                     () -> removeCallback(responseFuture.getRequestId()),
                     false /* retry loop manages the callback */,
+                    decompressorRegistry(),
                     tracer);
 
             final io.netty.channel.Channel streamChannel0 = new Http2StreamChannelBootstrap(connChannel)
@@ -326,7 +330,7 @@ public class WireClient extends AbstractHttp2Client {
      * Execute a single request attempt without retry logic (original path).
      */
     private void doSingleAttempt(Request request, Parser<? extends Message> responseParser,
-                                  Message requestMessage, String grpcPath, int timeout, String compressor,
+                                  Message requestMessage, String grpcPath, int timeout, Compressor compressor,
                                   DefaultResponseFuture responseFuture) {
         io.netty.channel.Channel streamChannel = null;
         try {
@@ -398,6 +402,7 @@ public class WireClient extends AbstractHttp2Client {
                 },
                 () -> removeCallback(responseFuture.getRequestId()),
                 true,
+                decompressorRegistry(),
                 tracer);
     }
 
@@ -435,7 +440,7 @@ public class WireClient extends AbstractHttp2Client {
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
         int timeout = resolveDeadline(request, options);
-        String compressor = resolveCompressor(options);
+        Compressor compressor = resolveCompressor(options);
 
         StreamSubject<Object> observer = new StreamSubject<>();
         io.netty.channel.Channel streamChannel = null;
@@ -447,6 +452,7 @@ public class WireClient extends AbstractHttp2Client {
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new WireStreamStreamingHandler(
                                     responseParser, observer, maxMessageSize, maxInboundMetadataSize,
+                                    decompressorRegistry(),
                                     tracer))
                             .open().syncUninterruptibly().getNow();
             streamChannel = streamChannel0;
@@ -518,7 +524,7 @@ public class WireClient extends AbstractHttp2Client {
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
         int timeout = resolveDeadline(request, options);
-        String compressor = resolveCompressor(options);
+        Compressor compressor = resolveCompressor(options);
 
         DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
         // Use StreamSubject (synchronous delivery) to guarantee onNext fires
@@ -649,7 +655,7 @@ public class WireClient extends AbstractHttp2Client {
         String grpcPath = "/" + request.getInterfaceName() + "/" + request.getMethodName();
 
         int timeout = resolveDeadline(request, options);
-        String compressor = resolveCompressor(options);
+        Compressor compressor = resolveCompressor(options);
 
         StreamSubject<Object> observer = new StreamSubject<>();
         io.netty.channel.Channel streamChannel = null;
@@ -661,6 +667,7 @@ public class WireClient extends AbstractHttp2Client {
                     new Http2StreamChannelBootstrap(connChannel)
                             .handler(new WireStreamStreamingHandler(
                                     responseParser, observer, maxMessageSize, maxInboundMetadataSize,
+                                    decompressorRegistry(),
                                     tracer))
                             .open().syncUninterruptibly().getNow();
             streamChannel = streamChannel0;
@@ -731,7 +738,7 @@ public class WireClient extends AbstractHttp2Client {
      * caller's deadline, and the request attachments as custom metadata.
      */
     private Http2Headers buildRequestHeaders(Request request, String grpcPath, int timeout,
-                                             String compressor) {
+                                             Compressor compressor) {
         Http2Headers headers = new DefaultHttp2Headers()
                 .method("POST")
                 .scheme(getSslContext() != null ? "https" : "http")
@@ -740,13 +747,21 @@ public class WireClient extends AbstractHttp2Client {
                 .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
                 .set(WireConstants.HEADER_TE, WireConstants.TE_TRAILERS)
                 .set(WireConstants.HEADER_USER_AGENT, WireConstants.USER_AGENT)
-                // Advertise that compressed responses are accepted
-                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ACCEPT_ENCODINGS)
                 // Propagate the caller's deadline so the server can honor it
                 // and report DEADLINE_EXCEEDED (gRPC timeout semantics)
                 .set(WireStatus.GRPC_TIMEOUT, WireStatus.encodeTimeout(timeout));
-        if (compressor != null && !WireConstants.ENCODING_IDENTITY.equals(compressor)) {
-            headers.set(WireConstants.GRPC_ENCODING, compressor);
+        // Advertise what this client can decompress, taken from the registry:
+        // identity is registered but not advertised, so the default offer is
+        // exactly "gzip" — an uncompressed frame needs no agreement
+        String advertised = decompressorRegistry.rawAdvertisedEncodings();
+        if (!advertised.isEmpty()) {
+            headers.set(WireConstants.GRPC_ACCEPT_ENCODING, advertised);
+        }
+        // A client names its encoding only when it is compressing; absence
+        // already means identity, which is why only the server writes the
+        // header unconditionally
+        if (compressor != null && compressor != Codec.Identity.NONE) {
+            headers.set(WireConstants.GRPC_ENCODING, compressor.getMessageEncoding());
         }
         // Request attachments → gRPC metadata (custom headers)
         WireMetadata.writeToHeaders(headers, request.getAttachments());
@@ -807,17 +822,73 @@ public class WireClient extends AbstractHttp2Client {
      * @param options per-call options (may be {@code null} or {@link WireCallOptions#DEFAULT})
      * @return the effective compressor ("identity" or a supported encoding)
      */
-    String resolveCompressor(WireCallOptions options) {
+    Compressor resolveCompressor(WireCallOptions options) {
         if (options == null || options.compressor() == null) {
-            return compression;
+            return lookupCompressor(compression);
         }
         String c = options.compressor();
-        if (WireConstants.ENCODING_IDENTITY.equals(c) || WireCompression.isSupported(c)) {
-            return c;
+        if (WireConstants.ENCODING_IDENTITY.equals(c)) {
+            return Codec.Identity.NONE;
+        }
+        Compressor compressor = compressorRegistry.lookupCompressor(c);
+        if (compressor != null) {
+            return compressor;
         }
         log.warn("Unsupported wire call compressor '{}', falling back to client default '{}'",
                 c, compression);
-        return compression;
+        return lookupCompressor(compression);
+    }
+
+    /**
+     * Resolve a configured or requested encoding name to a compressor.
+     *
+     * @param name the encoding name, possibly {@code null}
+     * @return the registered compressor, or identity for a name nothing is
+     *         registered under — warned rather than swallowed, because a codec
+     *         that silently does nothing is worse than one refused outright
+     */
+    private Compressor lookupCompressor(String name) {
+        if (name == null || name.isEmpty() || WireConstants.ENCODING_IDENTITY.equals(name)) {
+            return Codec.Identity.NONE;
+        }
+        Compressor compressor = compressorRegistry.lookupCompressor(name);
+        if (compressor == null) {
+            log.warn("No compressor registered for '{}', sending uncompressed", name);
+            return Codec.Identity.NONE;
+        }
+        return compressor;
+    }
+
+    /**
+     * Replace the compressors selectable by the {@code compression} parameter
+     * and by {@link WireCallOptions#withCompressor(String)}. Mirrors
+     * grpc-java's {@code ManagedChannelBuilder.compressorRegistry(...)}.
+     *
+     * @param compressorRegistry the registry to use, {@code null} for the default
+     */
+    public void setCompressorRegistry(CompressorRegistry compressorRegistry) {
+        this.compressorRegistry = compressorRegistry != null
+                ? compressorRegistry : CompressorRegistry.getDefaultInstance();
+    }
+
+    /**
+     * Replace what this client can decompress and advertises in
+     * {@code grpc-accept-encoding}. Mirrors grpc-java's
+     * {@code ManagedChannelBuilder.decompressorRegistry(...)}.
+     *
+     * @param decompressorRegistry the registry to use, {@code null} for the default
+     */
+    public void setDecompressorRegistry(DecompressorRegistry decompressorRegistry) {
+        this.decompressorRegistry = decompressorRegistry != null
+                ? decompressorRegistry : DecompressorRegistry.getDefaultInstance();
+    }
+
+    /**
+     * @return the decompressions this client can perform, needed by its
+     *         per-stream response handlers
+     */
+    DecompressorRegistry decompressorRegistry() {
+        return decompressorRegistry;
     }
 
     /**
@@ -932,7 +1003,8 @@ public class WireClient extends AbstractHttp2Client {
         private final Request request;
         private final String grpcPath;
         private final int timeout;
-        private final String compressor;
+        /** Compressor negotiated for this call's request messages. */
+        private final Compressor compressor;
         private final WireCallContext callContext;
         private final Consumer<Throwable> failureSink;
         /** Observer shared with this stream's response handler; never {@code null}. */
@@ -946,7 +1018,7 @@ public class WireClient extends AbstractHttp2Client {
         private int outboundMessageNumber;
 
         ClientCallImpl(io.netty.channel.Channel streamChannel, Request request,
-                        String grpcPath, int timeout, String compressor,
+                        String grpcPath, int timeout, Compressor compressor,
                         WireCallContext callContext, Consumer<Throwable> failureSink,
                         ClientStreamTracer tracer) {
             this.streamChannel = streamChannel;

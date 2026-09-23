@@ -86,4 +86,18 @@ public class WireExporter<T> extends AbstractExporter<T> {
     public void drainInflightRequests(long timeout) {
         server.drainInflightRequests(timeout);
     }
+
+    /**
+     * The wire server this exporter registered its service on, exposed for the
+     * server-side wiring that has no URL representation: attaching a
+     * {@link ServerStreamTracer.Factory}, or replacing the compressor and
+     * decompressor registries. Same reason {@link WireServer#getHealthService()}
+     * is reachable.
+     *
+     * @return the shared wire server, or {@code null} before {@link #init()}
+     *         has created it
+     */
+    public WireServer getServer() {
+        return (WireServer) server;
+    }
 }

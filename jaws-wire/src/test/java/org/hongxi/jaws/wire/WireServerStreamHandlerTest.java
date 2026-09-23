@@ -48,6 +48,9 @@ class WireServerStreamHandlerTest {
 
     private static final int MAX_MESSAGE_SIZE = 4 * 1024 * 1024;
 
+    /** Framing and server configuration take negotiated codecs, not names. */
+    private static final Codec GZIP = new Codec.Gzip();
+
     /** Same-thread executor so dispatch runs inline with writeInbound. */
     private static final ExecutorService DIRECT_EXECUTOR = new AbstractExecutorService() {
         private volatile boolean shutdown;
@@ -186,9 +189,15 @@ class WireServerStreamHandlerTest {
         assertEquals("200", responseHeaders.headers().status().toString());
         assertEquals(WireConstants.CONTENT_TYPE_GRPC,
                 responseHeaders.headers().get(WireConstants.HEADER_CONTENT_TYPE).toString());
-        // The response advertises accepted encodings for follow-up calls
-        assertEquals(WireConstants.ACCEPT_ENCODINGS,
+        // The response advertises what this server can decompress. Identity is
+        // registered but not advertised, so the offer is exactly gzip: an
+        // uncompressed frame needs no agreement to read
+        assertEquals(WireConstants.ENCODING_GZIP,
                 responseHeaders.headers().get(WireConstants.GRPC_ACCEPT_ENCODING).toString());
+        // The server names its codec even when it is not compressing, so the
+        // peer always has something to read the frame flag against
+        assertEquals(WireConstants.ENCODING_IDENTITY,
+                responseHeaders.headers().get(WireConstants.GRPC_ENCODING).toString());
 
         Http2DataFrame dataFrame = ch.readOutbound();
         assertEquals(ServingStatus.SERVING, decodeResponseData(dataFrame).getStatus());
@@ -264,13 +273,14 @@ class WireServerStreamHandlerTest {
         Http2Headers extra = new DefaultHttp2Headers()
                 .set(WireConstants.GRPC_ENCODING, WireConstants.ENCODING_GZIP);
         ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
-        ByteBuf compressedFrame = WireFrameCodec.encode(REQUEST, ch.alloc(), WireConstants.ENCODING_GZIP);
+        ByteBuf compressedFrame = WireFrameCodec.encode(REQUEST, ch.alloc(), GZIP);
         ch.writeInbound(new DefaultHttp2DataFrame(compressedFrame, true));
 
         assertEquals("demo", seenService.get(), "gzip request must be decompressed before parsing");
         Http2HeadersFrame responseHeaders = ch.readOutbound();
-        // Server has no compression configured: no grpc-encoding in the response
-        assertNull(responseHeaders.headers().get(WireConstants.GRPC_ENCODING));
+        // Server has no compression configured: it still names the codec it used
+        assertEquals(WireConstants.ENCODING_IDENTITY,
+                responseHeaders.headers().get(WireConstants.GRPC_ENCODING).toString());
         ch.readOutbound(); // DATA
         Http2HeadersFrame trailers = ch.readOutbound();
         assertEquals("0", trailers.headers().get(WireConstants.GRPC_STATUS).toString());
@@ -306,7 +316,7 @@ class WireServerStreamHandlerTest {
         return new EmbeddedChannel(
                 new WireStreamServerHandler(
                         new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
-                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, WireConstants.ENCODING_GZIP));
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, GZIP));
     }
 
     @Test
@@ -315,7 +325,7 @@ class WireServerStreamHandlerTest {
         EmbeddedChannel ch = gzipServerChannel(registry);
 
         Http2Headers extra = new DefaultHttp2Headers()
-                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ACCEPT_ENCODINGS);
+                .set(WireConstants.GRPC_ACCEPT_ENCODING, WireConstants.ENCODING_GZIP);
         ch.writeInbound(requestHeaders("/test.Health/Echo", extra));
         ch.writeInbound(new DefaultHttp2DataFrame(
                 WireFrameCodec.encode(REQUEST, ch.alloc()), true));
@@ -345,7 +355,9 @@ class WireServerStreamHandlerTest {
                 WireFrameCodec.encode(REQUEST, ch.alloc()), true));
 
         Http2HeadersFrame responseHeaders = ch.readOutbound();
-        assertNull(responseHeaders.headers().get(WireConstants.GRPC_ENCODING),
+        CharSequence unadvertised = responseHeaders.headers().get(WireConstants.GRPC_ENCODING);
+        assertNotNull(unadvertised, "the server names its codec even when not compressing");
+        assertEquals(WireConstants.ENCODING_IDENTITY, unadvertised.toString(),
                 "an unadvertised encoding must be downgraded to identity");
 
         Http2DataFrame dataFrame = ch.readOutbound();
@@ -369,7 +381,9 @@ class WireServerStreamHandlerTest {
                 WireFrameCodec.encode(REQUEST, ch.alloc()), true));
 
         Http2HeadersFrame responseHeaders = ch.readOutbound();
-        assertNull(responseHeaders.headers().get(WireConstants.GRPC_ENCODING));
+        assertEquals(WireConstants.ENCODING_IDENTITY,
+                responseHeaders.headers().get(WireConstants.GRPC_ENCODING).toString(),
+                "no advertisement means no compression");
 
         Http2DataFrame dataFrame = ch.readOutbound();
         assertCompressedFlag(dataFrame, WireConstants.NOT_COMPRESSED);

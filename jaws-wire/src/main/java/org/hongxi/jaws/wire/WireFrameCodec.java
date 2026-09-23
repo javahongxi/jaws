@@ -6,6 +6,12 @@ import com.google.protobuf.Parser;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
 /**
  * Codec for the gRPC length-prefixed message frame format.
  * <p>
@@ -14,9 +20,14 @@ import io.netty.buffer.ByteBufAllocator;
  *   [1 byte compressed-flag] [4 bytes big-endian length] [payload bytes]
  * </pre>
  * The compressed flag is {@code 0} when the payload is sent as-is and
- * {@code 1} when it is compressed with the encoding declared in the call's
- * {@code grpc-encoding} header ({@code identity} or {@code gzip}, see
- * {@link WireCompression}).
+ * {@code 1} when it was compressed by the {@link Compressor} named in the
+ * call's {@code grpc-encoding} header.
+ * <p>
+ * This codec takes negotiated <em>instances</em>, not encoding names: looking
+ * a name up in a {@link CompressorRegistry} or {@link DecompressorRegistry} is
+ * the negotiation step, done once per call, and by the time a message is
+ * framed the answer is already settled. Passing a name down would re-open the
+ * "who decides what is supported" question on every message.
  * <p>
  * This codec does not use or depend on grpc-java; it operates directly on
  * {@link ByteBuf} and protobuf {@link Message} instances.
@@ -42,30 +53,31 @@ public final class WireFrameCodec {
 
     /**
      * Encode a protobuf {@link Message} into a gRPC frame, compressing the
-     * payload when {@code encoding} is a supported compression encoding.
+     * payload when a compressor was negotiated for this call.
      *
-     * @param message  the protobuf message to encode
-     * @param alloc    the allocator for the output buffer
-     * @param encoding the outbound encoding ({@code null}/identity = uncompressed)
+     * @param message    the protobuf message to encode
+     * @param alloc      the allocator for the output buffer
+     * @param compressor the negotiated compressor; {@code null} or
+     *                   {@link Codec.Identity#NONE} sends the payload as-is
      * @return a new {@link ByteBuf} containing the complete gRPC frame
      */
-    public static ByteBuf encode(Message message, ByteBufAllocator alloc, String encoding) {
-        return encodeRawBytes(message.toByteArray(), alloc, encoding);
+    public static ByteBuf encode(Message message, ByteBufAllocator alloc, Compressor compressor) {
+        return encodeRawBytes(message.toByteArray(), alloc, compressor);
     }
 
     /**
      * Decode a gRPC frame from the given {@link ByteBuf} into a protobuf {@link Message}.
      * The reader index of {@code frame} must be at the start of the frame header
-     * (compressed-flag byte). A compressed payload is decompressed with the
-     * call's {@code grpc-encoding} value.
+     * (compressed-flag byte). A compressed payload is rejected, because no
+     * encoding was negotiated for this call.
      *
      * @param frame  the buffer positioned at the frame header
      * @param parser the protobuf parser for the expected message type
      * @param <T>    the protobuf message type
      * @return the decoded protobuf message
-     * @throws InvalidProtocolBufferException if the payload is not valid protobuf
-     * @throws IllegalArgumentException       if the payload is compressed with an
-     *                                        unsupported encoding (grpc-status UNIMPLEMENTED)
+     * @throws InvalidProtocolBufferException if the payload is not valid protobuf,
+     *                                        or is compressed while nothing was
+     *                                        negotiated
      */
     public static <T extends Message> T decode(ByteBuf frame, Parser<T> parser)
             throws InvalidProtocolBufferException {
@@ -73,37 +85,56 @@ public final class WireFrameCodec {
     }
 
     /**
-     * Decode a gRPC frame with an explicit inbound encoding.
+     * Decode a gRPC frame with the decompressor negotiated for this call.
      *
-     * @param frame    the buffer positioned at the frame header
-     * @param parser   the protobuf parser for the expected message type
-     * @param encoding the encoding declared in the call's grpc-encoding header
-     * @param <T>      the protobuf message type
+     * @param frame        the buffer positioned at the frame header
+     * @param parser       the protobuf parser for the expected message type
+     * @param decompressor the negotiated decompressor; {@code null} or
+     *                     {@link Codec.Identity#NONE} accepts only uncompressed
+     *                     payloads
+     * @param <T>          the protobuf message type
      * @return the decoded protobuf message
-     * @throws InvalidProtocolBufferException if the payload is malformed
-     * @throws IllegalArgumentException       if the payload is compressed with an
-     *                                        unsupported encoding (grpc-status UNIMPLEMENTED)
+     * @throws InvalidProtocolBufferException if the payload is malformed, or is
+     *                                        compressed while nothing was negotiated
      */
-    public static <T extends Message> T decode(ByteBuf frame, Parser<T> parser, String encoding)
+    public static <T extends Message> T decode(ByteBuf frame, Parser<T> parser,
+                                               Decompressor decompressor)
             throws InvalidProtocolBufferException {
-        byte[] data = extractPayload(frame, encoding);
+        byte[] data = extractPayload(frame, decompressor);
         return parser.parseFrom(data);
     }
 
     /**
-     * Encode raw protobuf bytes into a gRPC frame, compressing the payload
-     * when {@code encoding} is a supported compression encoding.
+     * Encode raw protobuf bytes into a gRPC frame, compressing the payload when
+     * a compressor was negotiated.
      *
-     * @param rawBytes the raw protobuf bytes (without gRPC header)
-     * @param alloc    the allocator for the output buffer
-     * @param encoding the outbound encoding ({@code null}/identity = uncompressed)
+     * @param rawBytes   the raw protobuf bytes (without gRPC header)
+     * @param alloc      the allocator for the output buffer
+     * @param compressor the negotiated compressor; {@code null} or
+     *                   {@link Codec.Identity#NONE} sends the payload as-is
      * @return a new {@link ByteBuf} containing the complete gRPC frame
+     * @throws IllegalStateException if compression fails
      */
-    public static ByteBuf encodeRawBytes(byte[] rawBytes, ByteBufAllocator alloc, String encoding) {
-        boolean compressed = encoding != null
-                && !WireConstants.ENCODING_IDENTITY.equals(encoding)
-                && WireCompression.isSupported(encoding);
-        byte[] payload = compressed ? WireCompression.compress(rawBytes, encoding) : rawBytes;
+    public static ByteBuf encodeRawBytes(byte[] rawBytes, ByteBufAllocator alloc,
+                                        Compressor compressor) {
+        // A compressor named by reference inequality with the identity
+        // sentinel, as in grpc-java; and, also as there, an empty message is
+        // not worth compressing — a gzip stream has a fixed ~20-byte overhead,
+        // so "compressing" an empty payload only grows the frame.
+        boolean compressed = compressor != null
+                && compressor != Codec.Identity.NONE
+                && rawBytes.length > 0;
+        byte[] payload = rawBytes;
+        if (compressed) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream(rawBytes.length / 2 + 16);
+            try (OutputStream compressedOut = compressor.compress(out)) {
+                compressedOut.write(rawBytes);
+            } catch (IOException e) {
+                throw new IllegalStateException(
+                        compressor.getMessageEncoding() + " compression failed", e);
+            }
+            payload = out.toByteArray();
+        }
         ByteBuf buf = alloc.buffer(WireConstants.GRPC_HEADER_SIZE + payload.length);
         buf.writeByte(compressed ? WireConstants.COMPRESSED : WireConstants.NOT_COMPRESSED);
         buf.writeInt(payload.length);
@@ -116,14 +147,15 @@ public final class WireFrameCodec {
      * compressed flag is set. Used by the Provider pipeline mode, which carries raw
      * protobuf bytes instead of typed {@link Message} instances.
      *
-     * @param frame    the buffer positioned at the frame header
-     * @param encoding the encoding declared in the call's grpc-encoding header
+     * @param frame        the buffer positioned at the frame header
+     * @param decompressor the negotiated decompressor; {@code null} or
+     *                     {@link Codec.Identity#NONE} rejects a compressed payload
      * @return the uncompressed payload bytes
-     * @throws InvalidProtocolBufferException if the frame is malformed
-     * @throws IllegalArgumentException       if the payload is compressed with an
-     *                                        unsupported encoding (grpc-status UNIMPLEMENTED)
+     * @throws InvalidProtocolBufferException if the frame is malformed, the
+     *                                        payload is compressed while nothing was
+     *                                        negotiated, or it does not decode
      */
-    public static byte[] extractPayload(ByteBuf frame, String encoding)
+    public static byte[] extractPayload(ByteBuf frame, Decompressor decompressor)
             throws InvalidProtocolBufferException {
         byte compressedFlag = frame.readByte();
         int length = frame.readInt();
@@ -132,18 +164,16 @@ public final class WireFrameCodec {
         if (compressedFlag == WireConstants.NOT_COMPRESSED) {
             return data;
         }
-        if (encoding == null || WireConstants.ENCODING_IDENTITY.equals(encoding)) {
+        if (decompressor == null || decompressor == Codec.Identity.NONE) {
             throw new InvalidProtocolBufferException(
                     "Compressed gRPC message but no grpc-encoding declared");
         }
-        // Unsupported encoding propagates as IllegalArgumentException so the
-        // server can report UNIMPLEMENTED per the gRPC spec
-        try {
-            return WireCompression.decompress(data, encoding);
-        } catch (IllegalStateException e) {
+        try (InputStream decompressed = decompressor.decompress(new ByteArrayInputStream(data))) {
+            return decompressed.readAllBytes();
+        } catch (IOException e) {
             throw new InvalidProtocolBufferException(
-                    "Failed to decompress gRPC message with encoding " + encoding
-                            + ": " + e.getMessage());
+                    "Failed to decompress gRPC message with encoding "
+                            + decompressor.getMessageEncoding() + ": " + e.getMessage());
         }
     }
 

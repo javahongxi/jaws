@@ -83,6 +83,10 @@ public class ManagedChannel implements Closeable {
      * is what opens the first backends.
      */
     private final ClientStreamTracer.Factory streamTracerFactory;
+    /** Compressors this channel may send; {@code null} keeps the default registry. */
+    private final CompressorRegistry compressorRegistry;
+    /** What this channel can decompress and advertises; {@code null} = default. */
+    private final DecompressorRegistry decompressorRegistry;
 
     /** Immutable snapshot of the live backends; replaced on each address sync. */
     private volatile List<WireClient> clients = List.of();
@@ -103,13 +107,17 @@ public class ManagedChannel implements Closeable {
 
     ManagedChannel(NameResolver resolver, LoadBalancer loadBalancer, ClientConfig config,
                    List<WireClientInterceptor> interceptors,
-                   ClientStreamTracer.Factory streamTracerFactory) {
+                   ClientStreamTracer.Factory streamTracerFactory,
+                   CompressorRegistry compressorRegistry,
+                   DecompressorRegistry decompressorRegistry) {
         this.resolver = resolver;
         this.loadBalancer = loadBalancer;
         this.config = config;
         this.interceptors = List.copyOf(interceptors);
         // Assigned before resolver.start() below, which opens the first backends
         this.streamTracerFactory = streamTracerFactory;
+        this.compressorRegistry = compressorRegistry;
+        this.decompressorRegistry = decompressorRegistry;
         // start() delivers the initial address set synchronously (passthrough and
         // the first DNS resolve), then pushes updates on the resolver's schedule.
         resolver.start(new NameResolver.Listener() {
@@ -579,6 +587,9 @@ public class ManagedChannel implements Closeable {
             client.addInterceptor(interceptor);
         }
         client.setStreamTracerFactory(streamTracerFactory);
+        // Null-safe by design: each setter falls back to the grpc-style default
+        client.setCompressorRegistry(compressorRegistry);
+        client.setDecompressorRegistry(decompressorRegistry);
         // Recompute the aggregate whenever this backend's connectivity changes;
         // register before open() so the CONNECTING → READY transition is seen.
         client.getConnectivityTracker().addListener((prev, cur) -> recomputeAggregate());
@@ -686,6 +697,8 @@ public class ManagedChannel implements Closeable {
         private String sslPrivateKey = "";
         private final List<WireClientInterceptor> interceptors = new ArrayList<>();
         private ClientStreamTracer.Factory streamTracerFactory;
+        private CompressorRegistry compressorRegistry;
+        private DecompressorRegistry decompressorRegistry;
 
         private Builder() {
         }
@@ -898,6 +911,34 @@ public class ManagedChannel implements Closeable {
         }
 
         /**
+         * Replace the compressors this channel may send, i.e. the names
+         * {@link #compression(String)} and
+         * {@link WireCallOptions#withCompressor(String)} can resolve to.
+         * Registering a codec here is all a third encoding needs. Mirrors
+         * grpc-java's {@code ManagedChannelBuilder.compressorRegistry(...)}.
+         *
+         * @param compressorRegistry the registry, or {@code null} for the default
+         * @return this builder
+         */
+        public Builder compressorRegistry(CompressorRegistry compressorRegistry) {
+            this.compressorRegistry = compressorRegistry;
+            return this;
+        }
+
+        /**
+         * Replace what this channel can decompress, which is also what it
+         * advertises in {@code grpc-accept-encoding}. Mirrors grpc-java's
+         * {@code ManagedChannelBuilder.decompressorRegistry(...)}.
+         *
+         * @param decompressorRegistry the registry, or {@code null} for the default
+         * @return this builder
+         */
+        public Builder decompressorRegistry(DecompressorRegistry decompressorRegistry) {
+            this.decompressorRegistry = decompressorRegistry;
+            return this;
+        }
+
+        /**
          * Build the {@link ManagedChannel}: select the resolver, start it, and
          * open a client per resolved address.
          *
@@ -913,7 +954,7 @@ public class ManagedChannel implements Closeable {
             return new ManagedChannel(resolver, lb,
                     new ClientConfig(requestTimeout, connectTimeout, maxInboundMessageSize,
                             compression, keepalive, retry, tls),
-                    interceptors, streamTracerFactory);
+                    interceptors, streamTracerFactory, compressorRegistry, decompressorRegistry);
         }
 
         private NameResolver resolveNameResolver() {

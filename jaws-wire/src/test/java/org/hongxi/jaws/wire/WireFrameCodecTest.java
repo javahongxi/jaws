@@ -26,6 +26,9 @@ class WireFrameCodecTest {
     private static final HealthCheckRequest REQUEST =
             HealthCheckRequest.newBuilder().setService("demo").build();
 
+    /** The framing API takes negotiated codecs, not encoding names. */
+    private static final Codec GZIP = new Codec.Gzip();
+
     @Test
     void uncompressedRoundTrip() throws Exception {
         ByteBuf frame = WireFrameCodec.encode(REQUEST, ByteBufAllocator.DEFAULT);
@@ -39,19 +42,41 @@ class WireFrameCodecTest {
     @Test
     void gzipRoundTrip() throws Exception {
         ByteBuf frame = WireFrameCodec.encode(REQUEST, ByteBufAllocator.DEFAULT,
-                WireConstants.ENCODING_GZIP);
+                GZIP);
         assertEquals(WireConstants.COMPRESSED, frame.getByte(0));
         // Decoding requires the encoding declared in the grpc-encoding header
         HealthCheckRequest decoded = WireFrameCodec.decode(frame, HealthCheckRequest.parser(),
-                WireConstants.ENCODING_GZIP);
+                GZIP);
         assertEquals(REQUEST, decoded);
+        frame.release();
+    }
+
+    @Test
+    void identityCompressorLeavesThePayloadAsIs() throws Exception {
+        byte[] rawBytes = REQUEST.toByteArray();
+        ByteBuf frame = WireFrameCodec.encodeRawBytes(rawBytes, ByteBufAllocator.DEFAULT,
+                Codec.Identity.NONE);
+        assertEquals(WireConstants.NOT_COMPRESSED, frame.getByte(0));
+        assertArrayEquals(rawBytes,
+                WireFrameCodec.extractPayload(frame, Codec.Identity.NONE));
+        frame.release();
+    }
+
+    @Test
+    void emptyPayloadIsNotCompressedEvenWithGzip() {
+        // A gzip stream carries roughly 20 bytes of header and footer, so
+        // compressing an empty message only inflates the frame; grpc's framer
+        // skips it, and the compressed flag has to keep meaning what it says
+        ByteBuf frame = WireFrameCodec.encodeRawBytes(new byte[0], ByteBufAllocator.DEFAULT, GZIP);
+        assertEquals(WireConstants.NOT_COMPRESSED, frame.getByte(0));
+        assertEquals(0, frame.getInt(1));
         frame.release();
     }
 
     @Test
     void compressedFrameWithoutEncodingFails() {
         ByteBuf frame = WireFrameCodec.encode(REQUEST, ByteBufAllocator.DEFAULT,
-                WireConstants.ENCODING_GZIP);
+                GZIP);
         assertThrows(InvalidProtocolBufferException.class,
                 () -> WireFrameCodec.decode(frame, HealthCheckRequest.parser()));
         frame.release();
@@ -61,9 +86,9 @@ class WireFrameCodecTest {
     void extractPayloadRoundTripsRawBytes() throws Exception {
         byte[] rawBytes = REQUEST.toByteArray();
         ByteBuf frame = WireFrameCodec.encodeRawBytes(rawBytes, ByteBufAllocator.DEFAULT,
-                WireConstants.ENCODING_GZIP);
+                GZIP);
         assertEquals(WireConstants.COMPRESSED, frame.getByte(0));
-        byte[] extracted = WireFrameCodec.extractPayload(frame, WireConstants.ENCODING_GZIP);
+        byte[] extracted = WireFrameCodec.extractPayload(frame, GZIP);
         assertArrayEquals(rawBytes, extracted);
         frame.release();
     }
@@ -83,7 +108,7 @@ class WireFrameCodecTest {
         frame.writeByte(WireConstants.COMPRESSED).writeInt(validGzip.length).writeBytes(validGzip);
 
         assertThrows(InvalidProtocolBufferException.class,
-                () -> WireFrameCodec.extractPayload(frame, WireConstants.ENCODING_GZIP));
+                () -> WireFrameCodec.extractPayload(frame, GZIP));
         frame.release();
     }
 

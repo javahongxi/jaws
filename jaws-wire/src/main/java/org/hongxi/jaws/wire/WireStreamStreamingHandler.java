@@ -45,7 +45,10 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     private String grpcMessage;
     /** Decoded grpc-status-details-bin (rich error), or null when the server sent none. */
     private com.google.rpc.Status richStatus;
-    private String responseEncoding = WireConstants.ENCODING_IDENTITY;
+    /** Decompressor for the response encoding; identity until headers say otherwise. */
+    private Decompressor responseDecompressor = Codec.Identity.NONE;
+    /** What this client can decompress; resolves the response's grpc-encoding. */
+    private final DecompressorRegistry decompressorRegistry;
     /** Observer shared with the {@code ClientCallImpl} of this stream; never {@code null}. */
     private final ClientStreamTracer tracer;
     /** Inbound message counter for this stream, starting at 0. */
@@ -57,11 +60,14 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
                                StreamSubject<Object> observer,
                                int maxMessageSize,
                                int maxInboundMetadataSize,
+                               DecompressorRegistry decompressorRegistry,
                                ClientStreamTracer tracer) {
         this.responseParser = responseParser;
         this.observer = observer;
         this.maxMessageSize = maxMessageSize;
         this.maxInboundMetadataSize = maxInboundMetadataSize;
+        this.decompressorRegistry = decompressorRegistry != null
+                ? decompressorRegistry : DecompressorRegistry.getDefaultInstance();
         this.tracer = tracer;
     }
 
@@ -103,10 +109,25 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
             richStatus = WireErrorDetails.fromTrailers(headersFrame.headers());
             tracer.inboundTrailers();
         } else {
-            // Initial response HEADERS: capture the response message encoding
+            // Initial response HEADERS: resolve the response message encoding
+            // against what this client can actually decompress
             CharSequence encodingSeq = headersFrame.headers().get(WireConstants.GRPC_ENCODING);
             if (encodingSeq != null) {
-                responseEncoding = encodingSeq.toString();
+                String encoding = encodingSeq.toString();
+                // identity names the absence of a codec and is therefore never
+                // a registry lookup; only a real codec this client did not
+                // register is a failure
+                if (!WireConstants.ENCODING_IDENTITY.equals(encoding)) {
+                    Decompressor decompressor = decompressorRegistry.lookupDecompressor(encoding);
+                    if (decompressor == null) {
+                        reportStreamClosed(WireConstants.STATUS_INTERNAL);
+                        observer.onError(new RuntimeException(
+                                "Can't find decompressor for " + encoding
+                                        + ", the server chose a codec this client cannot read"));
+                        return;
+                    }
+                    responseDecompressor = decompressor;
+                }
             }
             tracer.inboundHeaders();
         }
@@ -143,7 +164,8 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
                 try {
                     // Captured before decoding: decode consumes the frame's reader index
                     long wireSize = WireFrameCodec.payloadSize(frame);
-                    Message response = WireFrameCodec.decode(frame, responseParser, responseEncoding);
+                    Message response = WireFrameCodec.decode(frame, responseParser,
+                            responseDecompressor);
                     tracer.inboundMessageRead(inboundMessageNumber++, wireSize,
                             response.getSerializedSize());
                     observer.onNext(response);

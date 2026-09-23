@@ -6,6 +6,8 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.transport.http2.AbstractHttp2Server;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -45,6 +47,8 @@ import java.util.function.Supplier;
  */
 public class WireServer extends AbstractHttp2Server {
 
+    private static final Logger log = LoggerFactory.getLogger(WireServer.class);
+
     private final WireHandlerRegistry registry;
     private final MessageHandler messageHandler;
     private final WireHealthService healthService;
@@ -54,8 +58,17 @@ public class WireServer extends AbstractHttp2Server {
     private final int maxMessageSize;
     /** Max size of inbound HTTP/2 headers (metadata) in bytes. */
     private final int maxInboundMetadataSize;
-    /** Configured response compression encoding (identity or gzip). */
-    private final String compression;
+    /** Encoding name configured for response compression, resolved per stream. */
+    private final String configuredCompression;
+    /**
+     * Which encoding names are selectable for responses. Replaces the
+     * previously hardcoded identity/gzip pair: registering a codec here is all
+     * it takes to make it usable by name.
+     */
+    private volatile CompressorRegistry compressorRegistry = CompressorRegistry.getDefaultInstance();
+    /** What this server can decompress, and what it advertises to clients. */
+    private volatile DecompressorRegistry decompressorRegistry =
+            DecompressorRegistry.getDefaultInstance();
 
     /**
      * Parent-channel attribute keys that should be propagated into every
@@ -94,7 +107,7 @@ public class WireServer extends AbstractHttp2Server {
         this.reflectionService = createHandlerModeReflectionService(registry);
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
         this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
-        this.compression = normalizeCompression(url);
+        this.configuredCompression = url.getParameter(UrlParam.Transport.COMPRESSION);
     }
 
     /**
@@ -113,7 +126,7 @@ public class WireServer extends AbstractHttp2Server {
         this.reflectionService = createProviderModeReflectionService(url);
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
         this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
-        this.compression = normalizeCompression(url);
+        this.configuredCompression = url.getParameter(UrlParam.Transport.COMPRESSION);
     }
 
     /**
@@ -151,10 +164,50 @@ public class WireServer extends AbstractHttp2Server {
         return healthService;
     }
 
-    private static String normalizeCompression(URL url) {
-        String compression = url.getParameter(UrlParam.Transport.COMPRESSION);
-        return compression != null && WireCompression.isSupported(compression)
-                ? compression : WireConstants.ENCODING_IDENTITY;
+    /**
+     * Resolve the configured encoding name against the compressor registry.
+     * Done per stream rather than once at construction so that a registry
+     * configured after the server exists still counts.
+     *
+     * @return the compressor for responses, identity when nothing usable was
+     *         configured
+     */
+    private Compressor resolveResponseCompressor() {
+        if (configuredCompression == null || configuredCompression.isEmpty()
+                || WireConstants.ENCODING_IDENTITY.equals(configuredCompression)) {
+            return Codec.Identity.NONE;
+        }
+        Compressor compressor = compressorRegistry.lookupCompressor(configuredCompression);
+        if (compressor == null) {
+            // Naming an unregistered codec must not look like it took effect
+            log.warn("No compressor registered for '{}', responding uncompressed",
+                    configuredCompression);
+            return Codec.Identity.NONE;
+        }
+        return compressor;
+    }
+
+    /**
+     * Replace the compressors selectable by the {@code compression} parameter.
+     * Mirrors grpc-java's {@code ServerBuilder.compressorRegistry(...)}.
+     *
+     * @param compressorRegistry the registry to use from now on
+     */
+    public void setCompressorRegistry(CompressorRegistry compressorRegistry) {
+        this.compressorRegistry = compressorRegistry != null
+                ? compressorRegistry : CompressorRegistry.getDefaultInstance();
+    }
+
+    /**
+     * Replace what this server can decompress and advertises in
+     * {@code grpc-accept-encoding}. Mirrors grpc-java's
+     * {@code ServerBuilder.decompressorRegistry(...)}.
+     *
+     * @param decompressorRegistry the registry to use from now on
+     */
+    public void setDecompressorRegistry(DecompressorRegistry decompressorRegistry) {
+        this.decompressorRegistry = decompressorRegistry != null
+                ? decompressorRegistry : DecompressorRegistry.getDefaultInstance();
     }
 
     /**
@@ -206,8 +259,8 @@ public class WireServer extends AbstractHttp2Server {
         }
         streamChannel.pipeline().addLast(
                 new WireStreamServerHandler(dispatcher, reflectionService,
-                        serverExecutor, maxMessageSize, maxInboundMetadataSize, compression,
-                        streamTracerFactory));
+                        serverExecutor, maxMessageSize, maxInboundMetadataSize,
+                        resolveResponseCompressor(), decompressorRegistry, streamTracerFactory));
     }
 
     // ========================================================================

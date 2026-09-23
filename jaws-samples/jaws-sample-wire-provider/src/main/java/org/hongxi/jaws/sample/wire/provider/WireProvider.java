@@ -4,6 +4,9 @@ import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.sample.wire.proto.GreeterService;
 import org.hongxi.jaws.sample.wire.provider.service.GreeterServiceImpl;
+import org.hongxi.jaws.wire.ServerStreamTracer;
+import org.hongxi.jaws.wire.WireExporter;
+import org.hongxi.jaws.wire.WireServer;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -81,6 +84,38 @@ public class WireProvider {
         serviceConfig.setProtocol(protocolConfig);
         serviceConfig.export();
         System.out.println("GreeterService exported via WireProtocol (direct mode, no registry).");
+
+        // Observe the negotiation from the server side: the tracer reports the
+        // bytes actually framed, so "wire != raw" on an outbound message is
+        // direct evidence the response really went out compressed rather than a
+        // header we hope someone reads.
+        WireServer wireServer =
+                ((WireExporter<?>) serviceConfig.getExporters().get(0)).getServer();
+        wireServer.setStreamTracerFactory(new ServerStreamTracer.Factory() {
+            @Override
+            public ServerStreamTracer newServerStreamTracer(String path) {
+                return new ServerStreamTracer() {
+                    @Override
+                    public void inboundMessageRead(int seqNo, long wireSize, long uncompressedSize) {
+                        System.out.printf("[tracer] %s in #%d wire=%dB raw=%dB%n",
+                                path, seqNo, wireSize, uncompressedSize);
+                    }
+
+                    @Override
+                    public void outboundMessageSent(int seqNo, long wireSize, long uncompressedSize) {
+                        System.out.printf("[tracer] %s out #%d wire=%dB raw=%dB -> %s%n",
+                                path, seqNo, wireSize, uncompressedSize,
+                                wireSize == uncompressedSize ? "uncompressed" : "compressed");
+                    }
+
+                    @Override
+                    public void streamClosed(int status) {
+                        System.out.printf("[tracer] %s closed status=%d%n", path, status);
+                    }
+                };
+            }
+        });
+
         System.out.println("Responses compressed with gzip for callers advertising grpc-accept-encoding.");
         System.out.println("Connection lifecycle: maxIdle=5min, maxAge=30min, maxInboundMetadata=16KB.");
         System.out.println("Provider listening on port " + PORT + ". Consumer should use directUrl=127.0.0.1:" + PORT);

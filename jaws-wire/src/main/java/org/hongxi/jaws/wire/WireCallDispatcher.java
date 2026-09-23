@@ -317,7 +317,7 @@ sealed interface WireCallDispatcher
                 // Captured before decoding: decode consumes the frame's reader index
                 long wireSize = WireFrameCodec.payloadSize(frame);
                 try {
-                    request = WireFrameCodec.decode(frame, methodHandler.getRequestParser(), serverHandler.requestEncoding);
+                    request = WireFrameCodec.decode(frame, methodHandler.getRequestParser(), serverHandler.requestDecompressor);
                 } catch (IllegalArgumentException e) {
                     serverHandler.sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, e.getMessage());
                     return;
@@ -702,7 +702,7 @@ sealed interface WireCallDispatcher
                 byte[] protobufBytes;
                 long wireSize = WireFrameCodec.payloadSize(frame);
                 try {
-                    protobufBytes = WireFrameCodec.extractPayload(frame, serverHandler.requestEncoding);
+                    protobufBytes = WireFrameCodec.extractPayload(frame, serverHandler.requestDecompressor);
                 } catch (IllegalArgumentException e) {
                     serverHandler.sendError(ctx, WireConstants.STATUS_UNIMPLEMENTED, e.getMessage());
                     return;
@@ -835,7 +835,7 @@ sealed interface WireCallDispatcher
             try {
                 long wireSize = WireFrameCodec.payloadSize(frame);
                 HealthCheckRequest request = WireFrameCodec.decode(
-                        frame, HealthCheckRequest.parser(), serverHandler.requestEncoding);
+                        frame, HealthCheckRequest.parser(), serverHandler.requestDecompressor);
                 serverHandler.traceInboundMessageRead(wireSize, request.getSerializedSize());
                 HealthCheckResponse.ServingStatus status =
                         healthService.getStatus(request.getService());
@@ -848,7 +848,7 @@ sealed interface WireCallDispatcher
                         .setStatus(status).build();
                 serverHandler.sendResponseHeaders(ctx);
                 ByteBuf responseFrame = WireFrameCodec.encode(
-                        response, ctx.alloc(), serverHandler.compression);
+                        response, ctx.alloc(), serverHandler.responseCompressor);
                 serverHandler.traceOutboundMessageSent(responseFrame, response);
                 ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
                 serverHandler.sendTrailers(ctx, WireConstants.STATUS_OK, null);
