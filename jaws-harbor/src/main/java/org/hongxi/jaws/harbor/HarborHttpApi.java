@@ -14,7 +14,9 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -187,7 +189,7 @@ public class HarborHttpApi {
     }
 
     private static Map<String, String> parseQuery(String rawQuery) {
-        Map<String, String> params = new java.util.HashMap<>();
+        Map<String, String> params = new HashMap<>();
         if (rawQuery == null || rawQuery.isEmpty()) {
             return params;
         }
@@ -195,8 +197,7 @@ public class HarborHttpApi {
             int split = pair.indexOf('=');
             if (split > 0) {
                 params.put(pair.substring(0, split),
-                        java.net.URLDecoder.decode(pair.substring(split + 1),
-                                java.nio.charset.StandardCharsets.UTF_8));
+                        URLDecoder.decode(pair.substring(split + 1), StandardCharsets.UTF_8));
             }
         }
         return params;
