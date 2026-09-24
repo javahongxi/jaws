@@ -206,9 +206,9 @@ END_STREAM 一次写出（3 帧 → 2 帧，与 grpc-java 同形）；client-str
 |------|-----|------|
 | wire 代理消费端（改动前） | 81,603 | 上表 5 轮均值 |
 | wire 代理消费端（折叠后 ×3） | 87,333 / 87,466 / 87,434 | 均值 **87,411**，极差 0.2%，帧折叠 +7.1% |
-| wire Direct API 消费端（ManagedChannel，×3） | 90,323 / 91,810 / 90,915 | 均值 **91,016**，代理层开销约 3.6k |
+| wire Direct API 消费端（ManagedChannel，×3） | 92,322 / 91,548 / 93,400 | 均值 **92,423**（最新窗口复测），代理层开销约 3.6k |
 
-距 grpc-java 客户端打同一服务端的约 101.3k 还差 ~10k，剩余差距在 wire 客户端核心栈
+距 grpc-java 客户端打同一服务端的约 105k 还差 ~12k，剩余差距在 wire 客户端核心栈
 （WireClient 每请求的定时器调度、响应处理与任务数）与 grpc-java 客户端栈之间，待
 热点采样归因。
 
@@ -237,7 +237,7 @@ END_STREAM 一次写出（3 帧 → 2 帧，与 grpc-java 同形）；client-str
 ### 与 grpc-java 客户端的剩余差距归因（2026-09-24，JFR 双向对比）
 
 同一 wire 服务端、同为 grpc 形态负载、各对 consumer JVM 采样（jcmd JFR.start +
-`jfr view hot-methods`）。wire 客户端 91k 档 vs grpc-java 客户端 101.3k 档，每单位
+`jfr view hot-methods`）。wire 客户端 91k 档 vs grpc-java 客户端 105k 档，每单位
 工作的 CPU 结构差异：
 
 | 成本项 | wire 客户端 | grpc-java 客户端 | 来源 |
@@ -271,13 +271,13 @@ grpc-java 的连接级 handler + WriteQueue 是另一条架构路线，追平它
 | grpc-java → grpc-java（正统 gRPC，分进程长驻） | 66,160 / 63,516 | 均值 **64,838**，两轮差 4% |
 | Dubbo Triple → Dubbo Triple（`whatsmars-dubbo-bench`，同负载同口径） | 52,166 / 52,142 / 52,192 | 均值 **52,167**，极差 0.1%；invoker 代理消费端 |
 | wire 客户端 → wire 服务端 | 81,603 | 上节 wire 基线（5 轮均值） |
-| grpc-java → wire 服务端（互操作，分进程长驻） | 102,469 / 101,844 / 101,781 | 首轮 97,858 计为预热，后三轮均值 **102,031**，极差 0.7% |
+| grpc-java → wire 服务端（互操作，分进程长驻） | 103,851 / 105,544 / 105,506 | 早期窗口均值 102,031，最新窗口三轮均值 **104,967** |
 
 初步读法：wire 全栈（管线消费端 87,411）为 Dubbo Triple 全栈（52,167）的
 **1.67 倍**——Triple 的 invoker/Filter/代理层与回调包装开销是差异主源，与下文
-grpc-java 服务端的穿越税诊断同源。三点结论：① **wire 服务端吞吐上限实测约 10.2 万**——第三方 grpc-java 客户端三轮稳定
+grpc-java 服务端的穿越税诊断同源。三点结论：① **wire 服务端吞吐上限实测约 10.5 万**——第三方 grpc-java 客户端多轮稳定
 复验（0 错误），远高于 wire 客户端打出的 8.2 万，剩余瓶颈在 **wire 客户端**写路径
-（无写合批、流级窗口 64KB 等）；② 互操作与正统 gRPC 的差值（约 10.2 万 vs 6.5 万）
+（无写合批、流级窗口 64KB 等）；② 互操作与正统 gRPC 的差值（约 10.5 万 vs 6.5 万）
 两侧 provider 均为长驻预热后测得，但预热时长仍不对称（数小时 vs 分钟级），作为方向性
 结论参考，精确差值待同预热条件复验；③ grpc-java 全套语义（HPACK、trailers、deadline、
 流控）在 wire 服务端上全绿，互操作性经第三方客户端反向验证成立。
@@ -314,7 +314,7 @@ executor 间跳两次，连接的全部编解码串在单条 ELG 线程上（实
 
 生产建议：默认无界 cached pool 在突发下会无限扩线程，应换成有界池（吞吐不损失）；但
 要拿回线程往返那 4 成，只能 `directExecutor()` 且业务 handler 必须非阻塞——这正是
-wire 服务端的形态（event loop 做轻活、重活一次性派发），其 10.2 万与该诊断自洽。
+wire 服务端的形态（event loop 做轻活、重活一次性派发），其 10.5 万与该诊断自洽。
 
 附带教训：bench-grpc 首跑曾钉死在约 1.5 万 QPS——benchmark 模块原本没有 `logback.xml`，
 logback 缺省 root=DEBUG，grpc-java 的 `NettyClientHandler` 对每个 HTTP/2 帧在 event loop
