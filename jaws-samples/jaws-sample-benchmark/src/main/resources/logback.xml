@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <property name="log.context.name" value="jaws-sample-benchmark"/>
+    <property name="log.charset" value="UTF-8"/>
+    <property name="log.pattern" value="%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"/>
+
+    <contextName>${log.context.name}</contextName>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder charset="${log.charset}">
+            <pattern>${log.pattern}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- grpc-java logs every HTTP/2 frame at DEBUG on the channel's event
+         loop; without this gate the benchmark measures logback, not RPC -->
+    <logger name="io.grpc.netty.shaded" level="INFO"/>
+    <logger name="io.grpc" level="INFO"/>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+
+</configuration>

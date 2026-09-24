@@ -46,6 +46,7 @@ HTTP2_CONSUMER_MAIN="org.hongxi.jaws.sample.http2.consumer.Http2Consumer"
 WIRE_PROVIDER_MAIN="org.hongxi.jaws.sample.wire.provider.WireProvider"
 WIRE_CONSUMER_MAIN="org.hongxi.jaws.sample.wire.consumer.WireConsumer"
 WIRE_BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.WireBenchmark"
+GRPC_BENCHMARK_MAIN="org.hongxi.jaws.sample.benchmark.GrpcBenchmark"
 WIRE_INTEROP_GRPC_CALL_WIRE="org.hongxi.jaws.sample.wire.interop.GrpcCallWireDemo"
 WIRE_INTEROP_WIRE_CALL_GRPC="org.hongxi.jaws.sample.wire.interop.WireCallGrpcDemo"
 WIRE_INTEROP_GRPC_SERVER="org.hongxi.jaws.sample.wire.interop.GrpcServerMain"
@@ -93,6 +94,7 @@ usage() {
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
     bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
+    bench-grpc         Benchmark - grpc-java client, server=wire (interop) or server=grpc (pure gRPC reference)
 
   Benchmark Options (passed via environment variables):
     THREADS            Concurrency thread count (default 4)
@@ -104,6 +106,7 @@ usage() {
     COMPRESSION        Compression method (default empty, bench-wire only)
     SLEEP              Simulated business processing time on provider side in ms (default 0, no simulation, bench-jaws only)
     ROLE               Run role (default all, same process; provider/consumer for separate processes)
+    SERVER             Server stack for bench-grpc: wire (default, interop) or grpc (pure gRPC reference)
     HOST               Provider address (default 127.0.0.1, separate-process mode only)
 
   Examples:
@@ -136,6 +139,10 @@ usage() {
     SLEEP=5 ./run-sample.sh bench-jaws       # Simulate 5ms business latency
     THREADS=20 DURATION=40 ./run-sample.sh bench-wire
     COMPRESSION=gzip ./run-sample.sh bench-wire
+    # grpc-java client benchmark: against jaws wire server (interop, needs a
+    # provider from bench-wire ROLE=provider) or pure grpc-java reference server
+    SERVER=wire THREADS=20 DURATION=40 ./run-sample.sh bench-grpc
+    SERVER=grpc THREADS=20 DURATION=40 ./run-sample.sh bench-grpc
     # Separate-process benchmark: run in two terminals (bench-jaws only)
     ROLE=provider ./run-sample.sh bench-jaws
     ROLE=consumer THREADS=20 ./run-sample.sh bench-jaws
@@ -801,6 +808,31 @@ cmd_bench_wire() {
         "$WIRE_BENCHMARK_MAIN"
 }
 
+cmd_bench_grpc() {
+    ensure_built
+    local server="${SERVER:-wire}"
+    local threads="${THREADS:-4}"
+    local warmup="${WARMUP:-5}"
+    local duration="${DURATION:-10}"
+    local port="${PORT:-50051}"
+    local role="${ROLE:-all}"
+    local host="${HOST:-127.0.0.1}"
+    local cp
+    cp=$(build_classpath "$BENCHMARK_MODULE")
+    cp="$cp:$BENCHMARK_MODULE/target/classes:jaws-samples/jaws-sample-injvm/target/classes"
+    echo "Running Benchmark [grpc-java client -> $server] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port host=$host"
+    echo "--------------------------------------------"
+    java -cp "$cp" \
+        -Dserver="$server" \
+        -Drole="$role" \
+        -Dthreads="$threads" \
+        -Dwarmup="$warmup" \
+        -Dduration="$duration" \
+        -Dport="$port" \
+        -Dhost="$host" \
+        "$GRPC_BENCHMARK_MAIN"
+}
+
 # Main entry point
 case "${1:-}" in
     build)       cmd_build ;;
@@ -825,6 +857,7 @@ case "${1:-}" in
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;
+    bench-grpc)  cmd_bench_grpc ;;
     -h|--help|help|"") usage ;;
     *)
         echo "Unknown command: $1"

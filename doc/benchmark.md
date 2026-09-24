@@ -49,17 +49,25 @@ ROLE=consumer THREADS=20 ./run-sample.sh bench-jaws
 | `HOST`        | provider 地址，consumer 直连目标 | 127.0.0.1 | 仅分进程模式 |
 | `COMPRESSION` | 压缩方式（`gzip` 或空） | 空（不压缩） | 仅 bench-wire |
 
-### 分进程模式说明（仅 bench-jaws）
+### 分进程模式说明
 
 `ROLE=all`（默认）时，provider 与 consumer 在同一 JVM 内，使用进程内 `local` 注册中心；
-`ROLE=provider` / `ROLE=consumer` 时，两端分属独立 JVM，通过 `direct` 直连注册中心对接：
-consumer 直接指向 provider 的 `HOST:PORT`，无需外部注册中心。用法：
+`ROLE=provider` / `ROLE=consumer` 时，两端分属独立 JVM，consumer 通过 `direct` 直连对接：
+直接指向 provider 的 `HOST:PORT`，无需外部注册中心。bench-jaws 与 bench-wire 均支持。
+
+bench-jaws 用法：
 
 1. 终端 A：`ROLE=provider PORT=10010 ./run-sample.sh bench-jaws`，等待输出 `Provider is ready`；
 2. 终端 B：`ROLE=consumer PORT=10010 THREADS=20 ./run-sample.sh bench-jaws` 执行压测；
 3. 压测结束后 Ctrl+C 停止 provider。
 
-分进程模式下两侧必须保持 `PORT`、`SERIALIZATION`、group/version 一致（后两者为固定值）。
+bench-wire 用法（provider 长驻后可多轮复用，服务端保持 JIT 全热）：
+
+1. 终端 A：`ROLE=provider ./run-sample.sh bench-wire`；
+2. 终端 B：`ROLE=consumer THREADS=20 ./run-sample.sh bench-wire` 执行压测。
+
+分进程模式下两侧必须保持 `PORT`、group/version 一致（group/version 为固定值）；
+bench-jaws 另需 `SERIALIZATION` 一致，bench-wire 另需 `COMPRESSION` 一致。
 
 ## 参数选择建议
 
@@ -161,3 +169,88 @@ jaws + netty + fastjson2，20 线程、WARMUP=5s、DURATION=40s，各 5 轮：
 新天花板口径：**8 核约 14 万 QPS 峰值 / 14 万 稳态均值**（约 17.6k QPS/核，分进程）。README 的「实测 13 万+」为钝表述，继续有效。
 
 另：本日新增 **Apache Fury** 为第四种序列化（`SERIALIZATION=fury`），上方 8/24 序列化对比表为三选手旧基线，四选手对比待复测更新。
+
+## wire 写路径合批与分进程基线（2026-09-24）
+
+改动：连接 pipeline 在 `ssl` 与 `http2_codec` 之间加装 `FlushConsolidationHandler(64, true)`
+（commit `1bac5643`）。wire 的响应写全部来自业务线程的逐消息 `writeAndFlush`，不在
+`channelRead` 期间，`consolidateWhenNoReadInProgress=true` 使 event loop 一轮内的多次
+flush 收敛为一次；`handlerRemoved`/`channelInactive` 均会补刷 pending 写，连接关闭不丢帧。
+两个 HTTP/2 传输基类（`AbstractHttp2Server`/`AbstractHttp2Client`）同时生效。
+
+jaws + wire + protobuf，20 线程、WARMUP=5s、DURATION=40s，各轮 0 错误（含返回值校验）：
+
+| 口径 | QPS | 说明 |
+|------|-----|------|
+| 同进程，改动前（8/27 基线） | 73,842 | 上方 8/27 传输层对比表 |
+| 同进程，改动后 ×2 | 77,898 / 76,696 | 合批收益约 +4~5.5% |
+| 分进程 ×5 | 82,293 / 82,128 / 79,604 / 82,471 / 81,521 | 均值 **81,603**，极差 3.5% |
+
+**wire 新基线口径：分进程均值约 8.2 万 QPS**（较 8/27 基线累计 +10.5%）。分进程 5 轮
+紧贴均值、无同进程 8/27 测量中出现的偶发毛刺形态；本轮同窗口未复测同进程，分进程与
+同进程的差值不单独归因。25 线程复测 ×2（82,371 / 81,116）与 20 线程持平，**20 线程即达
+饱和**，8.2 万为当前配置的分进程吞吐天花板。参考：9/7 在 jaws + netty 上分进程对同进程
+的增益为 +1.2%，wire 的分配面更宽（每流 child channel、帧对象、ByteBuf），分进程收益
+是否更大待同窗口复验后再下结论。
+
+分进程用法见「分进程模式说明」：provider 长驻（`ROLE=provider`），consumer 多轮压测
+（`ROLE=consumer THREADS=20`）。
+
+### grpc-java 客户端互操作与正统 gRPC 参照（2026-09-24）
+
+新增 `./run-sample.sh bench-grpc`（grpc-java 1.83.1 客户端，`SERVER=wire` 打 jaws wire
+服务端做互操作反验，`SERVER=grpc` 打纯 grpc-java netty 服务端做参照，参照服务端业务池
+对齐 wire：有界 EagerThreadPool 20/200/queue0；手搓
+`MethodDescriptor` 对齐 wire 注册路径，proto 零改动）。20 线程、WARMUP=5s、DURATION=40s，
+各轮 0 错误：
+
+| 客户端 → 服务端 | QPS | 说明 |
+|------|-----|------|
+| grpc-java → grpc-java（正统 gRPC，分进程长驻） | 66,160 / 63,516 | 均值 **64,838**，两轮差 4% |
+| wire 客户端 → wire 服务端 | 81,603 | 上节 wire 基线（5 轮均值） |
+| grpc-java → wire 服务端（互操作，分进程长驻） | 102,469 / 101,844 / 101,781 | 首轮 97,858 计为预热，后三轮均值 **102,031**，极差 0.7% |
+
+三点结论：① **wire 服务端吞吐上限实测约 10.2 万**——第三方 grpc-java 客户端三轮稳定
+复验（0 错误），远高于 wire 客户端打出的 8.2 万，剩余瓶颈在 **wire 客户端**写路径
+（无写合批、流级窗口 64KB 等）；② 互操作与正统 gRPC 的差值（约 10.2 万 vs 6.5 万）
+两侧 provider 均为长驻预热后测得，但预热时长仍不对称（数小时 vs 分钟级），作为方向性
+结论参考，精确差值待同预热条件复验；③ grpc-java 全套语义（HPACK、trailers、deadline、
+流控）在 wire 服务端上全绿，互操作性经第三方客户端反向验证成立。
+
+服务端线程模型诊断（jstack + 对照实验）：grpc-java netty 服务端为 boss ELG 1 线程 +
+worker ELG（netty 默认 2×核数，单连接实际只有 1 条活跃）+ 无界 cached executor
+（`grpc-default-executor`，压测中 7 秒生灭 23 条线程），每个 RPC 在 event loop 与
+executor 间跳两次，连接的全部编解码串在单条 ELG 线程上（实测单核占用 ~73%）。两组对照
+实验（均未合入，参照值保持官方默认口径）：
+
+- `directExecutor()`（回调直接跑在 ELG，零跳变）：64,838 → 92,906 / 85,738，**4 成开销
+  在线程往返本身**；
+- 换成与 wire 同款的有界 EagerThreadPool（20/200/queue0）：3 轮 68,498 / 65,508 /
+  69,642（均值 67,883），与默认 cached pool 持平——固定线程消掉生灭，
+  但消不掉往返。
+
+**互操作与正统 gRPC 的 34k 差距分解**（两边客户端相同——均为 grpc-java，变量只剩
+服务端：wire 服务端 102k vs grpc-java 服务端 67.9k，后者同为 eager pool）：
+
+- **约 25k：回调穿越层**。directExecutor 对照把这块钉死。grpc-java 服务端每 RPC 的
+  回调链是三层包装——`JumpToApplicationThreadServerStreamListener`（跳线程 + Context
+  传播，ServerImpl.java:791）、`SerializingExecutor`（回调可重入串行化，:479）、再过
+  一层 switchingExecutor（:591）——多次 executor 提交才落到用户线程池；wire 服务端是
+  单次 `serverExecutor.execute(dispatch)`，业务线程解码+调用+编码+写回一条龙。这层是
+  通用框架为"任意 executor 下线程语义正确"付出的结构性成本。
+- **约 9k：通用机器差异**（此时两边线程形态已对齐）。grpc-java 每 RPC 的 Metadata
+  双向解析转换、Context 生命周期、ServerCall/trailers 状态机、PerfMark 埋点等通用
+  开销，对比 wire 的精简派发路径；外加 SETTINGS 差异（grpc-java 窗口 1MB vs wire
+  64KB，对本负载影响小）与预热不对称残余。此块的精确归因需对服务端采样热点对比，
+  列为方向性结论。
+
+反过来说，这 25k 正是 wire 单次派发设计的价值证明：它省掉的不是线程池本身，而是
+每 RPC 必付的"回调穿越税"。
+
+生产建议：默认无界 cached pool 在突发下会无限扩线程，应换成有界池（吞吐不损失）；但
+要拿回线程往返那 4 成，只能 `directExecutor()` 且业务 handler 必须非阻塞——这正是
+wire 服务端的形态（event loop 做轻活、重活一次性派发），其 10.2 万与该诊断自洽。
+
+附带教训：bench-grpc 首跑曾钉死在约 1.5 万 QPS——benchmark 模块原本没有 `logback.xml`，
+logback 缺省 root=DEBUG，grpc-java 的 `NettyClientHandler` 对每个 HTTP/2 帧在 event loop
+上同步打 DEBUG 日志，日志开销成了瓶颈。已加配置将 `io.grpc` 门禁到 INFO。

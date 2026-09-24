@@ -37,6 +37,23 @@
             <artifactId>jaws-sample-wire-api</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- grpc-java stack for GrpcBenchmark: client load generator against
+             the jaws wire server (interop) and the pure gRPC reference server -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+            <version>1.83.1</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>1.83.1</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+            <version>1.83.1</version>
+        </dependency>
     </dependencies>
 
     <build>
