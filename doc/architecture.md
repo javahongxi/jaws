@@ -24,8 +24,8 @@ jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
 | 模块 | 手码规模 | 职责 | 层 |
 |---|---|---|---|
 | `jaws-stream-api` | ~95 行 | 流式收发的中立契约（push-only） | 契约 |
-| `jaws-core` | ~20.5k | RPC 骨架六层 + 扩展机制 | 骨架 |
-| `jaws-wire` | ~9k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
+| `jaws-core` | ~20.8k | RPC 骨架六层 + 扩展机制 | 骨架 |
+| `jaws-wire` | ~10.3k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
 | `jaws-wire-proto` | 生成码 | protoc 生成物（health/reflection/rpc.Status）隔离 | 对外协议 |
 | `jaws-registry-zookeeper` | ~670 | Registry SPI 的 ZooKeeper 实现（Curator） | 注册发现 |
 | `jaws-registry-nacos` | ~490 | Registry SPI 的 Nacos 薄封装 | 注册发现 |
