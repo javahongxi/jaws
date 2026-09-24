@@ -103,14 +103,23 @@ class ClientFailoverSemanticsTest {
     // ========================================================================
 
     private void startTwoNodes() throws Exception {
-        portA = freePort();
-        portB = freePort();
-        serverA = new HarborServer(new URL("harbor", "0.0.0.0", portA, ""));
-        serverA.start();
-        serverB = new HarborServer(new URL("harbor", "0.0.0.0", portB, ""));
-        serverB.start();
-        awaitListening(portA);
-        awaitListening(portB);
+        RuntimeException last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            portA = freePort();
+            portB = freePort();
+            serverA = new HarborServer(new URL("harbor", "0.0.0.0", portA, ""));
+            try {
+                serverA.start();
+                serverB = new HarborServer(new URL("harbor", "0.0.0.0", portB, ""));
+                serverB.start();
+                awaitListening(portA);
+                awaitListening(portB);
+                return;
+            } catch (RuntimeException e) {
+                last = e;
+            }
+        }
+        throw last;
     }
 
     private static int freePort() throws Exception {

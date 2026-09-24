@@ -64,9 +64,8 @@ class ClusterGuardSemanticsTest {
         // The guard bites on the cluster face only. A registration arriving from
         // the very address that was just refused for distro traffic is an ordinary
         // SDK client, and refusing it would make the guard a firewall in check form.
-        URL url = new URL("harbor", "0.0.0.0", freePort(), "");
-        HarborServer server = new HarborServer(url);
-        server.start();
+        HarborServer server = HarborTestServerSupport.startOnFreePort();
+        URL url = new URL("harbor", "0.0.0.0", server.port(), "");
         try {
             awaitListening(url.getPort());
 
@@ -87,11 +86,14 @@ class ClusterGuardSemanticsTest {
 
     @Test
     void aListedMemberIsServedByTheSameClusterCall() throws Exception {
-        int port = freePort();
-        URL url = new URL("harbor", "127.0.0.1", port, "");
         // The peer is this same node on a nominal port: what the guard matches on is
         // the source address, since a cluster member's listen port is not the
         // ephemeral source port its connection arrives from.
+        // The cluster-member parameter must be on the URL before start(), so
+        // this site keeps its own freePort inline (no retry helper — the retry
+        // would have to rebuild the URL anyway)
+        int port = freePort();
+        URL url = new URL("harbor", "127.0.0.1", port, "");
         url.addParameter(HarborServer.PARAM_CLUSTER_MEMBERS, "127.0.0.1:" + (port + 1));
         HarborServer server = new HarborServer(url);
         server.start();
@@ -143,12 +145,6 @@ class ClusterGuardSemanticsTest {
         return instance;
     }
 
-    private static int freePort() throws Exception {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        }
-    }
-
     /** Poll the port until it accepts, instead of guessing a startup delay. */
     private static void awaitListening(int listenPort) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5_000;
@@ -162,4 +158,10 @@ class ClusterGuardSemanticsTest {
         }
         fail("harbor port " + listenPort + " never accepted a connection");
     }
+    private static int freePort() throws Exception {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
+    }
+
 }
