@@ -1,5 +1,7 @@
 package org.hongxi.jaws.transport.http2;
 
+import io.netty.channel.Channel;
+import io.netty.handler.flush.FlushConsolidationHandler;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultProvider;
 import org.hongxi.jaws.rpc.Response;
@@ -198,6 +200,39 @@ class Http2TransportTest {
             probeClient.close();
             probeServer.close();
         }
+    }
+
+    @Test
+    void pipelineInstallsFlushConsolidationOnBothEnds() throws Exception {
+        // Both connection pipelines must carry the connection-level flush
+        // consolidator — without it every per-message writeAndFlush from the
+        // business threads reaches the socket as its own flush syscall batch.
+        //
+        // The server tracks the accepted channel inside initChannel, which runs
+        // on the accept event loop — possibly after the client's connect()
+        // future has already completed. Poll instead of assuming.
+        Channel serverConn = awaitServerConnection(server, 2000);
+        assertNotNull(serverConn, "server should have an active connection channel");
+        assertTrue(serverConn.pipeline().get(Http2PipelineSupport.FLUSH_CONSOLIDATION)
+                instanceof FlushConsolidationHandler);
+
+        Channel clientConn = client.activeChannel();
+        assertNotNull(clientConn, "client should have an active connection channel");
+        assertTrue(clientConn.pipeline().get(Http2PipelineSupport.FLUSH_CONSOLIDATION)
+                instanceof FlushConsolidationHandler);
+    }
+
+    private static Channel awaitServerConnection(Http2Server server, long timeoutMs)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            Channel ch = server.firstConnectionChannel();
+            if (ch != null) {
+                return ch;
+            }
+            Thread.sleep(10);
+        }
+        return null;
     }
 
     @Test

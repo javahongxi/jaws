@@ -7,6 +7,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
 import io.netty.handler.codec.http2.Http2MultiplexHandler;
+import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.handler.ssl.ApplicationProtocolConfig;
 import io.netty.handler.ssl.ApplicationProtocolNames;
 import io.netty.handler.ssl.SslContext;
@@ -37,7 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * semantics live (jaws payload encoding for {@link Http2Client}, gRPC wire
  * format for the wire module's client). The connection pipeline assembled here is:
  * <pre>
- *   [ssl] → http2_codec → http2_multiplex
+ *   [ssl] → flush_consolidation → http2_codec → http2_multiplex
  * </pre>
  * <p>
  * Speaks plain h2c (HTTP/2 prior-knowledge) by default; TLS is enabled when
@@ -107,6 +108,10 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                             pipeline.addLast("ssl",
                                     sslContext.newHandler(ch.alloc(), url.getHost(), url.getPort()));
                         }
+                        // Collapse per-message flushes into one flush per
+                        // event-loop turn (teardown paths flush pending writes).
+                        pipeline.addLast(Http2PipelineSupport.FLUSH_CONSOLIDATION,
+                                new FlushConsolidationHandler(64, true));
                         // HTTP/2 framing & flow control; liveness relies on TCP keepalive
                         // and HTTP/2 PINGs instead of application-level heartbeats
                         pipeline.addLast("http2_codec", configureHttp2Codec(Http2FrameCodecBuilder.forClient()).build());

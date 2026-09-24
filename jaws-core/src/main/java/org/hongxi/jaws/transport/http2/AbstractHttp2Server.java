@@ -9,6 +9,7 @@ import io.netty.handler.codec.http2.DefaultHttp2GoAwayFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
 import io.netty.handler.codec.http2.Http2MultiplexHandler;
+import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.handler.ssl.ApplicationProtocolConfig;
@@ -38,7 +39,7 @@ import java.io.IOException;
  * live (jaws payload encoding for {@link Http2Server}, gRPC wire format for
  * the wire module's server). The pipeline assembled here is:
  * <pre>
- *   [ssl] → http2_codec → http2_multiplex → (per-stream handler)
+ *   [ssl] → flush_consolidation → http2_codec → http2_multiplex → (per-stream handler)
  * </pre>
  * <p>
  * Speaks plain h2c (HTTP/2 prior-knowledge) by default; TLS is enabled when
@@ -60,6 +61,15 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
         super(url, serverName);
         this.connectionChannels = new DefaultChannelGroup(
                 serverName.toLowerCase() + "-connections", GlobalEventExecutor.INSTANCE);
+    }
+
+    /**
+     * Package-private view of one tracked connection channel, for tests.
+     *
+     * @return an active connection channel, or null if none was opened yet
+     */
+    io.netty.channel.Channel firstConnectionChannel() {
+        return connectionChannels.isEmpty() ? null : connectionChannels.iterator().next();
     }
 
     /**
@@ -117,6 +127,11 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
         if (sslContext != null) {
             pipeline.addLast("ssl", sslContext.newHandler(ch.alloc()));
         }
+
+        // Collapse per-message flushes from business-thread response writes into
+        // one flush per event-loop turn (teardown paths flush pending writes).
+        pipeline.addLast(Http2PipelineSupport.FLUSH_CONSOLIDATION,
+                new FlushConsolidationHandler(64, true));
 
         pipeline.addLast("http2_codec", configureHttp2Codec(Http2FrameCodecBuilder.forServer()).build());
 

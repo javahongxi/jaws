@@ -16,6 +16,12 @@ public final class Http2PipelineSupport {
      */
     public static final String HTTP2_CODEC = "http2_codec";
 
+    /**
+     * Name under which the connection-level {@link io.netty.handler.flush.FlushConsolidationHandler}
+     * is installed by both {@link AbstractHttp2Server} and {@link AbstractHttp2Client}.
+     */
+    public static final String FLUSH_CONSOLIDATION = "flush_consolidation";
+
     private Http2PipelineSupport() {
     }
 
