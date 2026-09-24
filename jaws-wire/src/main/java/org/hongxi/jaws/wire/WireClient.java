@@ -8,8 +8,6 @@ import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
 import io.netty.handler.codec.http2.DefaultHttp2ResetFrame;
 import io.netty.handler.codec.http2.Http2Error;
-import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
-import io.netty.handler.codec.http2.Http2Settings;
 import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
 import io.netty.util.AsciiString;
@@ -119,15 +117,6 @@ public class WireClient extends AbstractHttp2Client {
                 t.setDaemon(true);
                 return t;
             });
-
-    /**
-     * Advertise an 8 MiB stream window (see {@link WireConstants#INITIAL_WINDOW_SIZE}).
-     */
-    @Override
-    protected Http2FrameCodecBuilder configureHttp2Codec(Http2FrameCodecBuilder builder) {
-        return super.configureHttp2Codec(builder).initialSettings(
-                new Http2Settings().initialWindowSize(WireConstants.INITIAL_WINDOW_SIZE));
-    }
 
     public WireClient(URL url) {
         super(url, "WireClient");

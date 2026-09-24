@@ -2,8 +2,6 @@ package org.hongxi.jaws.wire;
 
 import com.google.protobuf.Descriptors;
 import io.netty.channel.ChannelPipeline;
-import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
-import io.netty.handler.codec.http2.Http2Settings;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.transport.MessageHandler;
@@ -100,15 +98,6 @@ public class WireServer extends AbstractHttp2Server {
      * automatically available; use {@link #getHealthService()} to manage
      * per-service statuses.
      */
-    /**
-     * Advertise an 8 MiB stream window (see {@link WireConstants#INITIAL_WINDOW_SIZE}).
-     */
-    @Override
-    protected Http2FrameCodecBuilder configureHttp2Codec(Http2FrameCodecBuilder builder) {
-        return super.configureHttp2Codec(builder).initialSettings(
-                new Http2Settings().initialWindowSize(WireConstants.INITIAL_WINDOW_SIZE));
-    }
-
     public WireServer(URL url, WireHandlerRegistry registry) {
         super(url, "WireServer");
         this.registry = registry;

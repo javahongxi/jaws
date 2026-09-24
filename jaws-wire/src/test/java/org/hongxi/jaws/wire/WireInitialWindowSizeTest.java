@@ -7,6 +7,7 @@ import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.wire.health.HealthCheckRequest;
+import org.hongxi.jaws.transport.http2.Http2Constants;
 import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -88,13 +89,13 @@ class WireInitialWindowSizeTest {
                         codec.connection().remote().flowController();
         Long remoteWindow = awaitRemoteWindow(remoteFc, 2000);
         assertNotNull(remoteWindow, "server SETTINGS must arrive");
-        assertEquals((long) WireConstants.INITIAL_WINDOW_SIZE, remoteWindow,
+        assertEquals((long) Http2Constants.INITIAL_WINDOW_SIZE, remoteWindow,
                 "server must advertise the 8 MiB stream window");
         // Own advertised window: what the peer may send us per stream
         io.netty.handler.codec.http2.DefaultHttp2LocalFlowController localFc =
                 (io.netty.handler.codec.http2.DefaultHttp2LocalFlowController)
                         codec.connection().local().flowController();
-        assertEquals((long) WireConstants.INITIAL_WINDOW_SIZE,
+        assertEquals((long) Http2Constants.INITIAL_WINDOW_SIZE,
                 localFc.initialWindowSize(),
                 "client must advertise the 8 MiB stream window");
     }
@@ -128,7 +129,7 @@ class WireInitialWindowSizeTest {
             long timeoutMs) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
-            if (remoteFc.initialWindowSize() == WireConstants.INITIAL_WINDOW_SIZE) {
+            if (remoteFc.initialWindowSize() == Http2Constants.INITIAL_WINDOW_SIZE) {
                 return (long) remoteFc.initialWindowSize();
             }
             Thread.sleep(20);

@@ -34,12 +34,6 @@ public final class WireConstants {
     /** gRPC frame header: 1 byte compressed flag + 4 bytes message length. */
     public static final int GRPC_HEADER_SIZE = 5;
 
-    /**
-     * SETTINGS_INITIAL_WINDOW_SIZE advertised by both wire endpoints (8 MiB,
-     * aligned with Dubbo TripleConfig): the HTTP/2 protocol default 64 KiB
-     * throttles bulk streams on any path with non-trivial RTT.
-     */
-    public static final int INITIAL_WINDOW_SIZE = 8 * 1024 * 1024;
     public static final byte NOT_COMPRESSED = 0;
     public static final byte COMPRESSED = 1;
 

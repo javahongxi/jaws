@@ -104,7 +104,10 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
      * @return the customized builder (may be the same instance)
      */
     protected Http2FrameCodecBuilder configureHttp2Codec(Http2FrameCodecBuilder builder) {
-        return builder;
+        // Advertise an 8 MiB stream window (aligned with Dubbo TripleConfig):
+        // the protocol default 64 KiB throttles bulk streams on non-trivial RTT
+        return builder.initialSettings(new io.netty.handler.codec.http2.Http2Settings()
+                .initialWindowSize(Http2Constants.INITIAL_WINDOW_SIZE));
     }
 
     @Override
