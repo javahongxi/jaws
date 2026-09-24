@@ -16,7 +16,7 @@ gRPC = HTTP/2 + 一层极薄的约定。wire 严格对齐这几点：
 
 - **传输**：HTTP/2，每条 RPC 是一个 stream（一元/流式都是），多路复用同一条连接。
 - **请求头**：`:method=POST`、`:path=/{package.Service}/{Method}`、`:scheme`、`content-type: application/grpc[+proto]`、可选 `grpc-timeout`。
-- **消息帧**：每个 gRPC 消息在 DATA 帧里再套一层 **5 字节前缀**——1 字节压缩标志 + 4 字节大端长度，后接 payload。
+- **消息帧**：每个 gRPC 消息在 DATA 帧里再套一层 **5 字节前缀**——1 字节压缩标志 + 4 字节大端长度，后接 payload。单请求形态（unary/server-streaming）把 END_STREAM 折进唯一那条 DATA 帧——HEADERS + DATA(END_STREAM) 两帧收发，与 grpc-java 同形，不再多发一条空 DATA。
 - **响应状态**：成功/失败都靠 **HTTP/2 trailer** 携带 `grpc-status`（0–16）、`grpc-message`，富错误再加 `grpc-status-details-bin`。
 
 ## 3. 帧编解码：`WireFrameCodec`
@@ -63,6 +63,13 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 - **压缩**：`CompressorRegistry`（出站选）+ `DecompressorRegistry`（入站解 + 决定 advertise）两张表驱动，内置 identity 与 gzip（`java.util.zip`，零外部依赖），注册一个 `Codec` 即可按名字启用第三种编码。入站未知编码 → `UNIMPLEMENTED`，出站未被客户端广告 → 降级 identity；响应头恒写 `grpc-encoding`（对齐 grpc-java 的 "Always put compressor, even if it's identity"），请求头只在真压缩时才写。
 - **keepalive（gRFC A8 服务端守卫）**：`WireKeepaliveHandler` 实现 gRPC 的"ping 过快"惩罚——PING 间隔小于许可值累计 strike，超过 `MAX_PING_STRIKES`（默认 **2**）才发 `GOAWAY` 带 `too_many_pings`，**不是第一次违规就踢**（和 grpc-java 服务端一致）。客户端 `WireClientKeepaliveHandler` 镜像 grpc-java 的 `KeepAliveManager` 状态机，无 ACK 即断连重连。
 - **GOAWAY**：`WireGoAwayHandler` 收到后置 IDLE、关连接、立即重连。
+- **RST 透传**：对端发来的 `RST_STREAM` 经 `Http2MultiplexHandler` 以 `Http2ResetFrame`
+  user event 抵达流 pipeline，客户端两个响应 handler 据此**立即**以映射状态失败调用
+  （`WireStatus.fromHttp2Error`：CANCEL→CANCELED、REFUSED_STREAM→UNAVAILABLE、
+  ENHANCE_YOUR_CALM→RESOURCE_EXHAUSTED、余 INTERNAL），不再等满请求超时——
+  grpc-java 服务端业务侧取消调用时，wire 客户端秒级拿到结果。
+- **流窗口**：两端广告 `SETTINGS_INITIAL_WINDOW_SIZE=8MiB`（对齐 Dubbo TripleConfig；
+  协议默认 64KiB 在大负载/高 RTT 下限吞吐），SETTINGS 交换后双向生效。
 - **retry**：`WireRetryPolicy` 指数退避 + 抖动，且**仅 `UNAVAILABLE` 可重试**（`WireStatus.isRetryable`）。
 
 ## 8. health 与 reflection：让 grpcurl 免 proto 直连
@@ -91,8 +98,30 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 
 最后一条，也是 wire 存在的一条纪律：**`jaws-to-jaws` 自测全绿并不代表和 gRPC 真互通**。两端同源时，双命名体系的问题会被同一套反射口径互相掩盖，跑再多遍也测不出来。所以 wire 的兼容性必须**从对面打过来**——用你不控制的第三方验证。`run-sample.sh interop` 就是干这个的：grpc-java 调 Jaws-wire、Jaws-wire 调真 gRPC、走 `ManagedChannel`、验 keepalive，四个方向都通，才算"对等 gRPC"。`grpcurl` 直连（靠 §8 的 reflection）则是最低成本的一路反验。
 
+## 12. 性能基准：与 grpc-java 的双向对照（`bench-grpc`）
+
+`run-sample.sh bench-grpc` 用一个 grpc-java 客户端打两种服务端：`SERVER=wire`（互操作
+反验）与 `SERVER=grpc`（纯 grpc-java netty 服务端参照）。同一负载（`hello(String)`）、
+20 线程、WARMUP=5s、DURATION=40s、分进程长驻、各轮 0 错误：
+
+| 客户端 → 服务端 | QPS | 说明 |
+|------|-----|------|
+| grpc-java → wire 服务端（互操作） | 102,469 / 101,844 / 101,781 | 均值 **102,031**，第三方客户端反验口径 |
+| wire 客户端 → wire 服务端（管线消费端） | 87,333 / 87,466 / 87,434 | 均值 87,411 |
+| wire 客户端 → wire 服务端（`DISPATCH=direct` 消费端） | 90,323 / 91,810 / 90,915 | 均值 **91,016**，绕过 ReferenceConfig 代理层 |
+| grpc-java → grpc-java（正统 gRPC 参照） | 66,160 / 63,516 | 均值 64,838；换有界业务池持平 |
+
+两个方向都值得读。**互操作 10.2 万**说明 wire 服务端在第三方客户端全文压下仍高于
+正统 grpc-java 服务端（6.5 万）——grpc-java 服务端的开销大头在每 RPC 的回调穿越层
+（`JumpToApplicationThread` + `SerializingExecutor` 两跳线程，`directExecutor` 对照
+实验 64.8k → 92.9k）。**消费端两档 87.4k → 91k** 则量化了 wire 客户端代理层约 3.6k
+的开销。与 grpc-java 客户端之间剩余 ~10k 的差距经 JFR 双向采样归因：头路径字符串
+比较（已用 AsciiString 常量化消除，热点退出 top 榜）与 child-channel 架构税
+（netty `Http2MultiplexHandler` 底座的 pipeline/Promise 固有成本，记档接受）。
+完整数据与诊断表见 [benchmark.md](benchmark.md) 的 9/24 节。
+
 ## 小结
 
 wire 的价值有两层：一层是**能力**——Jaws 因此能进 gRPC 生态当一等公民；另一层是**认知**——它逼着把 gRPC 线格式的每一条约定都实现并读懂，于是这个模块本身成了"gRPC over HTTP/2 到底规定了什么"的可读参考。它和 jaws 二进制协议是同一套骨架（core 六层）之上的两种对外齿形：一个对等 gRPC，一个对等 Dubbo。
 
-> 源码：`jaws-wire`（约 9k 行）+ `jaws-wire-proto`（生成码）。运行：`./run-sample.sh wire`（直连，兼容 grpcurl）、`./run-sample.sh interop`（grpc-java ↔ jaws-wire 双向互操作）。
+> 源码：`jaws-wire`（约 9k 行）+ `jaws-wire-proto`（生成码）。运行：`./run-sample.sh wire`（直连，兼容 grpcurl）、`./run-sample.sh interop`（grpc-java ↔ jaws-wire 双向互操作）、`./run-sample.sh bench-wire` / `bench-grpc`（性能基准，含互操作口径与 gRPC 参照口径）。
