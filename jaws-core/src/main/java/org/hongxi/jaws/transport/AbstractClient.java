@@ -16,8 +16,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * Base implementation of {@link Client} holding state shared by all
  * client transports: the remote {@link URL}, the volatile {@link ChannelState}
  * lifecycle flag, the async-request callback bookkeeping (callback futures
- * plus one-shot per-request timeouts on a shared HashedWheelTimer), and the
- * error-fusing availability management.
+ * plus one-shot per-request timeouts on a shared ScheduledExecutorService), and
+ * the error-fusing availability management.
  * <p>
  * Also provides the graceful-close template: drain in-flight requests within
  * the given timeout, cancel whatever remains, then delegate transport-specific

@@ -36,7 +36,7 @@ import org.slf4j.LoggerFactory;
  * in the request-id multiplexed jaws TCP protocol is eliminated by design.
  * <p>
  * Like {@code NettyClient}, async requests register a {@link ResponseFuture}
- * callback guarded by a one-shot timeout on a shared HashedWheelTimer; the
+ * callback guarded by a one-shot timeout on a shared ScheduledExecutorService; the
  * per-stream {@link Http2StreamResponseHandler} completes the future when the
  * response END_STREAM arrives, or fails it on stream reset/close.
  * <p>

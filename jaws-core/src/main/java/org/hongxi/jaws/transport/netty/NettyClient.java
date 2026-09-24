@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit;
  * {@link NettyChannelHandler}), encodes requests with zero-copy
  * {@link ByteBuf} allocation, and completes async requests through
  * {@link ResponseFuture} callbacks, each guarded by a one-shot timeout
- * scheduled on a shared HashedWheelTimer.
+ * scheduled on a shared ScheduledExecutorService.
  * <p>
  * Supports error fusing: once consecutive errors reach the fusing threshold
  * the client is marked unavailable and recovers on success. Per-request
