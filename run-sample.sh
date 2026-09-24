@@ -790,12 +790,13 @@ cmd_bench_wire() {
     local duration="${DURATION:-10}"
     local port="${PORT:-50051}"
     local compression="${COMPRESSION:-}"
+    local dispatch="${DISPATCH:-pipeline}"
     local role="${ROLE:-all}"
     local host="${HOST:-127.0.0.1}"
     local cp
     cp=$(build_classpath "$BENCHMARK_MODULE")
     cp="$cp:$BENCHMARK_MODULE/target/classes:jaws-samples/jaws-sample-injvm/target/classes"
-    echo "Running Benchmark [wire] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port compression=${compression:-none} host=$host"
+    echo "Running Benchmark [wire] role=$role threads=$threads warmup=${warmup}s duration=${duration}s port=$port compression=${compression:-none} dispatch=$dispatch host=$host"
     echo "--------------------------------------------"
     java -cp "$cp" \
         -Drole="$role" \
@@ -804,6 +805,7 @@ cmd_bench_wire() {
         -Dduration="$duration" \
         -Dport="$port" \
         -Dcompression="$compression" \
+        -Ddispatch="$dispatch" \
         -Dhost="$host" \
         "$WIRE_BENCHMARK_MAIN"
 }

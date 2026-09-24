@@ -294,7 +294,7 @@ public class WireClient extends AbstractHttp2Client {
             // Run client interceptor chain, then drive the single request
             WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), failFuture(responseFuture), tracer));
+                    mutableCallContext(request), failFuture(responseFuture), tracer, true));
             call.sendMessage(requestMessage);
             call.halfClose();
         } catch (Exception e) {
@@ -360,7 +360,7 @@ public class WireClient extends AbstractHttp2Client {
             // Run client interceptor chain, then drive the single request
             WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), failFuture(responseFuture), tracer));
+                    mutableCallContext(request), failFuture(responseFuture), tracer, true));
             call.sendMessage(requestMessage);
             call.halfClose();
         } catch (Exception e) {
@@ -469,7 +469,7 @@ public class WireClient extends AbstractHttp2Client {
             };
             WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure, tracer));
+                    mutableCallContext(request), writeFailure, tracer, true));
             call.sendMessage(requestMessage);
             call.halfClose();
 
@@ -575,7 +575,7 @@ public class WireClient extends AbstractHttp2Client {
             };
             final WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure, tracer));
+                    mutableCallContext(request), writeFailure, tracer, false));
 
             // Subscribe to the caller's request stream and forward each item
             // to the network as it is produced.
@@ -686,7 +686,7 @@ public class WireClient extends AbstractHttp2Client {
             };
             final WireClientCall call = buildClientChain(new ClientCallImpl(
                     streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure, tracer));
+                    mutableCallContext(request), writeFailure, tracer, false));
 
             // Subscribe to the caller's request stream and forward each item
             // to the network as it is produced.
@@ -998,7 +998,7 @@ public class WireClient extends AbstractHttp2Client {
      * response handler's {@code channelInactive}, so this sink is a backstop for
      * a local write error, not the normal termination path.
      */
-    private final class ClientCallImpl implements WireClientCall {
+    final class ClientCallImpl implements WireClientCall {
         private final io.netty.channel.Channel streamChannel;
         private final Request request;
         private final String grpcPath;
@@ -1010,6 +1010,20 @@ public class WireClient extends AbstractHttp2Client {
         /** Observer shared with this stream's response handler; never {@code null}. */
         private final ClientStreamTracer tracer;
         private boolean headersSent;
+        /** Whether {@link #halfClose} has emitted END_STREAM (directly or folded). */
+        private boolean halfClosed;
+        /**
+         * True for single-request shapes (unary, server-streaming) whose call
+         * sites invoke {@code sendMessage + halfClose} back-to-back on one
+         * thread: the message frame is staged and written with END_STREAM
+         * folded in at half-close — one DATA frame instead of two, exactly
+         * the shape grpc-java sends. False for interactive shapes
+         * (client-streaming, bidi), where every message must reach the peer
+         * immediately or a half-closing peer would deadlock the exchange.
+         */
+        private final boolean foldEndStream;
+        /** Staged encoded frame; non-null only while {@link #foldEndStream} is set. */
+        private ByteBuf pendingFrame;
         /**
          * Outbound message counter. Not atomic: callers of {@link #sendMessage}
          * are serialized by the contract of the API driving this call, exactly
@@ -1020,7 +1034,7 @@ public class WireClient extends AbstractHttp2Client {
         ClientCallImpl(io.netty.channel.Channel streamChannel, Request request,
                         String grpcPath, int timeout, Compressor compressor,
                         WireCallContext callContext, Consumer<Throwable> failureSink,
-                        ClientStreamTracer tracer) {
+                        ClientStreamTracer tracer, boolean foldEndStream) {
             this.streamChannel = streamChannel;
             this.request = request;
             this.grpcPath = grpcPath;
@@ -1029,6 +1043,7 @@ public class WireClient extends AbstractHttp2Client {
             this.callContext = callContext;
             this.failureSink = failureSink;
             this.tracer = tracer;
+            this.foldEndStream = foldEndStream;
         }
 
         @Override
@@ -1051,12 +1066,67 @@ public class WireClient extends AbstractHttp2Client {
             if (!streamChannel.isActive()) {
                 return;
             }
+            // Folding shapes: the previous staged message can no longer carry
+            // END_STREAM, so flush it unflagged before staging this one
+            flushPending();
             writeHeadersIfNeeded();
             ByteBuf content = WireFrameCodec.encode(message, streamChannel.alloc(), compressor);
             // Reported before the buffer is handed to the pipeline, which
             // consumes and releases it asynchronously
             tracer.outboundMessageSent(outboundMessageNumber++,
                     WireFrameCodec.payloadSize(content), message.getSerializedSize());
+            if (foldEndStream) {
+                pendingFrame = content;
+            } else {
+                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, false))
+                        .addListener(f -> {
+                            if (!f.isSuccess()) {
+                                reportWriteFailure("DATA", f.cause());
+                            }
+                        });
+            }
+        }
+
+        @Override
+        public void halfClose() {
+            if (halfClosed) {
+                return;
+            }
+            halfClosed = true;
+            if (!streamChannel.isActive()) {
+                releasePending();
+                return;
+            }
+            writeHeadersIfNeeded();
+            if (pendingFrame != null) {
+                // Fold END_STREAM into the staged message frame: unary and
+                // server-streaming go out as HEADERS + one DATA(END_STREAM),
+                // same as grpc-java, instead of an extra empty DATA frame
+                ByteBuf content = pendingFrame;
+                pendingFrame = null;
+                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, true))
+                        .addListener(f -> {
+                            if (!f.isSuccess()) {
+                                reportWriteFailure("DATA", f.cause());
+                            }
+                        });
+            } else {
+                streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
+                        .addListener(f -> {
+                            if (!f.isSuccess()) {
+                                reportWriteFailure("END_STREAM", f.cause());
+                            }
+                        });
+            }
+        }
+
+        /** Writes the staged frame unflagged, making room for the next message. */
+        private void flushPending() {
+            if (pendingFrame == null) {
+                return;
+            }
+            ByteBuf content = pendingFrame;
+            pendingFrame = null;
             streamChannel.writeAndFlush(new DefaultHttp2DataFrame(content, false))
                     .addListener(f -> {
                         if (!f.isSuccess()) {
@@ -1065,22 +1135,16 @@ public class WireClient extends AbstractHttp2Client {
                     });
         }
 
-        @Override
-        public void halfClose() {
-            if (!streamChannel.isActive()) {
-                return;
+        private void releasePending() {
+            if (pendingFrame != null) {
+                pendingFrame.release();
+                pendingFrame = null;
             }
-            writeHeadersIfNeeded();
-            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(true))
-                    .addListener(f -> {
-                        if (!f.isSuccess()) {
-                            reportWriteFailure("END_STREAM", f.cause());
-                        }
-                    });
         }
 
         @Override
         public void cancel(String reason) {
+            releasePending();
             cancelStream(streamChannel);
         }
 

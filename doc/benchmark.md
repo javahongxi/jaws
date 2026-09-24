@@ -193,6 +193,25 @@ jaws + wire + protobuf，20 线程、WARMUP=5s、DURATION=40s，各轮 0 错误�
 的增益为 +1.2%，wire 的分配面更宽（每流 child channel、帧对象、ByteBuf），分进程收益
 是否更大待同窗口复验后再下结论。
 
+**客户端写路径优化（END_STREAM 折叠与消费端直连，2026-09-24）**：wire 客户端每次
+unary/server-streaming 调用发出 HEADERS + DATA + 空 DATA(END_STREAM) 三帧，比
+grpc-java 客户端多一帧。两步优化：① unary/server-streaming 的调用点
+`sendMessage + halfClose` 背靠背同线程执行，消息帧暂存到 half-close 时折叠
+END_STREAM 一次写出（3 帧 → 2 帧，与 grpc-java 同形）；client-streaming/bidi 为交互
+形态保持逐消息立即写出（暂存会死锁交互式流，已有拦截器测试钉住）；② 消费端新增
+`DISPATCH=direct`——benchmark 客户端绕过 ReferenceConfig 代理层直接
+`ManagedChannel.unaryCall`（服务端保持管线模式不动，对比口径公平）。
+
+| 消费端 → 服务端（分进程长驻，服务端始终管线模式） | QPS | 说明 |
+|------|-----|------|
+| wire 代理消费端（改动前） | 81,603 | 上表 5 轮均值 |
+| wire 代理消费端（折叠后 ×3） | 87,333 / 87,466 / 87,434 | 均值 **87,411**，极差 0.2%，帧折叠 +7.1% |
+| wire 直连消费端（ManagedChannel，×3） | 90,323 / 91,810 / 90,915 | 均值 **91,016**，代理层开销约 3.6k |
+
+距 grpc-java 客户端打同一服务端的约 101.3k 还差 ~10k，剩余差距在 wire 客户端核心栈
+（WireClient 每请求的定时器调度、响应处理与任务数）与 grpc-java 客户端栈之间，待
+热点采样归因。
+
 分进程用法见「分进程模式说明」：provider 长驻（`ROLE=provider`），consumer 多轮压测
 （`ROLE=consumer THREADS=20`）。
 

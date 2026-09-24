@@ -1,8 +1,10 @@
 package org.hongxi.jaws.sample.benchmark;
 
 import org.hongxi.jaws.config.ProtocolConfig;
+import org.hongxi.jaws.wire.ManagedChannel;
 import org.hongxi.jaws.config.ReferenceConfig;
 import org.hongxi.jaws.config.ServiceConfig;
+import com.google.protobuf.Message;
 import org.hongxi.jaws.sample.wire.proto.GreeterService;
 import org.hongxi.jaws.sample.wire.proto.HelloReply;
 import org.hongxi.jaws.sample.wire.proto.HelloRequest;
@@ -30,6 +32,8 @@ import java.util.concurrent.atomic.LongAdder;
  *   port        - Wire protocol port, default 50051
  *   host        - Provider address, consumer direct-connect target, default 127.0.0.1 (separate-process mode only)
  *   compression - Compression method, default empty (none), optional: gzip
+ *   dispatch    - Consumer call path: pipeline (default, ReferenceConfig
+ *                 proxy) / direct (ManagedChannel unaryCall, no proxy layer)
  *
  * Examples:
  *   java -Dthreads=20 -Dduration=40 ...
@@ -47,6 +51,7 @@ public class WireBenchmark {
     private static final int PORT = Integer.parseInt(System.getProperty("port", "50051"));
     private static final String HOST = System.getProperty("host", "127.0.0.1");
     private static final String COMPRESSION = System.getProperty("compression", "");
+    private static final String DISPATCH = System.getProperty("dispatch", "pipeline");
 
     private static final String BENCHMARK_NAME = "benchmark";
     private static final HelloRequest REQUEST =
@@ -65,11 +70,13 @@ public class WireBenchmark {
         System.out.println("  Jaws Wire Benchmark");
         System.out.println("============================================");
         System.out.println("  role      : " + ROLE);
+        System.out.println("  dispatch  : " + DISPATCH + " (consumer path)");
         System.out.println("  threads   : " + THREADS);
         System.out.println("  warmup    : " + WARMUP_SECONDS + "s");
         System.out.println("  duration  : " + DURATION_SECONDS + "s");
         System.out.println("  port      : " + PORT);
         System.out.println("  compress  : " + (COMPRESSION.isEmpty() ? "none" : COMPRESSION));
+
         if (!"all".equals(ROLE)) {
             System.out.println("  host      : " + HOST);
         }
@@ -88,12 +95,28 @@ public class WireBenchmark {
             return;
         }
 
-        // 2. Create reference
-        ReferenceConfig<GreeterService> ref = createReference();
-        GreeterService greeterService = ref.getRef();
+        // 2. Create the invoker: proxy pipeline (ReferenceConfig) or direct
+        // ManagedChannel API — the layer under test on the consumer side
+        java.util.function.Supplier<HelloReply> invoke;
+        final ManagedChannel channel;
+        if ("direct".equals(DISPATCH)) {
+            channel = ManagedChannel.builder()
+                    .addAddress(HOST + ":" + PORT)
+                    .requestTimeout(30_000)
+                    .build();
+            invoke = () -> (HelloReply) channel
+                    .unaryCall(GreeterService.class.getName(), "SayHello",
+                            REQUEST, HelloReply.parser())
+                    .getValue();
+        } else {
+            channel = null;
+            ReferenceConfig<GreeterService> ref = createReference();
+            GreeterService greeterService = ref.getRef();
+            invoke = () -> greeterService.sayHello(REQUEST);
+        }
 
         // Verify invocation works
-        HelloReply testReply = greeterService.sayHello(REQUEST);
+        HelloReply testReply = invoke.get();
         if (!testReply.getMessage().contains(BENCHMARK_NAME)) {
             throw new RuntimeException("Sanity check failed: " + testReply.getMessage());
         }
@@ -101,11 +124,14 @@ public class WireBenchmark {
 
         // 3. Warm-up
         System.out.println("Warming up (" + WARMUP_SECONDS + "s)...");
-        runPhase(greeterService, WARMUP_SECONDS, true);
+        runPhase(invoke, WARMUP_SECONDS, true);
 
         // 4. Measurement
         System.out.println("Measuring (" + DURATION_SECONDS + "s, " + THREADS + " threads)...");
-        BenchmarkResult result = runPhase(greeterService, DURATION_SECONDS, false);
+        BenchmarkResult result = runPhase(invoke, DURATION_SECONDS, false);
+        if (channel != null) {
+            channel.shutdown();
+        }
 
         // 5. Print results
         printResult(result);
@@ -197,7 +223,8 @@ public class WireBenchmark {
         }
     }
 
-    private static BenchmarkResult runPhase(GreeterService greeterService, int durationSeconds, boolean warmup)
+    private static BenchmarkResult runPhase(java.util.function.Supplier<HelloReply> invoke,
+                                            int durationSeconds, boolean warmup)
             throws InterruptedException {
         AtomicLong totalCalls = new AtomicLong(0);
         List<List<Long>> perThreadLatencies = new ArrayList<>(THREADS);
@@ -225,7 +252,7 @@ public class WireBenchmark {
                 while (System.nanoTime() < deadline) {
                     long start = System.nanoTime();
                     try {
-                        HelloReply reply = greeterService.sayHello(REQUEST);
+                        HelloReply reply = invoke.get();
                         if (!reply.getMessage().contains(BENCHMARK_NAME)) {
                             recordError("InvalidResponse");
                         } else if (!warmup) {
