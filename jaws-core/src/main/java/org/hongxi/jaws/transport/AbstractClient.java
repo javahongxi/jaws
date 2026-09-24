@@ -1,7 +1,7 @@
 package org.hongxi.jaws.transport;
 
-import io.netty.util.Timeout;
 import org.hongxi.jaws.common.UrlParam;
+import org.hongxi.jaws.common.threadpool.DefaultThreadFactory;
 import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.ResponseFuture;
@@ -9,9 +9,7 @@ import org.hongxi.jaws.rpc.URL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -44,15 +42,14 @@ public abstract class AbstractClient implements Client {
      * Per-request timeout scheduler shared by all clients.
      * Each callback registers a one-shot timeout task at registration time.
      */
-    private static final java.util.concurrent.ScheduledExecutorService timeoutTimer =
-            new java.util.concurrent.ScheduledThreadPoolExecutor(
-                    1,
-                    new io.netty.util.concurrent.DefaultThreadFactory("jaws-client-timeout", true));
+    private static final ScheduledExecutorService timeoutTimer =
+            new ScheduledThreadPoolExecutor(1,
+                    new DefaultThreadFactory("jaws-client-timeout", true));
     // removeOnCancelPolicy: cancellation is an O(log n) heap delete with no
     // cancelled-entry garbage — HashedWheelTimer's bucket-list Timeout.remove()
     // was measured at ~10% CPU under load
     static {
-        ((java.util.concurrent.ScheduledThreadPoolExecutor) timeoutTimer)
+        ((ScheduledThreadPoolExecutor) timeoutTimer)
                 .setRemoveOnCancelPolicy(true);
     }
 
@@ -69,7 +66,7 @@ public abstract class AbstractClient implements Client {
      * Removal triggers: 1) response received from server  2) timeout task cancels it  3) close().
      */
     private final ConcurrentMap<Long, ResponseFuture> callbackMap = new ConcurrentHashMap<>();
-    private final ConcurrentMap<Long, java.util.concurrent.ScheduledFuture<?>> timeoutMap = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, ScheduledFuture<?>> timeoutMap = new ConcurrentHashMap<>();
 
     /** One warning per client about an unarmed request timeout. */
     private boolean warnUnboundedWait = true;
@@ -161,7 +158,7 @@ public abstract class AbstractClient implements Client {
                     + "indefinitely: set requestTimeout>0, url={}", getClass().getSimpleName(), url.getUri());
         }
         if (timeout > 0) {
-            java.util.concurrent.ScheduledFuture<?> timerTimeout = timeoutTimer.schedule(() -> {
+            ScheduledFuture<?> timerTimeout = timeoutTimer.schedule(() -> {
                 ResponseFuture future = callbackMap.remove(requestId);
                 if (future != null) {
                     timeoutMap.remove(requestId);
@@ -183,7 +180,7 @@ public abstract class AbstractClient implements Client {
      */
     public ResponseFuture removeCallback(long requestId) {
         // Cancel the timeout task if still pending
-        java.util.concurrent.ScheduledFuture<?> timeout = timeoutMap.remove(requestId);
+        ScheduledFuture<?> timeout = timeoutMap.remove(requestId);
         if (timeout != null) {
             // removeOnCancelPolicy makes this O(log n) heap removal with no
             // cancelled-entry garbage — see the field comment
