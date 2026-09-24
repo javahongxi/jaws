@@ -229,6 +229,11 @@ END_STREAM 一次写出（3 帧 → 2 帧，与 grpc-java 同形）；client-str
   剩余热点（HPACK 字符串比较、netty Promise 分配、pipeline 遍历）均为 netty 内部
   成本，grpc-java 客户端同样在付，进一步追猎边际收益低，到此收手。
 
+**http2 腿（jaws 协议）同步受益**：FCH 合批、header 路径 AsciiString 化与 8MiB
+窗口对两条 HTTP/2 腿同时生效。管线消费端三轮 85,341 / 87,843 / 88,867（均值
+**87,350**，较 8/27 基线 73,579 **+18.7%**，极差 4%）——与 wire 腿管线消费端的
+87.4k 持平（wire 直连消费端 91k 的差值即代理层，见上表）。
+
 ### 与 grpc-java 客户端的剩余差距归因（2026-09-24，JFR 双向对比）
 
 同一 wire 服务端、同为 grpc 形态负载、各对 consumer JVM 采样（jcmd JFR.start +
