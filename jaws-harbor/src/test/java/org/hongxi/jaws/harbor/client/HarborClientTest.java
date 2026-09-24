@@ -126,6 +126,9 @@ class HarborClientTest {
             // be satisfied by the replay (a stale stream ending late is likewise kept from
             // tearing down what the client has just rebuilt).
             assertEquals(connectionIdBefore, connectionIdAfter);
+            // The replay bookkeeping can land a beat after the reconnect
+            // returns under machine load; poll instead of asserting cold.
+            awaitTrue(() -> nativeConnectionIds().size() == 1, 5_000);
             assertEquals(1, nativeConnectionIds().size(), "one session, not two");
             // The registration is back.
             awaitTrue(() -> nacosInstances("replayed").stream()

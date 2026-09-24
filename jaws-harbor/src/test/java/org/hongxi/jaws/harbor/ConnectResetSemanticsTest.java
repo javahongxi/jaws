@@ -80,6 +80,9 @@ class ConnectResetSemanticsTest {
         // why the closure triggered by the old stream must not delete what the replay
         // has just put back.
         awaitTrue(() -> client.getInstances("expelled").size() == 1, 10_000);
+        // The client-side cache can refill a beat before the server's session
+        // bookkeeping lands; poll the server side instead of asserting cold.
+        awaitTrue(() -> serverA.getConnectionManager().size() == 1, 5_000);
         assertEquals(1, serverA.getConnectionManager().size(), "one session, not two");
 
         // And the subscription survived with it: a change now reaches the watcher.
