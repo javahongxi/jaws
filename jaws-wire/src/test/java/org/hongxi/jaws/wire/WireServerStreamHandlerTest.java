@@ -187,7 +187,7 @@ class WireServerStreamHandlerTest {
 
         Http2HeadersFrame responseHeaders = ch.readOutbound();
         assertEquals("200", responseHeaders.headers().status().toString());
-        assertEquals(WireConstants.CONTENT_TYPE_GRPC,
+        assertEquals(WireConstants.CONTENT_TYPE_GRPC.toString(),
                 responseHeaders.headers().get(WireConstants.HEADER_CONTENT_TYPE).toString());
         // The response advertises what this server can decompress. Identity is
         // registered but not advertised, so the offer is exactly gzip: an

@@ -743,6 +743,10 @@ public class WireClient extends AbstractHttp2Client {
         }
     }
 
+    private static final io.netty.util.AsciiString METHOD_POST = io.netty.util.AsciiString.of("POST");
+    private static final io.netty.util.AsciiString SCHEME_HTTP = io.netty.util.AsciiString.of("http");
+    private static final io.netty.util.AsciiString SCHEME_HTTPS = io.netty.util.AsciiString.of("https");
+
     /**
      * Build the gRPC request HEADERS: pseudo-headers, content-type, the
      * mandatory {@code te: trailers}, user-agent, encoding advertisement, the
@@ -751,10 +755,10 @@ public class WireClient extends AbstractHttp2Client {
     private Http2Headers buildRequestHeaders(Request request, String grpcPath, int timeout,
                                              Compressor compressor) {
         Http2Headers headers = new DefaultHttp2Headers()
-                .method("POST")
-                .scheme(getSslContext() != null ? "https" : "http")
-                .path(grpcPath)
-                .authority(url.getHostPort())
+                .method(METHOD_POST)
+                .scheme(getSslContext() != null ? SCHEME_HTTPS : SCHEME_HTTP)
+                .path(io.netty.util.AsciiString.of(grpcPath))
+                .authority(io.netty.util.AsciiString.of(url.getHostPort()))
                 .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
                 .set(WireConstants.HEADER_TE, WireConstants.TE_TRAILERS)
                 .set(WireConstants.HEADER_USER_AGENT, WireConstants.USER_AGENT)

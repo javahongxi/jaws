@@ -508,46 +508,83 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         // Now subscribe the network-forwarding observer to the buffer.
         // The buffer replays all items from the beginning, including any
         // that were already produced by the source before this point.
+        //
+        // Every frame committed here — each DATA and the closing trailers — is
+        // written on the stream's event loop via {@link #commitFrame}. A bidi
+        // source can hand its buffered items to this observer on a business
+        // thread while the terminal signal arrives later on the event loop; if
+        // each wrote inline, Netty could run the in-loop END_STREAM before the
+        // queued business-thread DATA, so the client would close the stream
+        // before the last item landed. Routing every write through the same
+        // event loop makes the on-wire order equal the submission order.
         buffer.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
-                if (canceled || !ctx.channel().isActive()) {
-                    return;
-                }
-                // Honor the caller's deadline: stop emitting and report
-                // DEADLINE_EXCEEDED once the grpc-timeout window has passed
-                if (isDeadlineExceeded()) {
-                    sendTrailers(ctx, WireConstants.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
-                    return;
-                }
-                if (item instanceof Message msg) {
-                    sendResponseHeaders(ctx);
-                    ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc(), responseCompressor);
-                    traceOutboundMessageSent(responseFrame, msg);
-                    ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
-                } else {
-                    log.warn("streaming: expected protobuf Message but got: {}",
-                            item != null ? item.getClass().getName() : "null");
-                }
+                commitFrame(ctx, () -> {
+                    if (canceled || !ctx.channel().isActive()) {
+                        return;
+                    }
+                    // Honor the caller's deadline: stop emitting and report
+                    // DEADLINE_EXCEEDED once the grpc-timeout window has passed
+                    if (isDeadlineExceeded()) {
+                        sendTrailers(ctx, WireConstants.STATUS_DEADLINE_EXCEEDED, "Deadline exceeded");
+                        return;
+                    }
+                    if (item instanceof Message msg) {
+                        sendResponseHeaders(ctx);
+                        ByteBuf responseFrame = WireFrameCodec.encode(msg, ctx.alloc(), responseCompressor);
+                        traceOutboundMessageSent(responseFrame, msg);
+                        ctx.writeAndFlush(new DefaultHttp2DataFrame(responseFrame, false));
+                    } else {
+                        log.warn("streaming: expected protobuf Message but got: {}",
+                                item != null ? item.getClass().getName() : "null");
+                    }
+                });
             }
 
             @Override
             public void onError(Throwable throwable) {
-                log.error("streaming error: path={}", path, throwable);
-                if (!canceled && ctx.channel().isActive()) {
-                    // Map failure class to grpc-status (retryable/deadline semantics)
-                    sendTrailers(ctx, WireStatus.fromThrowable(throwable),
-                            "Stream failed: " + throwable.getMessage());
-                }
+                commitFrame(ctx, () -> {
+                    log.error("streaming error: path={}", path, throwable);
+                    if (!canceled && ctx.channel().isActive()) {
+                        // Map failure class to grpc-status (retryable/deadline semantics)
+                        sendTrailers(ctx, WireStatus.fromThrowable(throwable),
+                                "Stream failed: " + throwable.getMessage());
+                    }
+                });
             }
 
             @Override
             public void onCompleted() {
-                if (!canceled && ctx.channel().isActive()) {
-                    sendTrailers(ctx, WireConstants.STATUS_OK, null);
-                }
+                commitFrame(ctx, () -> {
+                    if (!canceled && ctx.channel().isActive()) {
+                        sendTrailers(ctx, WireConstants.STATUS_OK, null);
+                    }
+                });
             }
         });
+    }
+
+    /**
+     * Commit one outbound frame action on the stream's event loop, in the order
+     * it is submitted.
+     * <p>
+     * A streaming response's items and its terminal signal can be produced on
+     * different threads — the business handler emits on the executor while the
+     * half-close that ends the response is observed on the event loop. Writing
+     * inline from each thread lets Netty reorder a queued business-thread DATA
+     * behind an in-loop {@code END_STREAM}; serializing every write through
+     * this one loop keeps them in submission order.
+     * <p>
+     * A task rejected because the loop is shutting down is dropped: the stream
+     * is going away and its frames no longer matter.
+     */
+    private static void commitFrame(ChannelHandlerContext ctx, Runnable frameWriter) {
+        try {
+            ctx.executor().execute(frameWriter);
+        } catch (RejectedExecutionException e) {
+            log.debug("dropped stream frame write: event loop shutting down");
+        }
     }
 
     /**

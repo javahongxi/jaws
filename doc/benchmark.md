@@ -229,6 +229,27 @@ END_STREAM 一次写出（3 帧 → 2 帧，与 grpc-java 同形）；client-str
   剩余热点（HPACK 字符串比较、netty Promise 分配、pipeline 遍历）均为 netty 内部
   成本，grpc-java 客户端同样在付，进一步追猎边际收益低，到此收手。
 
+### 与 grpc-java 客户端的剩余差距归因（2026-09-24，JFR 双向对比）
+
+同一 wire 服务端、同为 grpc 形态负载、各对 consumer JVM 采样（jcmd JFR.start +
+`jfr view hot-methods`）。wire 客户端 91k 档 vs grpc-java 客户端 101.3k 档，每单位
+工作的 CPU 结构差异：
+
+| 成本项 | wire 客户端 | grpc-java 客户端 | 来源 |
+|------|------|------|------|
+| HPACK/头字符串比较 | ~23%（`AsciiString.hashCode`+`contentEquals`） | ~4% | wire 的 `WireMetadata` 逐 header 过滤与 String 传参 |
+| pipeline 遍历 | 8.3%（`findContextIn/Outbound`） | 0% | wire 每 RPC 一个 netty child channel；grpc-java 是连接级 handler + stream map |
+| netty Promise 机器 | ~11% | 4.7% | child channel 的 promise 链更长 |
+| 写缓冲合批 | —（折叠后 2 次 ELG 任务） | 6.2%（`CoalescingBufferQueue`） | grpc-java 写路径自带合批缓冲 |
+
+两项处置：① 头字符串操作**已优化**——`WireConstants` 头名/值常量 AsciiString 化
+（HPACK 编解码走字节快路径、预计算哈希）、`WireMetadata.isReserved(CharSequence)`
+无分配判断、`estimateHeaderSize` 免 `toString()+getBytes()` 分配；复采确认
+AsciiString 热点从前 23% 退出 top 榜。② child-channel 架构税（pipeline 遍历 +
+Promise 链）**记档接受**——这是选择 netty `Http2MultiplexHandler` 底座的固有代价，
+grpc-java 的连接级 handler + WriteQueue 是另一条架构路线，追平它等于重做客户端
+底座，超出收益区间。
+
 分进程用法见「分进程模式说明」：provider 长驻（`ROLE=provider`），consumer 多轮压测
 （`ROLE=consumer THREADS=20`）。
 

@@ -1,6 +1,7 @@
 package org.hongxi.jaws.wire;
 
 import io.netty.handler.codec.http2.Http2Headers;
+import io.netty.util.AsciiString;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -36,10 +37,25 @@ public final class WireMetadata {
         }
         int size = 0;
         for (Map.Entry<CharSequence, CharSequence> entry : headers) {
-            size += entry.getKey().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            size += entry.getValue().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            size += utf8Length(entry.getKey());
+            size += utf8Length(entry.getValue());
         }
         return size;
+    }
+
+    /**
+     * UTF-8 octet count without the {@code toString()} + {@code getBytes()}
+     * allocation pair: an {@link AsciiString} is one byte per char, so its
+     * length is the answer; anything else falls back to encoding.
+     */
+    private static int utf8Length(CharSequence value) {
+        if (value instanceof AsciiString ascii) {
+            // gRPC metadata and header names are ASCII-only (RFC 7540 §8.1.2
+            // forbids anything else outside the -bin wrappers), so each char
+            // is exactly one UTF-8 byte
+            return ascii.length();
+        }
+        return value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 
     private WireMetadata() {
@@ -51,16 +67,43 @@ public final class WireMetadata {
      *         be mapped to a user attachment
      */
     public static boolean isReserved(String name) {
-        if (name == null || name.isEmpty()) {
+        return isReserved((CharSequence) name);
+    }
+
+    /**
+     * Allocation-free variant: netty decodes header names as {@link AsciiString},
+     * so the checks run on chars directly instead of materialising a String per
+     * header (this sits on the per-frame hot path).
+     */
+    public static boolean isReserved(CharSequence name) {
+        if (name == null || name.length() == 0) {
             return true;
         }
         if (name.charAt(0) == ':') {
             return true;
         }
-        if (name.startsWith("grpc-")) {
+        if (startsWith(name, "grpc-")) {
             return true;
         }
-        return "content-type".equals(name) || "te".equals(name) || "user-agent".equals(name);
+        return contentEquals(name, "content-type") || contentEquals(name, "te")
+                || contentEquals(name, "user-agent");
+    }
+
+    private static boolean startsWith(CharSequence name, String prefix) {
+        if (name.length() < prefix.length()) {
+            return false;
+        }
+        for (int i = 0; i < prefix.length(); i++) {
+            if (name.charAt(i) != prefix.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean contentEquals(CharSequence name, String expected) {
+        return name.length() == expected.length()
+                && startsWith(name, expected);
     }
 
     /**
@@ -96,10 +139,13 @@ public final class WireMetadata {
         }
         Map<String, String> metadata = new LinkedHashMap<>();
         for (Map.Entry<CharSequence, CharSequence> entry : headers) {
-            String key = entry.getKey().toString().toLowerCase(Locale.ROOT);
-            if (!isReserved(key)) {
-                metadata.put(key, entry.getValue().toString());
+            CharSequence key = entry.getKey();
+            if (isReserved(key)) {
+                continue;
             }
+            // Only non-reserved metadata pays the String materialisation
+            String lowerKey = key.toString().toLowerCase(Locale.ROOT);
+            metadata.put(lowerKey, entry.getValue().toString());
         }
         return Collections.unmodifiableMap(metadata);
     }

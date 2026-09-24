@@ -19,9 +19,17 @@ public final class WireConstants {
     private WireConstants() {
     }
 
+    /**
+     * Header names/values are precomputed {@link io.netty.util.AsciiString}s:
+     * HPACK encode/decode and {@code DefaultHttp2Headers} lookups then stay on
+     * the byte-based fast path (precomputed hash, same-type compares) instead
+     * of paying String↔AsciiString conversions per frame.
+     */
     /** gRPC content type header value. */
-    public static final String CONTENT_TYPE_GRPC = "application/grpc";
-    public static final CharSequence HEADER_CONTENT_TYPE = "content-type";
+    public static final io.netty.util.AsciiString CONTENT_TYPE_GRPC =
+            io.netty.util.AsciiString.of("application/grpc");
+    public static final io.netty.util.AsciiString HEADER_CONTENT_TYPE =
+            io.netty.util.AsciiString.of("content-type");
 
     /** gRPC frame header: 1 byte compressed flag + 4 bytes message length. */
     public static final int GRPC_HEADER_SIZE = 5;
@@ -55,18 +63,19 @@ public final class WireConstants {
     public static final int STATUS_UNAUTHENTICATED = 16;
 
     // Trailer header names
-    public static final CharSequence GRPC_STATUS = "grpc-status";
-    public static final CharSequence GRPC_MESSAGE = "grpc-message";
-    public static final CharSequence GRPC_ENCODING = "grpc-encoding";
+    public static final io.netty.util.AsciiString GRPC_STATUS = io.netty.util.AsciiString.of("grpc-status");
+    public static final io.netty.util.AsciiString GRPC_MESSAGE = io.netty.util.AsciiString.of("grpc-message");
+    public static final io.netty.util.AsciiString GRPC_ENCODING = io.netty.util.AsciiString.of("grpc-encoding");
     /** Encodings the sender accepts on incoming messages (client request / server response). */
-    public static final CharSequence GRPC_ACCEPT_ENCODING = "grpc-accept-encoding";
+    public static final io.netty.util.AsciiString GRPC_ACCEPT_ENCODING =
+            io.netty.util.AsciiString.of("grpc-accept-encoding");
 
     // Message compression encodings
     public static final String ENCODING_IDENTITY = "identity";
     public static final String ENCODING_GZIP = "gzip";
 
     /** HTTP/2 header required by the gRPC protocol to allow trailer-based status. */
-    public static final CharSequence HEADER_TE = "te";
+    public static final io.netty.util.AsciiString HEADER_TE = io.netty.util.AsciiString.of("te");
 
     /**
      * Key for the connection-level identifier propagated via parent-channel
@@ -90,9 +99,9 @@ public final class WireConstants {
      */
     public static final String CONNECTION_PEER = "x-wire-connection-peer";
 
-    public static final CharSequence TE_TRAILERS = "trailers";
-    public static final CharSequence HEADER_USER_AGENT = "user-agent";
-    public static final String USER_AGENT = userAgent();
+    public static final io.netty.util.AsciiString TE_TRAILERS = io.netty.util.AsciiString.of("trailers");
+    public static final io.netty.util.AsciiString HEADER_USER_AGENT = io.netty.util.AsciiString.of("user-agent");
+    public static final io.netty.util.AsciiString USER_AGENT = io.netty.util.AsciiString.of(userAgent());
 
     private static String userAgent() {
         String version = WireConstants.class.getPackage().getImplementationVersion();

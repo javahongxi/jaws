@@ -198,6 +198,10 @@ class WireStreamingRequestTest {
         ch.writeInbound(new DefaultHttp2DataFrame(WireFrameCodec.encode(REQUEST, ch.alloc()), true));
 
         executor.release();
+        // Response frames are committed on the stream's event loop (see
+        // WireStreamServerHandler#commitFrame), so the release above only
+        // enqueues them; drain the loop for the DATA and trailers to be written.
+        ch.runPendingTasks();
 
         List<String> frameKinds = new ArrayList<>();
         Object outbound;
