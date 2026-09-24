@@ -199,6 +199,24 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
         observer.onCompleted();
     }
 
+    /**
+     * An inbound RST_STREAM is the peer's explicit terminal verdict for the
+     * stream: surface it to the observer immediately with the mapped
+     * grpc-style status instead of waiting for the call to time out.
+     */
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
+        if (evt instanceof Http2ResetFrame reset) {
+            int grpcStatus = WireStatus.fromHttp2Error(reset.errorCode());
+            reportStreamClosed(grpcStatus);
+            observer.onError(WireStatus.toException(grpcStatus,
+                    "peer reset the stream (http2 error 0x"
+                            + Long.toHexString(reset.errorCode()) + ")"));
+            return;
+        }
+        ctx.fireUserEventTriggered(evt);
+    }
+
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
         // Closed with no trailers and no reset: the connection went away mid-call

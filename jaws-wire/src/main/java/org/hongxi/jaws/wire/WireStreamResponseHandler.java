@@ -9,6 +9,7 @@ import io.netty.handler.codec.http2.DefaultHttp2ResetFrame;
 import io.netty.handler.codec.http2.Http2DataFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
+import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.util.ReferenceCountUtil;
 import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
@@ -296,15 +297,26 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Note there is no {@code Http2ResetFrame} branch here. Measured on Netty
-     * 4.1.132 with {@code Http2FrameCodec} + {@code Http2MultiplexHandler}, an
-     * inbound RST_STREAM for a client-created stream channel is consumed inside
-     * the codec: it reaches neither this pipeline, nor the parent pipeline, nor
-     * the stream channel's own lifecycle — so a peer that resets the call while
-     * keeping the connection alive cannot be observed from here at all. Such a
-     * call is recovered by the per-request timeout, which is why
-     * {@code AbstractClient} warns when a client would arm no timer at all.
+     * An inbound RST_STREAM is the peer's explicit terminal verdict for the
+     * call: fail the future immediately with the mapped grpc-style status
+     * (CANCEL → CANCELLED, REFUSED_STREAM → UNAVAILABLE, …) instead of burning
+     * the whole request timeout. The frame reaches this child pipeline as a
+     * user event — {@code Http2MultiplexHandler} forwards it via
+     * {@code fireChildUserEventTriggered} (verified end-to-end by
+     * WireClientRstObservationTest).
      */
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
+        if (evt instanceof Http2ResetFrame reset) {
+            int grpcStatus = WireStatus.fromHttp2Error(reset.errorCode());
+            failCall("peer reset the stream",
+                    WireStatus.toException(grpcStatus, "peer reset the stream"
+                            + " (http2 error 0x" + Long.toHexString(reset.errorCode()) + ")"));
+            return;
+        }
+        ctx.fireUserEventTriggered(evt);
+    }
+
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
         failCall("gRPC stream closed before the response arrived", null);

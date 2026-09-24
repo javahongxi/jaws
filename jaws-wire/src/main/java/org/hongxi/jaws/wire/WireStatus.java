@@ -101,6 +101,22 @@ public final class WireStatus {
      * @param grpcMessage the grpc-message from trailers, may be null
      * @return the exception to fail the call with
      */
+    /**
+     * Map an HTTP/2 RST_STREAM error code to the grpc-style status the caller
+     * would have received in trailers, had the peer ended the call gracefully.
+     * Mirrors grpc-java's NettyClientHandler mapping: CANCEL → CANCELLED,
+     * REFUSED_STREAM → UNAVAILABLE (retryable), ENHANCE_YOUR_CALM →
+     * RESOURCE_EXHAUSTED, everything else → INTERNAL.
+     */
+    public static int fromHttp2Error(long errorCode) {
+        return switch ((int) errorCode) {
+            case 0x08 -> WireConstants.STATUS_CANCELED;            // CANCEL
+            case 0x07 -> WireConstants.STATUS_UNAVAILABLE;         // REFUSED_STREAM
+            case 0x0b -> WireConstants.STATUS_RESOURCE_EXHAUSTED;  // ENHANCE_YOUR_CALM
+            default -> WireConstants.STATUS_INTERNAL;
+        };
+    }
+
     public static RuntimeException toException(int grpcStatus, String grpcMessage) {
         return toException(grpcStatus, grpcMessage, null);
     }
