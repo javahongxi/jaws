@@ -41,14 +41,34 @@ class ConnectResetSemanticsTest {
 
     @BeforeAll
     static void startServers() throws Exception {
-        portA = freePort();
-        portB = freePort();
-        serverA = new HarborServer(new URL("harbor", "0.0.0.0", portA, ""));
-        serverA.start();
-        serverB = new HarborServer(new URL("harbor", "0.0.0.0", portB, ""));
-        serverB.start();
+        serverA = startServer();
+        portA = serverA.port();
+        serverB = startServer();
+        portB = serverB.port();
         awaitListening(portA);
         awaitListening(portB);
+    }
+
+    /**
+     * CI flake guard: between {@code freePort()} releasing the probe socket and
+     * the actual bind, the port can be grabbed as a local ephemeral port by
+     * another test's outbound connection — the bind then fails with "Failed to
+     * start WireServer server". Retry on a fresh port instead of failing the
+     * whole class.
+     */
+    private static HarborServer startServer() throws Exception {
+        RuntimeException last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            HarborServer server =
+                    new HarborServer(new URL("harbor", "0.0.0.0", freePort(), ""));
+            try {
+                server.start();
+                return server;
+            } catch (RuntimeException e) {
+                last = e;
+            }
+        }
+        throw last;
     }
 
     @AfterAll

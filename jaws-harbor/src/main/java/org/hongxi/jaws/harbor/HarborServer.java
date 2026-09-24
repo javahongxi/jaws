@@ -173,6 +173,11 @@ public class HarborServer {
         this.wireServer.addConnectionAttributeKey(WireConstants.CONNECTION_ID);
     }
 
+    /** The wire (grpc) serving port; package-private for tests. */
+    int port() {
+        return url.getPort();
+    }
+
     public void start() {
         joinCluster();
         wireServer.open();
