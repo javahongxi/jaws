@@ -1,5 +1,7 @@
 package org.hongxi.jaws.wire;
 
+import io.netty.util.AsciiString;
+
 /**
  * Wire protocol constants for the gRPC line format implemented by jaws-wire.
  * <p>
@@ -20,16 +22,14 @@ public final class WireConstants {
     }
 
     /**
-     * Header names/values are precomputed {@link io.netty.util.AsciiString}s:
+     * Header names/values are precomputed {@link AsciiString}s:
      * HPACK encode/decode and {@code DefaultHttp2Headers} lookups then stay on
      * the byte-based fast path (precomputed hash, same-type compares) instead
      * of paying String↔AsciiString conversions per frame.
      */
+    public static final AsciiString CONTENT_TYPE_GRPC = AsciiString.of("application/grpc");
     /** gRPC content type header value. */
-    public static final io.netty.util.AsciiString CONTENT_TYPE_GRPC =
-            io.netty.util.AsciiString.of("application/grpc");
-    public static final io.netty.util.AsciiString HEADER_CONTENT_TYPE =
-            io.netty.util.AsciiString.of("content-type");
+    public static final AsciiString HEADER_CONTENT_TYPE = AsciiString.of("content-type");
 
     /** gRPC frame header: 1 byte compressed flag + 4 bytes message length. */
     public static final int GRPC_HEADER_SIZE = 5;
@@ -63,19 +63,19 @@ public final class WireConstants {
     public static final int STATUS_UNAUTHENTICATED = 16;
 
     // Trailer header names
-    public static final io.netty.util.AsciiString GRPC_STATUS = io.netty.util.AsciiString.of("grpc-status");
-    public static final io.netty.util.AsciiString GRPC_MESSAGE = io.netty.util.AsciiString.of("grpc-message");
-    public static final io.netty.util.AsciiString GRPC_ENCODING = io.netty.util.AsciiString.of("grpc-encoding");
+    public static final AsciiString GRPC_STATUS = AsciiString.of("grpc-status");
+    public static final AsciiString GRPC_MESSAGE = AsciiString.of("grpc-message");
+    public static final AsciiString GRPC_ENCODING = AsciiString.of("grpc-encoding");
     /** Encodings the sender accepts on incoming messages (client request / server response). */
-    public static final io.netty.util.AsciiString GRPC_ACCEPT_ENCODING =
-            io.netty.util.AsciiString.of("grpc-accept-encoding");
+    public static final AsciiString GRPC_ACCEPT_ENCODING =
+            AsciiString.of("grpc-accept-encoding");
 
     // Message compression encodings
     public static final String ENCODING_IDENTITY = "identity";
     public static final String ENCODING_GZIP = "gzip";
 
     /** HTTP/2 header required by the gRPC protocol to allow trailer-based status. */
-    public static final io.netty.util.AsciiString HEADER_TE = io.netty.util.AsciiString.of("te");
+    public static final AsciiString HEADER_TE = AsciiString.of("te");
 
     /**
      * Key for the connection-level identifier propagated via parent-channel
@@ -99,9 +99,9 @@ public final class WireConstants {
      */
     public static final String CONNECTION_PEER = "x-wire-connection-peer";
 
-    public static final io.netty.util.AsciiString TE_TRAILERS = io.netty.util.AsciiString.of("trailers");
-    public static final io.netty.util.AsciiString HEADER_USER_AGENT = io.netty.util.AsciiString.of("user-agent");
-    public static final io.netty.util.AsciiString USER_AGENT = io.netty.util.AsciiString.of(userAgent());
+    public static final AsciiString TE_TRAILERS = AsciiString.of("trailers");
+    public static final AsciiString HEADER_USER_AGENT = AsciiString.of("user-agent");
+    public static final AsciiString USER_AGENT = AsciiString.of(userAgent());
 
     private static String userAgent() {
         String version = WireConstants.class.getPackage().getImplementationVersion();

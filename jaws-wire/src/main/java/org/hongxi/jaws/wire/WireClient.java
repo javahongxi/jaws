@@ -12,6 +12,7 @@ import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
 import io.netty.handler.codec.http2.Http2Settings;
 import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
+import io.netty.util.AsciiString;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
@@ -743,9 +744,9 @@ public class WireClient extends AbstractHttp2Client {
         }
     }
 
-    private static final io.netty.util.AsciiString METHOD_POST = io.netty.util.AsciiString.of("POST");
-    private static final io.netty.util.AsciiString SCHEME_HTTP = io.netty.util.AsciiString.of("http");
-    private static final io.netty.util.AsciiString SCHEME_HTTPS = io.netty.util.AsciiString.of("https");
+    private static final AsciiString METHOD_POST = AsciiString.of("POST");
+    private static final AsciiString SCHEME_HTTP = AsciiString.of("http");
+    private static final AsciiString SCHEME_HTTPS = AsciiString.of("https");
 
     /**
      * Build the gRPC request HEADERS: pseudo-headers, content-type, the
@@ -757,8 +758,8 @@ public class WireClient extends AbstractHttp2Client {
         Http2Headers headers = new DefaultHttp2Headers()
                 .method(METHOD_POST)
                 .scheme(getSslContext() != null ? SCHEME_HTTPS : SCHEME_HTTP)
-                .path(io.netty.util.AsciiString.of(grpcPath))
-                .authority(io.netty.util.AsciiString.of(url.getHostPort()))
+                .path(AsciiString.of(grpcPath))
+                .authority(AsciiString.of(url.getHostPort()))
                 .set(WireConstants.HEADER_CONTENT_TYPE, WireConstants.CONTENT_TYPE_GRPC)
                 .set(WireConstants.HEADER_TE, WireConstants.TE_TRAILERS)
                 .set(WireConstants.HEADER_USER_AGENT, WireConstants.USER_AGENT)
