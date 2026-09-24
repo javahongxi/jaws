@@ -212,6 +212,23 @@ END_STREAM 一次写出（3 帧 → 2 帧，与 grpc-java 同形）；client-str
 （WireClient 每请求的定时器调度、响应处理与任务数）与 grpc-java 客户端栈之间，待
 热点采样归因。
 
+### 同日附加改动与采样结论（2026-09-24）
+
+- **RST 透传**：wire 客户端两个响应 handler 收 `Http2ResetFrame` 立即以映射状态失败
+  调用（CANCEL→CANCELED、REFUSED_STREAM→UNAVAILABLE、ENHANCE_YOUR_CALM→
+  RESOURCE_EXHAUSTED、余 INTERNAL），不再等满请求超时。e2e：对端回 RST(CANCEL)
+  后 0.19s 失败（原行为等满超时）。
+- **8MiB 流窗口**：wire 两端广告 `SETTINGS_INITIAL_WINDOW_SIZE=8MiB`（对齐 Triple），
+  e2e 断言 SETTINGS 交换后双向生效。小消息基准无感，解锁大负载/高 RTT。
+- **每请求超时调度器**：`HashedWheelTimer` → `ScheduledThreadPoolExecutor`
+  （removeOnCancelPolicy）。JFR 采样显示 `HashedWheelTimeout.remove()` 占 ~10%
+  （wheel 桶为链表，取消是 O(桶长) 遍历且随待决量恶化）；**但替换后吞吐无提升**
+  （jaws/netty 139.5k vs 存档 140.7k 持平，wire 管线 89.0k vs 87.4k 为噪声级）——
+  该热点跑在业务线程上，而瓶颈不在业务线程 CPU。**热点 ≠ 关键路径**。保留此改动
+  的理由是规模保险：O(桶长) 取消随待决量恶化，removeOnCancelPolicy 与待决量无关。
+  剩余热点（HPACK 字符串比较、netty Promise 分配、pipeline 遍历）均为 netty 内部
+  成本，grpc-java 客户端同样在付，进一步追猎边际收益低，到此收手。
+
 分进程用法见「分进程模式说明」：provider 长驻（`ROLE=provider`），consumer 多轮压测
 （`ROLE=consumer THREADS=20`）。
 
