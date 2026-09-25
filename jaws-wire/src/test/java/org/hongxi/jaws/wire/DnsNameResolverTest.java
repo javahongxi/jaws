@@ -7,6 +7,7 @@ import java.net.UnknownHostException;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -83,5 +84,54 @@ class DnsNameResolverTest {
         DnsNameResolver resolver = new DnsNameResolver("example.com", 443, 5000);
         assertEquals("example.com", resolver.getHostname());
         assertEquals(443, resolver.getDefaultPort());
+    }
+
+    @Test
+    void throwingAddressListenerDoesNotEscapeTheRefreshTask() {
+        // ScheduledExecutorService drops every later run of a fixed-rate task whose
+        // body throws, so a transport listener must not be able to take periodic
+        // refresh down with it. This asserts the notification seam, not the tick.
+        DnsNameResolver resolver = new DnsNameResolver("localhost", 9090, 0);
+        AtomicInteger notified = new AtomicInteger();
+
+        assertDoesNotThrow(() -> resolver.start(new NameResolver.Listener() {
+            @Override
+            public void onAddresses(List<InetSocketAddress> addresses) {
+                notified.incrementAndGet();
+                throw new IllegalStateException("listener rejected the update");
+            }
+
+            @Override
+            public void onError(Throwable error) {
+            }
+        }));
+
+        assertEquals(1, notified.get());
+        assertFalse(resolver.getResolvedAddresses().isEmpty(),
+                "addresses are recorded before the listener is notified");
+        resolver.shutdown();
+    }
+
+    @Test
+    void throwingErrorListenerDoesNotEscapeTheRefreshTask() {
+        // Same guard on the other seam: onError runs from inside the
+        // UnknownHostException handler, so it needs covering too.
+        DnsNameResolver resolver = new DnsNameResolver("nonexistent.invalid.host.xyz", 9090, 0);
+        AtomicInteger errors = new AtomicInteger();
+
+        assertDoesNotThrow(() -> resolver.start(new NameResolver.Listener() {
+            @Override
+            public void onAddresses(List<InetSocketAddress> addresses) {
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                errors.incrementAndGet();
+                throw new IllegalStateException("listener rejected the error");
+            }
+        }));
+
+        assertEquals(1, errors.get(), "the resolution failure is still reported once");
+        resolver.shutdown();
     }
 }

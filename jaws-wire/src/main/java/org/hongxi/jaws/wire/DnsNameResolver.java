@@ -90,9 +90,23 @@ public class DnsNameResolver implements NameResolver {
     }
 
     /**
-     * Perform a DNS resolution and notify the listener of changes.
+     * One refresh tick. Runs both from the periodic schedule and from
+     * {@link #refresh()}, so nothing here may propagate: a fixed-rate task
+     * that throws is dropped by the scheduler for good, taking every later
+     * refresh with it and leaving the transport on stale addresses.
      */
     private void resolve() {
+        try {
+            doResolve();
+        } catch (RuntimeException e) {
+            log.warn("DNS refresh task failed for '{}'", hostname, e);
+        }
+    }
+
+    /**
+     * Perform a DNS resolution and notify the listener of changes.
+     */
+    private void doResolve() {
         try {
             InetAddress[] addresses = InetAddress.getAllByName(hostname);
             List<InetSocketAddress> socketAddresses = new ArrayList<>(addresses.length);

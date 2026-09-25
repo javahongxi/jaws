@@ -144,14 +144,22 @@ public class WireConnectionLifecycleHandler extends ChannelInboundHandlerAdapter
 
     private void sendGoAway(ChannelHandlerContext ctx, byte[] debugData) {
         goawaySent = true;
-        ctx.writeAndFlush(new DefaultHttp2GoAwayFrame(Http2Error.NO_ERROR, Unpooled.wrappedBuffer(debugData)))
-                .addListener(f -> {
-                    if (debugData.length == 0) {
-                        // Idle close: close immediately after GOAWAY
-                        ctx.close();
-                    }
-                    // Age close: wait for grace period (handled by scheduled task)
-                });
+        DefaultHttp2GoAwayFrame goAway = new DefaultHttp2GoAwayFrame(
+                Http2Error.NO_ERROR, Unpooled.wrappedBuffer(debugData));
+        ctx.writeAndFlush(goAway).addListener(f -> {
+            if (!f.isSuccess()) {
+                // Netty turns an outbound failure into a failed promise instead of
+                // throwing, so this is the only place that can still tell the peer
+                // was never told the connection is ending.
+                log.warn("Failed to send GOAWAY (maxIdleMs={}, maxAgeMs={}): remote={}",
+                        maxIdleMs, maxAgeMs, ctx.channel().remoteAddress(), f.cause());
+            }
+            if (debugData.length == 0) {
+                // Idle close: close immediately after GOAWAY
+                ctx.close();
+            }
+            // Age close: wait for grace period (handled by scheduled task)
+        });
         // Cancel idle checks
         if (idleCheckFuture != null) {
             idleCheckFuture.cancel(false);
