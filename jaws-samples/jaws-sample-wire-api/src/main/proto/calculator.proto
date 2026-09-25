@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "org.hongxi.jaws.sample.wire.proto";
+option java_outer_classname = "CalculatorProto";
+
+package calculator;
+
+// A second service on the same wire port, so "one server per host:port serves
+// more than one service" is checkable from a third-party client: grpcurl must
+// list both and call both.
+service Calculator {
+  // Unary division (quotient and remainder)
+  rpc Divide (DivideRequest) returns (DivideReply) {}
+
+  // Server streaming: emits the first N Fibonacci numbers
+  rpc Fibonacci (FibonacciRequest) returns (stream FibonacciReply) {}
+}
+
+// The request message carrying the operands.
+message DivideRequest {
+  int64 dividend = 1;
+  int64 divisor = 2;
+}
+
+// The response message carrying the result.
+message DivideReply {
+  int64 quotient = 1;
+  int64 remainder = 2;
+}
+
+// How many Fibonacci numbers to emit.
+message FibonacciRequest {
+  int32 count = 1;
+}
+
+// One Fibonacci number, with its 1-based index.
+message FibonacciReply {
+  int32 index = 1;
+  int64 value = 2;
+}

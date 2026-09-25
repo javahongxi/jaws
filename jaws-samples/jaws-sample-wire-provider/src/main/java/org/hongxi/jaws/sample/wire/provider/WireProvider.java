@@ -2,7 +2,9 @@ package org.hongxi.jaws.sample.wire.provider;
 
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ServiceConfig;
+import org.hongxi.jaws.sample.wire.proto.CalculatorService;
 import org.hongxi.jaws.sample.wire.proto.GreeterService;
+import org.hongxi.jaws.sample.wire.provider.service.CalculatorServiceImpl;
 import org.hongxi.jaws.sample.wire.provider.service.GreeterServiceImpl;
 import org.hongxi.jaws.wire.ServerStreamTracer;
 import org.hongxi.jaws.wire.WireExporter;
@@ -18,6 +20,9 @@ import java.util.concurrent.CountDownLatch;
  *   <li>Configure {@code WireProtocol} (protocol name = "wire")</li>
  *   <li>No registry (export only, skip registration)</li>
  *   <li>Export {@link GreeterService} via {@link ServiceConfig}</li>
+ *   <li>Export {@link CalculatorService} on the <b>same</b> port — one server per
+ *       {@code host:port} serves both, which is what the grpcurl checks below
+ *       observe from the outside</li>
  *   <li>The service is available to both Jaws wire consumers and grpcurl</li>
  * </ol>
  * <p>
@@ -38,10 +43,17 @@ import java.util.concurrent.CountDownLatch;
  *       default 300000ms to guard against overly frequent client PINGs</li>
  * </ul>
  * <p>
- * Test with grpcurl (no proto file needed, via server reflection):
+ * Test with grpcurl (no proto file needed, via server reflection). Wrap each
+ * command in a timeout — grpcurl prints its result and then stays attached to
+ * the stream, so it does not exit on its own against this server:
  * <pre>
+ *   grpcurl -plaintext localhost:50051 list
  *   grpcurl -plaintext -d '{"name":"World"}' \
  *     localhost:50051 greeter.Greeter/SayHello
+ *   grpcurl -plaintext -d '{"dividend":17,"divisor":5}' \
+ *     localhost:50051 calculator.Calculator/Divide
+ *   grpcurl -plaintext -d '{"count":6}' \
+ *     localhost:50051 calculator.Calculator/Fibonacci
  * </pre>
  * <p>
  * Note: this sample sets {@code permitPingIntervalMs=0} (guard disabled) so
@@ -85,6 +97,20 @@ public class WireProvider {
         serviceConfig.export();
         System.out.println("GreeterService exported via WireProtocol (direct mode, no registry).");
 
+        // A second service on the same port. The transport keeps one server per
+        // host:port, so this export registers into the server the first one
+        // created — the case that must be visible from the other side.
+        ServiceConfig<CalculatorService> calculatorConfig = new ServiceConfig<>();
+        calculatorConfig.setInterface(CalculatorService.class);
+        calculatorConfig.setRef(new CalculatorServiceImpl());
+        calculatorConfig.setApplication("sample-wire-provider");
+        calculatorConfig.setModule("sample-wire");
+        calculatorConfig.setCheck(true);
+        calculatorConfig.setProtocol(protocolConfig);
+        calculatorConfig.export();
+        System.out.println("CalculatorService exported on the same port "
+                + "(second service on the shared server).");
+
         // Observe the negotiation from the server side: the tracer reports the
         // bytes actually framed, so "wire != raw" on an outbound message is
         // direct evidence the response really went out compressed rather than a
@@ -120,9 +146,16 @@ public class WireProvider {
         System.out.println("Connection lifecycle: maxIdle=5min, maxAge=30min, maxInboundMetadata=16KB.");
         System.out.println("Provider listening on port " + PORT + ". Consumer should use directUrl=127.0.0.1:" + PORT);
         System.out.println();
-        System.out.println("Test with grpcurl (server reflection enabled, no proto file needed):");
+        System.out.println("Test with grpcurl (server reflection enabled, no proto file needed).");
+        System.out.println("Wrap each command in a timeout: grpcurl prints its result and then");
+        System.out.println("stays attached to the stream, so it will not exit on its own.");
+        System.out.println("  grpcurl -plaintext localhost:" + PORT + " list");
         System.out.println("  grpcurl -plaintext -d '{\"name\":\"World\"}' \\");
         System.out.println("    localhost:" + PORT + " greeter.Greeter/SayHello");
+        System.out.println("  grpcurl -plaintext -d '{\"dividend\":17,\"divisor\":5}' \\");
+        System.out.println("    localhost:" + PORT + " calculator.Calculator/Divide");
+        System.out.println("  grpcurl -plaintext -d '{\"count\":6}' \\");
+        System.out.println("    localhost:" + PORT + " calculator.Calculator/Fibonacci");
 
         // Block main thread to prevent JVM exit (Netty event loop threads may be daemon)
         new CountDownLatch(1).await();
