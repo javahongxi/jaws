@@ -598,8 +598,8 @@ sealed interface WireCallDispatcher
             }
             // Resolve streaming flags from the WireMessageHandler's proto types
             if (messageHandler instanceof WireMessageHandler wmh && methodName != null) {
-                this.bidiStream = wmh.isBidiStream(methodName);
-                this.clientStream = wmh.isClientStream(methodName);
+                this.bidiStream = wmh.isBidiStream(serviceName, methodName);
+                this.clientStream = wmh.isClientStream(serviceName, methodName);
             }
             // Provider pipeline mode defers path validation to dispatch time
             return true;

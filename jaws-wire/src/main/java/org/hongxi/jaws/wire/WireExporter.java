@@ -3,7 +3,6 @@ package org.hongxi.jaws.wire;
 import org.hongxi.jaws.rpc.AbstractExporter;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.URL;
-import org.hongxi.jaws.transport.ProviderMessageHandler;
 import org.hongxi.jaws.transport.Server;
 import org.hongxi.jaws.transport.TransportFactory;
 import org.hongxi.jaws.transport.TransportResolver;
@@ -15,13 +14,11 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * Wire protocol exporter. Creates a {@link WireServer} via the
- * {@link TransportFactory} SPI, wrapping the {@link ProviderMessageHandler}
- * with a {@link WireMessageHandler} to bridge raw protobuf bytes to typed
- * protobuf {@link com.google.protobuf.Message} instances.
- * <p>
- * This enables the full Jaws filter chain and Provider pipeline to work
- * with protobuf-typed arguments while the transport layer speaks gRPC
- * wire format.
+ * {@link TransportFactory} SPI, backed by the one {@link WireMessageHandler}
+ * that owns this {@code host:port}: that handler converts raw protobuf bytes to
+ * typed {@link com.google.protobuf.Message} instances and holds the port's
+ * provider registry, so the full Jaws filter chain and Provider pipeline work
+ * with protobuf arguments while the transport speaks gRPC wire format.
  *
  * @author shenhongxi
  */
@@ -29,27 +26,29 @@ public class WireExporter<T> extends AbstractExporter<T> {
 
     private static final Logger log = LoggerFactory.getLogger(WireExporter.class);
 
-    private static final ConcurrentMap<String, ProviderMessageHandler> messageHandlerMap =
+    /**
+     * One handler per {@code host:port}, because a shared server keeps whichever
+     * handler it was created with; every service exported on that address
+     * registers into the same handler.
+     */
+    private static final ConcurrentMap<String, WireMessageHandler> handlerMap =
             new ConcurrentHashMap<>();
 
     protected Server server;
     private final TransportFactory transportFactory;
+    private final WireMessageHandler wireHandler;
 
     public WireExporter(Provider<T> provider, URL url) {
         super(provider, url);
 
-        ProviderMessageHandler baseHandler = messageHandlerMap.computeIfAbsent(
-                url.getHostPort(), key -> new ProviderMessageHandler());
-        baseHandler.addProvider(provider);
-
-        // Wrap with WireMessageHandler for byte[] ↔ Message conversion
+        String hostPort = url.getHostPort();
         WireProtoTypes protoTypes = WireProtoTypes.fromServiceInterface(
                 provider.getInterface());
-        WireMessageHandler wireHandler = new WireMessageHandler(
-                baseHandler, protoTypes);
+        wireHandler = handlerMap.computeIfAbsent(hostPort, key -> new WireMessageHandler());
+        wireHandler.addService(provider, protoTypes);
 
         // Register the service interface for gRPC server reflection
-        WireServer.addProviderServiceInterface(url.getHostPort(), provider.getInterface());
+        WireServer.addProviderServiceInterface(hostPort, provider.getInterface());
 
         transportFactory = TransportResolver.resolve(url);
         server = transportFactory.createServer(url, wireHandler);
@@ -67,12 +66,13 @@ public class WireExporter<T> extends AbstractExporter<T> {
 
     @Override
     public void destroy() {
-        ProviderMessageHandler messageHandler = messageHandlerMap.get(url.getHostPort());
-        if (messageHandler != null) {
-            messageHandler.removeProvider(provider);
+        String hostPort = url.getHostPort();
+        wireHandler.removeService(provider);
+        if (wireHandler.isEmpty()) {
+            handlerMap.remove(hostPort, wireHandler);
         }
         // Unregister the service interface from gRPC server reflection
-        WireServer.removeProviderServiceInterface(url.getHostPort(), provider.getInterface());
+        WireServer.removeProviderServiceInterface(hostPort, provider.getInterface());
         transportFactory.releaseServer(server);
         log.info("WireExporter destroy: url={}", url);
     }

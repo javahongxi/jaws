@@ -10,6 +10,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import org.hongxi.jaws.stream.StreamSource;
@@ -65,6 +66,32 @@ public final class WireProtoTypes {
                     "No method info registered for: " + methodName);
         }
         return info;
+    }
+
+    /**
+     * @return true when this service declares the method, under either its Java
+     *         camelCase name or its gRPC PascalCase name
+     */
+    public boolean hasMethod(String methodName) {
+        return methodInfoMap.containsKey(methodName);
+    }
+
+    /**
+     * The proto service full names (e.g. {@code grpc.health.v1.Health}) declared
+     * by the descriptor files these messages belong to. A port indexes its
+     * services by these names so a gRPC path can be matched to the service that
+     * actually owns the method.
+     *
+     * @return the service full names, empty when no message exposes a descriptor
+     */
+    public Set<String> getServiceNames() {
+        Set<String> names = new LinkedHashSet<>();
+        for (Descriptors.FileDescriptor fd : getFileDescriptors()) {
+            for (Descriptors.ServiceDescriptor sd : fd.getServices()) {
+                names.add(sd.getFullName());
+            }
+        }
+        return names;
     }
 
     /**
