@@ -53,7 +53,7 @@ gRPC 把"从一个 target 字符串解析出地址列表"抽象成 `NameResolver
 - `addAddress(...)` → `PassthroughNameResolver`（等价 grpc 的 `passthrough:///`）；
 - `nameResolver(...)` → 自定义。
 
-`NameResolver.start(Listener)` 推送地址列表，`ManagedChannel` 据此**对每个地址 reconcile 出一个 `WireClient`**，再按 `LoadBalancePolicy` 选：**`ROUND_ROBIN`（轮转 + 失败切换到其他地址）** 或 **`PICK_FIRST`（粘住第一个）**。
+`NameResolver.start(Listener)` 推送地址列表，`ManagedChannel` 据此**对每个地址 reconcile 出一个 `WireClient`**，再按 `LoadBalancePolicy` 选：**`ROUND_ROBIN`（轮转 + 建流失败时换下一个地址）** 或 **`PICK_FIRST`（粘住第一个）**。注意这条切换只覆盖同步抛出——`WireClient.request()` 返回的是 future，对端以 `grpc-status` 表达的失败不经过这个循环（见 §13）。
 
 ## 7. 运维语义：deadline / 压缩 / keepalive / GOAWAY / retry
 
@@ -76,12 +76,12 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 
 两个标准 gRPC 服务让 wire 能被通用工具直接操作：
 
-- **`WireHealthService`** 实现 `grpc.health.v1.Health`（Check/Watch），`WireServer` 自动挂载——`grpcurl ... grpc.health.v1.Health/Check` 可探针存活。
+- **`WireHealthService`** 实现 `grpc.health.v1.Health`（Check/Watch），`WireServer` 自动挂载——`grpcurl ... grpc.health.v1.Health/Check` 可探针存活。其中 **Watch 只在 Direct API 模式挂载**（它是一条服务端流，要注册成 handler）；管线模式只内联应答 Check（见 §13）。
 - **`WireReflectionService`** 实现 `grpc.reflection.v1.ServerReflection`，支持 `list services` / `FileContaining*`——**这正是 `grpcurl` 不挂 `.proto` 文件也能调用 wire 服务的原因**。
 
 ## 9. 桥接 core：wire 只是 Jaws 眼里的"又一种 Protocol"
 
-`WireProtocol` 直接 `@Extension("wire") extends AbstractProtocol`（即实现 core 的 `org.hongxi.jaws.rpc.Protocol` 体系）。`createExporter → WireExporter`（经 `TransportFactory` 建 `WireServer`）、`createReference → WireReference`（委托 `ManagedChannel`/`WireClient`）。服务端派发由 `WireCallDispatcher`（一个 sealed interface）的两种策略承担：`WireCallDispatcher.HandlerCallDispatcher` 走强类型 `Message` 的 Direct API，`WireCallDispatcher.ProviderCallDispatcher` 桥到 Jaws 自己的 `MessageHandler` 管道（raw bytes）。**关键点**：wire 不另起编程模型，而是伪装成 core 眼里的普通 Protocol，于是注册中心、负载均衡、Filter 链、动态配置这些上层能力**全部白嫖**——这就是"对外咬合"能低成本落地的结构性原因。
+`WireProtocol` 直接 `@Extension("wire") extends AbstractProtocol`（即实现 core 的 `org.hongxi.jaws.rpc.Protocol` 体系）。`createExporter → WireExporter`（经 `TransportFactory` 建 `WireServer`）、`createReference → WireReference`（委托 raw 客户端 `WireClient`；`ManagedChannel` 是 Direct API 的门面，不在这条链路上）。服务端派发由 `WireCallDispatcher`（一个 sealed interface）的两种策略承担：`WireCallDispatcher.HandlerCallDispatcher` 走强类型 `Message` 的 Direct API，`WireCallDispatcher.ProviderCallDispatcher` 桥到 Jaws 自己的 `MessageHandler` 管道（raw bytes）。**关键点**：wire 不另起编程模型，而是伪装成 core 眼里的普通 Protocol，于是注册中心、负载均衡、Filter 链、动态配置这些上层能力**全部白嫖**——这就是"对外咬合"能低成本落地的结构性原因。
 
 拦截器也已重做成 grpc-java 式异步链，且**服务端与客户端不对称**：服务端 `WireServerInterceptor` 支持全部四种调用类型，客户端 `WireClientInterceptor` 目前只拦一元；链在 `WireClient` 里逐层包 `ForwardingClientCall`，Builder 方法是 `intercept(...)`。
 
@@ -119,6 +119,48 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 比较（已用 AsciiString 常量化消除，热点退出 top 榜）与 child-channel 架构税
 （netty `Http2MultiplexHandler` 底座的 pipeline/Promise 固有成本，记档接受）。
 完整数据与诊断表见 [benchmark.md](benchmark.md) 的 9/24 节。
+
+## 13. 能力面清单：管线模式 vs Direct API 模式
+
+wire 有两副面孔。**管线模式**走 core 的配置与协议链（`ServiceConfig`/`ReferenceConfig` → `Protocol` SPI → `WireExporter`/`WireReference`，服务发现由注册中心下发的 URL 驱动）；**Direct API 模式**走 grpc-java 形状的那套门面（客户端 `ManagedChannel` + `target`/`NameResolver`，服务端手搭 `WireServer` + `WireHandlerRegistry`）。两副面孔共用同一个 `WireStreamServerHandler` 和同一个 `WireClient`，所以 §3–§5、§7 的线格式能力两边一致，**差异全部集中在门面层**。
+
+边界先立住：`NameResolver.java:13-15` 自陈 "This lives entirely on the raw `WireClient`/`ManagedChannel` path. The Jaws RPC path performs discovery through the `Registry` layer"。所以**调一个不在 jaws 注册中心里的 gRPC 服务，只有 Direct API 一条路**；反过来，管线模式白嫖注册中心与集群治理，但拿不到下面第一张表里的东西。
+
+**只在 Direct API 侧**
+
+| 能力 | 锚点 |
+| --- | --- |
+| `NameResolver` / `DnsNameResolver`（30s 重解析）/ `Passthrough` | `ManagedChannel.java:960-987`、`DnsNameResolver.java:57-104` |
+| 客户端 LB（`round_robin` / `pick_first`）与地址级 failover | `LoadBalancerRegistry.java:23`、`ManagedChannel.java:619-657` |
+| 每调用 `WireCallOptions`（deadline、compressor 覆盖） | `WireCallOptions.java:34-50` → `WireClient.java:810-845`；`WireReference.java:58-95` 一律走默认 |
+| 客户端拦截器、自定义压缩/解压注册表、`ClientStreamTracer` | 只有 `ManagedChannel.java:585-592` 装配；管线侧 `WireTransportFactory.java:48` 是裸 `new WireClient(url)` |
+| 连通性状态机（`getState` / `notifyWhenStateChanged`）与通道排水 | `ManagedChannel.java:266-431` |
+| Health **Watch** 流 | 由 `WireHealthService.registerTo()` 挂载（`:69-72`）；管线只内联应答 Check（`WireCallDispatcher.java:569-570`） |
+| 精确 `/{service}/{method}` 路由，头部阶段即回 NOT_FOUND | `WireHandlerRegistry.java:37-40`；管线 `resolvePath` 恒 true（`WireCallDispatcher.java:600-605`），靠方法名回退找 provider，服务名/group/version 不参与匹配 |
+| 服务端把取消暴露给业务（`isCancelled()`） | `WireCallDispatcher.java:547-550`（两模式的业务 handler 都收不到取消通知） |
+
+**只在管线侧**
+
+| 能力 | 锚点 |
+| --- | --- |
+| 注册中心注册与目录刷新 | `ServiceConfig.java:243-256`、`ConsumerCoordinator.java:109-121` |
+| 集群容错（failover/failfast/failsafe）、Router 链、Filter 链、RpcContext attachment 自动注入 | `cluster/support/*`、`proxy/ReferenceInvoker.java:105-110,168-173` |
+| 6 种负载均衡策略（random / roundRobin / leastActive / leastLoad / adaptive / consistentHash） | `META-INF/services/org.hongxi.jaws.cluster.LoadBalance` |
+| 服务端 unary 的**主动超时**：阻塞型 handler 也会被计时打断 | `WireCallDispatcher.java:730` 的 `future.orTimeout`；Direct 侧只在解码前查一次 `isDeadlineExceeded()`（`:305-308`） |
+
+**两边都有，但默认值或配置面不同**
+
+- 超时：管线 `requestTimeout` 默认 **1000ms**、`connectTimeout` **1000ms**（`UrlParam.java:94-95`），Direct 是 **5000ms** / **3000ms**（`ManagedChannel.java:688-689`）。同一份业务代码换门面，超时表现就不同。
+- 重试：两侧默认都是 `maxAttempts=2`（`UrlParam.java:165` / `ManagedChannel.java:1014`），关闭方式不同（URL 参数 vs `retryDisabled()`）。
+- 传输旋钮：管线有强类型的 `compression` / `ssl*` / 线程池字段（`ProtocolConfig.java`），其余 wire 参数要塞 `parameters`；Direct 侧全靠自己造 URL，但参数名与默认值与管线**逐字相同**。
+- 反射内容：Direct 列 handler registry 里的路径服务名，管线列接口反推的 proto 全名（`WireServer.java:275-313`）。
+
+**两模式共同的结构性事实**（不是差异，但常被当成差异来问）
+
+- 同一 `host:port` 只会有一个 server 实例：`AbstractTransportFactory.createServer` 命中即复用，**新传入的 handler 被丢弃**（`:33-51`）。因此管线侧一个端口只有一个 `WireMessageHandler`（`WireExporter.java:34-48`）：它既持有该端口的 provider 注册表（内含 `ProviderMessageHandler`），也持有**每个**导出服务的 protobuf 元数据，第二个及以后的服务向同一个 handler 注册、注销时只摘自己那份（`WireMessageHandler.java:58`、`:74`）。方法归属先按 path 里的 proto 服务名精确匹配，命中不了再退回方法名 join——因为 gRPC 调用方报 proto 服务名，而 jaws 调用方报 Java 接口名。
+- 上一那条精确匹配只在 protobuf 转换这一层成立：provider 侧仍按方法名回退取**第一个**声明者（`AbstractRequestHandler.java:56`、`:126`），所以两个服务声明同名 Java 方法时，provider 归属是模糊的。
+- Direct 的地址级 failover 只捕获同步抛出（`ManagedChannel.java:626-632`），而 `WireClient.request()` 返回 future（`:194-222`）：建流期失败会换后端，对端回了 `UNAVAILABLE` 不会。
+- 服务端拦截器与 Filter 链是**分工**而非重复：`WireServerInterceptor` 只作用于 Direct API 的 `WireHandlerRegistry`，管线模式用 core 的 Filter 链（`WireServerInterceptor.java:35-36` 已写明）。
 
 ## 小结
 
