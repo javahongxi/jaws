@@ -100,14 +100,12 @@ bench-wire 用法（provider 长驻后可多轮复用，服务端保持 JIT 全�
 | grpc-java → wire 服务端 | HTTP/2 / protobuf | 第三方客户端互操作（服务端天花板） | **104,967** | 09-24 | 互操作对照 |
 | jaws → jaws（http2 腿） | HTTP/2 / fastjson2 | 管线（pipeline） | **87,350** | 09-24 | wire 演进 |
 | grpc-java → grpc-java | HTTP/2 / protobuf | 正统 gRPC 参照（eager pool） | **70,334** | 09-26 | 互操作对照 |
-| Dubbo Triple → Dubbo Triple | HTTP/2 / protobuf | invoker 代理消费端 | **52,167** | 09-24 | 互操作对照 |
 
 要点：
 
 1. **同硬件下能力分三档**：纯 TCP 的 jaws + netty（约 14 万）> 走 HTTP/2 的 wire 传输（管线 89,945、Direct API 92,423、服务端天花板约 10.5 万，jaws-over-http2 腿同量级）。netty TCP 领先 HTTP/2 的差额是 HTTP/2 帧编解码 + 流多路复用 + 应用层双层流控的固有协议税。
 2. **wire 的瓶颈在客户端，不在服务端**：第三方 grpc-java 客户端打同一 wire 服务端能到约 10.5 万，而 wire 自有客户端（Direct API）打同一服务端约 9.2 万、经代理管线约 9.0 万——剩余差距在 wire 客户端核心栈（架构税），见「与 grpc-java 客户端的剩余差距归因」。
-3. **wire 全栈约是 Dubbo Triple 全栈的 1.67 倍**（09-24 同窗口对照，详见「第三方对照与互操作」）：差异主源是 Triple 的 invoker / Filter / 代理层与回调包装开销，与 grpc-java 服务端的「回调穿越税」诊断同源。
-4. README 的「约 14 万」为钝表述，对应 jaws + netty 分进程稳态，继续有效。
+3. README 的「约 14 万」为钝表述，对应 jaws + netty 分进程稳态，继续有效。
 
 ## 序列化方式对比
 
@@ -253,7 +251,7 @@ jaws + wire + protobuf，20 线程、WARMUP=5s、DURATION=40s，各轮 0 错误�
 
 ## 第三方对照与互操作
 
-**结论**：以 grpc-java 客户端打 jaws wire 服务端做互操作反验，实测服务端天花板约 10.5 万；与正统 gRPC、Dubbo Triple 的同口径对照给出横向坐标。以下含互操作命令、结果表与服务端线程模型诊断。
+**结论**：以 grpc-java 客户端打 jaws wire 服务端做互操作反验，实测服务端天花板约 10.5 万；与正统 gRPC 的同口径对照给出横向坐标（Dubbo 系对照见文末引用）。以下含互操作命令、结果表与服务端线程模型诊断。
 
 ### grpc-java 客户端互操作与正统 gRPC 参照（2026-09-24）
 
@@ -262,15 +260,13 @@ jaws + wire + protobuf，20 线程、WARMUP=5s、DURATION=40s，各轮 0 错误�
 | 客户端 → 服务端 | QPS | 说明 |
 |------|-----|------|
 | grpc-java → grpc-java（正统 gRPC，分进程长驻，eager pool） | 69,711 / 71,343 / 69,949 | 均值 **70,334**，极差 2.3%（09-26 安静环境复测，与下文穿越税分解同源） |
-| Dubbo Triple → Dubbo Triple（`whatsmars-dubbo-bench`，同负载同口径） | 52,166 / 52,142 / 52,192 | 均值 **52,167**，极差 0.1%；invoker 代理消费端 |
-| wire 客户端 → wire 服务端（管线） | **87,411** | 09-24 帧折叠后管线消费端均值（极差 0.2%，与下文 1.67 倍对照同源） |
+| wire 客户端 → wire 服务端（管线） | **87,411** | 09-24 帧折叠后管线消费端均值（极差 0.2%） |
 | grpc-java → wire 服务端（互操作，分进程长驻） | 103,851 / 105,544 / 105,506 | 早期窗口均值 102,031，最新窗口三轮均值 **104,967** |
 
-三点结论：
+两点结论：
 
 1. **wire 服务端吞吐上限实测约 10.5 万**——第三方 grpc-java 客户端多轮稳定复验（0 错误），远高于 wire 管线客户端打出的约 8.7 万（87,411），剩余瓶颈在 wire 客户端核心栈（见「与 grpc-java 客户端的剩余差距归因」）。
-2. **wire 全栈（管线消费端 87,411）为 Dubbo Triple 全栈（52,167）的 1.67 倍**——Triple 的 invoker / Filter / 代理层与回调包装开销是差异主源，与下文 grpc-java 服务端的穿越税诊断同源。
-3. **grpc-java 全套语义（HPACK、trailers、deadline、流控）在 wire 服务端上全绿**，互操作性经第三方客户端反向验证成立。互操作与正统 gRPC 的差值（约 10.5 万 vs 约 7.0 万）两侧 provider 均为长驻预热后测得，但预热时长仍不对称（数小时 vs 分钟级），作为方向性结论参考，精确差值待同预热条件复验。
+2. **grpc-java 全套语义（HPACK、trailers、deadline、流控）在 wire 服务端上全绿**，互操作性经第三方客户端反向验证成立。互操作与正统 gRPC 的差值（约 10.5 万 vs 约 7.0 万）两侧 provider 均为长驻预热后测得，但预热时长仍不对称（数小时 vs 分钟级），作为方向性结论参考，精确差值待同预热条件复验。
 
 **服务端线程模型诊断（jstack + 对照实验）**：grpc-java netty 服务端为 boss ELG 1 线程 + worker ELG（netty 默认 2×核数，单连接实际只有 1 条活跃）+ 无界 cached executor（`grpc-default-executor`，压测中 7 秒生灭 23 条线程），每个 RPC 在 event loop 与 executor 间跳两次，连接的全部编解码串在单条 ELG 线程上（实测单核占用 ~73%）。围绕线程池形态做了三组测量：默认无界 cached executor（基线 64,838）、`directExecutor()`、与 wire 同款的有界 EagerThreadPool（20/200/queue0）。**正统 gRPC 参照口径现统一取 eager pool**（对齐 wire 服务端形态，09-26 安静环境复测 70,334，见上表），另两组对照均未合入：
 
@@ -302,3 +298,11 @@ jaws + wire + protobuf，20 线程、WARMUP=5s、DURATION=40s，各轮 0 错误�
 有效三轮均值 **89,945**，极差 1.0k（1.1%）。对照 09-24 帧折叠后的 87,411（极差 0.2%）是 **+2.9%**；与同日附加改动一节里 STPE 替换后测得的 89.0k 同档，因此读作**吞吐无损**，那 +2.9% 不解读为提升——跨窗口比较，量级仍落在环境噪声内。
 
 未覆盖：Direct API 消费端（92,423）与 grpc-java 互操作（104,967）本轮未重测。服务端改动对三条腿同等生效，但按"改哪测哪"的纪律，那两格的口径值仍沿用 09-24 记录。
+
+## 关于 Dubbo / Triple 的对照
+
+本文正文不设 Dubbo / Triple 的对照行，原因有二：其一，jaws 的全部数字出自自研 harness（`run-sample.sh`、手写线程循环、`hello(String)` 单字符串极小报文），而 Apache 官方基准走的是 JMH + 结构化 `User` DTO，两者的测量方法、线程数、报文尺寸与序列化敏感点均不同，绝对值放进同一张表会构成假可比；其二，此前一次性记录过的 Dubbo Triple 跑分出自一个未随仓保留、无法复现的临时 harness，不满足本文对可复现口径的要求，故一并撤下。
+
+作为外部坐标，仅引 Apache 官方结论：Dubbo 3.2 的 Triple 协议相较 3.1，在小报文场景（`existUser` / `getUser` / `createUser`）性能提升约 40%–45%，提升后与同场景 gRPC 基本持平；较大报文场景（`listUser`）较 3.1 提升约 17%，仍比同场景 gRPC 低约 11%。此处只作 Triple 与 gRPC 的**协议层相对位置**参考，不与上文任何 jaws 绝对值直接比较。
+
+来源：Apache Dubbo 官方基准工程 [apache/dubbo-benchmark](https://github.com/apache/dubbo-benchmark)（JMH，`dubbo-triple` 对 `native-grpc`）及 Dubbo 官方性能文档。
