@@ -391,7 +391,14 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
             // Reflection is a bidirectional stream: process each gRPC frame
             // immediately and respond without waiting for END_STREAM.
             if (reflectionPath) {
-                processReflectionFrames(ctx);
+                boolean terminated = processReflectionFrames(ctx);
+                if (!terminated && dataFrame.isEndStream()) {
+                    // The caller half-closed its request stream and is reading
+                    // the response until EOF — answering is not enough, the
+                    // stream has to terminate. Without this, grpcurl prints its
+                    // result and then never exits.
+                    sendTrailers(ctx, WireConstants.STATUS_OK, null);
+                }
                 return;
             }
 
@@ -422,8 +429,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
      * bidi-stream. Each frame is decoded as a {@link ServerReflectionRequest},
      * handled by the {@link WireReflectionService}, and the response is written
      * immediately — no waiting for END_STREAM.
+     *
+     * @return true when the stream was already terminated by an error frame
      */
-    private void processReflectionFrames(ChannelHandlerContext ctx) {
+    private boolean processReflectionFrames(ChannelHandlerContext ctx) {
         while (accumulator != null && accumulator.readableBytes() >= WireConstants.GRPC_HEADER_SIZE) {
             ByteBuf frame = WireFrameCodec.tryExtractFrame(accumulator);
             if (frame == null) {
@@ -443,11 +452,12 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 log.error("Reflection request decode failed", e);
                 sendError(ctx, WireConstants.STATUS_INTERNAL,
                         "Invalid reflection request: " + e.getMessage());
-                return;
+                return true;
             } finally {
                 frame.release();
             }
         }
+        return false;
     }
 
     /**

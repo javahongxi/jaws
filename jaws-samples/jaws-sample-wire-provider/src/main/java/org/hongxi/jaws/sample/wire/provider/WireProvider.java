@@ -43,9 +43,7 @@ import java.util.concurrent.CountDownLatch;
  *       default 300000ms to guard against overly frequent client PINGs</li>
  * </ul>
  * <p>
- * Test with grpcurl (no proto file needed, via server reflection). Wrap each
- * command in a timeout — grpcurl prints its result and then stays attached to
- * the stream, so it does not exit on its own against this server:
+ * Test with grpcurl (no proto file needed, via server reflection):
  * <pre>
  *   grpcurl -plaintext localhost:50051 list
  *   grpcurl -plaintext -d '{"name":"World"}' \
@@ -146,9 +144,7 @@ public class WireProvider {
         System.out.println("Connection lifecycle: maxIdle=5min, maxAge=30min, maxInboundMetadata=16KB.");
         System.out.println("Provider listening on port " + PORT + ". Consumer should use directUrl=127.0.0.1:" + PORT);
         System.out.println();
-        System.out.println("Test with grpcurl (server reflection enabled, no proto file needed).");
-        System.out.println("Wrap each command in a timeout: grpcurl prints its result and then");
-        System.out.println("stays attached to the stream, so it will not exit on its own.");
+        System.out.println("Test with grpcurl (server reflection enabled, no proto file needed):");
         System.out.println("  grpcurl -plaintext localhost:" + PORT + " list");
         System.out.println("  grpcurl -plaintext -d '{\"name\":\"World\"}' \\");
         System.out.println("    localhost:" + PORT + " greeter.Greeter/SayHello");

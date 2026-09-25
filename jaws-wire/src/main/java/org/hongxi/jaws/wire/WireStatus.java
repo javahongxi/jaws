@@ -92,16 +92,6 @@ public final class WireStatus {
     }
 
     /**
-     * Build the exception surfaced to the jaws caller when the server reports
-     * a non-OK grpc-status in trailers. The exception message carries the
-     * status name so callers (and logs) can distinguish deadline / unavailable /
-     * business failures without parsing raw codes.
-     *
-     * @param grpcStatus the status code from trailers
-     * @param grpcMessage the grpc-message from trailers, may be null
-     * @return the exception to fail the call with
-     */
-    /**
      * Map an HTTP/2 RST_STREAM error code to the grpc-style status the caller
      * would have received in trailers, had the peer ended the call gracefully.
      * Mirrors grpc-java's NettyClientHandler mapping: CANCEL → CANCELLED,
@@ -117,6 +107,16 @@ public final class WireStatus {
         };
     }
 
+    /**
+     * Build the exception surfaced to the jaws caller when the server reports
+     * a non-OK grpc-status in trailers. The exception message carries the
+     * status name so callers (and logs) can distinguish deadline / unavailable /
+     * business failures without parsing raw codes.
+     *
+     * @param grpcStatus  the status code from trailers
+     * @param grpcMessage the grpc-message from trailers, may be null
+     * @return the exception to fail the call with
+     */
     public static RuntimeException toException(int grpcStatus, String grpcMessage) {
         return toException(grpcStatus, grpcMessage, null);
     }

@@ -96,7 +96,7 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 
 ## 11. 反验铁律：自测全绿 ≠ 协议互通
 
-最后一条，也是 wire 存在的一条纪律：**`jaws-to-jaws` 自测全绿并不代表和 gRPC 真互通**。两端同源时，双命名体系的问题会被同一套反射口径互相掩盖，跑再多遍也测不出来。所以 wire 的兼容性必须**从对面打过来**——用你不控制的第三方验证。`run-sample.sh interop` 就是干这个的：grpc-java 调 Jaws-wire、Jaws-wire 调真 gRPC、走 `ManagedChannel`、验 keepalive，四个方向都通，才算"对等 gRPC"。`grpcurl` 直连（靠 §8 的 reflection）则是最低成本的一路反验。用它时**每条命令都要带超时**：wire 服务端把响应发完后流不会走到 grpcurl 认可的收尾，`grpcurl` 打印结果（甚至打印错误）都不自行退出——实测 unary、server-stream、`list`、以及一次"服务不存在"的错误响应全都挂到被 kill 为止。所以判据取"响应载荷对不对"，别等它自己结束。
+最后一条，也是 wire 存在的一条纪律：**`jaws-to-jaws` 自测全绿并不代表和 gRPC 真互通**。两端同源时，双命名体系的问题会被同一套反射口径互相掩盖，跑再多遍也测不出来。所以 wire 的兼容性必须**从对面打过来**——用你不控制的第三方验证。`run-sample.sh interop` 就是干这个的：grpc-java 调 Jaws-wire、Jaws-wire 调真 gRPC、走 `ManagedChannel`、验 keepalive，四个方向都通，才算"对等 gRPC"。`grpcurl` 直连（靠 §8 的 reflection）则是最低成本的一路反验。它也是唯一抓到反射 bug 的一路：反射是 bidi 流，服务端逐帧应答却从不看客户端的 END_STREAM，grpcurl 打印完结果就永久等不到流终止——`jaws-to-jaws` 跑多少遍都是绿的，因为 jaws 客户端把 trailer 当结束、不要求 EOF。判据要同时看**响应载荷对不对**和**客户端能不能自己退出来**。
 
 ## 12. 性能基准：与 grpc-java 的双向对照（`bench-grpc`）
 

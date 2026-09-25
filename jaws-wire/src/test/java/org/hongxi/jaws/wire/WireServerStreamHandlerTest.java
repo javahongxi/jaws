@@ -558,4 +558,36 @@ class WireServerStreamHandlerTest {
         assertNull(ch.readOutbound(), "no further frames after rejection");
         ch.finishAndReleaseAll();
     }
+
+    @Test
+    void reflectionStreamTerminatesWhenTheClientHalfCloses() throws Exception {
+        // grpcurl resolves a method over the reflection bidi stream, then
+        // CloseSend()s and reads until EOF. Answering each request is not
+        // enough: without a terminal END_STREAM the caller hangs after printing
+        // its result, which is how this was first observed.
+        WireReflectionService reflection = new WireReflectionService(
+                () -> Set.of("test.Health"), () -> Set.of());
+        EmbeddedChannel ch = new EmbeddedChannel(
+                new WireStreamServerHandler(
+                        new WireCallDispatcher.HandlerCallDispatcher(
+                                new WireHandlerRegistry(), Set.of()),
+                        reflection, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null));
+
+        ch.writeInbound(requestHeaders(WireReflectionService.REFLECTION_PATH));
+        ch.writeInbound(new DefaultHttp2DataFrame(
+                WireFrameCodec.encode(org.hongxi.jaws.wire.reflection.ServerReflectionRequest
+                        .newBuilder().setListServices("").build(), ch.alloc()), true));
+
+        Http2HeadersFrame responseHeaders = ch.readOutbound();
+        assertEquals("200", responseHeaders.headers().status().toString());
+        Http2DataFrame answer = ch.readOutbound();
+        assertTrue(answer.content().readableBytes() > 0, "the request must be answered");
+
+        Http2HeadersFrame trailers = ch.readOutbound();
+        assertNotNull(trailers,
+                "the response stream must end once the client stopped sending");
+        assertTrue(trailers.isEndStream(), "the terminal frame must carry END_STREAM");
+        assertEquals("0", trailers.headers().get(WireConstants.GRPC_STATUS).toString());
+        ch.finishAndReleaseAll();
+    }
 }
