@@ -4,7 +4,6 @@ import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
 import io.netty.util.AttributeKey;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -12,8 +11,6 @@ import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.RpcContext;
 import org.hongxi.jaws.transport.MessageHandler;
 import org.hongxi.jaws.stream.StreamSource;
-import org.hongxi.jaws.wire.health.HealthCheckRequest;
-import org.hongxi.jaws.wire.health.HealthCheckResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,6 +114,22 @@ sealed interface WireCallDispatcher
      *         caller should immediately reject with NOT_FOUND
      */
     boolean resolvePath(ChannelHandlerContext ctx, String path);
+
+    /**
+     * The dispatcher that should serve this path.
+     * <p>
+     * A server may host protocol services (health) alongside business traffic
+     * served by a different mechanism; those route to their own dispatcher so
+     * they never reach the business pipeline. Called once per stream, before
+     * {@link #resolvePath}.
+     *
+     * @param path the request path
+     * @return the dispatcher for this path; {@code this} unless the path is a
+     *         built-in protocol service
+     */
+    default WireCallDispatcher dispatcherFor(String path) {
+        return this;
+    }
 
     /**
      * Decode the request from the accumulated gRPC frame, invoke the business
@@ -559,18 +572,18 @@ sealed interface WireCallDispatcher
      * SPI-mode dispatcher: parses the gRPC path into service/method names,
      * extracts raw protobuf bytes from the gRPC frame, builds a Jaws
      * {@link DefaultRequest}, and dispatches through the {@link MessageHandler}
-     * pipeline. Also handles the standard {@code grpc.health.v1} health check
-     * inline as a protocol concern.
+     * pipeline.
+     * <p>
+     * Built-in protocol services (health) are <em>not</em> handled here: they
+     * live in a registry of their own and route to
+     * {@link HandlerCallDispatcher} via {@link #dispatcherFor}, so both server
+     * modes serve them with the same handlers.
      */
     final class ProviderCallDispatcher implements WireCallDispatcher {
         private static final Logger log = LoggerFactory.getLogger(ProviderCallDispatcher.class);
 
-        /** gRPC path for the standard health Check method. */
-        private static final String HEALTH_CHECK_PATH =
-                "/" + WireHealthService.SERVICE_NAME + "/Check";
-
         private final MessageHandler messageHandler;
-        private final WireHealthService healthService;
+        private final WireHandlerRegistry builtinRegistry;
         private final Set<String> connectionAttributeKeys;
 
         private String serviceName;
@@ -578,11 +591,22 @@ sealed interface WireCallDispatcher
         private boolean bidiStream;
         private boolean clientStream;
 
-        ProviderCallDispatcher(MessageHandler messageHandler, WireHealthService healthService,
+        ProviderCallDispatcher(MessageHandler messageHandler, WireHandlerRegistry builtinRegistry,
                                Set<String> connectionAttributeKeys) {
             this.messageHandler = messageHandler;
-            this.healthService = healthService;
+            this.builtinRegistry = builtinRegistry;
             this.connectionAttributeKeys = connectionAttributeKeys;
+        }
+
+        @SuppressWarnings("ClassEscapesDefinedScope")
+        @Override
+        public WireCallDispatcher dispatcherFor(String path) {
+            if (builtinRegistry == null || builtinRegistry.resolve(path) == null) {
+                return this;
+            }
+            // A fresh instance per stream: the handler dispatcher keeps per-call
+            // state, and one server hosts many streams.
+            return new HandlerCallDispatcher(builtinRegistry, connectionAttributeKeys);
         }
 
         @Override
@@ -688,13 +712,6 @@ sealed interface WireCallDispatcher
                 frame = WireFrameCodec.tryExtractFrame(frameData);
                 if (frame == null) {
                     serverHandler.sendError(ctx, WireConstants.STATUS_INTERNAL, "Incomplete gRPC frame");
-                    return;
-                }
-
-                // Health check is a protocol concern handled before the
-                // business pipeline; no Jaws-side registration needed
-                if (HEALTH_CHECK_PATH.equals(serverHandler.path)) {
-                    dispatchHealthCheck(ctx, frame, serverHandler);
                     return;
                 }
 
@@ -824,39 +841,6 @@ sealed interface WireCallDispatcher
             }
             throw new RuntimeException("Wire Provider unexpected result type: "
                     + (result != null ? result.getClass().getName() : "null"));
-        }
-
-        /**
-         * Handle {@code grpc.health.v1.Health/Check} inline: decode the request,
-         * look up the status, and write the response. Unknown services return
-         * NOT_FOUND per the gRPC health-checking spec.
-         */
-        private void dispatchHealthCheck(ChannelHandlerContext ctx, ByteBuf frame, WireStreamServerHandler serverHandler) {
-            try {
-                long wireSize = WireFrameCodec.payloadSize(frame);
-                HealthCheckRequest request = WireFrameCodec.decode(
-                        frame, HealthCheckRequest.parser(), serverHandler.requestDecompressor);
-                serverHandler.traceInboundMessageRead(wireSize, request.getSerializedSize());
-                HealthCheckResponse.ServingStatus status =
-                        healthService.getStatus(request.getService());
-                if (status == null) {
-                    serverHandler.sendError(ctx, WireConstants.STATUS_NOT_FOUND,
-                            "Unknown health service: " + request.getService());
-                    return;
-                }
-                HealthCheckResponse response = HealthCheckResponse.newBuilder()
-                        .setStatus(status).build();
-                serverHandler.sendResponseHeaders(ctx);
-                ByteBuf responseFrame = WireFrameCodec.encode(
-                        response, ctx.alloc(), serverHandler.responseCompressor);
-                serverHandler.traceOutboundMessageSent(responseFrame, response);
-                ctx.write(new DefaultHttp2DataFrame(responseFrame, false));
-                serverHandler.sendTrailers(ctx, WireConstants.STATUS_OK, null);
-            } catch (Exception e) {
-                log.error("Wire Provider health check failed: path={}", serverHandler.path, e);
-                serverHandler.sendError(ctx, WireConstants.STATUS_INTERNAL,
-                        "Health check failed: " + e.getMessage());
-            }
         }
     }
 

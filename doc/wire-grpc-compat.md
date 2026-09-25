@@ -76,7 +76,7 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 
 两个标准 gRPC 服务让 wire 能被通用工具直接操作：
 
-- **`WireHealthService`** 实现 `grpc.health.v1.Health`（Check/Watch），`WireServer` 自动挂载。其中 **Watch 只在 Direct API 模式挂载**（它是一条服务端流，要注册成 handler）；管线模式只内联应答 Check（见 §13）。注意管线模式的反射**不列** `grpc.health.v1.Health`，所以 `grpcurl` 靠反射直连该服务会报 `target server does not expose service`——探活要么自带 descriptor，要么走 Direct API 模式（那里的反射列得出 health）。
+- **`WireHealthService`** 实现 `grpc.health.v1.Health`（Check/Watch），`WireServer` 自动挂载。两种模式共用**同一组 handler**：Direct API 模式注册进调用方的 `WireHandlerRegistry`，管线模式注册进服务器自己的内建 registry（`WireServer.java:130-137`），命中内建路径时由 `WireCallDispatcher.dispatcherFor` 改派给 registry 分发器（`WireStreamServerHandler.java:298-303`）——所以 Check/Watch 两模式行为一致，反射也都宣告它。注意 `Check` 只认显式登记过状态的服务名，未登记的按协议返回 NOT_FOUND；探整体状态用空串（实测 `grpcurl -d '{"service":""}' ... Health/Check` → `SERVING`）。
 - **`WireReflectionService`** 实现 `grpc.reflection.v1.ServerReflection`，支持 `list services` / `FileContaining*`——**这正是 `grpcurl` 不挂 `.proto` 文件也能调用 wire 服务的原因**。实测管线模式 `grpcurl -plaintext host:port list` 只回业务服务名（如 `calculator.Calculator`、`greeter.Greeter`），不含 `grpc.*` 内建。
 
 ## 9. 桥接 core：wire 只是 Jaws 眼里的"又一种 Protocol"
@@ -135,7 +135,6 @@ wire 有两副面孔。**管线模式**走 core 的配置与协议链（`Service
 | 每调用 `WireCallOptions`（deadline、compressor 覆盖） | `WireCallOptions.java:34-50` → `WireClient.java:810-845`；`WireReference.java:58-95` 一律走默认 |
 | 客户端拦截器、自定义压缩/解压注册表、`ClientStreamTracer` | 只有 `ManagedChannel.java:585-592` 装配；管线侧 `WireTransportFactory.java:48` 是裸 `new WireClient(url)` |
 | 连通性状态机（`getState` / `notifyWhenStateChanged`）与通道排水 | `ManagedChannel.java:266-431` |
-| Health **Watch** 流 | 由 `WireHealthService.registerTo()` 挂载（`:69-72`）；管线只内联应答 Check（`WireCallDispatcher.java:569-570`） |
 | 精确 `/{service}/{method}` 路由，头部阶段即回 NOT_FOUND | `WireHandlerRegistry.java:37-40`；管线 `resolvePath` 恒 true（`WireCallDispatcher.java:600-605`），靠方法名回退找 provider，服务名/group/version 不参与匹配 |
 | 服务端把取消暴露给业务（`isCancelled()`） | `WireCallDispatcher.java:547-550`（两模式的业务 handler 都收不到取消通知） |
 

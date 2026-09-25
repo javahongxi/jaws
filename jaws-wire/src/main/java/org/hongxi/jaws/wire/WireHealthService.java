@@ -21,11 +21,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <a href="https://github.com/grpc/grpc/blob/master/doc/health-checking.md">
  * health-checking.md</a>).
  * <p>
- * {@link WireServer} creates and registers a {@code WireHealthService}
- * automatically — both in direct API mode (registered into the
- * {@link WireHandlerRegistry}) and in Provider pipeline mode (intercepted at
- * the stream-handler level). Use {@link WireServer#getHealthService()} to
- * obtain the instance for managing per-service statuses.
+ * {@link WireServer} creates a {@code WireHealthService} automatically in both
+ * server modes and registers its handlers into a {@link WireHandlerRegistry} —
+ * the caller's registry in direct API mode, a built-in one in Provider pipeline
+ * mode — so {@code Check} and {@code Watch} behave identically either way. Use
+ * {@link WireServer#getHealthService()} to obtain the instance for managing
+ * per-service statuses.
  * <p>
  * Serves the two protocol methods:
  * <ul>

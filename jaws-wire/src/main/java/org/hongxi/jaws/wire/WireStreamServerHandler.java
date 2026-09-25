@@ -66,8 +66,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     private static final Logger log = LoggerFactory.getLogger(WireStreamServerHandler.class);
 
-    /** Dispatch strategy: registry-based routing or SPI pipeline bridge. */
-    private final WireCallDispatcher dispatcher;
+    /**
+     * Dispatch strategy: registry-based routing or SPI pipeline bridge.
+     * Replaced once per stream when the path belongs to a built-in protocol
+     * service rather than the business traffic this dispatcher was created for.
+     */
+    private WireCallDispatcher dispatcher;
     /** Reflection service instance; null if reflection is not enabled. */
     private final WireReflectionService reflectionService;
     protected final ExecutorService serverExecutor;
@@ -294,6 +298,12 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         // dispatcher's path resolution entirely.
         reflectionPath = WireReflectionService.REFLECTION_PATH.equals(path)
                 && reflectionService != null;
+
+        // Built-in protocol services (health) are served by their own
+        // dispatcher, so they never reach the business pipeline.
+        if (!reflectionPath) {
+            dispatcher = dispatcher.dispatcherFor(path);
+        }
 
         if (!reflectionPath && !dispatcher.resolvePath(ctx, path)) {
             sendError(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + path);

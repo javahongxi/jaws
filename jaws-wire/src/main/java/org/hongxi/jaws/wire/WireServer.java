@@ -50,6 +50,14 @@ public class WireServer extends AbstractHttp2Server {
     private static final Logger log = LoggerFactory.getLogger(WireServer.class);
 
     private final WireHandlerRegistry registry;
+    /**
+     * Provider pipeline mode only: a registry holding just the built-in
+     * protocol services (health), so both server modes serve them through the
+     * same {@link WireMethodHandler} objects instead of a second
+     * implementation. Null in Direct API mode, where the user registry already
+     * holds them.
+     */
+    private final WireHandlerRegistry builtinRegistry;
     private final MessageHandler messageHandler;
     private final WireHealthService healthService;
     private final WireReflectionService reflectionService;
@@ -101,6 +109,7 @@ public class WireServer extends AbstractHttp2Server {
     public WireServer(URL url, WireHandlerRegistry registry) {
         super(url, "WireServer");
         this.registry = registry;
+        this.builtinRegistry = null;
         this.messageHandler = null;
         this.healthService = new WireHealthService();
         this.healthService.registerTo(registry);
@@ -116,14 +125,17 @@ public class WireServer extends AbstractHttp2Server {
      * <p>
      * The standard {@code grpc.health.v1.Health} and
      * {@code grpc.reflection.v1.ServerReflection} services are
-     * automatically intercepted at the stream-handler level.
+     * automatically available; health is served by the same handlers Direct
+     * API mode registers, through a built-in registry of its own.
      */
     public WireServer(URL url, MessageHandler messageHandler) {
         super(url, "WireServer");
         this.registry = null;
+        this.builtinRegistry = new WireHandlerRegistry();
         this.messageHandler = messageHandler;
         this.healthService = new WireHealthService();
-        this.reflectionService = createProviderModeReflectionService(url);
+        this.healthService.registerTo(builtinRegistry);
+        this.reflectionService = createProviderModeReflectionService(url, builtinRegistry);
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
         this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
         this.configuredCompression = url.getParameter(UrlParam.Transport.COMPRESSION);
@@ -162,6 +174,15 @@ public class WireServer extends AbstractHttp2Server {
      */
     public WireHealthService getHealthService() {
         return healthService;
+    }
+
+    /**
+     * @return the auto-installed reflection service, whose enumeration is what
+     *         reflection-driven tools (grpcurl and friends) see as this
+     *         server's catalog
+     */
+    WireReflectionService getReflectionService() {
+        return reflectionService;
     }
 
     /**
@@ -255,7 +276,7 @@ public class WireServer extends AbstractHttp2Server {
                     registry, connectionAttributeKeys);
         } else {
             dispatcher = new WireCallDispatcher.ProviderCallDispatcher(
-                    messageHandler, healthService, connectionAttributeKeys);
+                    messageHandler, builtinRegistry, connectionAttributeKeys);
         }
         streamChannel.pipeline().addLast(
                 new WireStreamServerHandler(dispatcher, reflectionService,
@@ -281,10 +302,17 @@ public class WireServer extends AbstractHttp2Server {
 
     /**
      * Provider mode: service interfaces are registered by {@link WireExporter}
-     * in a shared static map keyed by host:port. The reflection service reads
-     * from this map lazily on every request.
+     * in a shared static map keyed by host:port, and the built-in protocol
+     * services live in {@code builtinRegistry}. The reflection service reads
+     * from both lazily on every request.
+     * <p>
+     * Names are derived from the descriptor set alone, so advertising a
+     * built-in is a matter of contributing its descriptors — the same rule that
+     * makes business services visible, and the reason a server that answers
+     * {@code Check} also lists {@code grpc.health.v1.Health}.
      */
-    private static WireReflectionService createProviderModeReflectionService(URL url) {
+    private static WireReflectionService createProviderModeReflectionService(
+            URL url, WireHandlerRegistry builtinRegistry) {
         String hostPort = url.getHostPort();
         // Share the File descriptor set between the two suppliers so that
         // the service names are always consistent with the descriptors
@@ -296,6 +324,7 @@ public class WireServer extends AbstractHttp2Server {
                 WireProtoTypes protoTypes = WireProtoTypes.fromServiceInterface(iface);
                 result.addAll(protoTypes.getFileDescriptors());
             }
+            result.addAll(builtinRegistry.collectFileDescriptors());
             return result;
         };
         // Derive service names from the proto FileDescriptors (e.g.

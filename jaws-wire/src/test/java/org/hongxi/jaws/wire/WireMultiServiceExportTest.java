@@ -40,8 +40,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class WireMultiServiceExportTest {
 
-    /** Proto service name the dispatcher reads off {@code /{service}/{method}}. */
-    private static final String SERVICE = "grpc.health.v1.Health";
+    /**
+     * Service name used on the wire path. Deliberately not a real proto name:
+     * these services are found by the method-name join the pipeline falls back
+     * to, and {@code grpc.health.v1.Health} is now claimed by the built-in
+     * health service on this port.
+     */
+    private static final String SERVICE = "demo.Multi";
 
     private static final long CALL_TIMEOUT_SECONDS = 5;
 
