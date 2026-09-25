@@ -1,15 +1,16 @@
 # Jaws 架构总览：模块地图与六层骨架
 
-> 这是读 Jaws 源码的**第一站**：先讲清 11 个 Maven 模块各自负责什么、`jaws-core` 内部怎么分层、以及贯穿全框架的几条设计主张。每个专题再深入哪一层，文末有文档地图。**模块边界就是设计取舍留下的物理证据**——看懂了切分，就看懂了它为什么"约 Dubbo 1/10 代码量"。
+> 这是读 Jaws 源码的**第一站**：先讲清 11 个 Maven 模块各自负责什么、`jaws-core` 内部怎么分层、以及贯穿全框架的几条设计主张。每个专题再深入哪一层，文末有文档地图。**模块边界就是设计取舍留下的物理证据**——看懂了切分，就看懂了它为什么"约 Dubbo 核心骨架 1/7 代码量"。
 
 ## 1. 定位与门面口径
 
-Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框架，用约 Dubbo 1/10 的代码量，把工业级 RPC 的核心机制走了一遍（多协议传输、序列化、注册发现、六种负载均衡、容错、路由、gRPC 线格式对等、HTTP/2 三种流式、自适应传输、全链路异步、优雅停机、可观测性），实测约 14 万 QPS。目标是做 **RPC 骨架的标杆**：每层薄到能读完，读完再去啃 Dubbo 会快很多。
+Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框架，用约 Dubbo 核心骨架 1/7 的代码量，把工业级 RPC 的核心机制走了一遍（多协议传输、序列化、注册发现、六种负载均衡、容错、路由、gRPC 线格式对等、HTTP/2 三种流式、自适应传输、全链路异步、优雅停机、可观测性），实测约 14 万 QPS。目标是做 **RPC 骨架的标杆**：每层薄到能读完，读完再去啃 Dubbo 会快很多。
 
-**门面数字口径**（钝表述、防过时，与"约 Dubbo 1/10 / 约 14 万 QPS"同一套算法）：
+**门面数字口径**（钝表述、防过时，与"约 Dubbo 核心骨架 1/7 / 约 14 万 QPS"同一套算法）：
 
-- "核心 3 万余行" = `jaws-core` + `jaws-wire` + `jaws-stream-api` + `jaws-registry-nacos`/`jaws-registry-zookeeper` 两个客户端。
+- "核心 3 万余行" = `jaws-core` + `jaws-wire` + `jaws-stream-api` + `jaws-registry-nacos`/`jaws-registry-zookeeper` 两个客户端（main Java 物理行，实测 ≈3.3 万）。
 - **不计入**：`jaws-wire-proto`（protoc 生成码）、整个 `jaws-harbor`（服务端件，手码与内嵌生成码一并剔除）、`jaws-samples`、`jaws-spring-boot`、`jaws-extensions`。
+- "约 Dubbo 核心骨架 1/7" 的分母 = Dubbo 3.3 同范围核心骨架 7 模块 `dubbo-common`/`-rpc`/`-remoting`/`-cluster`/`-config`/`-registry`/`-serialization`（main Java 物理行 ≈22 万，两边都含 registry 方对齐）；**不计** Dubbo 的 `dubbo-plugin`/`-metadata`/`-metrics`/`-compatible` 等非核心扩展（≈8 万，jaws 未实现也无对应）。故 ≈1/7，而非拿全仓凑的 1/10。
 
 ## 2. 模块地图
 
@@ -56,7 +57,7 @@ Jaws 名字里的 "Jaws（咬合）" 有纵横两义：纵向是 core 仿 Dubbo 
 
 - **wire ↔ gRPC**：`jaws-wire` 零 grpc-java 依赖实现 gRPC 线格式，与原生 gRPC、`grpcurl` 双向互通。→ [wire-grpc-compat](wire-grpc-compat.md)
 - **harbor ↔ nacos-client**：`jaws-harbor` 服务端说 Nacos 2.x 的 naming gRPC 协议，真实 nacos-client 可直接把它当 Nacos 用。→ [harbor-vs-nacos](harbor-vs-nacos.md)
-- **jaws 协议 ↔ Dubbo**：core 的分层、二进制头、优雅停机等对标 Dubbo，但用约 1/10 代码量复刻骨架。→ [dubbo-comparison](dubbo-comparison.md)
+- **jaws 协议 ↔ Dubbo**：core 的分层、二进制头、优雅停机等对标 Dubbo，但用约 1/7 代码量复刻骨架。→ [dubbo-comparison](dubbo-comparison.md)
 
 一条配套纪律：**`jaws-to-jaws` 自测全绿 ≠ 协议互通**（同源两端会互相掩盖命名体系问题），所以兼容性必须用第三方工具反向验证——`run-sample.sh interop`（grpc-java ↔ jaws-wire 双向）就是这条铁律的落地。
 
