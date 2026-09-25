@@ -76,8 +76,8 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 
 两个标准 gRPC 服务让 wire 能被通用工具直接操作：
 
-- **`WireHealthService`** 实现 `grpc.health.v1.Health`（Check/Watch），`WireServer` 自动挂载——`grpcurl ... grpc.health.v1.Health/Check` 可探针存活。其中 **Watch 只在 Direct API 模式挂载**（它是一条服务端流，要注册成 handler）；管线模式只内联应答 Check（见 §13）。
-- **`WireReflectionService`** 实现 `grpc.reflection.v1.ServerReflection`，支持 `list services` / `FileContaining*`——**这正是 `grpcurl` 不挂 `.proto` 文件也能调用 wire 服务的原因**。
+- **`WireHealthService`** 实现 `grpc.health.v1.Health`（Check/Watch），`WireServer` 自动挂载。其中 **Watch 只在 Direct API 模式挂载**（它是一条服务端流，要注册成 handler）；管线模式只内联应答 Check（见 §13）。注意管线模式的反射**不列** `grpc.health.v1.Health`，所以 `grpcurl` 靠反射直连该服务会报 `target server does not expose service`——探活要么自带 descriptor，要么走 Direct API 模式（那里的反射列得出 health）。
+- **`WireReflectionService`** 实现 `grpc.reflection.v1.ServerReflection`，支持 `list services` / `FileContaining*`——**这正是 `grpcurl` 不挂 `.proto` 文件也能调用 wire 服务的原因**。实测管线模式 `grpcurl -plaintext host:port list` 只回业务服务名（如 `calculator.Calculator`、`greeter.Greeter`），不含 `grpc.*` 内建。
 
 ## 9. 桥接 core：wire 只是 Jaws 眼里的"又一种 Protocol"
 
@@ -96,7 +96,7 @@ wire 把 gRPC 的运维约定逐条补齐，这也是"能不能上生产对接"�
 
 ## 11. 反验铁律：自测全绿 ≠ 协议互通
 
-最后一条，也是 wire 存在的一条纪律：**`jaws-to-jaws` 自测全绿并不代表和 gRPC 真互通**。两端同源时，双命名体系的问题会被同一套反射口径互相掩盖，跑再多遍也测不出来。所以 wire 的兼容性必须**从对面打过来**——用你不控制的第三方验证。`run-sample.sh interop` 就是干这个的：grpc-java 调 Jaws-wire、Jaws-wire 调真 gRPC、走 `ManagedChannel`、验 keepalive，四个方向都通，才算"对等 gRPC"。`grpcurl` 直连（靠 §8 的 reflection）则是最低成本的一路反验。
+最后一条，也是 wire 存在的一条纪律：**`jaws-to-jaws` 自测全绿并不代表和 gRPC 真互通**。两端同源时，双命名体系的问题会被同一套反射口径互相掩盖，跑再多遍也测不出来。所以 wire 的兼容性必须**从对面打过来**——用你不控制的第三方验证。`run-sample.sh interop` 就是干这个的：grpc-java 调 Jaws-wire、Jaws-wire 调真 gRPC、走 `ManagedChannel`、验 keepalive，四个方向都通，才算"对等 gRPC"。`grpcurl` 直连（靠 §8 的 reflection）则是最低成本的一路反验。用它时**每条命令都要带超时**：wire 服务端把响应发完后流不会走到 grpcurl 认可的收尾，`grpcurl` 打印结果（甚至打印错误）都不自行退出——实测 unary、server-stream、`list`、以及一次"服务不存在"的错误响应全都挂到被 kill 为止。所以判据取"响应载荷对不对"，别等它自己结束。
 
 ## 12. 性能基准：与 grpc-java 的双向对照（`bench-grpc`）
 
