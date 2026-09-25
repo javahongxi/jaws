@@ -319,3 +319,25 @@ wire 服务端的形态（event loop 做轻活、重活一次性派发），其 
 附带教训：bench-grpc 首跑曾钉死在约 1.5 万 QPS——benchmark 模块原本没有 `logback.xml`，
 logback 缺省 root=DEBUG，grpc-java 的 `NettyClientHandler` 对每个 HTTP/2 帧在 event loop
 上同步打 DEBUG 日志，日志开销成了瓶颈。已加配置将 `io.grpc` 门禁到 INFO。
+
+## 服务端记账改动复测（2026-09-25）
+
+`ded374ec` 与 `0d8a63a6` 把服务端几处"只被声明不被执行"补实：accept 路径加了限连计数
+（`maxServerConnections` 落地）、每流路径加了 inflight 计数（`drainInflightRequests`
+从此对 wire 真正生效）、反射 bidi 流补了终止帧。三者都贴着吞吐关键路径，故在停掉 IDEA
+与办公类应用后的安静窗口重测 wire 管线腿——分进程长驻（`ROLE=provider` 常驻 +
+`ROLE=consumer DISPATCH=pipeline`），20 线程、WARMUP=5s、DURATION=40s：
+
+| 轮次 | QPS | 总调用 |
+|------|-----|--------|
+| 第一轮（作预热，不计入） | 89,054 | 3,562,179 |
+| 第二轮 | 90,541 | 3,621,657 |
+| 第三轮 | 89,524 | 3,580,953 |
+| 第四轮 | 89,770 | 3,590,809 |
+
+有效三轮均值 **89,945**，极差 1.0k（1.1%）。对照 9/24 帧折叠后的 87,411（极差 0.2%）
+是 **+2.9%**；与同日附加改动一节里 STPE 替换后测得的 89.0k 同档，因此读作**吞吐无损**，
+那 +2.9% 不解读为提升——跨窗口比较，量级仍落在环境噪声内。
+
+未覆盖：Direct API 消费端（92,423）与 grpc-java 互操作（104,967）本轮未重测。服务端改动
+对三条腿同等生效，但按"改哪测哪"的纪律，那两格的口径值仍沿用 9/24 记录。
