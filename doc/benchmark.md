@@ -268,6 +268,15 @@ jaws + wire + protobuf，20 线程、WARMUP=5s、DURATION=40s，各轮 0 错误�
 1. **wire 服务端吞吐上限实测约 10.5 万**——第三方 grpc-java 客户端多轮稳定复验（0 错误），远高于 wire 管线客户端打出的约 8.7 万（87,411），剩余瓶颈在 wire 客户端核心栈（见「与 grpc-java 客户端的剩余差距归因」）。
 2. **grpc-java 全套语义（HPACK、trailers、deadline、流控）在 wire 服务端上全绿**，互操作性经第三方客户端反向验证成立。互操作与正统 gRPC 的差值（约 10.5 万 vs 约 7.0 万）两侧 provider 均为长驻预热后测得，但预热时长仍不对称（数小时 vs 分钟级），作为方向性结论参考，精确差值待同预热条件复验。
 
+**服务端框架派发税 ≈ 0（A/B 实测，2026-09-26 安静环境）**：为验证 wire 服务端的框架栈是否拖慢吞吐，把同一 grpc-java 客户端分别打两种服务端起法——Path A 用裸 `WireServer` + `WireHandlerRegistry` 注册直返的 `WireMethodHandler`（绕开框架），Path B 用 `ServiceConfig.export()` 全栈（WireExporter → WireMessageHandler → resolveService/getMethodInfo + invoker/代理/反射派发）。各 3 轮、20 线程、DURATION=40s、0 错误：
+
+| 服务端起法 | QPS ×3 | 均值 | 极差 |
+|---|---|---|---|
+| Path A · 裸 handler（绕框架） | 106,626 / 106,769 / 105,773 | 106,389 | 0.9% |
+| Path B · ServiceConfig 全栈 | 105,946 / 107,354 / 106,273 | 106,524 | 1.3% |
+
+两者差 0.13%、被各自极差吞没——**在 `hello(String)` CPU-bound 天花板这一档，服务端框架派发税实测为 0**。机制与「热点 ≠ 关键路径」同源：真正吃 CPU 的是 event loop + HTTP/2 帧编解码 + protobuf + 单次派发，而 invoker 派发不过是一次 map 查找 + 反射调用，摊进 ~20us 的单请求不足 0.5us，测不出。（注：此处 Path B 是 09-26 安静环境复测，106,524 略高于上表 09-24 的 104,967，属环境红利，与 A/B 结论无关。）复现：临时把 `GrpcBenchmark.exportWireService()` 改成 `WireHandlerRegistry` + `new WireServer(url, registry).open()`（同 `sample-wire-interop` 的 `GrpcCallWireDemo` 起法），A 用 `SERVER=wire ROLE=provider bench-grpc`、B 用 `ROLE=provider bench-wire`，客户端恒为 `SERVER=wire ROLE=consumer bench-grpc`；该实验代码不随仓保留。
+
 **服务端线程模型诊断（jstack + 对照实验）**：grpc-java netty 服务端为 boss ELG 1 线程 + worker ELG（netty 默认 2×核数，单连接实际只有 1 条活跃）+ 无界 cached executor（`grpc-default-executor`，压测中 7 秒生灭 23 条线程），每个 RPC 在 event loop 与 executor 间跳两次，连接的全部编解码串在单条 ELG 线程上（实测单核占用 ~73%）。围绕线程池形态做了三组测量：默认无界 cached executor（基线 64,838）、`directExecutor()`、与 wire 同款的有界 EagerThreadPool（20/200/queue0）。**正统 gRPC 参照口径现统一取 eager pool**（对齐 wire 服务端形态，09-26 安静环境复测 70,334，见上表），另两组对照均未合入：
 
 - `directExecutor()`（回调直接跑在 ELG，零跳变）：cached 基线 64,838 → 92,906 / 85,738，**4 成开销在线程往返本身**；
