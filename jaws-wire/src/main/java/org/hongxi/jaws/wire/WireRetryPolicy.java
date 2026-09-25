@@ -29,7 +29,12 @@ import java.util.Set;
  */
 public final class WireRetryPolicy {
 
-    /** gRPC status codes eligible for retry (gRFC A6 non-idempotent set). */
+    /**
+     * gRPC status codes eligible for retry. gRFC A6 makes the list mandatory in
+     * a service config and defines no fallback, so this pair is Jaws' own
+     * policy: UNAVAILABLE for a transient transport or failover, and
+     * RESOURCE_EXHAUSTED for the "busy, try again later" answer.
+     */
     private static final Set<Integer> RETRYABLE_STATUSES = Set.of(
             WireConstants.STATUS_UNAVAILABLE,
             WireConstants.STATUS_RESOURCE_EXHAUSTED
@@ -128,6 +133,15 @@ public final class WireRetryPolicy {
         // Business exceptions are never retryable
         if (cause instanceof JawsBizException) {
             return false;
+        }
+        // A grpc-status from the peer is the authoritative signal, so judge it by
+        // its code. The text sniffing below is left for transport-level failures
+        // that never carried a status.
+        for (Throwable status = cause; status != null;
+                status = status.getCause() == status ? null : status.getCause()) {
+            if (status instanceof WireStatusException statusFailure) {
+                return isRetryableStatus(statusFailure.getGrpcStatus());
+            }
         }
         // Walk the cause chain looking for known retryable patterns
         Throwable t = cause;

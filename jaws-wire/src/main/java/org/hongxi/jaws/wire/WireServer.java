@@ -117,6 +117,7 @@ public class WireServer extends AbstractHttp2Server {
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
         this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
         this.configuredCompression = url.getParameter(UrlParam.Transport.COMPRESSION);
+        WireIgnoredParameters.warnIgnored(log, url, "WireServer");
     }
 
     /**
@@ -139,6 +140,7 @@ public class WireServer extends AbstractHttp2Server {
         this.maxMessageSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_MESSAGE_SIZE);
         this.maxInboundMetadataSize = url.getIntParameter(UrlParam.Transport.MAX_INBOUND_METADATA_SIZE);
         this.configuredCompression = url.getParameter(UrlParam.Transport.COMPRESSION);
+        WireIgnoredParameters.warnIgnored(log, url, "WireServer");
     }
 
     /**
@@ -281,7 +283,8 @@ public class WireServer extends AbstractHttp2Server {
         streamChannel.pipeline().addLast(
                 new WireStreamServerHandler(dispatcher, reflectionService,
                         serverExecutor, maxMessageSize, maxInboundMetadataSize,
-                        resolveResponseCompressor(), decompressorRegistry, streamTracerFactory));
+                        resolveResponseCompressor(), decompressorRegistry, streamTracerFactory,
+                        inflightRequests));
     }
 
     // ========================================================================

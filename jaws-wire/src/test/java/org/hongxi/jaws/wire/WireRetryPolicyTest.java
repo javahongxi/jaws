@@ -87,6 +87,34 @@ class WireRetryPolicyTest {
     }
 
     @Test
+    void peerStatusIsJudgedByItsCode() {
+        // The status table used to be unreachable from the decision path: a
+        // failure carrying a real grpc-status was judged by sniffing the
+        // message text, so RESOURCE_EXHAUSTED never retried.
+        assertTrue(WireRetryPolicy.isRetryableFailure(new WireStatusException(
+                "gRPC RESOURCE_EXHAUSTED: rate limit", WireConstants.STATUS_RESOURCE_EXHAUSTED, null)),
+                "RESOURCE_EXHAUSTED is in the retryable set, so it must retry");
+        assertTrue(WireRetryPolicy.isRetryableFailure(new WireStatusException(
+                "gRPC UNAVAILABLE: server went away", WireConstants.STATUS_UNAVAILABLE, null)));
+        assertFalse(WireRetryPolicy.isRetryableFailure(new WireStatusException(
+                "gRPC INTERNAL: boom", WireConstants.STATUS_INTERNAL, null)));
+        // The code outranks the wording: wording must not smuggle a
+        // non-retryable status past the policy.
+        assertFalse(WireRetryPolicy.isRetryableFailure(new WireStatusException(
+                "gRPC INTERNAL (retryable)", WireConstants.STATUS_INTERNAL, null)),
+                "a status code decides, not the message");
+    }
+
+    @Test
+    void peerStatusFoundUnderAWrappingCauseStillDecides() {
+        assertTrue(WireRetryPolicy.isRetryableFailure(new IOException("request failed",
+                new WireStatusException("gRPC UNAVAILABLE", WireConstants.STATUS_UNAVAILABLE, null))));
+        assertFalse(WireRetryPolicy.isRetryableFailure(new IOException("request failed",
+                new WireStatusException("gRPC PERMISSION_DENIED",
+                        WireConstants.STATUS_PERMISSION_DENIED, null))));
+    }
+
+    @Test
     void singleAttemptPolicy() {
         WireRetryPolicy policy = new WireRetryPolicy(1, 100, 1000, 2.0, 0);
         assertEquals(1, policy.maxAttempts());

@@ -58,6 +58,11 @@ public abstract class AbstractNettyServer implements Server {
     /** Tracks in-flight business requests for graceful shutdown draining. */
     protected final AtomicInteger inflightRequests = new AtomicInteger(0);
 
+    /** Accepted connections still open; the denominator of the connection cap. */
+    private final AtomicInteger openConnections = new AtomicInteger(0);
+    /** Ceiling read once in {@link #open()}; {@code maxServerConnections}. */
+    private int maxConnections;
+
     protected AbstractNettyServer(URL url, String serverName) {
         this.url = url;
         this.serverName = serverName;
@@ -84,6 +89,7 @@ public abstract class AbstractNettyServer implements Server {
                 new AbortPolicyWithStats(serverName + "-" + url.getHostPort()));
         executor.prestartAllCoreThreads();
         serverExecutor = executor;
+        maxConnections = url.getIntParameter(UrlParam.Server.MAX_CONNECTIONS);
 
         // Non-daemon event loops keep the JVM alive after main() exits.
         bossGroup = new NioEventLoopGroup(1,
@@ -100,6 +106,18 @@ public abstract class AbstractNettyServer implements Server {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
+                            if (openConnections.incrementAndGet() > maxConnections) {
+                                // Refuse at accept time rather than half-open the
+                                // connection: an installed pipeline that never
+                                // serves a request would hold a worker and hide
+                                // the ceiling from the caller.
+                                log.warn("{} reached maxServerConnections={}, refusing: remote={}",
+                                        serverName, maxConnections, ch.remoteAddress());
+                                ch.close();
+                                openConnections.decrementAndGet();
+                                return;
+                            }
+                            ch.closeFuture().addListener(f -> openConnections.decrementAndGet());
                             AbstractNettyServer.this.initChannel(ch);
                         }
                     })

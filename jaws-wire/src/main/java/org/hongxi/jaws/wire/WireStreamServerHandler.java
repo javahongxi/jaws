@@ -150,6 +150,14 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     private final AtomicInteger outboundSeq = new AtomicInteger();
     /** Guards that {@link StreamTracer#streamClosed(int)} fires exactly once. */
     private final AtomicBoolean streamClosedReported = new AtomicBoolean();
+    /**
+     * The server's in-flight total, or {@code null} when this handler was built
+     * without one. Counted per business stream so {@code drainInflightRequests}
+     * has something to wait for.
+     */
+    private final AtomicInteger inflightRequests;
+    /** Set while this stream holds a slot in {@link #inflightRequests}. */
+    private boolean inflightCounted;
 
     WireStreamServerHandler(WireCallDispatcher dispatcher,
                             WireReflectionService reflectionService,
@@ -170,6 +178,18 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 maxInboundMetadataSize, responseCompressor, null, tracerFactory);
     }
 
+    WireStreamServerHandler(WireCallDispatcher dispatcher,
+                            WireReflectionService reflectionService,
+                            ExecutorService serverExecutor,
+                            int maxMessageSize, int maxInboundMetadataSize,
+                            Compressor responseCompressor,
+                            DecompressorRegistry decompressorRegistry,
+                            ServerStreamTracer.Factory tracerFactory) {
+        this(dispatcher, reflectionService, serverExecutor, maxMessageSize,
+                maxInboundMetadataSize, responseCompressor, decompressorRegistry,
+                tracerFactory, null);
+    }
+
     /**
      * @param responseCompressor    what to compress responses with, or
      *                              {@code null} for identity; may still be
@@ -178,6 +198,8 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
      *                              advertises back; {@code null} uses
      *                              {@link DecompressorRegistry#getDefaultInstance()}
      * @param tracerFactory         per-stream observer; {@code null} for none
+     * @param inflightRequests      the server's in-flight total to account
+     *                              against; {@code null} disables the counting
      */
     WireStreamServerHandler(WireCallDispatcher dispatcher,
                             WireReflectionService reflectionService,
@@ -185,7 +207,8 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                             int maxMessageSize, int maxInboundMetadataSize,
                             Compressor responseCompressor,
                             DecompressorRegistry decompressorRegistry,
-                            ServerStreamTracer.Factory tracerFactory) {
+                            ServerStreamTracer.Factory tracerFactory,
+                            AtomicInteger inflightRequests) {
         this.dispatcher = dispatcher;
         this.reflectionService = reflectionService;
         this.serverExecutor = serverExecutor;
@@ -196,6 +219,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         this.decompressorRegistry = decompressorRegistry != null
                 ? decompressorRegistry : DecompressorRegistry.getDefaultInstance();
         this.tracerFactory = tracerFactory;
+        this.inflightRequests = inflightRequests;
     }
 
     @Override
@@ -308,6 +332,14 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         if (!reflectionPath && !dispatcher.resolvePath(ctx, path)) {
             sendError(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + path);
             return;
+        }
+
+        // Account the stream against the server's in-flight total, which is what
+        // graceful shutdown waits on. Reflection streams are tooling rather than
+        // traffic being drained, so they stay out of the count.
+        if (!reflectionPath && inflightRequests != null) {
+            inflightRequests.incrementAndGet();
+            inflightCounted = true;
         }
 
         // Check if the resolved method is streaming (bidi or client-streaming)
@@ -847,6 +879,12 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
         canceled = true;
+        // Netty delivers channelInactive exactly once per handler, which is what
+        // pairs this with the increment taken when the stream was accepted.
+        if (inflightCounted) {
+            inflightCounted = false;
+            inflightRequests.decrementAndGet();
+        }
         notifyStreamClosed(ctx);
         // Netty calls channelInactive exactly once per handler, so the
         // tracer's end-of-life event needs no guard; the status does, because

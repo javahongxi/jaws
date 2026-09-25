@@ -42,11 +42,15 @@ class WireMessageHandler implements MessageHandler {
     /** This port's provider registry and invocation dispatch (core side). */
     private final ProviderMessageHandler providers = new ProviderMessageHandler();
 
-    /** Service interface → its protobuf types; iteration order is irrelevant. */
-    private final ConcurrentMap<Class<?>, WireProtoTypes> byInterface = new ConcurrentHashMap<>();
+    /** One exported service on this port: what it is, and its protobuf types. */
+    private record Service(Class<?> serviceInterface, WireProtoTypes protoTypes) {
+    }
 
-    /** Proto service name or Java interface name → types, for exact path matching. */
-    private final ConcurrentMap<String, WireProtoTypes> byServiceName = new ConcurrentHashMap<>();
+    /** Service interface → its entry; iteration order is irrelevant. */
+    private final ConcurrentMap<Class<?>, Service> byInterface = new ConcurrentHashMap<>();
+
+    /** Proto service name or Java interface name → entry, for exact path matching. */
+    private final ConcurrentMap<String, Service> byServiceName = new ConcurrentHashMap<>();
 
     /**
      * Register one exported service on this port: its provider in the core
@@ -58,13 +62,13 @@ class WireMessageHandler implements MessageHandler {
     void addService(Provider<?> provider, WireProtoTypes protoTypes) {
         providers.addProvider(provider);
 
-        Class<?> serviceInterface = provider.getInterface();
-        byInterface.put(serviceInterface, protoTypes);
-        byServiceName.put(serviceInterface.getName(), protoTypes);
+        Service service = new Service(provider.getInterface(), protoTypes);
+        byInterface.put(service.serviceInterface(), service);
+        byServiceName.put(service.serviceInterface().getName(), service);
         // A descriptor file can declare services this interface does not own, so
         // never let an alias displace the service that already claimed the name.
         for (String name : protoTypes.getServiceNames()) {
-            byServiceName.putIfAbsent(name, protoTypes);
+            byServiceName.putIfAbsent(name, service);
         }
     }
 
@@ -74,12 +78,12 @@ class WireMessageHandler implements MessageHandler {
     void removeService(Provider<?> provider) {
         providers.removeProvider(provider);
 
-        WireProtoTypes removed = byInterface.remove(provider.getInterface());
+        Service removed = byInterface.remove(provider.getInterface());
         if (removed == null) {
             return;
         }
         byServiceName.remove(provider.getInterface().getName(), removed);
-        for (String name : removed.getServiceNames()) {
+        for (String name : removed.protoTypes().getServiceNames()) {
             byServiceName.remove(name, removed);
         }
     }
@@ -92,23 +96,22 @@ class WireMessageHandler implements MessageHandler {
     }
 
     /**
-     * Find the protobuf metadata owning a method.
+     * Find the service owning a method.
      * <p>
      * The path's service name is tried first; a method-name join is the
      * fallback, because a gRPC caller names the proto service while a Jaws
-     * caller names the Java interface — the same ambiguity the provider lookup
-     * in {@code AbstractRequestHandler} resolves by method name.
+     * caller names the Java interface.
      *
      * @throws IllegalArgumentException when no registered service declares it
      */
-    private WireProtoTypes.MethodInfo resolveMethod(String serviceName, String methodName) {
-        WireProtoTypes named = serviceName == null ? null : byServiceName.get(serviceName);
-        if (named != null && named.hasMethod(methodName)) {
-            return named.getMethodInfo(methodName);
+    private Service resolveService(String serviceName, String methodName) {
+        Service named = serviceName == null ? null : byServiceName.get(serviceName);
+        if (named != null && named.protoTypes().hasMethod(methodName)) {
+            return named;
         }
-        for (WireProtoTypes protoTypes : byInterface.values()) {
-            if (protoTypes.hasMethod(methodName)) {
-                return protoTypes.getMethodInfo(methodName);
+        for (Service service : byInterface.values()) {
+            if (service.protoTypes().hasMethod(methodName)) {
+                return service;
             }
         }
         throw new IllegalArgumentException(
@@ -127,9 +130,11 @@ class WireMessageHandler implements MessageHandler {
         }
 
         // Look up per-method request parser
+        Service owner;
         WireProtoTypes.MethodInfo methodInfo;
         try {
-            methodInfo = resolveMethod(request.getInterfaceName(), request.getMethodName());
+            owner = resolveService(request.getInterfaceName(), request.getMethodName());
+            methodInfo = owner.protoTypes().getMethodInfo(request.getMethodName());
         } catch (IllegalArgumentException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -142,7 +147,10 @@ class WireMessageHandler implements MessageHandler {
             // Convert gRPC PascalCase method name (SayHello) back to Java
             // camelCase (sayHello) so that the Provider can find the method.
             DefaultRequest typedRequest = new DefaultRequest();
-            typedRequest.setInterfaceName(request.getInterfaceName());
+            // The Java interface name, not the name on the wire: two services
+            // may declare the same method, and this is the one whose types
+            // decoded the payload.
+            typedRequest.setInterfaceName(owner.serviceInterface().getName());
             typedRequest.setMethodName(toJavaMethodName(request.getMethodName()));
             typedRequest.setParamDesc(request.getParamDesc());
             typedRequest.setArguments(new Object[]{requestMessage});
@@ -171,9 +179,11 @@ class WireMessageHandler implements MessageHandler {
      */
     @Override
     public StreamSource<Object> handleStream(Request request, StreamSource<Object> requestStream) {
+        Service owner;
         WireProtoTypes.MethodInfo methodInfo;
         try {
-            methodInfo = resolveMethod(request.getInterfaceName(), request.getMethodName());
+            owner = resolveService(request.getInterfaceName(), request.getMethodName());
+            methodInfo = owner.protoTypes().getMethodInfo(request.getMethodName());
         } catch (IllegalArgumentException e) {
             throw new UnsupportedOperationException("Unknown method: " + request.getMethodName(), e);
         }
@@ -208,7 +218,33 @@ class WireMessageHandler implements MessageHandler {
             }
         });
 
-        return providers.handleStream(request, typedStream);
+        return providers.handleStream(
+                addressed(request, owner.serviceInterface().getName()), typedStream);
+    }
+
+    /**
+     * Copy a request with its service identity replaced.
+     * <p>
+     * The same ownership rewrite the unary path performs in place: the Java
+     * interface name of the service whose types decoded the payload is the only
+     * name that identifies the provider unambiguously.
+     */
+    private static Request addressed(Request request, String serviceInterfaceName) {
+        if (!(request instanceof DefaultRequest source)
+                || serviceInterfaceName.equals(request.getInterfaceName())) {
+            return request;
+        }
+        DefaultRequest copy = new DefaultRequest();
+        copy.setInterfaceName(serviceInterfaceName);
+        copy.setMethodName(source.getMethodName());
+        copy.setParamDesc(source.getParamDesc());
+        copy.setArguments(source.getArguments());
+        copy.setRequestId(source.getRequestId());
+        copy.setRetries(source.getRetries());
+        for (var entry : source.getAttachments().entrySet()) {
+            copy.setAttachment(entry.getKey(), entry.getValue());
+        }
+        return copy;
     }
 
     /**
@@ -217,7 +253,8 @@ class WireMessageHandler implements MessageHandler {
      */
     boolean isBidiStream(String serviceName, String methodName) {
         try {
-            WireProtoTypes.MethodInfo info = resolveMethod(serviceName, methodName);
+            WireProtoTypes.MethodInfo info =
+                    resolveService(serviceName, methodName).protoTypes().getMethodInfo(methodName);
             return info.hasRequestStream() && info.streaming();
         } catch (IllegalArgumentException e) {
             return false;
@@ -230,7 +267,8 @@ class WireMessageHandler implements MessageHandler {
      */
     boolean isClientStream(String serviceName, String methodName) {
         try {
-            WireProtoTypes.MethodInfo info = resolveMethod(serviceName, methodName);
+            WireProtoTypes.MethodInfo info =
+                    resolveService(serviceName, methodName).protoTypes().getMethodInfo(methodName);
             return info.hasRequestStream() && !info.streaming();
         } catch (IllegalArgumentException e) {
             return false;

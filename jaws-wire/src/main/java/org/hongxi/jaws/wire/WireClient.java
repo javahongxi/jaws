@@ -129,6 +129,7 @@ public class WireClient extends AbstractHttp2Client {
         this.keepaliveTimeMs = url.getLongParameter(UrlParam.Transport.KEEPALIVE_TIME_MS);
         this.keepaliveTimeoutMs = url.getLongParameter(UrlParam.Transport.KEEPALIVE_TIMEOUT_MS);
         this.retryPolicy = WireRetryPolicy.fromUrl(url);
+        WireIgnoredParameters.warnIgnored(log, url, "WireClient");
     }
 
     @Override
