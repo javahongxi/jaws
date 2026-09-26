@@ -23,8 +23,12 @@ import java.util.List;
  * {@link BeanPostProcessor} that scans for {@link JawsReference} annotated fields
  * and injects Jaws RPC service proxies.
  * <p>
- * Annotation attributes support {@code ${...}} property placeholders, resolved
- * against the Spring Environment (e.g. {@code directUrl = "${sample.wire.address}"}).
+ * Every String-valued annotation attribute ({@code directUrl}, {@code group},
+ * {@code version}, {@code application}, {@code serviceInterface}) supports
+ * {@code ${...}} property placeholders, resolved against the Spring Environment
+ * (e.g. {@code directUrl = "${sample.wire.address}"}). Primitive-valued attributes
+ * ({@code requestTimeout}, {@code check}, {@code generic}) cannot carry a
+ * placeholder by construction, so they are read as written.
  * <p>
  * Created by shenhongxi on 2026/7/17.
  */
@@ -86,13 +90,34 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
         ProtocolConfig protocolConfig = beanFactory.getBean(ProtocolConfig.class);
         RegistryConfig registryConfig = beanFactory.getBean(RegistryConfig.class);
 
+        ReferenceConfig<Object> refConfig = toReferenceConfig(jawsRef, fieldType,
+                properties, protocolConfig, registryConfig);
+
+        Object proxy = refConfig.getRef();
+        referenceConfigs.add(refConfig);
+
+        log.info("created reference: interface={}, group={}, version={}",
+                refConfig.getInterface().getName(), refConfig.getGroup(), refConfig.getVersion());
+
+        return proxy;
+    }
+
+    /**
+     * Map annotation attributes onto a {@link ReferenceConfig} (precedence:
+     * annotation &gt; global properties), resolving {@code ${...}} placeholders on
+     * the way. Kept apart from {@link #createReference} so the mapping can be
+     * asserted without creating an RPC proxy.
+     */
+    @SuppressWarnings("unchecked")
+    ReferenceConfig<Object> toReferenceConfig(JawsReference jawsRef, Class<?> fieldType,
+                                              JawsProperties properties, ProtocolConfig protocolConfig,
+                                              RegistryConfig registryConfig) {
         Class<?> interfaceClass = (jawsRef.interfaceClass() != void.class)
                 ? jawsRef.interfaceClass() : fieldType;
         String application = StringUtils.isNotBlank(jawsRef.application())
-                ? jawsRef.application() : properties.getApplication().getName();
+                ? resolvePlaceholder(jawsRef.application()) : properties.getApplication().getName();
 
         ReferenceConfig<Object> refConfig = new ReferenceConfig<>();
-        // noinspection unchecked
         refConfig.setInterface((Class<Object>) interfaceClass);
         refConfig.setApplication(application);
         refConfig.setProtocol(protocolConfig);
@@ -100,14 +125,14 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
 
         /* group: annotation > global */
         String group = StringUtils.isNotBlank(jawsRef.group())
-                ? jawsRef.group() : properties.getReference().getGroup();
+                ? resolvePlaceholder(jawsRef.group()) : properties.getReference().getGroup();
         if (StringUtils.isNotBlank(group)) {
             refConfig.setGroup(group);
         }
 
         /* version: annotation > global */
         String version = StringUtils.isNotBlank(jawsRef.version())
-                ? jawsRef.version() : properties.getReference().getVersion();
+                ? resolvePlaceholder(jawsRef.version()) : properties.getReference().getVersion();
         if (StringUtils.isNotBlank(version)) {
             refConfig.setVersion(version);
         }
@@ -133,7 +158,7 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
             refConfig.setRetries(properties.getReference().getRetries());
         }
 
-        /* directUrl: supports ${...} placeholders */
+        /* directUrl */
         String directUrl = resolvePlaceholder(jawsRef.directUrl());
         if (StringUtils.isNotBlank(directUrl)) {
             refConfig.setDirectUrl(directUrl);
@@ -142,8 +167,9 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
         /* generic invocation */
         if (jawsRef.generic()) {
             refConfig.setGeneric(true);
-            if (StringUtils.isNotBlank(jawsRef.serviceInterface())) {
-                refConfig.setServiceInterface(jawsRef.serviceInterface());
+            String serviceInterface = resolvePlaceholder(jawsRef.serviceInterface());
+            if (StringUtils.isNotBlank(serviceInterface)) {
+                refConfig.setServiceInterface(serviceInterface);
             } else if (jawsRef.interfaceClass() != void.class) {
                 refConfig.setServiceInterface(jawsRef.interfaceClass().getName());
             }
@@ -166,13 +192,7 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
             refConfig.setMethods(methodConfigs);
         }
 
-        Object proxy = refConfig.getRef();
-        referenceConfigs.add(refConfig);
-
-        log.info("created reference: interface={}, group={}, version={}",
-                interfaceClass.getName(), refConfig.getGroup(), refConfig.getVersion());
-
-        return proxy;
+        return refConfig;
     }
 
     @Override
