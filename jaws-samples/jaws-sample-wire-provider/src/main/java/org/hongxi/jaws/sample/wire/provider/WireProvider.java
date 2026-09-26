@@ -10,8 +10,6 @@ import org.hongxi.jaws.wire.ServerStreamTracer;
 import org.hongxi.jaws.wire.WireExporter;
 import org.hongxi.jaws.wire.WireServer;
 
-import java.util.concurrent.CountDownLatch;
-
 /**
  * Wire (gRPC wire format) provider sample in direct mode.
  * <p>
@@ -63,7 +61,7 @@ public class WireProvider {
 
     private static final int PORT = Integer.parseInt(System.getProperty("port", "50051"));
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName("wire");
         protocolConfig.setId("wire");
@@ -152,8 +150,5 @@ public class WireProvider {
         System.out.println("    localhost:" + PORT + " calculator.Calculator/Divide");
         System.out.println("  grpcurl -plaintext -d '{\"count\":6}' \\");
         System.out.println("    localhost:" + PORT + " calculator.Calculator/Fibonacci");
-
-        // Block main thread to prevent JVM exit (Netty event loop threads may be daemon)
-        new CountDownLatch(1).await();
     }
 }
