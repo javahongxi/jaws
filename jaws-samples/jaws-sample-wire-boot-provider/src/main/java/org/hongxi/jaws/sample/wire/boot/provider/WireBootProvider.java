@@ -4,8 +4,6 @@ import org.hongxi.jaws.spring.boot.annotation.EnableJaws;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-import java.util.concurrent.CountDownLatch;
-
 /**
  * Wire (gRPC wire format) provider in Spring Boot mode, direct-connect demo.
  * <p>
@@ -28,11 +26,7 @@ import java.util.concurrent.CountDownLatch;
 @SpringBootApplication
 public class WireBootProvider {
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) {
         SpringApplication.run(WireBootProvider.class, args);
-        // The wire server runs on daemon threads, so hold the main thread; a
-        // Ctrl-C still goes through Spring's shutdown hook (graceful unexport)
-        // and then releases this latch.
-        new CountDownLatch(1).await();
     }
 }

@@ -6,9 +6,10 @@ jaws:
   application:
     name: ${spring.application.name}
   protocol:
-    # gRPC wire format over HTTP/2, served by the jaws-wire transport SPI
+    # gRPC wire format over HTTP/2, served by the jaws-wire transport SPI.
+    # transport-factory is intentionally omitted: the transport follows the
+    # protocol name, so name=wire resolves to the "wire" transport
     name: wire
-    transport-factory: wire
     port: 50051
     # Compress responses with gzip for callers advertising grpc-accept-encoding
     compression: gzip

@@ -1,5 +1,6 @@
 package org.hongxi.jaws.spring.boot;
 
+import org.apache.commons.lang3.StringUtils;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.springframework.beans.factory.BeanFactory;
@@ -50,7 +51,11 @@ public class JawsAutoConfiguration {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName(protocolProps.getName());
         protocolConfig.setId(protocolProps.getName());
-        protocolConfig.setTransportFactory(protocolProps.getTransportFactory());
+        // Only pass an explicit transport through; when unset, TransportResolver
+        // derives it from the protocol name (wire -> wire transport, else netty)
+        if (StringUtils.isNotBlank(protocolProps.getTransportFactory())) {
+            protocolConfig.setTransportFactory(protocolProps.getTransportFactory());
+        }
         protocolConfig.setSerialization(protocolProps.getSerialization());
         if (protocolProps.getHost() != null) {
             protocolConfig.setHost(protocolProps.getHost());

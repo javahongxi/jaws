@@ -14,7 +14,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     name: jaws
  *     port: 10000
  *     serialization: fastjson2
- *     transport-factory: netty
+ *     # transport-factory is optional: when omitted the transport is resolved
+ *     # from the protocol name (wire -> wire transport), else netty
  *   registry:
  *     address: nacos://127.0.0.1:8848
  *     username: nacos
@@ -147,9 +148,16 @@ public class JawsProperties {
         private String serialization = "fastjson2";
 
         /**
-         * Transport factory SPI name (e.g., netty).
+         * Transport factory SPI name (e.g., netty, http2, http, adaptive, wire).
+         * <p>
+         * Leave unset to let the transport follow the protocol: a transport
+         * registered under the protocol's own name wins ({@code name=wire} picks
+         * the {@code wire} transport), otherwise {@code netty} applies. Setting
+         * it explicitly is only needed to choose among the transports that can
+         * carry the jaws protocol; an incompatible pair (e.g. {@code name=wire}
+         * with {@code transport-factory=netty}) fails fast at export.
          */
-        private String transportFactory = "netty";
+        private String transportFactory;
 
         /**
          * Heartbeat interval in milliseconds. 0 means disabled.
