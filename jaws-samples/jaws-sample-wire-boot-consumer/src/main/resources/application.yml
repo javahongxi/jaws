@@ -1,0 +1,24 @@
+server:
+  port: 8083
+spring:
+  application:
+    name: sample-wire-boot-consumer
+
+jaws:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    # Same wire transport as the provider side, used for outbound references
+    name: wire
+    transport-factory: wire
+  # Not used: references resolve through directUrl below, no registry discovery
+  registry:
+    address: local://127.0.0.1:0
+  reference:
+    request-timeout: 5000
+    check: false
+
+sample:
+  # Provider address used by @JawsReference(directUrl = "${sample.wire.address}")
+  wire:
+    address: 127.0.0.1:50051

@@ -13,6 +13,8 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.context.EmbeddedValueResolverAware;
+import org.springframework.util.StringValueResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,17 +23,42 @@ import java.util.List;
  * {@link BeanPostProcessor} that scans for {@link JawsReference} annotated fields
  * and injects Jaws RPC service proxies.
  * <p>
+ * Annotation attributes support {@code ${...}} property placeholders, resolved
+ * against the Spring Environment (e.g. {@code directUrl = "${sample.wire.address}"}).
+ * <p>
  * Created by shenhongxi on 2026/7/17.
  */
-public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, DisposableBean {
+public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, DisposableBean, EmbeddedValueResolverAware {
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceAnnotationBeanPostProcessor.class);
 
     private final BeanFactory beanFactory;
     private final List<ReferenceConfig<?>> referenceConfigs = new ArrayList<>();
+    private StringValueResolver embeddedValueResolver;
 
     public ReferenceAnnotationBeanPostProcessor(BeanFactory beanFactory) {
         this.beanFactory = beanFactory;
+    }
+
+    @Override
+    public void setEmbeddedValueResolver(StringValueResolver resolver) {
+        this.embeddedValueResolver = resolver;
+    }
+
+    /**
+     * Resolve {@code ${...}} placeholders in an annotation attribute value.
+     */
+    private String resolvePlaceholder(String value) {
+        if (embeddedValueResolver == null || StringUtils.isBlank(value)) {
+            return value;
+        }
+        /* keep the raw value when it contains an unresolvable placeholder */
+        try {
+            return embeddedValueResolver.resolveStringValue(value);
+        } catch (IllegalArgumentException e) {
+            log.warn("failed to resolve placeholder in value [{}], using it as-is", value);
+            return value;
+        }
     }
 
     @Override
@@ -106,9 +133,10 @@ public class ReferenceAnnotationBeanPostProcessor implements BeanPostProcessor, 
             refConfig.setRetries(properties.getReference().getRetries());
         }
 
-        /* directUrl */
-        if (StringUtils.isNotBlank(jawsRef.directUrl())) {
-            refConfig.setDirectUrl(jawsRef.directUrl());
+        /* directUrl: supports ${...} placeholders */
+        String directUrl = resolvePlaceholder(jawsRef.directUrl());
+        if (StringUtils.isNotBlank(directUrl)) {
+            refConfig.setDirectUrl(directUrl);
         }
 
         /* generic invocation */

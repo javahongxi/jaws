@@ -56,6 +56,7 @@ public @interface JawsReference {
 
     /**
      * Direct connect URL (bypasses registry). Format: "host:port".
+     * Supports {@code ${...}} property placeholders.
      */
     String directUrl() default "";
 

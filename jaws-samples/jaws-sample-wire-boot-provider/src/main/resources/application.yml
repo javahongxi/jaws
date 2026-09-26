@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: sample-wire-boot-provider
+
+jaws:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    # gRPC wire format over HTTP/2, served by the jaws-wire transport SPI
+    name: wire
+    transport-factory: wire
+    port: 50051
+    # Compress responses with gzip for callers advertising grpc-accept-encoding
+    compression: gzip
+  # Direct-connect demo: the built-in "local" registry keeps registrations inside
+  # this JVM only, so no external registry center is required and consumers
+  # reach this provider through directUrl.
+  registry:
+    address: local://127.0.0.1:0
+  service:
+    check: true
