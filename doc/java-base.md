@@ -1,20 +1,25 @@
 # Java Base Five Topics：Jaws 作者的 java.base 精读计划
 
 > 本文记录一个务实的决定：精力有限的情况下，`java.base` 里只精读五个主题。选择标准不是"经典"，而是**它们撑起了 Jaws 框架里每一个并发行为**——存（容器）、等（同步器）、跑（线程池）。每个主题附阅读重点、Jaws 对应代码、读完后必须能回答的验收问题。
+>
+> 定性：个人学习笔记，非框架文档。
 
 ## 0. 为什么是这五个
 
-Jaws 全仓（含 samples）的 `java.util` 使用密度统计：
+Jaws 全仓（含 samples，main+test）的使用密度统计。口径：import 该类的文件数，
+2026-09-27 统计——仓库持续演进，重跑即漂移，只看量级不看个位：
 
 ```
-ArrayList             107 处    万物基底
-ConcurrentHashMap      59 处    跨线程共享状态（本文主题 ②）
-HashMap                59 处    本地缓存 / attachment（本文主题 ①）
-CopyOnWriteArrayList   31 处    读极多写极少的监听器 / invoker 列表
-ScheduledExecutor      N 处     Harbor 推送引擎、看门狗、重连（本文主题 ⑤）
-ThreadPoolExecutor     各服务    serverExecutor 业务线程池（本文主题 ④）
-CountDownLatch         示例      流式回调等待（本文主题 ③）
+ArrayList             102 文件    万物基底
+ConcurrentHashMap      57 文件    跨线程共享状态（本文主题 ②）
+HashMap                61 文件    本地缓存 / attachment（本文主题 ①）
+CopyOnWriteArrayList   31 文件    读极多写极少的监听器 / invoker 列表
+ScheduledExecutor*     13 文件    Harbor 推送引擎、看门狗、重连（本文主题 ⑤）
+ThreadPoolExecutor      3 文件    serverExecutor 业务线程池（本文主题 ④）
+CountDownLatch         23 文件    流式回调等待（本文主题 ③）
 ```
+
+\* 按 `ScheduledExecutorService` import 计；实现一律是 `new ScheduledThreadPoolExecutor(...)`。
 
 五个主题的依赖关系即推荐阅读顺序，**不要乱序**：
 
@@ -69,8 +74,9 @@ JDK 8+    Node 数组 + CAS + synchronized 锁单桶：
           · 空桶插入走 CAS，完全无锁
           · sizeCtl 状态机 + transferIndex 切片 → helpTransfer 多线程协助扩容
           · baseCount + CounterCell[] 分段计数（LongAdder 同款）
-          · 数组元素访问统一走 tabAt/setTabAt（VarHandle getOpaque/setVolatile），
-            因为 Java 没有 volatile 元素数组
+          · 数组元素访问统一走 tabAt/setTabAt（Unsafe reference 系直读数组：
+            读 Acquire / 写 Volatile，tabAt 源码旁注 "require only release
+            ordering"），因为 Java 没有 volatile 元素数组
 ```
 
 JDK 8 敢用 `synchronized` 的原因：锁的是单条桶的头节点，冲突概率极低、临界区极短，且锁对象就是节点自己，比每段一个 ReentrantLock 省内存。
@@ -104,7 +110,9 @@ AQS 四块拼图，用三个类刚好覆盖：
 
 ```
 独占模式（exclusive）  →  ReentrantLock（Semaphore/Latch 都不走这条路）
-共享模式（shared）     →  CountDownLatch（Semaphore 是其变体，差一个公平性检查）
+共享模式（shared）     →  CountDownLatch（与 Semaphore 同为共享模式：
+                          Latch 一次性倒计数、无 release/不可重置；
+                          Semaphore 计数可恢复，另分公平/非公平）
 state 的多义性         →  Latch=剩余次数 / Lock=重入深度，读两个才算真懂
 Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
                           ConditionObject 的 transferForSignal 是全站最难也最值钱的一段
@@ -120,7 +128,7 @@ Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
 ### Jaws 对应（Condition 是 ④⑤ 的前置知识）
 
 - sample 里流式调用的 `CountDownLatch` + `onCompleted`/`await` 模式——忘写 `await()` 流式结果直接丢失（Dubbo Triple 示例的经典错误，Jaws sample 同款结构）。
-- ④ 的 `ExecutorQueue extends LinkedBlockingQueue`：内部 `putLock/takeLock` 两把 ReentrantLock + `notEmpty/notFull` 两个 Condition，"为什么 LBQ 两把锁而 ABQ 一把"要到这站找答案。
+- ④ 的 `ExecutorQueue extends LinkedTransferQueue`：无锁 CAS 入队、无界，所以 `force()`（裸 `offer`）才永远成功——Eager"第二次 offer 入真队列"的地基在这站读懂。注意 `LinkedBlockingQueue` 的 `putLock/takeLock` 双锁 + `notEmpty/notFull` 双 Condition 是**另一条知识线**（"为什么 LBQ 两把锁而 ABQ 一把"），读 LBQ 源码本身时找答案；jaws 核心路径上没有 LBQ。
 - ⑤ 的 DelayedWorkQueue：`available = lock.newCondition()`，take 线程 `awaitNanos` 挂起全靠本站机制。
 - 番外：Netty `SingleThreadEventExecutor` 的 waker 是同款 ReentrantLock + Condition 模型。
 
@@ -235,4 +243,4 @@ removeOnCancel    cancel() 默认只置 CANCEL 标志、节点留在堆里直到
 5. `LinkedBlockingQueue` 双锁（putLock/takeLock）结构——④ 的前置事实。
 6. CHM 遍历顺序依赖桶物理布局 → 无序集合上禁止用顺序依赖运算（滚动哈希）计算 revision，用 XOR/求和等交换律运算——Jaws 实测 bug 与修复。
 7. `java.util.ImmutableCollections`（JDK 9 起，List.of/Set.of/Map.of 的实现，List12/ListN/SetN/Map1/MapN + CollSer 序列化代理）：真不可变 vs `Collections.unmodifiableXxx` 包装视图的区别；拒绝 null 与 CHM/Optional 同一设计立场。跨线程发布的只读配置优先用 `X.of`。
-8. `ArrayDeque`：环形数组 + 位运算取模，JDK 基础组件 23 处使用（Resolver/URLClassPath/SelectorImpl/ZipFile），Jaws 暂 0 处——协议解析/调度缓冲场景（HEADERS-DATA 帧排序、CONTINUATION 聚合）的候选优化项。
+8. `ArrayDeque`：环形数组 + 位运算取模，java.base 内 12 个文件使用（Resolver/URLClassPath/ZipFile 等，2026-09-27 grep 口径），Jaws 暂 0 处——协议解析/调度缓冲场景（HEADERS-DATA 帧排序、CONTINUATION 聚合）的候选优化项。
