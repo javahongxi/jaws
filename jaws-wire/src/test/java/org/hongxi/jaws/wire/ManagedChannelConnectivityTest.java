@@ -28,10 +28,10 @@ class ManagedChannelConnectivityTest {
                      .addAddress("127.0.0.1:" + b.getLocalPort())
                      .roundRobin().build()) {
 
-            assertEquals(WireConnectivityState.READY, ch.getState(),
+            assertEquals(ConnectivityState.READY, ch.getState(),
                     "two connected backends ⇒ channel READY");
             // requestConnection is a safe no-op on a live (non-IDLE) channel.
-            assertEquals(WireConnectivityState.READY, ch.getState(true));
+            assertEquals(ConnectivityState.READY, ch.getState(true));
         }
     }
 
@@ -42,11 +42,11 @@ class ManagedChannelConnectivityTest {
                     .addAddress("127.0.0.1:" + ss.getLocalPort()).build();
 
             AtomicInteger fired = new AtomicInteger();
-            ch.notifyWhenStateChanged(WireConnectivityState.READY, fired::incrementAndGet);
+            ch.notifyWhenStateChanged(ConnectivityState.READY, fired::incrementAndGet);
             assertEquals(0, fired.get(), "still READY → callback must not have fired");
 
             ch.shutdownNow();   // drives the aggregate to SHUTDOWN
-            assertEquals(WireConnectivityState.SHUTDOWN, ch.getState());
+            assertEquals(ConnectivityState.SHUTDOWN, ch.getState());
             assertEquals(1, fired.get(), "callback fires exactly once when leaving READY");
 
             // A second state change must not re-fire the (self-deregistering) one-shot.
@@ -64,7 +64,7 @@ class ManagedChannelConnectivityTest {
 
             AtomicInteger fired = new AtomicInteger();
             // Watching to leave TRANSIENT_FAILURE, but we're READY → differs now.
-            ch.notifyWhenStateChanged(WireConnectivityState.TRANSIENT_FAILURE, fired::incrementAndGet);
+            ch.notifyWhenStateChanged(ConnectivityState.TRANSIENT_FAILURE, fired::incrementAndGet);
             assertEquals(1, fired.get(), "already differs from source → fires immediately");
         }
     }

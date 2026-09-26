@@ -31,8 +31,8 @@ import java.util.concurrent.atomic.AtomicReference;
 public class WireConnectivityTracker {
     private static final Logger log = LoggerFactory.getLogger(WireConnectivityTracker.class);
 
-    private final AtomicReference<WireConnectivityState> state =
-            new AtomicReference<>(WireConnectivityState.IDLE);
+    private final AtomicReference<ConnectivityState> state =
+            new AtomicReference<>(ConnectivityState.IDLE);
 
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
@@ -46,13 +46,13 @@ public class WireConnectivityTracker {
          * @param previous the previous state
          * @param current  the new state
          */
-        void onStateChange(WireConnectivityState previous, WireConnectivityState current);
+        void onStateChange(ConnectivityState previous, ConnectivityState current);
     }
 
     /**
      * @return the current connectivity state
      */
-    public WireConnectivityState getState() {
+    public ConnectivityState getState() {
         return state.get();
     }
 
@@ -64,8 +64,8 @@ public class WireConnectivityTracker {
      * @return true if the state was changed, false if it was already in the target state
      *         or the transition was rejected (e.g. from SHUTDOWN)
      */
-    public boolean transitionTo(WireConnectivityState newState) {
-        WireConnectivityState previous = state.getAndSet(newState);
+    public boolean transitionTo(ConnectivityState newState) {
+        ConnectivityState previous = state.getAndSet(newState);
         if (previous == newState) {
             return false;
         }
@@ -106,21 +106,21 @@ public class WireConnectivityTracker {
      * @return true if the channel is in a state where RPCs can be sent
      */
     public boolean isReady() {
-        return state.get() == WireConnectivityState.READY;
+        return state.get() == ConnectivityState.READY;
     }
 
     /**
      * @return true if the channel has been shut down
      */
     public boolean isShutdown() {
-        return state.get() == WireConnectivityState.SHUTDOWN;
+        return state.get() == ConnectivityState.SHUTDOWN;
     }
 
     /**
      * Convenience: transition to SHUTDOWN and clear all listeners.
      */
     public void shutdown() {
-        transitionTo(WireConnectivityState.SHUTDOWN);
+        transitionTo(ConnectivityState.SHUTDOWN);
         listeners.clear();
     }
 }

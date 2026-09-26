@@ -55,9 +55,9 @@ class WireGoAwayHandlerTest {
         WireConnectivityTracker tracker = client.getConnectivityTracker();
 
         // Simulate the client being in READY state
-        tracker.transitionTo(WireConnectivityState.CONNECTING);
-        tracker.transitionTo(WireConnectivityState.READY);
-        org.junit.jupiter.api.Assertions.assertEquals(WireConnectivityState.READY, tracker.getState());
+        tracker.transitionTo(ConnectivityState.CONNECTING);
+        tracker.transitionTo(ConnectivityState.READY);
+        org.junit.jupiter.api.Assertions.assertEquals(ConnectivityState.READY, tracker.getState());
 
         EmbeddedChannel ch = new EmbeddedChannel(new WireGoAwayHandler(client));
 
@@ -70,6 +70,6 @@ class WireGoAwayHandlerTest {
 
         // Connectivity state should have transitioned away from READY
         // (to IDLE, since reconnect fails without a server)
-        org.junit.jupiter.api.Assertions.assertNotEquals(WireConnectivityState.READY, tracker.getState());
+        org.junit.jupiter.api.Assertions.assertNotEquals(ConnectivityState.READY, tracker.getState());
     }
 }

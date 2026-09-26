@@ -19,7 +19,7 @@ class WireConnectivityTrackerTest {
     @Test
     void initialStateIsIdle() {
         WireConnectivityTracker tracker = new WireConnectivityTracker();
-        assertEquals(WireConnectivityState.IDLE, tracker.getState());
+        assertEquals(ConnectivityState.IDLE, tracker.getState());
         assertFalse(tracker.isReady());
         assertFalse(tracker.isShutdown());
     }
@@ -31,8 +31,8 @@ class WireConnectivityTrackerTest {
 
         tracker.addListener((prev, curr) -> transitions.add(prev + "→" + curr));
 
-        tracker.transitionTo(WireConnectivityState.CONNECTING);
-        tracker.transitionTo(WireConnectivityState.READY);
+        tracker.transitionTo(ConnectivityState.CONNECTING);
+        tracker.transitionTo(ConnectivityState.READY);
 
         assertEquals(2, transitions.size());
         assertEquals("IDLE→CONNECTING", transitions.get(0));
@@ -43,13 +43,13 @@ class WireConnectivityTrackerTest {
     @Test
     void sameStateTransitionReturnsFalse() {
         WireConnectivityTracker tracker = new WireConnectivityTracker();
-        tracker.transitionTo(WireConnectivityState.READY);
+        tracker.transitionTo(ConnectivityState.READY);
 
         // Same state: no notification
         AtomicInteger count = new AtomicInteger();
         tracker.addListener((prev, curr) -> count.incrementAndGet());
 
-        assertFalse(tracker.transitionTo(WireConnectivityState.READY));
+        assertFalse(tracker.transitionTo(ConnectivityState.READY));
         assertEquals(0, count.get());
     }
 
@@ -64,7 +64,7 @@ class WireConnectivityTrackerTest {
         assertEquals(1, count.get()); // shutdown notification
 
         // After shutdown, further transitions don't notify (listeners cleared)
-        tracker.transitionTo(WireConnectivityState.READY);
+        tracker.transitionTo(ConnectivityState.READY);
         assertEquals(1, count.get()); // no new notification
     }
 
@@ -74,10 +74,10 @@ class WireConnectivityTrackerTest {
         List<String> transitions = new ArrayList<>();
         tracker.addListener((prev, curr) -> transitions.add(prev + "→" + curr));
 
-        tracker.transitionTo(WireConnectivityState.CONNECTING);
-        tracker.transitionTo(WireConnectivityState.TRANSIENT_FAILURE);
-        tracker.transitionTo(WireConnectivityState.CONNECTING);
-        tracker.transitionTo(WireConnectivityState.READY);
+        tracker.transitionTo(ConnectivityState.CONNECTING);
+        tracker.transitionTo(ConnectivityState.TRANSIENT_FAILURE);
+        tracker.transitionTo(ConnectivityState.CONNECTING);
+        tracker.transitionTo(ConnectivityState.READY);
 
         assertEquals(4, transitions.size());
         assertEquals("TRANSIENT_FAILURE→CONNECTING", transitions.get(2));
@@ -92,11 +92,11 @@ class WireConnectivityTrackerTest {
         WireConnectivityTracker.Listener listener = (prev, curr) -> count.incrementAndGet();
 
         tracker.addListener(listener);
-        tracker.transitionTo(WireConnectivityState.READY);
+        tracker.transitionTo(ConnectivityState.READY);
         assertEquals(1, count.get());
 
         tracker.removeListener(listener);
-        tracker.transitionTo(WireConnectivityState.SHUTDOWN);
+        tracker.transitionTo(ConnectivityState.SHUTDOWN);
         assertEquals(1, count.get()); // no further notification
     }
 }

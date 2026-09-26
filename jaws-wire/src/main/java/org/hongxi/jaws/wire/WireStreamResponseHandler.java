@@ -141,7 +141,7 @@ class WireStreamResponseHandler extends ChannelInboundHandlerAdapter {
             }
             trailerMetadata = WireMetadata.fromHeaders(headersFrame.headers());
             // Rich error details (grpc-status-details-bin): decoded and carried onto
-            // the thrown exception in completeOrFail (see WireStatusException).
+            // the thrown exception in completeOrFail (see StatusException).
             richStatus = WireErrorDetails.fromTrailers(headersFrame.headers());
             tracer.inboundTrailers();
         } else {

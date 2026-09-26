@@ -22,7 +22,7 @@ import java.io.Serial;
  *
  * @author shenhongxi
  */
-public class WireStatusException extends JawsServiceException {
+public class StatusException extends JawsServiceException {
 
     @Serial
     private static final long serialVersionUID = 167949946546769763L;
@@ -30,13 +30,13 @@ public class WireStatusException extends JawsServiceException {
     private final int grpcStatus;
     private final Status statusDetails;
 
-    public WireStatusException(String message, int grpcStatus, Status statusDetails) {
+    public StatusException(String message, int grpcStatus, Status statusDetails) {
         super(message);
         this.grpcStatus = grpcStatus;
         this.statusDetails = statusDetails;
     }
 
-    public WireStatusException(String message, int jawsErrorCode, int grpcStatus, Status statusDetails) {
+    public StatusException(String message, int jawsErrorCode, int grpcStatus, Status statusDetails) {
         super(message, jawsErrorCode);
         this.grpcStatus = grpcStatus;
         this.statusDetails = statusDetails;

@@ -21,7 +21,7 @@ package org.hongxi.jaws.wire;
  * @author shenhongxi
  * @see <a href="https://github.com/grpc/proposal/blob/master/A13-client-side-keepalives.md">gRFC A13</a>
  */
-public enum WireConnectivityState {
+public enum ConnectivityState {
     /** Not trying to connect; lazy connection on first RPC. */
     IDLE,
 

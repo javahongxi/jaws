@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Locks the gRPC rich-error loop on the CLIENT side: a {@code grpc-status-details-bin}
  * trailer (a serialized {@link Status}, possibly carrying {@link Any} details) is
- * decoded and surfaced to the caller on a {@link WireStatusException}, for both the
+ * decoded and surfaced to the caller on a {@link StatusException}, for both the
  * streaming handler (behavioural, via {@link EmbeddedChannel}) and the status→exception
  * mapping (unit).
  */
@@ -60,8 +60,8 @@ class WireRichErrorClientTest {
 
         Throwable t = seen.get();
         assertNotNull(t, "a non-OK grpc-status must fail the stream");
-        WireStatusException wse = assertInstanceOf(WireStatusException.class, t,
-                "client must surface a rich WireStatusException, not a bare exception");
+        StatusException wse = assertInstanceOf(StatusException.class, t,
+                "client must surface a rich StatusException, not a bare exception");
         assertEquals(5, wse.getGrpcStatus());
         assertNotNull(wse.getStatusDetails(), "grpc-status-details-bin must be decoded onto the exception");
         assertEquals(1, wse.getStatusDetails().getDetailsCount(),
@@ -89,20 +89,20 @@ class WireRichErrorClientTest {
 
         Throwable t = seen.get();
         assertNotNull(t);
-        assertInstanceOf(WireStatusException.class, t);
-        assertNull(((WireStatusException) t).getStatusDetails(),
+        assertInstanceOf(StatusException.class, t);
+        assertNull(((StatusException) t).getStatusDetails(),
                 "no details-bin => null rich Status, but code path still typed");
-        assertEquals(13, ((WireStatusException) t).getGrpcStatus());
+        assertEquals(13, ((StatusException) t).getGrpcStatus());
     }
 
     @Test
     void toExceptionCarriesStatusAndErrorCodesAreMapped() {
         RuntimeException deadline = WireStatus.toException(
                 WireConstants.STATUS_DEADLINE_EXCEEDED, "too slow", statusWithDetail());
-        assertInstanceOf(WireStatusException.class, deadline);
+        assertInstanceOf(StatusException.class, deadline);
         // deadline must keep the jaws SERVICE_TIMEOUT mapping while also carrying details
         assertTrue(deadline.getMessage().contains("DEADLINE_EXCEEDED"));
-        assertEquals(1, ((WireStatusException) deadline).getStatusDetails().getDetailsCount());
+        assertEquals(1, ((StatusException) deadline).getStatusDetails().getDetailsCount());
     }
 
     @Test

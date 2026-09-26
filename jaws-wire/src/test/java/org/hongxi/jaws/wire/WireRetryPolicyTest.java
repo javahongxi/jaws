@@ -91,16 +91,16 @@ class WireRetryPolicyTest {
         // The status table used to be unreachable from the decision path: a
         // failure carrying a real grpc-status was judged by sniffing the
         // message text, so RESOURCE_EXHAUSTED never retried.
-        assertTrue(WireRetryPolicy.isRetryableFailure(new WireStatusException(
+        assertTrue(WireRetryPolicy.isRetryableFailure(new StatusException(
                 "gRPC RESOURCE_EXHAUSTED: rate limit", WireConstants.STATUS_RESOURCE_EXHAUSTED, null)),
                 "RESOURCE_EXHAUSTED is in the retryable set, so it must retry");
-        assertTrue(WireRetryPolicy.isRetryableFailure(new WireStatusException(
+        assertTrue(WireRetryPolicy.isRetryableFailure(new StatusException(
                 "gRPC UNAVAILABLE: server went away", WireConstants.STATUS_UNAVAILABLE, null)));
-        assertFalse(WireRetryPolicy.isRetryableFailure(new WireStatusException(
+        assertFalse(WireRetryPolicy.isRetryableFailure(new StatusException(
                 "gRPC INTERNAL: boom", WireConstants.STATUS_INTERNAL, null)));
         // The code outranks the wording: wording must not smuggle a
         // non-retryable status past the policy.
-        assertFalse(WireRetryPolicy.isRetryableFailure(new WireStatusException(
+        assertFalse(WireRetryPolicy.isRetryableFailure(new StatusException(
                 "gRPC INTERNAL (retryable)", WireConstants.STATUS_INTERNAL, null)),
                 "a status code decides, not the message");
     }
@@ -108,9 +108,9 @@ class WireRetryPolicyTest {
     @Test
     void peerStatusFoundUnderAWrappingCauseStillDecides() {
         assertTrue(WireRetryPolicy.isRetryableFailure(new IOException("request failed",
-                new WireStatusException("gRPC UNAVAILABLE", WireConstants.STATUS_UNAVAILABLE, null))));
+                new StatusException("gRPC UNAVAILABLE", WireConstants.STATUS_UNAVAILABLE, null))));
         assertFalse(WireRetryPolicy.isRetryableFailure(new IOException("request failed",
-                new WireStatusException("gRPC PERMISSION_DENIED",
+                new StatusException("gRPC PERMISSION_DENIED",
                         WireConstants.STATUS_PERMISSION_DENIED, null))));
     }
 

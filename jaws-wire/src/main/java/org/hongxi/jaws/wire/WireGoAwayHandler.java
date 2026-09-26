@@ -44,7 +44,7 @@ class WireGoAwayHandler extends ChannelDuplexHandler {
                         ctx.channel().localAddress(), ctx.channel().remoteAddress());
 
                 // Transition connectivity state: READY → IDLE (graceful, not a failure)
-                client.getConnectivityTracker().transitionTo(WireConnectivityState.IDLE);
+                client.getConnectivityTracker().transitionTo(ConnectivityState.IDLE);
 
                 // Close the connection
                 ctx.close();
@@ -55,7 +55,7 @@ class WireGoAwayHandler extends ChannelDuplexHandler {
 
                 // Restore connectivity state after successful reconnect
                 if (client.isAvailable()) {
-                    client.getConnectivityTracker().transitionTo(WireConnectivityState.READY);
+                    client.getConnectivityTracker().transitionTo(ConnectivityState.READY);
                 }
             } finally {
                 ReferenceCountUtil.release(goAwayFrame);

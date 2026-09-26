@@ -92,7 +92,7 @@ class WirePipelineHealthTest {
     void unknownServiceStillReportsNotFound() throws Exception {
         startPipelineServer();
 
-        WireStatusException failure = assertThrows(WireStatusException.class,
+        StatusException failure = assertThrows(StatusException.class,
                 () -> check("no.such.Service"));
 
         assertEquals(WireConstants.STATUS_NOT_FOUND, failure.getGrpcStatus(),

@@ -139,7 +139,7 @@ public final class WireRetryPolicy {
         // that never carried a status.
         for (Throwable status = cause; status != null;
                 status = status.getCause() == status ? null : status.getCause()) {
-            if (status instanceof WireStatusException statusFailure) {
+            if (status instanceof StatusException statusFailure) {
                 return isRetryableStatus(statusFailure.getGrpcStatus());
             }
         }

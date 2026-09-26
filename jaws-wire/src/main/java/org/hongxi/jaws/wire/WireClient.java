@@ -148,18 +148,18 @@ public class WireClient extends AbstractHttp2Client {
      */
     @Override
     public synchronized boolean open() {
-        connectivityTracker.transitionTo(WireConnectivityState.CONNECTING);
+        connectivityTracker.transitionTo(ConnectivityState.CONNECTING);
         boolean opened;
         try {
             opened = super.open();
         } catch (Exception e) {
-            connectivityTracker.transitionTo(WireConnectivityState.TRANSIENT_FAILURE);
+            connectivityTracker.transitionTo(ConnectivityState.TRANSIENT_FAILURE);
             throw e;
         }
         if (opened) {
-            connectivityTracker.transitionTo(WireConnectivityState.READY);
+            connectivityTracker.transitionTo(ConnectivityState.READY);
         } else {
-            connectivityTracker.transitionTo(WireConnectivityState.TRANSIENT_FAILURE);
+            connectivityTracker.transitionTo(ConnectivityState.TRANSIENT_FAILURE);
         }
         return opened;
     }

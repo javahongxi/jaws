@@ -250,12 +250,12 @@ public class ManagedChannel implements Closeable {
      * The channel's aggregate connectivity, derived from its backends. Mirrors
      * grpc-java's {@code ManagedChannel.getState(requestConnection)}.
      * <ul>
-     *   <li>{@link WireConnectivityState#READY} — at least one backend is READY</li>
-     *   <li>{@link WireConnectivityState#CONNECTING} — none READY but one is connecting</li>
-     *   <li>{@link WireConnectivityState#TRANSIENT_FAILURE} — none READY/connecting,
+     *   <li>{@link ConnectivityState#READY} — at least one backend is READY</li>
+     *   <li>{@link ConnectivityState#CONNECTING} — none READY but one is connecting</li>
+     *   <li>{@link ConnectivityState#TRANSIENT_FAILURE} — none READY/connecting,
      *       at least one failed</li>
-     *   <li>{@link WireConnectivityState#IDLE} — no backends</li>
-     *   <li>{@link WireConnectivityState#SHUTDOWN} — shut down / terminated</li>
+     *   <li>{@link ConnectivityState#IDLE} — no backends</li>
+     *   <li>{@link ConnectivityState#SHUTDOWN} — shut down / terminated</li>
      * </ul>
      *
      * @param requestConnection if true and the aggregate is {@code IDLE}, nudge the
@@ -263,9 +263,9 @@ public class ManagedChannel implements Closeable {
      *                          static/passthrough resolver)
      * @return the current aggregate connectivity state
      */
-    public WireConnectivityState getState(boolean requestConnection) {
-        WireConnectivityState current = recomputeAggregate();
-        if (requestConnection && current == WireConnectivityState.IDLE && !shutdown) {
+    public ConnectivityState getState(boolean requestConnection) {
+        ConnectivityState current = recomputeAggregate();
+        if (requestConnection && current == ConnectivityState.IDLE && !shutdown) {
             resolver.refresh();
         }
         return current;
@@ -274,7 +274,7 @@ public class ManagedChannel implements Closeable {
     /**
      * @see #getState(boolean) with {@code requestConnection == false}
      */
-    public WireConnectivityState getState() {
+    public ConnectivityState getState() {
         return getState(false);
     }
 
@@ -288,7 +288,7 @@ public class ManagedChannel implements Closeable {
      * @param source   the state to watch for departure from
      * @param callback run (once) when the current state is not {@code source}
      */
-    public void notifyWhenStateChanged(WireConnectivityState source, Runnable callback) {
+    public void notifyWhenStateChanged(ConnectivityState source, Runnable callback) {
         if (getState(false) != source) {
             callback.run();
             return;
@@ -327,10 +327,10 @@ public class ManagedChannel implements Closeable {
      *
      * @return the newly computed aggregate state
      */
-    private WireConnectivityState recomputeAggregate() {
-        WireConnectivityState agg;
+    private ConnectivityState recomputeAggregate() {
+        ConnectivityState agg;
         if (terminated) {
-            agg = WireConnectivityState.SHUTDOWN;
+            agg = ConnectivityState.SHUTDOWN;
         } else {
             boolean anyReady = false;
             boolean anyConnecting = false;
@@ -344,13 +344,13 @@ public class ManagedChannel implements Closeable {
                 }
             }
             if (anyReady) {
-                agg = WireConnectivityState.READY;
+                agg = ConnectivityState.READY;
             } else if (anyConnecting) {
-                agg = WireConnectivityState.CONNECTING;
+                agg = ConnectivityState.CONNECTING;
             } else if (anyFailed) {
-                agg = WireConnectivityState.TRANSIENT_FAILURE;
+                agg = ConnectivityState.TRANSIENT_FAILURE;
             } else {
-                agg = WireConnectivityState.IDLE;
+                agg = ConnectivityState.IDLE;
             }
         }
         channelTracker.transitionTo(agg);

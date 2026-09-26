@@ -37,7 +37,7 @@ buf.writeBytes(payload);
 gRPC 用 trailer 而非 HTTP 状态码表达业务结果。wire 把 **0–16 全部 17 个码**都实现了（`WireConstants`：`STATUS_OK=0 … STATUS_UNAUTHENTICATED=16`），并做双向映射：
 
 - **异常 → 码**：`WireStatus.fromThrowable` 把 Jaws 异常族翻译成 grpc 码（超时→`DEADLINE_EXCEEDED(4)`、连接失败→`UNAVAILABLE(14)`、业务异常→`UNKNOWN(2)` 等）。
-- **码 → 调用方**：服务端在 `WireStreamServerHandler.sendTrailers` 写 `grpc-status`/`grpc-message`；非 OK 时再写 `grpc-status-details-bin`——值是 **base64 编码的 `google.rpc.Status` protobuf**（可携带任意 `Any` 详情）。客户端 `WireStatus` 把它解回、抛 `WireStatusException`，让调用方拿到结构化富错误。
+- **码 → 调用方**：服务端在 `WireStreamServerHandler.sendTrailers` 写 `grpc-status`/`grpc-message`；非 OK 时再写 `grpc-status-details-bin`——值是 **base64 编码的 `google.rpc.Status` protobuf**（可携带任意 `Any` 详情）。客户端 `WireStatus` 把它解回、抛 `StatusException`，让调用方拿到结构化富错误。
 
 `google.rpc.Status` 这类 protobuf 生成物被隔离在 `jaws-wire-proto` 模块（见 §9），不污染 wire 主模块。
 

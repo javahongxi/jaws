@@ -11,7 +11,7 @@ import org.hongxi.jaws.wire.WireClientCall;
 import org.hongxi.jaws.wire.WireClientCallHandler;
 import org.hongxi.jaws.wire.WireClientInterceptor;
 import org.hongxi.jaws.wire.WireCallOptions;
-import org.hongxi.jaws.wire.WireConnectivityState;
+import org.hongxi.jaws.wire.ConnectivityState;
 
 import org.hongxi.jaws.rpc.Response;
 
@@ -309,17 +309,17 @@ public class ManagedChannelDemo {
             System.out.println("  passthrough-target call -> "
                     + ((HelloReply) p2Response.getValue()).getMessage());
             System.out.println("  getState = " + p2.getState());
-            if (p2.getState() != WireConnectivityState.READY) {
+            if (p2.getState() != ConnectivityState.READY) {
                 throw new AssertionError("connected channel should report READY, got " + p2.getState());
             }
 
             AtomicInteger stateFired = new AtomicInteger();
-            p2.notifyWhenStateChanged(WireConnectivityState.READY, stateFired::incrementAndGet);
+            p2.notifyWhenStateChanged(ConnectivityState.READY, stateFired::incrementAndGet);
             p2.shutdown();
             p2.awaitTermination(5, TimeUnit.SECONDS);
             System.out.println("  state-change callback fired=" + stateFired.get()
                     + ", getState after shutdown=" + p2.getState());
-            if (stateFired.get() != 1 || p2.getState() != WireConnectivityState.SHUTDOWN) {
+            if (stateFired.get() != 1 || p2.getState() != ConnectivityState.SHUTDOWN) {
                 throw new AssertionError("P2 connectivity view did not behave as expected");
             }
 

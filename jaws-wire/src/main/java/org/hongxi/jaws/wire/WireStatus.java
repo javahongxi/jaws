@@ -123,28 +123,28 @@ public final class WireStatus {
 
     /**
      * Build the exception surfaced to the jaws caller, additionally carrying the
-     * rich {@code grpc-status-details-bin} {@link Status} the server sent (code,
+     * rich {@code grpc-status-details-bin} {@link com.google.rpc.Status} the server sent (code,
      * message, and any {@link com.google.protobuf.Any} details). Pass
      * {@code null} when the server sent no rich details.
      *
      * @param grpcStatus  the status code from trailers
      * @param grpcMessage the grpc-message from trailers, may be null
      * @param statusDetails the decoded rich error Status, or null
-     * @return a {@link WireStatusException} (a {@link JawsServiceException})
+     * @return a {@link StatusException} (a {@link JawsServiceException})
      */
     public static RuntimeException toException(int grpcStatus, String grpcMessage,
                                                com.google.rpc.Status statusDetails) {
         String name = nameOf(grpcStatus);
         String detail = grpcMessage != null ? grpcMessage : "";
         if (isDeadlineExceeded(grpcStatus)) {
-            return new WireStatusException("gRPC " + name + ": " + detail,
+            return new StatusException("gRPC " + name + ": " + detail,
                     JawsErrorCode.SERVICE_TIMEOUT, grpcStatus, statusDetails);
         }
         if (isRetryable(grpcStatus)) {
-            return new WireStatusException("gRPC " + name + " (retryable): " + detail,
+            return new StatusException("gRPC " + name + " (retryable): " + detail,
                     JawsErrorCode.SERVICE_DEFAULT, grpcStatus, statusDetails);
         }
-        return new WireStatusException("gRPC " + name + ": " + detail, grpcStatus, statusDetails);
+        return new StatusException("gRPC " + name + ": " + detail, grpcStatus, statusDetails);
     }
 
     /**
