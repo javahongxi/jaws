@@ -265,23 +265,23 @@ removeOnCancel    cancel() 默认只置 CANCEL 标志、节点留在堆里直到
 7. `java.util.ImmutableCollections`（JDK 9 起，List.of/Set.of/Map.of 的实现，List12/ListN/SetN/Map1/MapN + CollSer 序列化代理）：真不可变 vs `Collections.unmodifiableXxx` 包装视图的区别；拒绝 null 与 CHM/Optional 同一设计立场。跨线程发布的只读配置优先用 `X.of`。
 8. `ArrayDeque`：环形数组 + 位运算取模，java.base 内 12 个文件使用（Resolver/URLClassPath/ZipFile 等，2026-09-27 grep 口径），Jaws 暂 0 处——协议解析/调度缓冲场景（HEADERS-DATA 帧排序、CONTINUATION 聚合）的候选优化项。
 9. **AQS 在 JDK 17 起已是重写版**（本机 temurin-17.0.19 与 21.0.11 源码同模型逐行确认，SIGNAL/PROPAGATE 属 JDK 8~16 口径）：
-   - Node 状态改为位模型 `WAITING=1 / COND=2 / CANCELLED=0x80000000`（AQS.java L462-464），模式区分改用节点子类型 `SharedNode/ExclusiveNode/ConditionNode`；`waitStatus`、`transferForSignal`、`setHeadAndPropagate` 均不存在。
-   - 共享唤醒为链式点名：`releaseShared → signalNext(head)`（L1179-1184）+ 升为 head 时 `signalNextIfShared(node)`（L755，定义 L650）只看后继是否 `SharedNode`。`tryAcquireShared` 三态返回值的 javadoc 仍在（L948-956），但实现只做 `>= 0` 二分（L741、L1112-1114），**0 与正值无行为差别**（注释 L407-411 自认）。
-   - park/unpark 靠 Dekker 协议：置 `WAITING` → 重试 acquire → 复查 status → 才 park；唤醒方 `getAndUnsetStatus(WAITING)` 后 unpark（注释 L345-349）。
-   - `ReentrantLock` 重入分支已从 `tryAcquire` 上移到 `initialTryLock`：非公平 L223（裸 CAS，barging 点）/ 公平 L259（多 `!hasQueuedThreads()`）；两者 `tryAcquire` 的唯一差别是公平版 L280 的 `!hasQueuedPredecessors()`。`hasQueuedPredecessors` 新实现先乐观读 `head.next.waiter`，快照失效再从 tail 反向走（L1291-1297）。
-   - `signal()` 不唤醒任何线程：`doSignal` 用 `getAndUnsetStatus(COND)` 原子认领节点后 `enqueue` 入主队列（L1540-1553 + L606-625），正常路径不 unpark；线程真正醒来是靠持锁者 `release → signalNext(head)`（L1092-1098）。这就是"叫 transfer 不叫唤醒"的根据。
-   - 模板方法的代价实证：`AbstractQueuedLongSynchronizer.java`（1606 行）是 AQS（1984 行）的 int→long 整份副本。
+    - Node 状态改为位模型 `WAITING=1 / COND=2 / CANCELLED=0x80000000`（AQS.java L462-464），模式区分改用节点子类型 `SharedNode/ExclusiveNode/ConditionNode`；`waitStatus`、`transferForSignal`、`setHeadAndPropagate` 均不存在。
+    - 共享唤醒为链式点名：`releaseShared → signalNext(head)`（L1179-1184）+ 升为 head 时 `signalNextIfShared(node)`（L755，定义 L650）只看后继是否 `SharedNode`。`tryAcquireShared` 三态返回值的 javadoc 仍在（L948-956），但实现只做 `>= 0` 二分（L741、L1112-1114），**0 与正值无行为差别**（注释 L407-411 自认）。
+    - park/unpark 靠 Dekker 协议：置 `WAITING` → 重试 acquire → 复查 status → 才 park；唤醒方 `getAndUnsetStatus(WAITING)` 后 unpark（注释 L345-349）。
+    - `ReentrantLock` 重入分支已从 `tryAcquire` 上移到 `initialTryLock`：非公平 L223（裸 CAS，barging 点）/ 公平 L259（多 `!hasQueuedThreads()`）；两者 `tryAcquire` 的唯一差别是公平版 L280 的 `!hasQueuedPredecessors()`。`hasQueuedPredecessors` 新实现先乐观读 `head.next.waiter`，快照失效再从 tail 反向走（L1291-1297）。
+    - `signal()` 不唤醒任何线程：`doSignal` 用 `getAndUnsetStatus(COND)` 原子认领节点后 `enqueue` 入主队列（L1540-1553 + L606-625），正常路径不 unpark；线程真正醒来是靠持锁者 `release → signalNext(head)`（L1092-1098）。这就是"叫 transfer 不叫唤醒"的根据。
+    - 模板方法的代价实证：`AbstractQueuedLongSynchronizer.java`（1606 行）是 AQS（1984 行）的 int→long 整份副本。
 10. **`ScheduledFutureTask` 的状态机在 JDK 17/21 同样已不存在**（旧版 `WAITING → PROPAGATE → RUNNING → CANCELLED` 中的 `PROPAGATE` 服务于 `stopCompoundTask`，随 FutureTask 重写一并删除）：
-   - `run()` 只剩四个分支：`!canRunInCurrentRunState → cancel(false)` / 非周期 → `super.run()` / 周期 → `super.runAndReset()` 成功才 `setNextRunTime() + reExecutePeriodic(outerTask)`（STPE.java L300-309）。
-   - 方法名是 `setNextRunTime()`（L279，旧名 `setNextTime`）：`p > 0 → time += p`（fixedRate 追赶），否则 `time = triggerTime(-p)`（fixedDelay 重排）。
-   - `period` 三态由字段注释直接定义（L194-200）：正 = fixed-rate、负 = fixed-delay、**0 = one-shot**；`isPeriodic()` 即 `period != 0`（L272）。
-   - `FutureTask.state`：`NEW=0 → COMPLETING=1 → NORMAL=2 / EXCEPTIONAL=3`、`NEW → CANCELLED=4`、`NEW → INTERRUPTING=5 → INTERRUPTED=6`（FutureTask.java L92-99）；`runAndReset()` 在 `c.call()` 抛异常时 `setException(ex)` 并返回 false（L348-375），这串起了"异常 = 静默停摆"。
-   - `DelayedWorkQueue` 靠 `ScheduledFutureTask.heapIndex` 定位堆内下标，使 `remove` 从 O(n) 降为 O(log n)，堆操作均在 siftUp/siftDown 里同步记录索引；非 `ScheduledFutureTask` 元素回退线性搜索（L903-923、L1044-1060）。
-   - `DEFAULT_KEEPALIVE_MILLIS = 10L`（L443），四个构造器均固定 `super(corePoolSize, Integer.MAX_VALUE, 10, MILLISECONDS, new DelayedWorkQueue())`；`offer` 仅在 `queue[0] == e` 时 `leader = null; available.signal()`（L1105-1114）。
-   - `cancel()` = `super.cancel()` 后只当 `cancelled && removeOnCancel && heapIndex >= 0` 才 `remove(this)`（L287-294）；heapIndex 的并发读被注释判为 benign（< 0 表示确定已移除），否则进 `remove()` 在锁内复查。
+    - `run()` 只剩四个分支：`!canRunInCurrentRunState → cancel(false)` / 非周期 → `super.run()` / 周期 → `super.runAndReset()` 成功才 `setNextRunTime() + reExecutePeriodic(outerTask)`（STPE.java L300-309）。
+    - 方法名是 `setNextRunTime()`（L279，旧名 `setNextTime`）：`p > 0 → time += p`（fixedRate 追赶），否则 `time = triggerTime(-p)`（fixedDelay 重排）。
+    - `period` 三态由字段注释直接定义（L194-200）：正 = fixed-rate、负 = fixed-delay、**0 = one-shot**；`isPeriodic()` 即 `period != 0`（L272）。
+    - `FutureTask.state`：`NEW=0 → COMPLETING=1 → NORMAL=2 / EXCEPTIONAL=3`、`NEW → CANCELLED=4`、`NEW → INTERRUPTING=5 → INTERRUPTED=6`（FutureTask.java L92-99）；`runAndReset()` 在 `c.call()` 抛异常时 `setException(ex)` 并返回 false（L348-375），这串起了"异常 = 静默停摆"。
+    - `DelayedWorkQueue` 靠 `ScheduledFutureTask.heapIndex` 定位堆内下标，使 `remove` 从 O(n) 降为 O(log n)，堆操作均在 siftUp/siftDown 里同步记录索引；非 `ScheduledFutureTask` 元素回退线性搜索（L903-923、L1044-1060）。
+    - `DEFAULT_KEEPALIVE_MILLIS = 10L`（L443），四个构造器均固定 `super(corePoolSize, Integer.MAX_VALUE, 10, MILLISECONDS, new DelayedWorkQueue())`；`offer` 仅在 `queue[0] == e` 时 `leader = null; available.signal()`（L1105-1114）。
+    - `cancel()` = `super.cancel()` 后只当 `cancelled && removeOnCancel && heapIndex >= 0` 才 `remove(this)`（L287-294）；heapIndex 的并发读被注释判为 benign（< 0 表示确定已移除），否则进 `remove()` 在锁内复查。
 11. **①② 两站在 JDK 21 下全部成立**，本轮补取的行号证据：
-   - HashMap：扰动 `h ^ (h >>> 16)` L338；`tableSizeFor` L377；resize 高低位分裂 `if ((e.hash & oldCap) == 0)` L727（链表分支带 `preserve order` 注释）与 `((TreeNode<K,V>)e).split(...)` L720；`TREEIFY_THRESHOLD=8 / UNTREEIFY_THRESHOLD=6 / MIN_TREEIFY_CAPACITY=64` L260/267/275；`treeifyBin` L761-764；`TreeNode extends LinkedHashMap.Entry` L1966（LinkedHashMap.Entry L205）。
-   - CHM：`sizeCtl` 字段 javadoc 直接列出三种角色（L793-800）——负数为初始化中（-1）或扩容中（-(1+活跃扩容线程数)），table 为 null 时存初始表长，初始化后存下次扩容阈值；位压缩发生在扩容态（`RESIZE_STAMP_BITS = 16`、`MAX_RESIZERS = (1<<16)-1`、`RESIZE_STAMP_SHIFT = 16`，L575/581/586）。**元素计数不在 sizeCtl 里**，而在 `baseCount`(long) + `CounterCell[]`（L790/815）。
-   - CHM 元素访问：`tabAt` = `U.getReferenceAcquire`（L759-761）、`setTabAt` = `U.putReferenceRelease`（L767-770）——本机 17 与 21 一致（本机无 JDK 8，"早期写用 Volatile"属二手口径，未本地验证）。`DEFAULT_CONCURRENCY_LEVEL = 16` 仍定义但注释标为 unused（L523-526）。
-   - `computeIfAbsent`（L1691-1778）四条路径：空桶 → CAS `ReservationNode` 并 `synchronized (r)` 跑 function；`fh == MOVED` → `helpTransfer`；**命中桶头（hash+key+val 全匹配）→ 不加锁直接返回**（源码注释 "check first node without acquiring lock"）；否则 `synchronized (f)` 锁桶头。递归更新由 `pred.next != null` 或撞上 `ReservationNode` 检出并抛 `IllegalStateException("Recursive update")`。`putVal` 的 null 拒写在 L1011。
-   - 口径提醒：① 节统计表按 import 计（CHM 57 文件），全文匹配则为 59 文件；`LinkedHashMap` 的 11 是"提及文件数"（`new LinkedHashMap` 出现 22 次）。
+    - HashMap：扰动 `h ^ (h >>> 16)` L338；`tableSizeFor` L377；resize 高低位分裂 `if ((e.hash & oldCap) == 0)` L727（链表分支带 `preserve order` 注释）与 `((TreeNode<K,V>)e).split(...)` L720；`TREEIFY_THRESHOLD=8 / UNTREEIFY_THRESHOLD=6 / MIN_TREEIFY_CAPACITY=64` L260/267/275；`treeifyBin` L761-764；`TreeNode extends LinkedHashMap.Entry` L1966（LinkedHashMap.Entry L205）。
+    - CHM：`sizeCtl` 字段 javadoc 直接列出三种角色（L793-800）——负数为初始化中（-1）或扩容中（-(1+活跃扩容线程数)），table 为 null 时存初始表长，初始化后存下次扩容阈值；位压缩发生在扩容态（`RESIZE_STAMP_BITS = 16`、`MAX_RESIZERS = (1<<16)-1`、`RESIZE_STAMP_SHIFT = 16`，L575/581/586）。**元素计数不在 sizeCtl 里**，而在 `baseCount`(long) + `CounterCell[]`（L790/815）。
+    - CHM 元素访问：`tabAt` = `U.getReferenceAcquire`（L759-761）、`setTabAt` = `U.putReferenceRelease`（L767-770）——本机 17 与 21 一致（本机无 JDK 8，"早期写用 Volatile"属二手口径，未本地验证）。`DEFAULT_CONCURRENCY_LEVEL = 16` 仍定义但注释标为 unused（L523-526）。
+    - `computeIfAbsent`（L1691-1778）四条路径：空桶 → CAS `ReservationNode` 并 `synchronized (r)` 跑 function；`fh == MOVED` → `helpTransfer`；**命中桶头（hash+key+val 全匹配）→ 不加锁直接返回**（源码注释 "check first node without acquiring lock"）；否则 `synchronized (f)` 锁桶头。递归更新由 `pred.next != null` 或撞上 `ReservationNode` 检出并抛 `IllegalStateException("Recursive update")`。`putVal` 的 null 拒写在 L1011。
+    - 口径提醒：① 节统计表按 import 计（CHM 57 文件），全文匹配则为 59 文件；`LinkedHashMap` 的 11 是"提及文件数"（`new LinkedHashMap` 出现 22 次）。
