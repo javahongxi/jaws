@@ -44,8 +44,8 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
     @Override
     public Registry getRegistry(URL url) {
         String registryUri = getRegistryUri(url);
+        lock.lock();
         try {
-            lock.lock();
             Registry registry = registries.get(registryUri);
             if (registry != null) {
                 return registry;

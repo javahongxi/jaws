@@ -58,8 +58,8 @@ public class HarborRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doRegister(URL url) {
+        serverLock.lock();
         try {
-            serverLock.lock();
             String serviceName = HarborPathUtils.toServiceName(url);
             String group = HarborPathUtils.toGroup(url);
             Instance instance = new Instance();
@@ -82,8 +82,8 @@ public class HarborRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doUnregister(URL url) {
+        serverLock.lock();
         try {
-            serverLock.lock();
             String serviceName = HarborPathUtils.toServiceName(url);
             String group = HarborPathUtils.toGroup(url);
             Instance instance = new Instance();
@@ -100,8 +100,8 @@ public class HarborRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doSubscribe(URL url, NotifyListener listener) {
+        clientLock.lock();
         try {
-            clientLock.lock();
             String serviceName = HarborPathUtils.toServiceName(url);
             String group = HarborPathUtils.toGroup(url);
             Map<NotifyListener, Consumer<ServiceInfo>> listeners =
@@ -125,8 +125,8 @@ public class HarborRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doUnsubscribe(URL url, NotifyListener listener) {
+        clientLock.lock();
         try {
-            clientLock.lock();
             Map<NotifyListener, Consumer<ServiceInfo>> listeners = serviceListeners.get(url);
             if (listeners != null) {
                 Consumer<ServiceInfo> consumer = listeners.remove(listener);

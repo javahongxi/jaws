@@ -72,8 +72,8 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doRegister(URL url) {
+        serverLock.lock();
         try {
-            serverLock.lock();
             String serviceName = NacosPathUtils.toServiceName(url);
             String group = NacosPathUtils.toGroup(url);
             Instance instance = new Instance();
@@ -97,8 +97,8 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doUnregister(URL url) {
+        serverLock.lock();
         try {
-            serverLock.lock();
             String serviceName = NacosPathUtils.toServiceName(url);
             String group = NacosPathUtils.toGroup(url);
             Instance instance = new Instance();
@@ -115,8 +115,8 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doSubscribe(URL url, NotifyListener listener) {
+        clientLock.lock();
         try {
-            clientLock.lock();
             String serviceName = NacosPathUtils.toServiceName(url);
             String group = NacosPathUtils.toGroup(url);
             Map<NotifyListener, EventListener> listeners = serviceListeners.computeIfAbsent(url, k -> new HashMap<>());
@@ -142,8 +142,8 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doUnsubscribe(URL url, NotifyListener listener) {
+        clientLock.lock();
         try {
-            clientLock.lock();
             Map<NotifyListener, EventListener> listeners = serviceListeners.get(url);
             if (listeners != null) {
                 EventListener eventListener = listeners.remove(listener);

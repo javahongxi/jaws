@@ -97,8 +97,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doRegister(URL url) {
+        serverLock.lock();
         try {
-            serverLock.lock();
             // Remove stale nodes that may not have been properly unregistered
             removeNode(url, ZkNodeType.AVAILABLE_SERVER);
             createNode(url, ZkNodeType.AVAILABLE_SERVER);
@@ -111,8 +111,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doUnregister(URL url) {
+        serverLock.lock();
         try {
-            serverLock.lock();
             removeNode(url, ZkNodeType.AVAILABLE_SERVER);
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to unregister %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -123,8 +123,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doSubscribe(final URL url, final NotifyListener listener) {
+        clientLock.lock();
         try {
-            clientLock.lock();
             subscribeServiceInternal(url, listener);
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to subscribe %s to zookeeper(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -179,8 +179,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     @Override
     protected void doUnsubscribe(URL url, NotifyListener listener) {
+        clientLock.lock();
         try {
-            clientLock.lock();
             Map<NotifyListener, Subscription> childChangeListeners = serviceListeners.get(url);
             if (childChangeListeners != null) {
                 Subscription subscription = childChangeListeners.remove(listener);
@@ -295,8 +295,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
     private void reRegisterServices() {
         Set<URL> registered = getRegistered();
         if (!registered.isEmpty()) {
+            serverLock.lock();
             try {
-                serverLock.lock();
                 for (URL url : registered) {
                     // Remove stale nodes that may not have been properly unregistered
                     removeNode(url, ZkNodeType.AVAILABLE_SERVER);
@@ -311,8 +311,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
 
     private void reSubscribeServices() {
         if (!serviceListeners.isEmpty()) {
+            clientLock.lock();
             try {
-                clientLock.lock();
                 for (Map.Entry<URL, Map<NotifyListener, Subscription>> entry : serviceListeners.entrySet()) {
                     URL url = entry.getKey();
                     Map<NotifyListener, Subscription> childChangeListeners = entry.getValue();
@@ -332,8 +332,8 @@ public class ZookeeperRegistry extends FailbackRegistry implements Closeable {
         // Close all subscription caches before the client they depend on.
         // Must acquire clientLock the same way as doSubscribe/doUnsubscribe
         // so that close is mutually exclusive with subscription operations.
+        clientLock.lock();
         try {
-            clientLock.lock();
             for (Map<NotifyListener, Subscription> listeners : serviceListeners.values()) {
                 for (Subscription subscription : listeners.values()) {
                     subscription.close();
