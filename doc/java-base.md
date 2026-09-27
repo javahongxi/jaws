@@ -42,26 +42,27 @@ CountDownLatch         23 文件    流式回调等待（本文主题 ③）
 ### 关键结论（已逐条对照 JDK 21 源码验证）
 
 1. **扰动函数** `hash = h ^ (h >>> 16)`：桶下标 `hash & (n-1)` 只有低位参与，扰动把高位信息送进低位。
-2. **容量恒为 2 的幂**（`tableSizeFor`）：位运算取模 + 扩容高低位分裂的前提。
-3. **resize 高低位分裂**：容量翻倍后元素新位置只有两种可能，看 `hash & oldCap`——0 留原位，1 移到 `原位 + oldCap`。一趟 O(n) 完成，无需 rehash。
-4. **树化是逐桶决策**：链长 ≥ 8 且 `table.length ≥ 64` 才 `treeifyBin`；容量不足时优先扩容。树桶内部仍维持双向链表（`next/prev`），树只服务 O(log n) 查找，迭代走链表。
-5. **继承链**（易错点）：`TreeNode extends LinkedHashMap.Entry extends HashMap.Node`。挂到 LinkedHashMap.Entry 下是为了 LinkedHashMap 桶树化后仍能维护 `before/after` 的 LRU 顺序，HashMap 与 TreeMap 之间**没有任何代码复用**。
+2. **表长（`table.length`）恒为 2 的幂**（`tableSizeFor`）：位运算取模 + 扩容高低位分裂的前提。
+3. **resize 触发看 `size`（HashMap 大小 = 元素个数），不是 `table.length`**：`putVal` 插入末尾 `if (++size > threshold) resize()`（L668），`threshold = 容量 × 负载因子`——常规扩容以"装了多少元素"为准（与第 4 条树化门槛比 `table.length` 是两回事）。**高低位分裂**：表长翻倍后元素新位置只有两种可能，看 `hash & oldCap`——0 留原位，1 移到 `原位 + oldCap`。一趟 O(n) 完成，无需 rehash。
+4. **树化是逐桶决策**：链长 ≥ 8 且 `table.length ≥ 64` 才 `treeifyBin`；表长不足时优先扩容（`treeifyBin` 首行就 `if (tab == null || (n = tab.length) < MIN_TREEIFY_CAPACITY) resize();`，L761-764）。树桶内部仍维持双向链表（`next` + `TreeNode.prev`，后者注释原话 "needed to unlink next upon deletion"），查找走 O(log n) 树，迭代走链表（`HashIterator` 只跟 `next`，L1581-1605）。
+5. **继承链**（易错点）：`TreeNode extends LinkedHashMap.Entry extends HashMap.Node`（L1966 / L205）。挂到 LinkedHashMap.Entry 下是为了 LinkedHashMap 桶树化后仍能维护 `before/after` 的 LRU 顺序，源码 javadoc 原话只说了一句更宽的："Extends LinkedHashMap.Entry (which in turn extends Node) so can be used as extension of either regular or linked node"（L1962-1965）。HashMap 与 TreeMap 之间**没有任何代码复用**。
 6. **混合异构**：同一张表里链桶、树桶、空桶共存；resize 时一棵树可能分裂成两棵树、两条链或一树一链（节点 ≤ 6 退化回链，滞回设计防抖动）。
+7. **四个数字都不是拍脑袋**（类注释 L176-200 自带推导）：`TreeNode` 约是普通节点两倍大，所以上树要"足够多节点"才划算；理想随机 hash 下桶长服从参数 λ≈0.5 的 Poisson 分布（λ 来自 0.75 默认负载因子），源码直接列了期望频次表：`0: 0.60653066 … 6: 0.00001316、7: 0.00000094、8: 0.00000006、more: less than 1 in ten million`——**默认下一个桶长到 8 的概率约六百万分之一**。所以树化是**止损机制而非优化**：真走到这条分支，意味着 hash 质量已崩（相似短串聚簇，或故意碰撞），此时 O(log n) 只是把 O(n) 链查找的坑兜住。UNTREEIFY=6 与 8 之间留 gap 是滞回，避免在阈值附近反复转换；`MIN_TREEIFY_CAPACITY=64`（= 4×8）防止"表太小导致的碰撞"被误判成"该树化"——`table.length` 不足时永远先扩容。
 
 ### Jaws 对应
 
-- `ConsistentHashLoadBalance.hash()` 的 FNV1a：解决的是**值空间分布**问题——`String.hashCode` 对相似短串（`arg-0`..`arg-999`）产出的值聚簇在窄区间，整批请求落进哈希环同一段弧，实测 99% 流量倾斜到单节点。注意这条链路上没有 HashMap（环是 TreeMap，靠比较器不靠哈希桶），别和上面第 1 条的扰动函数混为一谈：扰动解决的是**索引位选取**（低位丢弃高位）导致的桶碰撞，两者机理不同、解法不通用（聚簇值扰动后依然聚簇）。对照记忆：同一个 hashCode 缺陷，在 HashMap 里表现为碰撞，在哈希环里表现为弧长不均。
+- `ConsistentHashLoadBalance.hash()` 的 FNV1a：解决的是**值空间分布**问题——`String.hashCode` 对相似短串（`arg-0`..`arg-999`）产出的值聚簇在窄区间，整批请求落进哈希环同一段弧，实测 99% 流量倾斜到单节点。注意这条链路上没有 HashMap（环是 TreeMap，靠比较器不靠哈希桶），别和上面第 1 条的扰动函数混为一谈：扰动解决的是**索引位选取**（低位丢弃高位）导致的桶碰撞，两者机理不同、解法不通用（聚簇值扰动后依然聚簇）。对照记忆：同一个 hashCode 缺陷，在 HashMap 里表现为碰撞（上一节第 7 条：严重到触发树化就是它的信号），在哈希环里表现为弧长不均。
 - 配置类保序输出用 `LinkedHashMap`（11 处）：遍历顺序有语义时必须换有序 Map，HashMap 的遍历顺序依赖桶物理布局，扩容后即变。
 
 ### 验收问题
 
 - [ ] 为什么 `HashMap` 的 `get` 先比 hash 再比 `==`/`equals`？自定义 key 只写 equals 不写 hashCode 会怎样？
-- [ ] 负载因子 0.75、树化阈值 8、退树阈值 6、树化最小容量 64，各自的设计依据？
+- [ ] 负载因子 0.75、树化阈值 8、退树阈值 6、树化最小表长 64（`MIN_TREEIFY_CAPACITY`，比的是 `table.length`），各自的设计依据？（第 7 条给了源码推导，能不看文档复述 Poisson 表最末两行才算过）
 - [ ] 1.7 头插并发扩容成环的机理，1.8 尾插为什么消灭了环但仍线程不安全？
 
 ---
 
-## ② ConcurrentHashMap —— 项目命脉（59 处）
+## ② ConcurrentHashMap —— 项目命脉（57 文件 import / 59 文件出现）
 
 **源码**：`java.base/java/util/concurrent/ConcurrentHashMap.java`
 
@@ -69,14 +70,20 @@ CountDownLatch         23 文件    流式回调等待（本文主题 ③）
 
 ```
 JDK 5~7   Segment 分段锁：Segment extends ReentrantLock，并发度构造期固定（默认 16）
+          （JDK 21 里 DEFAULT_CONCURRENCY_LEVEL = 16 仍在，字段注释原话
+           "Unused but defined for compatibility"，L523-526——纯兼容残留）
 JDK 8+    Node 数组 + CAS + synchronized 锁单桶：
           · 锁粒度从"段"到"桶"
-          · 空桶插入走 CAS，完全无锁
+          · put 遇空桶走 casTabAt，完全无锁；computeIfAbsent 遇空桶先 CAS 一个
+            ReservationNode 占位，再在这个自造对象上跑 mappingFunction
           · sizeCtl 状态机 + transferIndex 切片 → helpTransfer 多线程协助扩容
           · baseCount + CounterCell[] 分段计数（LongAdder 同款）
           · 数组元素访问统一走 tabAt/setTabAt（Unsafe reference 系直读数组：
-            读 Acquire / 写 Volatile，tabAt 源码旁注 "require only release
-            ordering"），因为 Java 没有 volatile 元素数组
+            读 getReferenceAcquire / 写 putReferenceRelease，旁注原话"setTabAt
+            always occur within locked regions, and so require only release
+            ordering"，L754-755），因为 Java 没有 volatile 元素数组
+          · 树桶的桶头不是普通节点而是 TreeBin（hash = TREEBIN），锁形态为
+            synchronized(TreeBin) + lockState（WRITER/WAITER/READER，L2776-2780）
 ```
 
 JDK 8 敢用 `synchronized` 的原因：锁的是单条桶的头节点，冲突概率极低、临界区极短，且锁对象就是节点自己，比每段一个 ReentrantLock 省内存。
@@ -88,15 +95,15 @@ JDK 8 敢用 `synchronized` 的原因：锁的是单条桶的头节点，冲突�
 | `AbstractClient.callbackMap` / `timeoutMap`（全链路异步的 requestId→Future 关联中枢） | 收响应的 IO 线程、超时任务的定时器线程、`close()` 清理线程三方竞争同一个 key，`removeCallback` 里的 `remove(requestId)` **返回旧值的原子性**就是"胜者独占完成权"的仲裁（NettyClient 源码注释原话：atomically claim）。get 后再 remove 的复合写法会让响应和超时双方都以为自己是胜者、双重完成 future |
 | `AbstractClient.registerCallback` 的 `callbackMap.size() >= MAX_INFLIGHT_REQUESTS` 拒绝 | size() 是 baseCount + CounterCell[] 条带求和（LongAdder 同款）的弱一致快照——当防 OOM 背压的软阈值没问题，当精确计数用就会错 |
 | `AbstractRequestHandler.providers`（服务端请求路径正中的服务分发表） | 每次 RPC 分发都无锁读一次，写入只发生在生命周期线程——写一次读多次，CHM 四种使用形态里最极端的只读形态，代码注释直接写明 "requests read providers lock-free on every RPC" |
-| `ExtensionLoader.singletonInstances.computeIfAbsent`（SPI 单例缓存） | mappingFunction 内再访问同一 key 会递归锁死（JDK 9 起抛 IllegalStateException）——读 transfer 源码理解 bin 锁语义后自明 |
+| `ExtensionLoader.singletonInstances.computeIfAbsent`（SPI 单例缓存） | 当前 mappingFunction 只做反射 `newInstance`，不碰同一个 map，所以安全；跨 type 取扩展走的是不同 loader 的不同 map。风险点：一旦把逻辑写成"在同 type 的 mappingFunction 里再取同 type 扩展"，JDK 9+ 会以 `IllegalStateException("Recursive update")` 检出（检测不到的情形仍可能死锁）——读 transfer 源码理解 bin 锁语义后自明 |
 | `FailbackRegistry.failedSubscribed.computeIfAbsent(url, k -> newKeySet()).add(listener)` | 只有"建内层 Set"是原子的，`.add` 发生在锁外；正确性靠 add 自身原子 + 重试线程弱一致迭代收敛。注意 computeIfAbsent 保护的是缺失值创建，不是整段读-改-写 |
 
 ### 验收问题
 
-- [ ] `sizeCtl` 在初始化、扩容、计数三个角色间如何复用（位压缩）？
-- [ ] `helpTransfer` 的线程如何安全地加入迁移？ForwardingNode 起什么作用？
+- [ ] `sizeCtl` 的三态复用：未初始化时存什么、负数存什么（-1 / -(1+扩容线程数)，高 16 位 `resizeStamp` 起什么作用）、稳态存什么？为什么"元素计数"不在 sizeCtl 里？
+- [ ] `helpTransfer` 的线程如何安全地加入迁移？ForwardingNode 起什么作用？（源码 L2363-2381：`rs = resizeStamp(n) << RESIZE_STAMP_SHIFT` 与 `sc == rs + MAX_RESIZERS / sc == rs + 1 / transferIndex <= 0` 三重退出条件）
 - [ ] `put` 为什么不能接受 null value，而 `get` 返回 null 时你必须用什么 API 区分"不存在"和"值为 null"？
-- [ ] `computeIfAbsent` 什么时候锁整桶、什么时候完全不锁？
+- [ ] `computeIfAbsent` 四条路径各自的加锁形态：什么时候完全不锁（命中桶头的 fast path）、什么时候锁自造的 ReservationNode、什么时候 `synchronized(f)` 锁桶头、什么时候根本不去锁而是 `helpTransfer`？"递归更新"靠什么检出（`pred.next != null` / 撞上 ReservationNode）？
 
 ---
 
@@ -115,14 +122,18 @@ AQS 四块拼图，用三个类刚好覆盖：
                           Semaphore 计数可恢复，另分公平/非公平）
 state 的多义性         →  Latch=剩余次数 / Lock=重入深度，读两个才算真懂
 Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
-                          ConditionObject 的 transferForSignal 是全站最难也最值钱的一段
+                          ConditionObject 的 doSignal→enqueue 迁移协议是全站最难也最值钱的一段
 ```
+
+> **版本口径**：本机 JDK 17 与 21 的 AQS 均已是重写版（go-dark 之后的实现），`waitStatus` 的
+> `SIGNAL/PROPAGATE`、`transferForSignal`、`setHeadAndPropagate` 都已消失——网上绝大多数 AQS
+> 文章是 JDK 8~16 口径，读源码时先认清版本再对照。见文末清单第 9 条。
 
 ### 内部阅读次序
 
-1. ReentrantLock 非公平锁路径（最少代码走通独占 + 重入 + state 三义）
-2. CountDownLatch（共享模式 `tryAcquireShared` 的向上传播）
-3. ConditionObject（条件队列 ↔ AQS 同步队列的 transfer 协议、`hasWaiters` 必须持锁检查）
+1. ReentrantLock 非公平锁路径（最少代码走通独占 + 重入 + state 三义；注意重入在 `initialTryLock` 而不在 `tryAcquire`）
+2. CountDownLatch（共享模式的链式点名唤醒：`releaseShared → signalNext(head)`，加成功后的 `signalNextIfShared`）
+3. ConditionObject（条件队列 ↔ AQS 同步队列的 transfer 协议、`getAndUnsetStatus(COND)` 的原子认领、`hasWaiters` 必须持锁检查）
 4. ~~读写锁~~ 跳过（AQS 应用的重复练习）；Semaphore 30 分钟速览
 
 ### Jaws 对应（Condition 是 ④⑤ 的前置知识）
@@ -134,10 +145,10 @@ Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
 
 ### 验收问题
 
-- [ ] CLH 变体队列里 SIGNAL/PROPAGATE 状态的传播链；`tryAcquireShared` 返回负值意味着什么？
-- [ ] 公平与非公平 ReentrantLock 的 `tryAcquire` 差别在哪一行？
-- [ ] `signal()` 之后等待线程去了哪里？为什么叫 transfer 而不是唤醒？
-- [ ] AQS 为什么用模板方法而非组合？`getState/setState` 的"语义留给子类"设计利弊？
+- [ ] 新版 `WAITING/COND/CANCELLED` 位模型下，park/unpark 之间的 Dekker 协议如何避免丢失唤醒？为什么 JDK 8 的 SIGNAL/PROPAGATE 传播链能被删掉？`tryAcquireShared` 返回负值意味着什么，返回 0 与正值在本机实现里行为有区别吗？
+- [ ] 公平与非公平 ReentrantLock 的 `tryAcquire` 差别在哪一行？为什么重入判断挪到了 `initialTryLock`？barging 实际发生在哪一处？
+- [ ] `signal()` 之后等待线程去了哪里（提示：它没醒）？为什么叫 transfer 而不是唤醒？`getAndUnsetStatus(COND)` 的原子认领在防什么竞态？
+- [ ] AQS 为什么用模板方法而非组合？`getState/setState` 的"语义留给子类"设计利弊？（代价的现成证据：`AbstractQueuedLongSynchronizer` 是整份 long 版副本）
 
 ---
 
@@ -185,19 +196,28 @@ DelayedWorkQueue    手写最小堆（siftUp/siftDown，Object[] 直接存，无
                     与 DelayQueue 的关系：同一问题（取最近到期）的演化实现——
                     LBQ 的 put/take Condition 换成了 available + q.size() 双检 +
                     "队首变化才 signal" 的 leader 式优化
-ScheduledFutureTask state: WAITING → PROPAGATE → RUNNING → CANCELLED
-                    period 字段：≤0 一次性 / >0 fixedRate / <0 fixedDelay
-setNextTime         两种周期的 drift 处理差异（fixedDelay 基于完成时间重排，
-                    fixedRate 基于上次计划时间追赶）
+ScheduledFutureTask 无自有状态机（JDK 17 起随 FutureTask 重写，旧版
+                    WAITING → PROPAGATE → RUNNING → CANCELLED 已消失）：
+                    只靠 FutureTask.state（NEW→COMPLETING→NORMAL/EXCEPTIONAL、
+                    NEW→CANCELLED）+ period 三态：0 一次性 / >0 fixedRate /
+                    <0 fixedDelay（isPeriodic() 即 period != 0）
+setNextRunTime      （旧名 setNextTime）两种周期的 drift 处理差异：fixedRate 是
+                    time += p，基于上次计划时间，跑超时后连续补跑追赶；fixedDelay
+                    是 time = triggerTime(-p)，基于本轮触发时刻重排
 池参数藏在构造器  所有 STE 构造器固定传 super(corePoolSize, MAX_VALUE, 10ms)——
                     maximumPoolSize 无意义（源码注释：core 与 max "effectively
                     identical"），多余线程闲置 10ms 即回收；javadoc 同时警告别把
                     core 设 0 或开 allowCoreThreadTimeOut，否则任务到期无人取
 removeOnCancel    cancel() 默认只置 CANCEL 标志、节点留在堆里直到到期被 poll 剔除
     （默认 false）      （O(1) 标记 + 摊销清理）；setRemoveOnCancelPolicy(true) 改为
-                    O(log n) 立即堆删除——高频取消场景防 cancelled-entry 垃圾堆积
-异常 = 静默停摆     周期任务抛一次异常 → runWorker catch → FutureTask.setException
-                    → 该任务永远不再进堆，且没有任何日志
+                    立即堆删除——DelayedWorkQueue 里 ScheduledFutureTask 自己记
+                    heapIndex（堆内下标），删除从 O(n) 搜索降到 O(log n)，非
+                    ScheduledFutureTask 元素回退线性搜索——高频取消场景防
+                    cancelled-entry 垃圾堆积
+异常 = 静默停摆     周期任务抛一次异常 → runAndReset 内部 catch → setException 置
+                    EXCEPTIONAL → runAndReset 返回 false → run() 不再
+                    reExecutePeriodic，该任务永远不再进堆；异常存在 future 里没人
+                    get，因此没有任何日志（不经过 runWorker 的 catch）
 ```
 
 ### Jaws 对应
@@ -234,13 +254,34 @@ removeOnCancel    cancel() 默认只置 CANCEL 标志、节点留在堆里直到
 
 ## 附录：本计划依赖的已验证事实清单
 
-以下结论均已对照本机 JDK 21（temurin-21.0.11）`src.zip` 源码逐条验证，非二手资料：
+以下结论均已对照本机 JDK 21（temurin-21.0.11）`src.zip` 源码逐条验证，非二手资料；第 9、10 条额外比对了本机 temurin-17.0.19：
 
 1. `TreeNode extends LinkedHashMap.Entry extends Node`，与 TreeMap 无代码复用（HashMap.java L1966 / LinkedHashMap.java L205）。
 2. CHM 锁机制在 JDK 8 从 Segment 切换到"锁头节点 + CAS 空桶插入"。
-3. HashMap resize 高低位分裂：`hash & oldCap` 决定留原位或移 `原位 + oldCap`。
-4. 树化双条件：链长 ≥ 8 且容量 ≥ 64，容量不足时扩容优先。
+3. HashMap resize 触发与分裂：常规扩容由 `putVal` 末尾 `if (++size > threshold) resize()` 判定（L668，比的是元素个数 `size`）；分裂时 `hash & oldCap` 决定留原位或移 `原位 + oldCap`。
+4. 树化双条件：链长 ≥ 8 且 `table.length ≥ 64`（比的是当前桶数组长度，不是 threshold、也不是剩余可用容量），表长不足时扩容优先。
 5. `LinkedBlockingQueue` 双锁（putLock/takeLock）结构——④ 的前置事实。
 6. CHM 遍历顺序依赖桶物理布局 → 无序集合上禁止用顺序依赖运算（滚动哈希）计算 revision，用 XOR/求和等交换律运算——Jaws 实测 bug 与修复。
 7. `java.util.ImmutableCollections`（JDK 9 起，List.of/Set.of/Map.of 的实现，List12/ListN/SetN/Map1/MapN + CollSer 序列化代理）：真不可变 vs `Collections.unmodifiableXxx` 包装视图的区别；拒绝 null 与 CHM/Optional 同一设计立场。跨线程发布的只读配置优先用 `X.of`。
 8. `ArrayDeque`：环形数组 + 位运算取模，java.base 内 12 个文件使用（Resolver/URLClassPath/ZipFile 等，2026-09-27 grep 口径），Jaws 暂 0 处——协议解析/调度缓冲场景（HEADERS-DATA 帧排序、CONTINUATION 聚合）的候选优化项。
+9. **AQS 在 JDK 17 起已是重写版**（本机 temurin-17.0.19 与 21.0.11 源码同模型逐行确认，SIGNAL/PROPAGATE 属 JDK 8~16 口径）：
+   - Node 状态改为位模型 `WAITING=1 / COND=2 / CANCELLED=0x80000000`（AQS.java L462-464），模式区分改用节点子类型 `SharedNode/ExclusiveNode/ConditionNode`；`waitStatus`、`transferForSignal`、`setHeadAndPropagate` 均不存在。
+   - 共享唤醒为链式点名：`releaseShared → signalNext(head)`（L1179-1184）+ 升为 head 时 `signalNextIfShared(node)`（L755，定义 L650）只看后继是否 `SharedNode`。`tryAcquireShared` 三态返回值的 javadoc 仍在（L948-956），但实现只做 `>= 0` 二分（L741、L1112-1114），**0 与正值无行为差别**（注释 L407-411 自认）。
+   - park/unpark 靠 Dekker 协议：置 `WAITING` → 重试 acquire → 复查 status → 才 park；唤醒方 `getAndUnsetStatus(WAITING)` 后 unpark（注释 L345-349）。
+   - `ReentrantLock` 重入分支已从 `tryAcquire` 上移到 `initialTryLock`：非公平 L223（裸 CAS，barging 点）/ 公平 L259（多 `!hasQueuedThreads()`）；两者 `tryAcquire` 的唯一差别是公平版 L280 的 `!hasQueuedPredecessors()`。`hasQueuedPredecessors` 新实现先乐观读 `head.next.waiter`，快照失效再从 tail 反向走（L1291-1297）。
+   - `signal()` 不唤醒任何线程：`doSignal` 用 `getAndUnsetStatus(COND)` 原子认领节点后 `enqueue` 入主队列（L1540-1553 + L606-625），正常路径不 unpark；线程真正醒来是靠持锁者 `release → signalNext(head)`（L1092-1098）。这就是"叫 transfer 不叫唤醒"的根据。
+   - 模板方法的代价实证：`AbstractQueuedLongSynchronizer.java`（1606 行）是 AQS（1984 行）的 int→long 整份副本。
+10. **`ScheduledFutureTask` 的状态机在 JDK 17/21 同样已不存在**（旧版 `WAITING → PROPAGATE → RUNNING → CANCELLED` 中的 `PROPAGATE` 服务于 `stopCompoundTask`，随 FutureTask 重写一并删除）：
+   - `run()` 只剩四个分支：`!canRunInCurrentRunState → cancel(false)` / 非周期 → `super.run()` / 周期 → `super.runAndReset()` 成功才 `setNextRunTime() + reExecutePeriodic(outerTask)`（STPE.java L300-309）。
+   - 方法名是 `setNextRunTime()`（L279，旧名 `setNextTime`）：`p > 0 → time += p`（fixedRate 追赶），否则 `time = triggerTime(-p)`（fixedDelay 重排）。
+   - `period` 三态由字段注释直接定义（L194-200）：正 = fixed-rate、负 = fixed-delay、**0 = one-shot**；`isPeriodic()` 即 `period != 0`（L272）。
+   - `FutureTask.state`：`NEW=0 → COMPLETING=1 → NORMAL=2 / EXCEPTIONAL=3`、`NEW → CANCELLED=4`、`NEW → INTERRUPTING=5 → INTERRUPTED=6`（FutureTask.java L92-99）；`runAndReset()` 在 `c.call()` 抛异常时 `setException(ex)` 并返回 false（L348-375），这串起了"异常 = 静默停摆"。
+   - `DelayedWorkQueue` 靠 `ScheduledFutureTask.heapIndex` 定位堆内下标，使 `remove` 从 O(n) 降为 O(log n)，堆操作均在 siftUp/siftDown 里同步记录索引；非 `ScheduledFutureTask` 元素回退线性搜索（L903-923、L1044-1060）。
+   - `DEFAULT_KEEPALIVE_MILLIS = 10L`（L443），四个构造器均固定 `super(corePoolSize, Integer.MAX_VALUE, 10, MILLISECONDS, new DelayedWorkQueue())`；`offer` 仅在 `queue[0] == e` 时 `leader = null; available.signal()`（L1105-1114）。
+   - `cancel()` = `super.cancel()` 后只当 `cancelled && removeOnCancel && heapIndex >= 0` 才 `remove(this)`（L287-294）；heapIndex 的并发读被注释判为 benign（< 0 表示确定已移除），否则进 `remove()` 在锁内复查。
+11. **①② 两站在 JDK 21 下全部成立**，本轮补取的行号证据：
+   - HashMap：扰动 `h ^ (h >>> 16)` L338；`tableSizeFor` L377；resize 高低位分裂 `if ((e.hash & oldCap) == 0)` L727（链表分支带 `preserve order` 注释）与 `((TreeNode<K,V>)e).split(...)` L720；`TREEIFY_THRESHOLD=8 / UNTREEIFY_THRESHOLD=6 / MIN_TREEIFY_CAPACITY=64` L260/267/275；`treeifyBin` L761-764；`TreeNode extends LinkedHashMap.Entry` L1966（LinkedHashMap.Entry L205）。
+   - CHM：`sizeCtl` 字段 javadoc 直接列出三种角色（L793-800）——负数为初始化中（-1）或扩容中（-(1+活跃扩容线程数)），table 为 null 时存初始表长，初始化后存下次扩容阈值；位压缩发生在扩容态（`RESIZE_STAMP_BITS = 16`、`MAX_RESIZERS = (1<<16)-1`、`RESIZE_STAMP_SHIFT = 16`，L575/581/586）。**元素计数不在 sizeCtl 里**，而在 `baseCount`(long) + `CounterCell[]`（L790/815）。
+   - CHM 元素访问：`tabAt` = `U.getReferenceAcquire`（L759-761）、`setTabAt` = `U.putReferenceRelease`（L767-770）——本机 17 与 21 一致（本机无 JDK 8，"早期写用 Volatile"属二手口径，未本地验证）。`DEFAULT_CONCURRENCY_LEVEL = 16` 仍定义但注释标为 unused（L523-526）。
+   - `computeIfAbsent`（L1691-1778）四条路径：空桶 → CAS `ReservationNode` 并 `synchronized (r)` 跑 function；`fh == MOVED` → `helpTransfer`；**命中桶头（hash+key+val 全匹配）→ 不加锁直接返回**（源码注释 "check first node without acquiring lock"）；否则 `synchronized (f)` 锁桶头。递归更新由 `pred.next != null` 或撞上 `ReservationNode` 检出并抛 `IllegalStateException("Recursive update")`。`putVal` 的 null 拒写在 L1011。
+   - 口径提醒：① 节统计表按 import 计（CHM 57 文件），全文匹配则为 59 文件；`LinkedHashMap` 的 11 是"提及文件数"（`new LinkedHashMap` 出现 22 次）。
