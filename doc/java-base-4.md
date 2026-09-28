@@ -360,3 +360,60 @@ if (runStateLessThan(c, STOP)) {   // L1013：此时 c=TERMINATED，>= STOP → 
 - 唯一可抠的细节：**池状态到 TERMINATED 的瞬间，最后一个 worker 线程的 `run()` 尚未返回**——它正替整个池执行 `terminated()`/置 TERMINATED/`container.close()`，属「正在收尾将死」，而非游离。等它返回后，所有线程与池状态才在物理上完全对齐。
 
 > 副作用：正因 remove 即接近死亡，`getActiveCount()`/`getPoolSize()` 这类统计走的是 mainLock 下遍历 `workers`（`w.isLocked()`），它反映的是「仍在册的活线程」，与 OS 层面「线程是否已彻底回收」可能有纳秒级的收尾滞后，但绝不会把已 remove 的线程算进去。
+
+## 八、补充看点：JDK 线程池还需要过哪些地方
+
+> 前七节集中在「状态机 + 关停/中断 + worker 退休」这条纵线。本节按优先级盘点剩余看点，
+> 并标注对本仓 `EagerThreadPoolExecutor`/`ExecutorQueue` 的直接对应价值。行号取 Temurin 21。
+
+### 1. 三层并发控制的分工（架构级看点）
+
+一把 `AtomicInteger ctl`、一把 `mainLock`、每个 `Worker` 一把 AQS 锁——各管一摊：
+
+| 机制 | 管什么 | 为什么这么分 |
+|---|---|---|
+| `ctl`（无锁 CAS）| 状态迁移 + workerCount | 热路径（execute/getTask/建线），不能上锁 |
+| `mainLock`（ReentrantLock）| `workers` set 增删、`largestPoolSize`/`completedTaskCount` 统计、**串行化 interrupt** | 注释 L456-467：串行化 `interruptIdleWorkers` 防「中断风暴」，退出线程不会互相打断 |
+| `Worker` 的 AQS 锁 | 区分 idle（未锁）vs 正在跑任务（已锁）| `shutdown` 靠 `tryLock` 只挑空闲者；`getActiveCount` 靠 `isLocked()` |
+
+另两个配套细节：
+
+- **`execute` 三段式（L1339-1377）的 recheck 回滚**：`offer` 成功后若池已关则 `remove(command)` + `reject`（L1370-1371）；`workerCountOf(recheck)==0` 时 `addWorker(null,false)` 防 core=0 黑洞（L1372-1373）。这是 `EagerThreadPoolExecutor` 重写 `offer` 的语义地基——标准池「先入队后扩线程」，Eager 反转为「先扩到 max 再入队」，必须借 `ctl` 的 RUNNING 检查保证原子性（见 `java-base.md` ④ 站）。
+- **`addWorker` 两阶段提交（L901-962）**：phase1 无锁自旋只做状态复查 + `compareAndIncrementWorkerCount` 先 +1 占坑（L915）；phase2 才在 mainLock 内 `workers.add` + `container.start`。所以任何时刻 `workerCount ≥ 实际活线程数`，这是 `getPoolSize()` 与 `workerCountOf(ctl)` 短暂不一致的根因。另注意 L913 的 `& COUNT_MASK`：core/max 超过 2^29-1 会被静默截断（注释 L550-560）。
+
+### 2. `Worker extends AQS`：不可重入锁 + `setState(-1)` 抑制启动期中断（L608-682）
+
+第六节讲了 `tryLock` 挑空闲 worker，这里补两个精妙点：
+
+- **构造期 `setState(-1)`（L635）**：state 负值使 `tryAcquire`（CAS 0→1，L655）失败、`tryLock` 也失败，从而在建线→`runWorker` 之前**屏蔽一切中断**（`interruptIfStarted` 的 `getState() >= 0` 判定 L675 也据此跳过）。直到 `runWorker` 开头 `w.unlock()`（L1127）把 state 置 0，才「允许被中断」。这解释了为什么 worker 刚 new 出来还没进循环时不会被 shutdown 误伤。
+- **故意做成不可重入**：`lock()`=`acquire(1)`，任务执行期间持锁；若可重入，`interruptIdleWorkers` 的 `tryLock` 就可能误判「空闲」。重入语义被剥离正是为了「忙/闲」这一个 bit 的判别。
+- 版本口径：这套 0/1 位模型 JDK 8→21 一字未动，但 `acquire/release` 自 JDK 17 起跑在重写版 AQS 上（位模型 + Dekker，见 `java-base.md` 第 9 条）。
+
+### 3. `getTask` 的 timed/untimed 分叉 + `allowCoreThreadTimeOut` 归一（L1042-1078）
+
+- core 用 `take()`（永久等）、非 core 用 `poll(keepAlive)`（超时即回收）——**线程回收的本质就是这条超时 poll 返回 null**（`timedOut=true`，下轮 L1060 命中 cull）。
+- `allowCoreThreadTimeOut(true)`（L1662）把 `timed` 恒置 true，core 与非 core 路径统一。
+- 注意 L1060-1061 的双重守卫 `wc > 1 || workQueue.isEmpty()`：保证队列非空时不会把所有 worker 都超时掉、至少留一个取任务。
+
+### 4. 四种拒绝策略 + `CallerRunsPolicy` 反压（L2038-2145）
+
+`reject(command)`（L840）统一入口。四种里 `CallerRunsPolicy` 值得单独品：它不丢任务、不抛异常，而是 `if (!e.isShutdown()) r.run()`——**让提交线程自己跑**，天然回压生产者速率。
+
+本仓对应：`AbortPolicyWithStats.rejectedExecution(task, pool)` 的 `pool` 回调参数天然就是 `ThreadPoolExecutor`，靠 `getActiveCount()` 区分拒绝原因（`poolSize==max && activeCount==poolSize` → 真过载；`poolSize==max && activeCount<poolSize` → 异常，如队列逻辑 bug），所以 `serverExecutor` 字段保持 `ExecutorService` 接口即可——「统计访问点」与「字段声明点」职责分离。
+
+### 5. 异常路径：`execute` 吞、`submit` 存（runWorker L1141-1154）
+
+第六节提到任务抛异常走 `completedAbruptly=true`，但异常语义本身需单独记：
+
+- `runWorker` catch `Throwable` 后 `afterExecute(task, ex)` 再 `throw ex` 出循环，经线程 `UncaughtExceptionHandler`，**不影响池里其它 worker**；且异常 worker 会被 `processWorkerExit` 补线替换（L1021，abrupt 时无视 min 直接补）。
+- `submit`→`FutureTask` 把异常存进 future，不 `get()` 就静默——监控只能靠 `beforeExecute`/`afterExecute` 两个钩子自接。
+
+### 6. 动态调参的顺序规则（`setCorePoolSize` L1559 / `setMaximumPoolSize`）
+
+JDK 17/21 新增交叉校验 `corePoolSize < 0 || maximumPoolSize < corePoolSize` 即抛 `IllegalArgumentException`（L1560）。实践铁律：**扩容先 setMax 后 setCore，缩容先 setCore 后 setMax**，否则中间态必违反约束。
+
+本仓现状：全仓 0 处调用；一旦把 core/max 接进 Nacos 动态配置就必须遵守（`java-base.md` ④ 站）。另 `setCorePoolSize` 调大后会按 `min(delta, workQueue.size())` 启发式预补新 worker（L1571-1575），调小后靠 `interruptIdleWorkers()` 让超额空闲线程自行退出。
+
+### 优先级建议
+
+若目标是「焊死 `EagerThreadPoolExecutor` 的每个 hack」，**第 1、2、3 块（三层分工 / Worker 锁语义 / getTask 回收）是必读且能直接反哺本仓注释的**；第 4-6 块偏 API 边角，扫一遍即可。
