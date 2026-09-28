@@ -62,16 +62,7 @@ public class HarborRegistry extends FailbackRegistry implements Closeable {
         try {
             String serviceName = HarborPathUtils.toServiceName(url);
             String group = HarborPathUtils.toGroup(url);
-            Instance instance = new Instance();
-            instance.setIp(url.getHost());
-            instance.setPort(url.getPort());
-            instance.setHealthy(true);
-            instance.setEphemeral(true);
-            Map<String, String> metadata = new HashMap<>(url.getParameters());
-            metadata.put(METADATA_KEY_PROTOCOL, url.getProtocol());
-            metadata.put(METADATA_KEY_PATH, url.getPath());
-            instance.setMetadata(metadata);
-            client.registerInstance(serviceName, group, instance);
+            client.registerInstance(serviceName, group, toInstance(url));
         } catch (Throwable e) {
             throw new JawsFrameworkException(String.format("Failed to register %s to harbor(%s), cause: %s",
                     url, getUrl(), e.getMessage()), e);
@@ -159,13 +150,37 @@ public class HarborRegistry extends FailbackRegistry implements Closeable {
         }
     }
 
+    /**
+     * URL → registry payload. {@code Instance} has no column for protocol or
+     * path, so they travel as two sentinel keys alongside the URL parameters;
+     * {@link #instancesToUrls(URL, String, String, List)} reads them back.
+     * Package-private so the mapping can be asserted without a client.
+     */
+    static Instance toInstance(URL url) {
+        Instance instance = new Instance();
+        instance.setIp(url.getHost());
+        instance.setPort(url.getPort());
+        instance.setHealthy(true);
+        instance.setEphemeral(true);
+        Map<String, String> metadata = new HashMap<>(url.getParameters());
+        metadata.put(METADATA_KEY_PROTOCOL, url.getProtocol());
+        metadata.put(METADATA_KEY_PATH, url.getPath());
+        instance.setMetadata(metadata);
+        return instance;
+    }
+
     private List<URL> instancesToUrls(URL refUrl, ServiceInfo serviceInfo) {
         return instancesToUrls(refUrl, serviceInfo.getName(), serviceInfo.getGroupName(),
                 serviceInfo.getHosts());
     }
 
-    private List<URL> instancesToUrls(URL refUrl, String serviceName, String group,
-                                      List<Instance> instances) {
+    /**
+     * Registry payload → addressable URL. Package-private so the mapping can
+     * be asserted without a client; production enters through
+     * {@link #doDiscover(URL)} and the subscribe callback.
+     */
+    List<URL> instancesToUrls(URL refUrl, String serviceName, String group,
+                              List<Instance> instances) {
         List<URL> urls = new ArrayList<>();
         if (instances == null) {
             return urls;
@@ -176,8 +191,14 @@ public class HarborRegistry extends FailbackRegistry implements Closeable {
             if (metadata != null && metadata.containsKey(METADATA_KEY_PROTOCOL)) {
                 String protocol = metadata.get(METADATA_KEY_PROTOCOL);
                 String path = metadata.get(METADATA_KEY_PATH);
+                // Consumed into URL fields; leaving them in the parameter
+                // table as well would break the rule stated in
+                // InterfaceConfig#loadRegistryUrls (and URL.equals).
+                Map<String, String> parameters = new HashMap<>(metadata);
+                parameters.remove(METADATA_KEY_PROTOCOL);
+                parameters.remove(METADATA_KEY_PATH);
                 parsedUrl = new URL(protocol, instance.getIp(), instance.getPort(), path,
-                        new HashMap<>(metadata));
+                        parameters);
             } else {
                 // Foreign instance (registered by another client, no jaws metadata):
                 // rebuild it as a consumer URL and fill in the service coordinates,

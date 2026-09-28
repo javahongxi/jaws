@@ -32,11 +32,4 @@ public class NacosPathUtils {
     public static String toGroup(URL url) {
         return url.getGroup();
     }
-
-    /**
-     * Build the instance identifier (host:port) from Jaws URL.
-     */
-    public static String toInstanceId(URL url) {
-        return url.getHostPort();
-    }
 }

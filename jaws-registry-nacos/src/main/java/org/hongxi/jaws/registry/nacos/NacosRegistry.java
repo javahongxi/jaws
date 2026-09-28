@@ -76,17 +76,7 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
         try {
             String serviceName = NacosPathUtils.toServiceName(url);
             String group = NacosPathUtils.toGroup(url);
-            Instance instance = new Instance();
-            instance.setIp(url.getHost());
-            instance.setPort(url.getPort());
-            instance.setHealthy(true);
-            instance.setEphemeral(true);
-            // Store all URL parameters as metadata map, along with protocol and path
-            Map<String, String> metadata = new HashMap<>(url.getParameters());
-            metadata.put(METADATA_KEY_PROTOCOL, url.getProtocol());
-            metadata.put(METADATA_KEY_PATH, url.getPath());
-            instance.setMetadata(metadata);
-            namingService.registerInstance(serviceName, group, instance);
+            namingService.registerInstance(serviceName, group, toInstance(url));
         } catch (Throwable e) {
             throw new JawsFrameworkException(
                     String.format("Failed to register %s to nacos(%s), cause: %s", url, getUrl(), e.getMessage()), e);
@@ -174,7 +164,31 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
         }
     }
 
-    private List<URL> instancesToUrls(URL refUrl, List<Instance> instances) {
+    /**
+     * URL → registry payload. {@code Instance} has no column for protocol or
+     * path, so they travel as two sentinel keys alongside the URL parameters;
+     * {@link #instancesToUrls(URL, List)} reads them back. Package-private so
+     * the mapping can be asserted without a NamingService.
+     */
+    static Instance toInstance(URL url) {
+        Instance instance = new Instance();
+        instance.setIp(url.getHost());
+        instance.setPort(url.getPort());
+        instance.setHealthy(true);
+        instance.setEphemeral(true);
+        Map<String, String> metadata = new HashMap<>(url.getParameters());
+        metadata.put(METADATA_KEY_PROTOCOL, url.getProtocol());
+        metadata.put(METADATA_KEY_PATH, url.getPath());
+        instance.setMetadata(metadata);
+        return instance;
+    }
+
+    /**
+     * Registry payload → addressable URL. Package-private so the mapping can
+     * be asserted without a NamingService; production enters through
+     * {@link #doDiscover(URL)} and the subscribe callback.
+     */
+    List<URL> instancesToUrls(URL refUrl, List<Instance> instances) {
         List<URL> urls = new ArrayList<>();
         if (instances != null) {
             for (Instance instance : instances) {
@@ -183,7 +197,14 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
                 if (metadata != null && metadata.containsKey(METADATA_KEY_PROTOCOL)) {
                     String protocol = metadata.get(METADATA_KEY_PROTOCOL);
                     String path = metadata.get(METADATA_KEY_PATH);
-                    parsedUrl = new URL(protocol, instance.getIp(), instance.getPort(), path, new HashMap<>(metadata));
+                    // Consumed into URL fields; leaving them in the parameter
+                    // table as well would break the rule stated in
+                    // InterfaceConfig#loadRegistryUrls (and URL.equals).
+                    Map<String, String> parameters = new HashMap<>(metadata);
+                    parameters.remove(METADATA_KEY_PROTOCOL);
+                    parameters.remove(METADATA_KEY_PATH);
+                    parsedUrl = new URL(protocol, instance.getIp(), instance.getPort(),
+                            path, parameters);
                 } else {
                     // Fallback: reconstruct from reference URL
                     parsedUrl = refUrl.createCopy();

@@ -1,6 +1,5 @@
 package org.hongxi.jaws.common;
 
-import java.io.File;
 import java.util.regex.Pattern;
 
 /**
@@ -18,7 +17,14 @@ public class JawsConstants {
     public static final String FRAMEWORK_NAME = "jaws";
 
     public static final String PROTOCOL_SEPARATOR = "://";
-    public static final String PATH_SEPARATOR = File.separator;
+
+    /**
+     * Separator of logical coordinates (registry paths, service names, cache
+     * keys), so it must not follow the host OS: a provider started on Windows
+     * has to be found by a consumer on Linux. Filesystem paths use
+     * {@code File.separator} explicitly.
+     */
+    public static final String PATH_SEPARATOR = "/";
 
     public static final Pattern COMMA_SPLIT_PATTERN = Pattern.compile("\\s*[,]+\\s*");
 
