@@ -156,6 +156,9 @@ Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
 
 **源码**：`ThreadPoolExecutor.java`、`LinkedBlockingQueue.java`
 
+> 详述已拆出单篇：[java-base-4.md](./java-base-4.md) —— 五种运行状态的 `ctl` 编码与大小顺序设计、状态迁移在源码里哪几行动手、interrupt worker 后的移除路径、池到 TERMINATED 后 worker 的存续形态，以及补充看点（三层并发控制 / Worker 继承 AQS / getTask 分叉 / 四种拒绝策略 / 异常路径 / 动态调参顺序规则）。
+> 本站行号证据仍保留在本文件文末已验证事实清单第 12 条。
+
 ### 重点
 
 ```
