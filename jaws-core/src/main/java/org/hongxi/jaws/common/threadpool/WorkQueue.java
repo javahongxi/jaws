@@ -14,13 +14,13 @@ import java.util.concurrent.RejectedExecutionException;
  * Created by shenhongxi on 2020/7/6.
  *
  */
-public class ExecutorQueue extends LinkedTransferQueue<Runnable> {
+public class WorkQueue extends LinkedTransferQueue<Runnable> {
     @Serial
     private static final long serialVersionUID = -3392627914941820087L;
 
     private EagerThreadPoolExecutor threadPoolExecutor;
 
-    public ExecutorQueue() {
+    public WorkQueue() {
         super();
     }
 

@@ -139,7 +139,7 @@ Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
 ### Jaws 对应（Condition 是 ④⑤ 的前置知识）
 
 - sample 里流式调用的 `CountDownLatch` + `onCompleted`/`await` 模式——忘写 `await()` 流式结果直接丢失（Dubbo Triple 示例的经典错误，Jaws sample 同款结构）。
-- ④ 的 `ExecutorQueue extends LinkedTransferQueue`：无锁 CAS 入队、无界，所以 `force()`（裸 `offer`）才永远成功——Eager"第二次 offer 入真队列"的地基在这站读懂。注意 `LinkedBlockingQueue` 的 `putLock/takeLock` 双锁 + `notEmpty/notFull` 双 Condition 是**另一条知识线**（"为什么 LBQ 两把锁而 ABQ 一把"），读 LBQ 源码本身时找答案；jaws 核心路径上没有 LBQ。
+- ④ 的 `WorkQueue extends LinkedTransferQueue`：无锁 CAS 入队、无界，所以 `force()`（裸 `offer`）才永远成功——Eager"第二次 offer 入真队列"的地基在这站读懂。注意 `LinkedBlockingQueue` 的 `putLock/takeLock` 双锁 + `notEmpty/notFull` 双 Condition 是**另一条知识线**（"为什么 LBQ 两把锁而 ABQ 一把"），读 LBQ 源码本身时找答案；jaws 核心路径上没有 LBQ。
 - ⑤ 的 DelayedWorkQueue：`available = lock.newCondition()`，take 线程 `awaitNanos` 挂起全靠本站机制。
 - 番外：Netty `SingleThreadEventExecutor` 的 waker 是同款 ReentrantLock + Condition 模型。
 
@@ -179,7 +179,7 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
 > AQS（③）与 FutureTask（⑤）在 JDK 17 被重写，`Worker`/`termination`/`submit` 全部换了实现路径。
 > 见文末清单第 12 条。
 
-### Jaws 对应：EagerThreadPoolExecutor + ExecutorQueue
+### Jaws 对应：EagerThreadPoolExecutor + WorkQueue
 
 这是本站的独特优势——**你反着改造过 TPE，读源码是验证自己的每个 hack**：
 
@@ -267,7 +267,7 @@ removeOnCancel    cancel() 默认只置 CANCEL 标志、节点留在堆里直到
 ⑤ ScheduledThreadPoolExecutor 15%   收尾，串起 ③④                         [ ]
 ```
 
-每站读完立即回项目做一次"源码考古笔记"：把与 Jaws 自定义实现（EagerThreadPoolExecutor、ExecutorQueue、PushDelayTaskEngine）的差异点补进对应类的英文注释，知识焊死在代码里。
+每站读完立即回项目做一次"源码考古笔记"：把与 Jaws 自定义实现（EagerThreadPoolExecutor、WorkQueue、PushDelayTaskEngine）的差异点补进对应类的英文注释，知识焊死在代码里。
 
 ## 附录：本计划依赖的已验证事实清单
 

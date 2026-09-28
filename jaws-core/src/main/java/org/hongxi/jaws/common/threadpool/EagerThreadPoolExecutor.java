@@ -35,7 +35,7 @@ public class EagerThreadPoolExecutor extends ThreadPoolExecutor {
     public static final int DEFAULT_MIN_THREADS = 20;
     public static final int DEFAULT_MAX_THREADS = 200;
 
-    public static final int DEFAULT_MAX_IDLE_TIME = 60 * 1000;
+    public static final long DEFAULT_KEEPALIVE_MILLIS = 60 * 1000L;
 
     protected AtomicInteger submittedTasksCount;
     private final int maxSubmittedTasks;
@@ -57,7 +57,7 @@ public class EagerThreadPoolExecutor extends ThreadPoolExecutor {
     }
 
     public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, int queueCapacity, ThreadFactory threadFactory) {
-        this(corePoolSize, maximumPoolSize, DEFAULT_MAX_IDLE_TIME, TimeUnit.MILLISECONDS, queueCapacity, threadFactory);
+        this(corePoolSize, maximumPoolSize, DEFAULT_KEEPALIVE_MILLIS, TimeUnit.MILLISECONDS, queueCapacity, threadFactory);
     }
 
     public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueCapacity) {
@@ -71,8 +71,8 @@ public class EagerThreadPoolExecutor extends ThreadPoolExecutor {
 
     public EagerThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
                                    int queueCapacity, ThreadFactory threadFactory, RejectedExecutionHandler handler) {
-        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, new ExecutorQueue(), threadFactory, handler);
-        ((ExecutorQueue) getQueue()).setThreadPoolExecutor(this);
+        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, new WorkQueue(), threadFactory, handler);
+        ((WorkQueue) getQueue()).setThreadPoolExecutor(this);
 
         submittedTasksCount = new AtomicInteger(0);
         maxSubmittedTasks = maximumPoolSize + queueCapacity;
@@ -89,7 +89,7 @@ public class EagerThreadPoolExecutor extends ThreadPoolExecutor {
         try {
             super.execute(command);
         } catch (RejectedExecutionException e) {
-            if (!((ExecutorQueue) getQueue()).force(command)) {
+            if (!((WorkQueue) getQueue()).force(command)) {
                 submittedTasksCount.decrementAndGet();
                 getRejectedExecutionHandler().rejectedExecution(command, this);
             }

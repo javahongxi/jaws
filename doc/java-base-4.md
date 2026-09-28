@@ -364,7 +364,7 @@ if (runStateLessThan(c, STOP)) {   // L1013：此时 c=TERMINATED，>= STOP → 
 ## 八、补充看点：JDK 线程池还需要过哪些地方
 
 > 前七节集中在「状态机 + 关停/中断 + worker 退休」这条纵线。本节按优先级盘点剩余看点，
-> 并标注对本仓 `EagerThreadPoolExecutor`/`ExecutorQueue` 的直接对应价值。行号取 Temurin 21。
+> 并标注对本仓 `EagerThreadPoolExecutor`/`WorkQueue` 的直接对应价值。行号取 Temurin 21。
 
 ### 1. 三层并发控制的分工（架构级看点）
 

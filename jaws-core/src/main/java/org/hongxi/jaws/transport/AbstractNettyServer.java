@@ -84,7 +84,7 @@ public abstract class AbstractNettyServer implements Server {
         EagerThreadPoolExecutor executor = new EagerThreadPoolExecutor(
                 url.getIntParameter(UrlParam.Server.MIN_WORKER_THREADS),
                 url.getIntParameter(UrlParam.Server.MAX_WORKER_THREADS),
-                EagerThreadPoolExecutor.DEFAULT_MAX_IDLE_TIME, TimeUnit.MILLISECONDS,
+                EagerThreadPoolExecutor.DEFAULT_KEEPALIVE_MILLIS, TimeUnit.MILLISECONDS,
                 url.getIntParameter(UrlParam.Server.WORKER_QUEUE_SIZE),
                 new DefaultThreadFactory(serverName + "-" + url.getHostPort(), true),
                 new AbortPolicyWithStats(serverName + "-" + url.getHostPort()));

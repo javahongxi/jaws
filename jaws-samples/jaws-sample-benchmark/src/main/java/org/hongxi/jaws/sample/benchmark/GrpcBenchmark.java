@@ -229,7 +229,7 @@ public class GrpcBenchmark {
         // so the reference measures the production-form thread model.
         EagerThreadPoolExecutor executor = new EagerThreadPoolExecutor(
                 20, 200,
-                EagerThreadPoolExecutor.DEFAULT_MAX_IDLE_TIME, TimeUnit.MILLISECONDS,
+                EagerThreadPoolExecutor.DEFAULT_KEEPALIVE_MILLIS, TimeUnit.MILLISECONDS,
                 0,
                 new DefaultThreadFactory("grpc-benchmark-server", true),
                 new AbortPolicyWithStats("grpc-benchmark-server"));
