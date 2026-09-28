@@ -164,9 +164,20 @@ execute 的 ctl 编码        高 3 位运行状态（RUNNING/SHUTDOWN/.../TIDYI
 runWorker 的 getTask 循环  core 用 take()、non-core 用 poll(keepAlive)——
                           线程回收的本质是这条超时 poll
 Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与"中断执行中任务"
+                          （state 0/1 模型 JDK 8~21 一字未动，但它跑的 acquire/release
+                          自 JDK 17 起已是重写版 AQS：位模型 + Dekker 协议，见 ③ 节）
 异常吞噬                   submit → FutureTask 保存异常；execute → 走
                           UncaughtExceptionHandler，runWorker catch 后不 rethrow
 ```
+
+> **版本口径**：本站是五站里**唯一"JDK 8 笔记到今天还基本能用"的一站**——TPE 自身几乎没改。
+> 本机 temurin-17.0.19 与 21.0.11 全文 diff：新增 18 行、删除 2 行，且**没有一行动过调度逻辑**
+> （全部是 `SharedThreadContainer` 登记 + `finalize` 注解 + import）；配套读的
+> `ScheduledThreadPoolExecutor` 与 `LinkedBlockingQueue` 两文件 17 与 21 **逐字节相同**。
+> 相对 JDK 8 真正外部可见的差异只有两处：**`finalize` 不再兜底 `shutdown`**（JDK 9 起）与
+> **`setCorePoolSize` 增加 `maximumPoolSize < corePoolSize` 校验**。而"大变化"发生在脚下：
+> AQS（③）与 FutureTask（⑤）在 JDK 17 被重写，`Worker`/`termination`/`submit` 全部换了实现路径。
+> 见文末清单第 12 条。
 
 ### Jaws 对应：EagerThreadPoolExecutor + ExecutorQueue
 
@@ -174,7 +185,10 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
 
 - 标准 TPE"先入队后扩线程"；Eager 策略反转为"先扩到 max 再入队"，靠重写 `offer` 实现（`submittedTasksCount <= poolSize` 判定 + 第二次 offer 入真队列）。读 `execute` 源码才能确认为什么必须借 `ctl` 的 RUNNING 检查完成原子性，以及 `workerQueueSize=0` 时 `maxSubmittedTasks = maximumPoolSize + 0` 导致探针任务被直接拒绝的边界（实测踩过，配 `workerQueueSize=1` 修复）。
 - benchmark 时池稳定在 corePoolSize=20：`submittedTasksCount ≤ poolSize` 使任务被空闲线程直接接走，永不触发扩容——读懂 getTask/wakeup 后才明白这个"不扩"是设计而非失效。
-- `prestartAllCoreThreads()` 与拒绝策略里访问 `getActiveCount()`（这也是 NettyServer/Http2Server 字段类型统一为 `ThreadPoolExecutor` 而非 `ExecutorService` 的原因）。
+- `prestartAllCoreThreads()` 与拒绝策略里访问 `getActiveCount()`：统计逻辑已下沉进 `AbortPolicyWithStats.rejectedExecution(task, pool)` 的 `pool` 回调参数（天然就是 `ThreadPoolExecutor`），所以 `serverExecutor` 字段保持 `ExecutorService` 接口即可（`AbstractNettyServer` L57）——"统计访问点"与"字段声明点"职责分离。
+- **Eager 的 hack 无版本依赖**：`execute` 至今仍然只是调 `workQueue.offer(command)`，`addWorker` 里 worker 数与 `ctl` 的原子校验、`workerQueueSize=0` 的边界也都未变，所以"重写 offer + 第二次 offer 入真队列"在 17/21 上行为与 8 一致。
+- **两处版本差异对本项目的实际意义**：① 服务端池靠非守护 Netty 线程 + `prestartAllCoreThreads()` 保活，从不依赖 `finalize` 兜底，JDK 9 起的"finalize 不再 shutdown"只是顺手消除了 `newSingleThreadExecutor` 那类偶发 `RejectedExecutionException` 隐患（JDK-8145304）；② 目前全仓**0 处**调用 `setCorePoolSize/setMaximumPoolSize`，一旦把 core/max 接进 Nacos 动态配置，就必须遵守新校验的顺序规则（扩容先 max 后 core，缩容先 core 后 max）。
+- 读本站时顺带确认 `SharedThreadContainer`（JDK 21）：worker 线程被登记进一个 `ThreadContainer` 供观测层按 executor 分组统计（`jcmd Thread.vthread_summary` 里能看到 `java.util.concurrent.ThreadPoolExecutor at ... [platform threads = N]`），`addWorker` 的 `t.start()` 变成 `container.start(t)`——**纯登记，语义零影响**；另外 JDK 21 的虚拟线程执行器 `newVirtualThreadPerTaskExecutor()` 返回的是私有 `ThreadPerTaskExecutor`（每任务一线程、无池无队列），**不是 TPE 被改造**，别把"21 线程池天翻地覆"误解成 TPE 重写。
 
 ### 验收问题
 
@@ -182,6 +196,9 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
 - [ ] 为什么 `Worker` 锁不能重入？`shutdown` 时如何避免中断正在执行任务的线程？
 - [ ] `allowCoreThreadTimeOut` 打开后 core/non-core 的 getTask 路径如何统一？
 - [ ] 四种拒绝策略 + CallerRuns 反压原理；Eager 的自定义拒绝策略为什么需要 `getActiveCount()`？
+- [ ] 本机 17 与 21 的 TPE 源码到底差在哪几行？为什么 `SharedThreadContainer` 对使用者零影响、而 `finalize` 的变化影响真实？
+- [ ] 相对 JDK 8 的两处外部可见差异是哪两个方法？动态调 core/max 的顺序规则是什么、为什么必须这样？
+- [ ] `Worker` 的 `lock/unlock` 在 JDK 17+ 走的是新 AQS，为什么它的"不可重入"语义却完全没变？
 
 ---
 
@@ -254,7 +271,7 @@ removeOnCancel    cancel() 默认只置 CANCEL 标志、节点留在堆里直到
 
 ## 附录：本计划依赖的已验证事实清单
 
-以下结论均已对照本机 JDK 21（temurin-21.0.11）`src.zip` 源码逐条验证，非二手资料；第 9、10 条额外比对了本机 temurin-17.0.19：
+以下结论均已对照本机 JDK 21（temurin-21.0.11）`src.zip` 源码逐条验证，非二手资料；第 9、10、12 条额外比对了本机 temurin-17.0.19（第 12 条给出两版全文 diff 行数）：
 
 1. `TreeNode extends LinkedHashMap.Entry extends Node`，与 TreeMap 无代码复用（HashMap.java L1966 / LinkedHashMap.java L205）。
 2. CHM 锁机制在 JDK 8 从 Segment 切换到"锁头节点 + CAS 空桶插入"。
@@ -285,3 +302,10 @@ removeOnCancel    cancel() 默认只置 CANCEL 标志、节点留在堆里直到
     - CHM 元素访问：`tabAt` = `U.getReferenceAcquire`（L759-761）、`setTabAt` = `U.putReferenceRelease`（L767-770）——本机 17 与 21 一致（本机无 JDK 8，"早期写用 Volatile"属二手口径，未本地验证）。`DEFAULT_CONCURRENCY_LEVEL = 16` 仍定义但注释标为 unused（L523-526）。
     - `computeIfAbsent`（L1691-1778）四条路径：空桶 → CAS `ReservationNode` 并 `synchronized (r)` 跑 function；`fh == MOVED` → `helpTransfer`；**命中桶头（hash+key+val 全匹配）→ 不加锁直接返回**（源码注释 "check first node without acquiring lock"）；否则 `synchronized (f)` 锁桶头。递归更新由 `pred.next != null` 或撞上 `ReservationNode` 检出并抛 `IllegalStateException("Recursive update")`。`putVal` 的 null 拒写在 L1011。
     - 口径提醒：① 节统计表按 import 计（CHM 57 文件），全文匹配则为 59 文件；`LinkedHashMap` 的 11 是"提及文件数"（`new LinkedHashMap` 出现 22 次）。
+12. **④ 站：TPE 骨架自 JDK 8 未变，变化在"脚下"与两处外部可见行为**（本机 temurin-17.0.19 与 21.0.11 `src.zip` 全文 diff：`ThreadPoolExecutor.java` 2129 → 2145 行，**+18 / −2**；`ScheduledThreadPoolExecutor.java` 与 `LinkedBlockingQueue.java` 两版**逐字节相同**；`FutureTask.java` diff 58 行。本机无 JDK 8，凡标"SE 8 javadoc"者取自 Oracle Java SE 8 官方 API 文档）：
+    - **`finalize` 不再兜底关池（JDK 9 起）**：SE 8 javadoc 原文 "Invokes shutdown when this executor is no longer referenced and it has no threads"；21 是空实现 `protected void finalize() {}`（TPE.java L1498），`@implNote` 自陈 "Previous versions of this class had a finalize method that shut down this executor, but in this version, finalize does nothing"，注解由 17 的 `@Deprecated(since="9")` 变为 21 的 `@Deprecated(since="9", forRemoval=true)`（具体落在哪个版本本机无法界定，只知在 17~21 之间）。副作用是 JDK-8145304（`newSingleThreadExecutor` 因 finalize 被提前回收而偶发 `RejectedExecutionException`）在新版不可能再发生。
+    - **`setCorePoolSize` 新增交叉校验**：SE 8 javadoc 只声明 `IllegalArgumentException - if corePoolSize < 0`；17 与 21 源码均为 `if (corePoolSize < 0 || maximumPoolSize < corePoolSize)`（21 L1560），javadoc 同步补上"or `corePoolSize` is greater than the maximum pool size"。而 `setMaximumPoolSize` 的 `<= 0 或 < corePoolSize` 在 SE 8 javadoc 里**已有**，不算新变化——两个 setter 的校验是对称了，不是都变严了。
+    - **JDK 21 唯一实质新增：`SharedThreadContainer`**（`jdk.internal.vm`，类注释原话 "doesn't have an owner and is intended for unstructured uses, e.g. thread pools"）：字段 L485、构造器 L1321-1322 `SharedThreadContainer.create(Objects.toIdentityString(this))`、`addWorker` 里 `container.start(t)` 取代裸 `t.start()`（L953）、`tryTerminate` 末尾 `container.close()`（L736）；17 全文无 `container` 字样。用途是把 worker 归入可枚举/可关闭的 `ThreadContainer` 供观测层按 executor 分组统计（`jcmd Thread.vthread_summary`），语义零影响；引入边界本机只能界定在 17~21 之间，STE 未跟进（即本条开头那份"STE 17 与 21 逐字节相同"的 diff 结果）。
+    - **骨架逐条仍在（行号取 21）**：`ctl` 仍是 `AtomicInteger(ctlOf(RUNNING, 0))` L387、`execute` 三段式与 "Proceed in 3 steps" 注释 L1339、`getTask` 的 core `take()` / non-core `poll(keepAlive)` 分叉 L1042、`runWorker` L1123、`Worker extends AbstractQueuedSynchronizer` L608-682（构造期 `setState(-1)` 抑制中断 L635、`tryAcquire` 的 CAS 0→1 L654、`lock()` = `acquire(1)` L668）、`ONLY_ONE` L829、`advanceRunState` L695、`processWorkerExit` L997、`getActiveCount` 仍是 mainLock 下遍历 `w.isLocked()`（`AbortPolicyWithStats` 依赖的就是它）。**公开 API 零新增**——整文件 `@since` 只有 1.5 与 1.6。
+    - **地基换了实现**：`Worker` 的 lock/unlock、`interruptIdleWorkers` 的 `tryLock()`、`termination.awaitNanos()` 自 JDK 17 起全跑在重写版 AQS 上（见第 9 条）；`submit` 路径的 FutureTask 同样已重写（见第 10 条）；`AtomicInteger` 内部由 `sun.misc.Unsafe` 换为 `VarHandle`（JDK 9，属公开变更记录，本机不可逐行取证）。
+    - **一处未逐行取证**：`runWorker` 内任务执行的 try/catch 形态——21 为 `try { task.run(); afterExecute(task, null); } catch (Throwable ex) { afterExecute(task, ex); throw ex; }`（L1143-1149），记忆中的 JDK 8 为 `Throwable thrown` + 三段 catch + `finally` 调 `afterExecute`；本机无 JDK 8，只确认语义等价，形态差异不写入结论。
