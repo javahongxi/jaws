@@ -206,94 +206,8 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
 
 **源码**：`ScheduledExecutorService.java`（接口）+ `ScheduledThreadPoolExecutor.java`（内部类 `ScheduledFutureTask`、`DelayedWorkQueue`）
 
-### 接口先行：`ScheduledExecutorService` 四方法，两组各一个区别
-
-**分组逻辑**：四方法在实现层的投影就是 `period` 三态——两个 `schedule` 落 `period=0`，
-两个周期方法分落 `>0`/`<0`。先看接口再看实现，顺序即依赖。
-
-**组一：两个 `schedule` 重载（一次性，接口 L106/L122）**。唯一区别在类型系统层面的
-"产出值与否"：Runnable 版完成时 `get()` 返回 null（L100-101），Callable 版返回
-`ScheduledFuture<V>` 可提取结果（L117）；到 STE 里是同一行代码的差别——构造的
-`ScheduledFutureTask` 只 `result` 字段一个传 null 一个传 callable。即 ④ 的
-`execute`/`submit` 二选一在定时维度的复刻，只多一个 `delay`。两条公共约定：
-允许 0/负 delay 视为立即执行（L50-52）——但 **period/delay 不允许非正**，两个周期
-方法 `≤ 0` 直接 `IllegalArgumentException`（L162/L204），恰好与 schedule 形成对照。
-
-**组二：两个周期方法（L164/L204）**。唯一区别是周期的"锚"打在哪：
-
-- **scheduleAtFixedRate**（L129-130 原文列序列）：相邻两次**开始**之间；计划时刻 `initialDelay + n×period` 绝对锚定，超时一轮会"追赶"（连补跑，对应 `setNextRunTime` 的 `time += p`）。
-- **scheduleWithFixedDelay**（L171-173：between the termination of one execution and the commencement of the next）：**上一轮结束**到**下一轮开始**之间；每轮跑完重新起表，无全局锚点、无追赶概念（`time = triggerTime(-p)`）。
-- **共同底线**：绝不并发执行同一任务（L146-148："will not concurrently execute"——重排发生在 `runAndReset()` 返回之后，本轮没跑完根本不会回堆）。
-
-选型直觉：fixedRate = 时钟语义（要求固定频率、能接受偶发连跑：对账扫描、指标采样）；
-fixedDelay = 歇脚语义（两轮之间必有 idle 间隔、给慢任务留缓冲）——Jaws 的
-`HealthCheckScheduler`、`FailbackRegistry.retryExecutor` 全用 fixedDelay 即此立场。
-
-**三种终止条件（L132-144，接口 javadoc 最值钱的一段）**：周期序列只有三种结束方式
-——显式 cancel、executor 终止、**某轮执行抛异常**；异常时 future 变 `isDone()=true`，
-异常存在 future 里，**只有 `get()` 才以 `ExecutionException` 现身**（L138-140）——本站
-"异常 = 静默停摆"的接口层法条：不经 `runWorker` 的 catch，异常被 FutureTask 状态机
-吞掉；Jaws 里 `scheduleWithFixedDelay` 包 try-catch 的正确防御依据就在这三行。
-
-**两条接口级公共约定**：① 全部 delay/period 是**相对量**，实现上换算成
-`triggerTime() = System.nanoTime() + unit.toNanos(delay)`，javadoc 特意警告相对延迟
-到期与墙钟 `Date` 不重合（NTP 校时/时钟漂移不影响调度，L54-63——"Java 定时为什么用
-nanoTime 不用 currentTimeMillis"的官方说法）；② `execute`/`submit` 在 STE 上等价于
-`delay=0` 的 schedule（L48-50）——所以 STE 的队列永远是 `DelayedWorkQueue`，普通
-提交也进堆。
-
-### 重点
-
-#### DelayedWorkQueue —— 手写最小堆
-
-`siftUp/siftDown`，`Object[]` 直接存，无节点对象分配。与 `DelayQueue` 的关系：同一问题（取最近到期）的演化实现——LBQ 的 put/take Condition 换成了 `available` + `q.size()` 双检 + "队首变化才 signal" 的 leader 式优化。
-
-**take() 里的三行"等"（L1163-1195）**——到期判断 `delay <= 0` 之外，未到期时线程全在这三行里：
-
-| 行 | 谁在等 | 等什么 |
-|---|---|---|
-| L1170 `available.await()` | 任何线程，堆空时 | 不定时，直到 `offer` 的 signal |
-| L1177 `available.await()` | follower（已有人是 leader） | 不定时，直到 leader 到点交棒 signal / 新队首 signal |
-| L1182 `available.awaitNanos(delay)` | **leader**（第一个到达等待分支的线程） | 定时 `delay` 纳秒——整个堆唯一的闹钟本体，时长就是 `getDelay` 返回的剩余量 |
-
-**leader 是什么**：不是选举协议，就是一个 `private Thread leader` 字段（L947）——leader-follower 模式（DNS 服务器文献起源）的"leader"指**代表全堆承担精确定时等待的那个人**：谁先走到 L1178 的 else 分支，谁把自己写进字段（L1180）去 `awaitNanos(delay)`；后来者看到 `leader != null` 就退化成 follower 睡不定时 `await()`，靠点名叫醒。收益：N 个 worker 等同一个到期时刻时，`parkNanos` 定时器只挂 1 次，而不是 N 次到点唤醒后 N-1 次空手而归——"堆里任何时刻最多一次精确定时"。
-
-三条配套不变式：① 交棒——leader 在 finally 里清字段（L1184-1185），外层 finally 见 `leader == null && queue[0] != null` 就 `available.signal()`（L1191-1192）点名新 leader，正常取走/中断/更早任务插入三路退出都保证闹钟有人接手；② `awaitNanos` 本身走 ③ 站的 ConditionObject 链：`addConditionWaiter` → `fullyRelease` **释放堆锁**（等待期间 offer/remove 不受阻）→ `parkNanos` 每圈补差防超时丢失 → 醒后 `reacquire` 抢回锁回到 `for(;;)` 圈首重算 `getDelay`；③ offer 侧只在 `queue[0] == e`（新任务成了新队首）时 signal（L1105-1114）——对等待者唯一有意义的事件是"最早到期提前了"。
-
-#### ScheduledFutureTask —— 无自有状态机
-
-JDK 17 起随 FutureTask 重写，旧版 `WAITING → PROPAGATE → RUNNING → CANCELLED` 已消失。只靠 `FutureTask.state`（NEW→COMPLETING→NORMAL/EXCEPTIONAL、NEW→CANCELLED）+ `period` 三态：0 一次性 / >0 fixedRate / <0 fixedDelay（`isPeriodic()` 即 `period != 0`）。
-
-#### setNextRunTime —— 两种周期的 drift 处理差异
-
-旧名 `setNextTime`。fixedRate 是 `time += p`，基于上次计划时间，跑超时后连续补跑追赶；fixedDelay 是 `time = triggerTime(-p)`，基于本轮触发时刻重排。
-
-#### 池参数藏在构造器
-
-所有 STE 构造器固定传 `super(corePoolSize, MAX_VALUE, 10ms)`——`maximumPoolSize` 无意义（源码注释：core 与 max "effectively identical"），多余线程闲置 10ms 即回收；javadoc 同时警告别把 core 设 0 或开 `allowCoreThreadTimeOut`，否则任务到期无人取。
-
-#### delayedExecute（L338-348）—— ④ execute 三段式在本站的塌缩形态
-
-四个 `schedule` 与被包装成 delay=0 的 `execute`/`submit` 全部以它收尾；类头注释第 2 条点名 "simplifies some execution mechanics (see delayedExecute)"（L147-150），做的减法 = 无界堆（`offer` 恒成功，砍掉"入队失败转 addWorker"第三段）+ core==max（砍掉 firstTask 直塞新线程的判断）。
-
-四步流程：
-
-1. `isShutdown()` → `reject(task)`——`reject` 是 TPE 专为 STE 留的包级方法（TPE L840 "for use by ScheduledThreadPoolExecutor"），走 handler 策略，关停后 `schedule` 抛 REE 的出处。
-2. 入堆——顺带"成为新队首才 signal available"。
-3. 双检 `!canRunInCurrentRunState && remove → cancel(false)`——与 `execute` 复查的 `!isRunning && remove → reject` 形似神异：任务已进过堆，语义是"撤销"不是"拒收"，不抛 REE；remove 失败（已被 worker 取走）落 else 良性放过，第三道防线在 `ScheduledFutureTask.run()` 首行重查同谓词后 `cancel(false)`（L301-302）。
-4. `ensurePrestart`——不在 STE 在 TPE（L1606-1612，"arranges that at least one thread is started even if corePoolSize is 0"），恒传 null firstTask，javadoc 括弧给出理由 "the task (probably) shouldn't be run yet"：新线程只许去 getTask 挂着等到期，这一步保证的是"到期那一刻有取主在场"而非"任务立刻有人跑"；`wc==0` 兜底起 non-core（10ms keepAlive）正是"池参数藏在构造器"一条的注脚——core 设 0 不致死锁，但线程闲置即回收会反复起线程。
-
-谓词 `canRunInCurrentRunState`（L316-325）比 TPE 的 `isRunning` 多出"任务维度"：STOP 一票否决；SHUTDOWN 分岔读两个 volatile 策略开关（L165-170，即两个 `setXxxPolicy` 背后字段，`onShutdown` 清堆读同一对）——周期任务看 `continueExistingPeriodicTasksAfterShutdown`（默认 false），非周期看 `executeExistingDelayedTasksAfterShutdown`（默认 true）或 `getDelay(NANOSECONDS)<=0`（已到期算 SHUTDOWN 承诺跑完的存量）。
-
-孪生方法 `reExecutePeriodic`（L356-366）javadoc 自陈 "Same idea as delayedExecute except drops task rather than rejecting"：入口不 reject，关停时周期任务静默 `cancel(false)`；两个 if 极性写成 `canRun || !remove`，与 `!canRun && remove` 同一德摩根式竞态处理。
-
-#### removeOnCancelPolicy（默认 false）
-
-`cancel()` 默认只置 CANCEL 标志、节点留在堆里直到到期被 poll 剔除（O(1) 标记 + 摊销清理）；`setRemoveOnCancelPolicy(true)` 改为立即堆删除——`DelayedWorkQueue` 里 `ScheduledFutureTask` 自己记 `heapIndex`（堆内下标），删除从 O(n) 搜索降到 O(log n)，非 `ScheduledFutureTask` 元素回退线性搜索——高频取消场景防 cancelled-entry 垃圾堆积。
-
-#### 异常 = 静默停摆
-
-周期任务抛一次异常 → `runAndReset` 内部 catch → `setException` 置 EXCEPTIONAL → `runAndReset` 返回 false → `run()` 不再 `reExecutePeriodic`，该任务永远不再进堆；异常存在 future 里没人 get，因此没有任何日志（不经过 `runWorker` 的 catch）。
+> 详述已拆出单篇：[java-base-5.md](./java-base-5.md) —— 接口四方法两组各一个区别、`DelayedWorkQueue` 手写最小堆与 leader-follower 三行等待、`ScheduledFutureTask` period 三态、`setNextRunTime` 两种周期 drift 处理、池参数藏在构造器、`delayedExecute` 四步、`removeOnCancelPolicy`、异常 = 静默停摆。
+> 本站行号证据仍保留在本文件文末已验证事实清单第 10 条。
 
 ### Jaws 对应
 
@@ -302,7 +216,7 @@ JDK 17 起随 FutureTask 重写，旧版 `WAITING → PROPAGATE → RUNNING → 
 - 对照组——**不靠调度器**的两类：`NettyClient` 的 send-reconnect（`send.reconnect` 默认 true）是请求路径内的 lazy 重连：发现 `!isAvailable()` 时当场 `resetErrorCount() + open()`，零后台线程；心跳则是 Netty `IdleStateHandler` 在 EventLoop 上的 `schedule`，也不是 STE。读本站时对比三种定时机制（STE 堆 / EventLoop 定时任务 / 请求路径惰性检查）的适用边界。
 - 消费端超时全家已统一为 STE：`AbstractClient.timeoutTimer` 是 `ScheduledThreadPoolExecutor(1, daemon)`，每个请求注册时挂一个 one-shot 超时任务（`registerCallback`/`removeCallback` + `timeoutMap`）。这段迁移本身就站在本站肩膀上：弃用 HashedWheelTimer 的原因是桶链表上 `Timeout.remove()` 实测负载下吃约 10% CPU，而 `removeOnCancelPolicy=true` 让取消变成 O(log n) 堆删除、不留 cancelled-entry 垃圾——读 DelayedWorkQueue 后才能判断这笔账（时间轮取消 O(1) vs 堆取消 O(log n)，为什么高基数短延时场景反而是堆赢）。
 - 时间轮 vs 最小堆的调度哲学对比已随统一实现收敛：消费链路上剩下的定时需求全部由 STE 或 EventLoop 承担（见上两条）。
-- `scheduleWithFixedDelay` 包 try-catch 是**正确防御**：不包的话异常导致周期任务静默停摆（见上文「异常 = 静默停摆」小节），Harbor 里曾出现看门狗误删连接的排查困难正源于此类静默。
+- `scheduleWithFixedDelay` 包 try-catch 是**正确防御**：不包的话异常导致周期任务静默停摆（见 [java-base-5.md](./java-base-5.md) 第八节「异常 = 静默停摆」），Harbor 里曾出现看门狗误删连接的排查困难正源于此类静默。
 
 ### 验收问题
 
