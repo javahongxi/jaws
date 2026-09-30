@@ -61,6 +61,16 @@ nanoTime 不用 currentTimeMillis"的官方说法）；② `execute`/`submit` �
 
 JDK 17 起随 FutureTask 重写，旧版 `WAITING → PROPAGATE → RUNNING → CANCELLED` 已消失。只靠 `FutureTask.state`（NEW→COMPLETING→NORMAL/EXCEPTIONAL、NEW→CANCELLED）+ `period` 三态：0 一次性 / >0 fixedRate / <0 fixedDelay（`isPeriodic()` 即 `period != 0`）。
 
+**本类全部的"额外职责"就是覆写的 `run()`（L300-309）**——javadoc 自陈 "Overrides FutureTask version so as to reset/requeue if periodic"，三个分支即三处交叉引用的合体：
+
+1. `!canRunInCurrentRunState(this)` → `cancel(false)`（L301-302）——`delayedExecute` 双检后仍竞态留在堆里的任务，开跑前最后一刻重查同一谓词，这就是第六节所称"第三道防线"的现场；
+2. `!isPeriodic()` → `super.run()`——一次性任务完全交回 FutureTask 状态机，本类零参与；
+3. 周期任务 → `super.runAndReset()` 返回 true 才 `setNextRunTime() + reExecutePeriodic(outerTask)`（L305-307）——本轮没跑完或跑挂，都不会回堆，接口第一节"绝不并发执行同一任务"的实现保证就在这一步。
+
+**runAndReset 为什么配当"是否续排"的判据**（FutureTask L348-376）：跑 `c.call()` 但**不置 result**（L358 注释 "don't set result"），成功路径 state 停在 NEW，末尾 `return ran && s == NEW`；异常走内层 catch → `setException` 置 EXCEPTIONAL → 返回 false → 不回堆——第八节"异常 = 静默停摆"的出口就是这个 boolean。finally 里 `runner = null` 后重读 state、`s >= INTERRUPTING` 时 `handlePossibleInterrupt` 自旋等 CANCEL 落定，防的是"被 cancel 的任务误判成功回了堆"。
+
+至此"无自有状态机"的完整含义闭环：**周期语义不占任何状态位，只体现为 `run()` 出口处对 `reExecutePeriodic` 的一次调用决策**。
+
 ## 四、setNextRunTime —— 两种周期的 drift 处理差异
 
 旧名 `setNextTime`。fixedRate 是 `time += p`，基于上次计划时间，跑超时后连续补跑追赶；fixedDelay 是 `time = triggerTime(-p)`，基于本轮触发时刻重排。
