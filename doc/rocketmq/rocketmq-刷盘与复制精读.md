@@ -112,7 +112,7 @@ commitRealTimeService = new CommitRealTimeService();   // 座位B·构造无条�
 
 **收落（slave）**：
 
-1. `transferFromMaster`（L347-365）：到点主动回报（`isTimeToReportOffset`，L105-108）→ `select(1000)` → 读事件；
+1. `transferFromMaster`（L347-365）：**双拍时序，report 其实一前一后各一拍**——① 轮首 `isTimeToReportOffset`（距上次写 > `haSendHeartbeatInterval=5s`，L105-108）先到点先报，报的是 `currentReportedOffset`=**上一轮的旧账**；② 收帧后的进度由 4.3-4 的 `reportSlaveMaxOffsetPlus` 随收随报（新账）。前置定时报必须打头有两个必然理由：**它是从库的保活包**——master 侧 `lastReadTimestamp` 只靠读到从库上报才刷新（L224），从库追平、主无数据可推时，这条 5s 报是链路上唯一周期流量，20s 不报 master 就拆线；**让 master 尽早在账**——先报旧账再收新，in-sync gap 判定与数票都少一轮延迟。与 master 侧空闲 5s 零体帧互为镜像：**双向各发各的心跳**。每轮 `select(1000)` → 读事件；
 2. `dispatchReadRequest`（L184-228）：解析 12B 头后**连续性断言——帧内 masterPhyOffset ≠ 本地 maxPhyOffset 即 return false 断线**（L195-198）：不解释、不自愈，交给重连重新对齐，粗暴但绝不吃错帧；
 3. 整帧齐了 `appendToCommitLog(masterPhyOffset, ...)`（L207-208）→ `commitLog.appendData`（DefaultMessageStore L1379）：**同样抢那把全局 putMessageLock、按主推来的物理地址顺序落 mmap**——从库的 commitlog 是主库的字节级镜像布局，这正是 §4.4"从库 CQ 自己派发但内容恰好一致"的前提；
 4. 每落完一帧 `reportSlaveMaxOffsetPlus()`（定义 L231-243，逐帧调用点 L213）：本地 maxPhy 前进了就**立刻**回写 8B——ack 是事件驱动，不是定时。
@@ -137,6 +137,45 @@ commitRealTimeService = new CommitRealTimeService();   // 座位B·构造无条�
 - master 侧：读线程静默超 `haHousekeepingInterval=20s`（Config L243）→ break 拆连接（L165-169），收尾五连：置 SHUTDOWN → 拖写线程 down → `removeConnection` → 计数-- → 关 selector/socket（L176-198）。
 - slave 侧：对称检查"主的最近供数"（L330-336）→ closeMaster 回 READY 立即重连；连不上才退避 5s（L317）。
 - **重连即全量再对齐**：`connectMaster` 重新取成绩单、master 侧新连接重走 4.2 首帧决策。设计上把"新连接"复用成唯一恢复路径，没有原地修复协议——与 §3.4 watcher"执行者挂掉另有哨兵"的思路一致：**坏掉的部分整个扔掉重来，不留半坏状态**。
+
+### 4.6 一条 HA 连接的三 Selector 拓扑（NIO 层细节，5.5.1 行号已核）
+
+**问题**：一条 socket 的读写被拆给两个线程，NIO 上怎么摆？答案是**三个独立 Selector，且 accept 出的 channel 从未"过手"A**：
+
+```
+SelectorA（AcceptSocketService，DefaultHAService L306-316）
+   注册：仅 ServerSocketChannel [OP_ACCEPT]（L316）
+        │ select 返回后：sc = serverSocketChannel.accept()（L353）
+        │ —— sc 此刻"自由身"：从未注册到 A（A 眼里只有 listen fd）
+        ▼
+DefaultHAConnection 构造（L74-75）
+   ├── ReadSocketService：  自建 SelectorB，sc.register(B, OP_READ)   （L148）
+   └── WriteSocketService： 自建 SelectorC，sc.register(C, OP_WRITE) （L270）
+```
+
+四个要点：
+
+1. **不存在"跨 Selector 转注册"**。`sc` 是 `accept()` 的产物，出生未注册，第一次注册分别发生在 B/C 上——传统 NIO 分工：listen fd 的 selector 只负责发现连接，accepted fd 归谁管是独立决定。
+2. **一 channel 两 selector 合法**。非阻塞 `SocketChannel` 可在多个 Selector 上各持一个 SelectionKey（B 关心可读、C 关心可写），两线程各自 `select()` 互不牵制——这就是 §4.1 六角色表里"每连接一读一写两线程"的 NIO 落法。对照 Netty：一 channel 绑一 eventLoop、读写同线程串行化免锁；RocketMQ HA 反选读写分线程，换取"读阻塞不拖写、写反压不拖读"，代价是共享状态（nextOffset/位点）自守——好在两侧状态本就分家（读侧只写 volatile `slaveAckOffset`，写侧只碰游标），§4.5 的解耦在此闭环。
+3. **select 在这里是"有上限的瞌睡"，不是事件路由**。两个 run 循环都 `selector.select(1000)` 后**不遍历 SelectionKey**、直接进 `processReadEvent()`/写逻辑（ReadSocketService L156-158、WriteSocketService L278-280 已核）——注册 OP_READ/OP_WRITE 的实际收益只是"可读/可写时 select 立刻返回"，无事件则 1s 封顶自然醒。selector 被当**可被就绪唤醒的节流定时器**用，比真·事件循环糙一档，换来循环里顺手掺 housekeeping（§4.5 超时拆线就长在 run 里）。
+4. **拆线同样对称**：读侧超时 → `makeStop` 写侧 → `removeConnection` → 两个 selector 与 socket 各自 close（L176-198）——注册关系随对象一起消亡，无原地摘键。
+
+#### 4.6+ 同一件事的 Netty 画法（boss/worker 对照）
+
+Netty 的 accept→register 与上面同构——**也没有"跨 selector 转 key"**：boss selector 只挂 `ServerSocketChannel/OP_ACCEPT`；`accept()` 出的新 channel 在构造时经 `workerGroup.next()` 轮询**终身绑定**一个 worker eventLoop，再由 boss pipeline 里的 `ServerBootstrapAcceptor` 向该 worker 投递注册任务，任务在 **worker 线程**执行 `javaChannel().register(workerSelector, 0, this)`——**首注册 interestOps=0**，待 `channelActive → beginRead` 才补 `|OP_READ`。两个工程差异点：
+
+1. **改 interestOps 必须回 eventLoop 线程**（Netty 的 `executeIfIoThread` 纪律）：一 channel 一 selector 一线程，读写全串行——**无锁的根因是线程亲和**；RocketMQ HA 反向选择一 channel 两 selector 两线程，共享位点靠 volatile 守。
+2. **同一个 Selector API 两种流派**：Netty 的 eventLoop = `select → processSelectedKeys → runAllTasks(taskQueue)`，register/write 任务靠 `wakeup()` 打断 select 进来，selector 是**事件枢纽+唤醒原语**；RocketMQ HA 的 `select(1000)` 后不遍历 key，是**有上限的瞌睡**。
+3. 彩蛋——Netty 世界里**真有**"已注册 key 换 selector"：`NioEventLoop` 检测到 JDK epoll 空轮询 bug（select 立即返回但无事件）连续若干次后，会**重建 selector**：新建一个，把旧 selector 上全部 key 按其 attachment 里的 channel 逐一重新注册（interestOps 照抄、attachment 换绑到新 key），旧 selector 作废。这是 Netty 对 "SelectionKey 不可迁移" 这一 NIO 铁律的绕行工程——绕行的代价（全量重注册 + 竞态防护）恰好反证了正常路径为何没人做 key 迁移。
+
+| | RocketMQ HA（§4.6） | Netty boss/worker |
+|---|---|---|
+| accept 线程的 selector | 只挂 ServerSocketChannel/OP_ACCEPT | 同（boss 只见 listen fd） |
+| accepted channel 首注册 | 分属读/写两个 selector（OP_READ / OP_WRITE） | **一个** worker selector，先 ops=0 后补 OP_READ |
+| 读写线程模型 | 两线程两 selector，volatile 守共享位点 | 一 eventLoop 串行 IO+pipeline，线程亲和即无锁 |
+| select 的角色 | 节流睡眠+就绪提示（不消费 key） | 事件枢纽 + taskQueue 唤醒点（消费 key+跑任务） |
+| key 迁移 | 不存在，也不需要 | 平时也不存在；epoll 空轮询 bug 下**重建 selector 全量重注册**是唯一例外 |
+| 拆线 | 随对象 close 消亡 | `key.cancel()` 亦在 eventLoop 内执行 |
 
 ## 5. 衍生物的持久化：CQ 不 sync、不复制、可重放
 
