@@ -1,6 +1,6 @@
 # JVM 演进笔记：17/21 对比 8/11 —— 内存布局 · GC · 特性
 
-> 本文是 [`java-base.md`](./java-base.md) 系列的 JVM 侧补充：库和并发类读的是 `src.zip`，
+> 本文是 [`java-base.md`](java-base.md) 系列的 JVM 侧补充：库和并发类读的是 `src.zip`，
 > JVM 本体（HotSpot）读的是 JEP 与实测行为。三条主线——内存布局、GC、特性（语言 + 运行时）——
 > 都按"8/11 旧基线 → 17/21 现状"对比展开，文末附 22~26 走向（截至 2026-09）。
 >
@@ -235,9 +235,9 @@ Leyden 启动加速路线：AOT 类加载链接（24，JEP 483）→ 26 的 AOT 
   在 17/21 上的又一层理由。
 - **Compact Strings ↔ 注册中心链路**：provider URL、attachment 键值、配置中心字符串
   密集对象在 9+ 上平均省一半——同一份注册表数据，8 与 21 的驻留内存不可直接对比。
-- **JFR（11 开源）↔ 观测性**：`doc/observability.md` 的指标路线之外，JFR 是零依赖的
+- **JFR（11 开源）↔ 观测性**：`../observability.md` 的指标路线之外，JFR 是零依赖的
   进程内事件流（`jfr print --events jdk.GCPhasePause`），benchmark 归因 GC 噪声首选。
-- **统一日志 ↔ benchmark 脚本**：`run-sample.sh`/benchmark 里任何 `-XX:+PrintGC*` 残留
+- **统一日志 ↔ benchmark 脚本**：`../../run-sample.sh`/benchmark 里任何 `-XX:+PrintGC*` 残留
   在 17/21 上都会让 JVM 起不来，参数必须换 `-Xlog:gc*` 口径。
 - **偏向锁移除 ↔ 锁开销叙事**：网上"偏向锁降低无竞争 synchronized 开销"的文章全是
   8/11 口径，17/21 上无竞争加锁就是轻量锁 CAS 写 mark word——`java-base.md` ③ 站读的
@@ -284,6 +284,6 @@ Leyden 启动加速路线：AOT 类加载链接（24，JEP 483）→ 26 的 AOT 
    9 = G1 默认）；22/25/26/27 的个别 JEP（519/521/534/516）来自二手来源与 OpenJDK 公告，
    升级引用前建议再对一次 openjdk.org 对应项目页。
 
-> 与 [`java-base.md`](./java-base.md) 的分工：那边管 `java.base` 源码里看得见的东西
+> 与 [`java-base.md`](java-base.md) 的分工：那边管 `java.base` 源码里看得见的东西
 > （容器/同步器/线程池），本文管看不见的那台机器（布局/GC/flag）。AQS 重写版口径
 > （17/21 已 go-dark）与本文 3.3 的 Loom 是同一批工作的两面，两文互链阅读。

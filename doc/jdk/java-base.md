@@ -156,7 +156,7 @@ Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
 
 **源码**：`ThreadPoolExecutor.java`、`LinkedBlockingQueue.java`
 
-> 详述已拆出单篇：[java-base-4.md](./java-base-4.md) —— 五种运行状态的 `ctl` 编码与大小顺序设计、状态迁移在源码里哪几行动手、interrupt worker 后的移除路径、池到 TERMINATED 后 worker 的存续形态，以及补充看点（三层并发控制 / Worker 继承 AQS / getTask 分叉 / 四种拒绝策略 / 异常路径 / 动态调参顺序规则）。
+> 详述已拆出单篇：[java-base-4.md](java-base-4.md) —— 五种运行状态的 `ctl` 编码与大小顺序设计、状态迁移在源码里哪几行动手、interrupt worker 后的移除路径、池到 TERMINATED 后 worker 的存续形态，以及补充看点（三层并发控制 / Worker 继承 AQS / getTask 分叉 / 四种拒绝策略 / 异常路径 / 动态调参顺序规则）。
 > 本站行号证据仍保留在本文件文末已验证事实清单第 12 条。
 
 ### 重点
@@ -209,7 +209,7 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
 
 **源码**：`ScheduledExecutorService.java`（接口）+ `ScheduledThreadPoolExecutor.java`（内部类 `ScheduledFutureTask`、`DelayedWorkQueue`）
 
-> 详述已拆出单篇：[java-base-5.md](./java-base-5.md) —— 接口四方法两组各一个区别、`DelayedWorkQueue` 手写最小堆与 leader-follower 三行等待、`ScheduledFutureTask` period 三态、`setNextRunTime` 两种周期 drift 处理、池参数藏在构造器、`delayedExecute` 四步、`removeOnCancelPolicy`、异常 = 静默停摆。
+> 详述已拆出单篇：[java-base-5.md](java-base-5.md) —— 接口四方法两组各一个区别、`DelayedWorkQueue` 手写最小堆与 leader-follower 三行等待、`ScheduledFutureTask` period 三态、`setNextRunTime` 两种周期 drift 处理、池参数藏在构造器、`delayedExecute` 四步、`removeOnCancelPolicy`、异常 = 静默停摆。
 > 本站行号证据仍保留在本文件文末已验证事实清单第 10 条。
 
 ### Jaws 对应
@@ -219,7 +219,7 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
 - 对照组——**不靠调度器**的两类：`NettyClient` 的 send-reconnect（`send.reconnect` 默认 true）是请求路径内的 lazy 重连：发现 `!isAvailable()` 时当场 `resetErrorCount() + open()`，零后台线程；心跳则是 Netty `IdleStateHandler` 在 EventLoop 上的 `schedule`，也不是 STE。读本站时对比三种定时机制（STE 堆 / EventLoop 定时任务 / 请求路径惰性检查）的适用边界。
 - 消费端超时全家已统一为 STE：`AbstractClient.timeoutTimer` 是 `ScheduledThreadPoolExecutor(1, daemon)`，每个请求注册时挂一个 one-shot 超时任务（`registerCallback`/`removeCallback` + `timeoutMap`）。这段迁移本身就站在本站肩膀上：弃用 HashedWheelTimer 的原因是桶链表上 `Timeout.remove()` 实测负载下吃约 10% CPU，而 `removeOnCancelPolicy=true` 让取消变成 O(log n) 堆删除、不留 cancelled-entry 垃圾——读 DelayedWorkQueue 后才能判断这笔账（时间轮取消 O(1) vs 堆取消 O(log n)，为什么高基数短延时场景反而是堆赢）。
 - 时间轮 vs 最小堆的调度哲学对比已随统一实现收敛：消费链路上剩下的定时需求全部由 STE 或 EventLoop 承担（见上两条）。
-- `scheduleWithFixedDelay` 包 try-catch 是**正确防御**：不包的话异常导致周期任务静默停摆（见 [java-base-5.md](./java-base-5.md) 第八节「异常 = 静默停摆」），Harbor 里曾出现看门狗误删连接的排查困难正源于此类静默。
+- `scheduleWithFixedDelay` 包 try-catch 是**正确防御**：不包的话异常导致周期任务静默停摆（见 [java-base-5.md](java-base-5.md) 第八节「异常 = 静默停摆」），Harbor 里曾出现看门狗误删连接的排查困难正源于此类静默。
 
 ### 验收问题
 

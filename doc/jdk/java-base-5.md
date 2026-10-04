@@ -1,8 +1,8 @@
 # ScheduledThreadPoolExecutor 源码精读：从接口到 DelayedWorkQueue（源码解析）
 
-> 本文是 [`java-base.md`](./java-base.md) ⑤ 站「ScheduledThreadPoolExecutor」的展开笔记。
+> 本文是 [`java-base.md`](java-base.md) ⑤ 站「ScheduledThreadPoolExecutor」的展开笔记。
 > 源码取自本机 **Eclipse Temurin 21.0.11**（`$JAVA_HOME/lib/src.zip`），文中行号均为该版本实测行号。
-> 版本口径：本机 17 与 21 的 `ScheduledThreadPoolExecutor.java` 逐字节相同（diff 结果见 [`java-base.md`](./java-base.md) 文末清单第 12 条）；
+> 版本口径：本机 17 与 21 的 `ScheduledThreadPoolExecutor.java` 逐字节相同（diff 结果见 [`java-base.md`](java-base.md) 文末清单第 12 条）；
 > `FutureTask` 与 AQS 的重写发生在 JDK 17，本站多处结论依赖之（见该清单第 9、10 条，行号证据保留在 java-base.md 附录）。
 
 ## 一、接口先行：`ScheduledExecutorService` 四方法，两组各一个区别
@@ -104,4 +104,4 @@ JDK 17 起随 FutureTask 重写，旧版 `WAITING → PROPAGATE → RUNNING → 
 
 ---
 
-> Jaws 对应与验收问题仍留在 [`java-base.md`](./java-base.md) ⑤ 站；本节各小节的行号证据清单见该文件文末第 10 条。
+> Jaws 对应与验收问题仍留在 [`java-base.md`](java-base.md) ⑤ 站；本节各小节的行号证据清单见该文件文末第 10 条。

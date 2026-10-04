@@ -1,6 +1,6 @@
 # ThreadPoolExecutor 的 5 种运行状态（源码解析）
 
-> 本文是 [`java-base.md`](./java-base.md) ④ 站「ThreadPoolExecutor」的展开笔记。
+> 本文是 [`java-base.md`](java-base.md) ④ 站「ThreadPoolExecutor」的展开笔记。
 > 源码取自本机 **Eclipse Temurin 21.0.11**（`$JAVA_HOME/lib/src.zip`），`ThreadPoolExecutor.java` 共 2145 行；
 > 文中行号均为该版本实测行号。版本口径：这套状态机骨架自 JDK 1.5 起未变，本机 17 与 21 的调度逻辑逐字节相同。
 
@@ -165,7 +165,7 @@ final void tryTerminate() {
 - **迁移到 TIDYING 的前置条件**：`workerCount == 0`，且——SHUTDOWN 态要求队列也空（`workQueue.isEmpty()`，L448 注释解释为何用 `isEmpty` 而非 `poll()==null`，兼容 DelayQueue），STOP 态不要求队列空（反正已 drain）。
 - **TIDYING 是个「独占过路态」**：`ctl.compareAndSet(c, ctlOf(TIDYING, 0))` 保证只有一个线程成功转入，由它负责跑 `terminated()`；跑完立刻 `ctl.set(ctlOf(TERMINATED, 0))`。这也是为什么注释说「transitioning to TIDYING 的那个线程 will run terminated()」。
 - `tryTerminate()` 在多处被调用（`shutdown`/`shutdownNow` 末尾、worker 退出 `processWorkerExit`、`getTask` 里检测到状态不对时），任何「可能让池变空」的动作后都要调它，才能推进终态。
-- L736 的 `container.close()` 是 JDK 21 相对 17 唯一实质变化（`SharedThreadContainer`，见 [`java-base.md`](./java-base.md) 第 12 条），纯资源登记，语义零影响。
+- L736 的 `container.close()` 是 JDK 21 相对 17 唯一实质变化（`SharedThreadContainer`，见 [`java-base.md`](java-base.md) 第 12 条），纯资源登记，语义零影响。
 
 `awaitTermination()`（L1466）则一直等在 `termination` 条件上，直到状态 `>= TERMINATED` 才返回，
 呼应注释「Threads waiting in awaitTermination() will return when the state reaches TERMINATED」。
