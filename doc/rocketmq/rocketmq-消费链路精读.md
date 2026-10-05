@@ -12,12 +12,12 @@
               → 首次 rebalance → computePullFromWhere（ConsumeFromWhere 生效点！）
               → dispatchPullRequest：首个 PullRequest 入队
 ② 拉取引擎   PullMessageService 循环 → 流控闸门群 → MQClientAPIImpl.pullMessage ── TCP ──►
-③ broker 应答 PullMessageProcessor → DefaultMessageStore.getMessage（⑥篇 §6.4 已读过）
+③ broker 应答 PullMessageProcessor → DefaultMessageStore.getMessage（发送篇 §6.5 已读过）
               → transferMessage 零拷贝 / 长轮询 PullRequestHoldService 挂起-唤醒
 ④ 回包与消费 PullAPIWrapper.processPullResult → ProcessQueue(TreeMap)
               → ConsumeMessageConcurrentlyService → 你的 consumeMessage() → ack → offset 推进
 ⑤ 位点闭环   RemoteBrokerOffsetStore 内存表 + 5s persistAllConsumerOffset
-              → broker ConsumerOffsetManager/consumerOffset.json（⑥篇 6.4 的账本收到存款）
+              → broker ConsumerOffsetManager/consumerOffset.json（发送篇 §6.4 那本账的收款口）
 ```
 
 ---
@@ -32,7 +32,7 @@
 | **CLUSTERING 专属** | L934-936 | `changeInstanceNameToPID()` | 集群模式把 instanceName 改成 **PID**——clientId 必须每进程唯一，rebalance 才认得出"我"；广播不改（本地位点文件按 clientId 分目录，撞了会共享文件，这是广播用户的责任） |
 | 拿/建工厂 | L938 | `MQClientManager.getOrCreateMQClientInstance` | 按 clientId 复用——同 JVM 第二、三、N 个 consumer 共享一个 MQClientInstance（心跳/路由/拉取线程全共用） |
 | 装 rebalance/pullAPI | L940-950 | 注入 group/strategy/factory | `allocateMessageQueueStrategy` 默认**平均分配** |
-| **选 OffsetStore** | L952-967 | CLUSTERING → `RemoteBrokerOffsetStore`（L960） | 广播才走 LocalFile（L957）——⑥篇 6.4 两本账在这一行的分岔；L967 `load()`：集群版**空实现**（权威账本在 broker，本地无账可读；取账发生在 `readOffset(READ_FROM_STORE)` 按需拉，见 1.4），广播版回读本地 offsets.json |
+| **选 OffsetStore** | L952-967 | CLUSTERING → `RemoteBrokerOffsetStore`（L960） | 广播才走 LocalFile（L957）——发送篇 §6.4 两本账在这一行的分岔；L967 `load()`：集群版**空实现**（权威账本在 broker，本地无账可读；取账发生在 `readOffset(READ_FROM_STORE)` 按需拉，见 1.4），广播版回读本地 offsets.json |
 | **选消费服务** | L969-986 | 按 listener 类型 `instanceof` 分叉：`MessageListenerOrderly` → `consumeOrderly=true` + `ConsumeMessageOrderlyService`（L969-974）；`MessageListenerConcurrently` → `ConsumeMessageConcurrentlyService`（L975-978，本样本走这支） | **listener 类型就是消费引擎的开关**；它与 push/pop 正交，组合成 2×2 四引擎。POP 变体也被一并 new+start（L974/980-981、986）但 push 路径不消费它——双引擎并存的过渡形态。`consumeOrderly` 标志的伏笔遍布全篇：②闸门 7 走 span 还是 isLocked、ProcessQueue `processMsgTreeMap` 双树仅 orderly 启用、④.4 与 ⑤.3 两套失败语义（sendBack vs 挂起重投）、cleanExpiredMsg 对 orderly 直接 return |
 | 注册进工厂 | L988-994 | `registerConsumer(group, this)` | 同 JVM 同 group 二次注册抛 "has been created before"（L992） |
 | 工厂启动 | L997 | `mQClientFactory.start()` | 见 1.2 |
@@ -54,7 +54,7 @@ fetchNameServerAddr(未配地址才需要, L346-347) → mQClientAPIImpl.start(L
 | fetchNameServerAddr | 2min（仅未配 addr） | L390-397 |
 | 刷 topic 路由 | `pollNameServerInterval` **30s** | ClientConfig L58 |
 | cleanOfflineBroker + **心跳注册**（携带订阅关系→broker 由此认识这个 group） | `heartbeatBrokerInterval` **30s**，首次 1s 后 | L62 |
-| **persistAllConsumerOffset（提交位点）** | `persistConsumerOffsetInterval` **5s**，首次 10s | L66——⑥篇 6.4 broker 侧 5s 落盘，客户端侧 5s 上交，两头节拍巧合地同数 |
+| **persistAllConsumerOffset（提交位点）** | `persistConsumerOffsetInterval` **5s**，首次 10s | L66——发送篇 §6.4 broker 侧 5s 落盘，客户端侧 5s 上交，两头节拍巧合地同数 |
 | adjustThreadPool（消费线程池按堆积自适应） | 1min | L425-431 |
 
 - **rebalance 不是定时任务，是独立线程**（RebalanceService L356 起）：`run()` 里 `waitForRunning(realWaitInterval)`，`waitInterval` 默认 **20s**（system property `rocketmq.client.rebalance.waitInterval`，L25-27），`minInterval` 1s（L28-30）；被 `rebalanceImmediately()` wakeup 时若距上次不足 1s，会**补足 minInterval 再跑**（L48-50）——所以 1.1 start 末尾的"立即 rebalance"实际最快 ~1s 后执行；`balanced` 结果还决定下轮间隔（未收敛就回到快档）。另一头 `rebalanceLater(500)`（MQClientInstance L1221-1226，就是延时 500ms 再 `rebalanceService.wakeup()`）服务的是**顺序消费独有**的场景：新队列入队生成 PullRequest 前，要先向 broker 申请队列锁（`lock(mq)` = `lockBatchMQ` RPC，1s 超时，RebalanceImpl L152-175；拿到才 `pq.setLocked(true)`），RPC 失败或没批到 → 该队列本轮不开工、置 `allMQLocked=false`（L468-470）→ 500ms 后催一轮 rebalance 重试锁。并发消费 `needLockMq=false`，此路径根本不触发（⑤.3"队列所有权"行的运行时另一半）。
@@ -94,7 +94,7 @@ fetchNameServerAddr(未配地址才需要, L346-347) → mQClientAPIImpl.start(L
 `computePullFromWhereWithException`（RebalancePushImpl L155 起）——**所有 case 第一步都是 `offsetStore.readOffset(mq, READ_FROM_STORE)` 问 broker 要已提交位点**（L174/L197 分支入口）：
 
 - 要到了（该 group 在这队列消费过）→ **直接续读，`ConsumeFromWhere` 形同不存在**；
-- 要不到（首次）才按策略：`CONSUME_FROM_FIRST_OFFSET → minOffset`（我们样本的路径，且 L253 有一处 FIRST 特判）；`CONSUME_FROM_LAST_OFFSET`：新队列→min，老队列→max（跳过历史积压）；`CONSUME_FROM_TIMESTAMP` → `searchOffset(mq, timestamp)`（L226，按时间查 index——⑥篇 §5.4 那个哈希索引文件在消费链路的第一个下游用户）。
+- 要不到（首次）才按策略：`CONSUME_FROM_FIRST_OFFSET → minOffset`（我们样本的路径，且 L253 有一处 FIRST 特判）；`CONSUME_FROM_LAST_OFFSET`：新队列→min，老队列→max（跳过历史积压）；`CONSUME_FROM_TIMESTAMP` → `searchOffset(mq, timestamp)`（L226，按时间查 index——发送篇 §5.4 那个哈希索引文件在消费链路的第一个下游用户）。
 
 > **一句话**：`ConsumeFromWhere` 是"初见策略"不是"重启策略"——重启续消费走位点账本，清账本或换 group 才轮到它出场。
 
@@ -145,8 +145,10 @@ L453-494 `pullKernelImpl` 实参里三个值得停下的点：
 
 ### 2.4 回调状态机：一台自我续装泵（L345-451）
 
+泵的实体就是一个 **`PullCallback` 匿名类**（L345 `PullCallback pullCallback = new PullCallback()`，接口仅 `onSuccess`/`onException` 两法，PullCallback.java L22-26）——它作为最后一个实参经 `pullKernelImpl`（L479-494）一路交给异步通道，**与发送篇 §2.4"同步=异步+阻塞"的 remoting 层 InvokeCallback 是同一个回调形状在消费侧的化身**（交接点 MQClientAPIImpl L1051：`invokeAsync(addr, request, timeoutMillis, new InvokeCallback(){ operationSucceed → pullCallback.onSuccess })`）。
+
 ```
-onSuccess → processPullResult（PullAPIWrapper，⑥篇 6.2 见过的 decodesBatch 在此）
+onSuccess → processPullResult（PullAPIWrapper，发送篇 §6.5 见过的 decodesBatch 在此；4.1 拆五道工序）
   FOUND      : nextOffset=nextBeginOffset；空列表→立即续装；
                有货→ pq.putMessage + submitConsumeRequest(→④) → 立即续装（pullInterval=0 默认，L376-381）
   NO_NEW_MSG /
@@ -155,7 +157,7 @@ onSuccess → processPullResult（PullAPIWrapper，⑥篇 6.2 见过的 decodesB
   OFFSET_ILLEGAL（L402-428）:
      接受 nextBeginOffset → pq.dropped → 异步任务四连：updateAndFreezeOffset + persist +
      removeProcessQueue + rebalanceImmediately
-     ← ⑥篇 6.4 "钳位三元组" 的客户端收口：broker 把越界位点钳回来，客户端连本地缓存一起冻结落盘，
+     ← 发送篇 §6.4 "钳位三元组" 的客户端收口：broker 把越界位点钳回来，客户端连本地缓存一起冻结落盘，
        再把队列扔回 rebalance 重建——又是"坏状态整个扔掉重来"，与 §4.5 重连自愈同套路
 onException  : broker 侧 FLOW_CONTROL → 20ms 轻惩罚（L109）；其他异常 → 可配延迟重投
 乱序哨兵     : nextBeginOffset/firstMsgOffset 比本次请求还小 → [BUG] warn（L384-391，只报警不处理）
@@ -196,7 +198,7 @@ onException  : broker 侧 FLOW_CONTROL → 20ms 轻惩罚（L109）；其他异�
 ```java
 tryCommitOffset(...)
   ├─ commitPullOffset  → pullOffsetTable（transient！L54，不落盘）
-  └─ commitOffset      → ConsumerOffsetManager.offsetTable（⑥篇 6.4 那本账）
+  └─ commitOffset      → ConsumerOffsetManager.offsetTable（发送篇 §6.4 那本账）
         条件：brokerAllowSuspend && hasCommitOffsetFlag
 ```
 
@@ -208,7 +210,7 @@ tryCommitOffset(...)
 
 - `channelIsWritable` 先查 socket 写缓冲：不可写 → `getMessageResult.release()` + **返回 null 直接丢弃这次响应**（L143-146）——慢消费者不配继续占用页缓存引用，等它的下一次 pull。
 - **默认 `transferMsgByHeap=true`**（BrokerConfig L134）：把 mmap 切片 read 进堆 byte[] 再 setBody——一次拷贝换实现简单。
-- 关掉后走**真零拷贝**：`ManyMessageTransfer`（FileRegion）把 `GetMessageResult` 的 mmap 切片集合直接 `writeAndFlush` 到 socket，listener 里才 `release()`（L154-171）。**页缓存 → 网卡，跳过用户态**——⑥篇里 transferMessage 的位置在这里，消息存储布局（记录自带物理长度）保证了一个 GetMessageResult 就是可整段搬走的字节区段。
+- 关掉后走**真零拷贝**：`ManyMessageTransfer`（FileRegion）把 `GetMessageResult` 的 mmap 切片集合直接 `writeAndFlush` 到 socket，listener 里才 `release()`（L154-171）。**页缓存 → 网卡，跳过用户态**——发送篇 §6.5 里 transferMessage 的位置在这里，消息存储布局（记录自带物理长度）保证了一个 GetMessageResult 就是可整段搬走的字节区段。
 
 ### 3.4 长轮询：`PullRequestHoldService`——事件驱动为主、5s 扫描兜底
 
@@ -220,11 +222,11 @@ tryCommitOffset(...)
 4. **兜底路**：HoldService 自己的线程 `waitForRunning(5s)` 周期扫超时（run L71-75），到期同样走 executeRequestWhenWakeup——事件丢了也保证 15s+5s 内必回，客户端永远等得到响应。
 5. 关掉 `longPollingEnable` 则挂起时长缩为 `shortPollingTimeMills=1s`（BrokerConfig L117-119）——退化为"1s 一轮的伪长轮询"。
 
-> **为什么在 Reput 之后才 notify（正确性关键）**：拉取取数走 ConsumeQueue 索引；若在 append 进 commitlog 时就唤醒，复查照样 NO_NEW_MSG，等于空转。"派发完成才通知"把长轮询的语义精确到**"可消费的索引已就绪"**——⑥篇 §5.5"写不等索引、读等索引"的母题在此合龙。
+> **为什么在 Reput 之后才 notify（正确性关键）**：拉取取数走 ConsumeQueue 索引；若在 append 进 commitlog 时就唤醒，复查照样 NO_NEW_MSG，等于空转。"派发完成才通知"把长轮询的语义精确到**"可消费的索引已就绪"**——发送篇 §4.3"写不等索引、读等索引"的母题在此合龙。
 
 ### 3.5 位点越界的应答侧（与②的客户端收口配对）
 
-⑥篇 §6.4 验过 store 的钳位（`OFFSET_TOO_SMALL→minOffset` 等）；broker 把"钳好的 nextBeginOffset"放进 `PULL_OFFSET_MOVED` 响应（handler L195+，主库或 `offsetCheckInSlave` 才检查）并抛 `OffsetMovedEvent`。客户端 ② 的 OFFSET_ILLEGAL 四连（冻结落盘→扔队列→rebalance）就是这句话的另一半。**一次钳位，两端各自自愈。**
+发送篇 §6.4 验过 store 的钳位（`OFFSET_TOO_SMALL→minOffset` 等）；broker 把"钳好的 nextBeginOffset"放进 `PULL_OFFSET_MOVED` 响应（handler L195+，主库或 `offsetCheckInSlave` 才检查）并抛 `OffsetMovedEvent`。客户端 ② 的 OFFSET_ILLEGAL 四连（冻结落盘→扔队列→rebalance）就是这句话的另一半。**一次钳位，两端各自自愈。**
 
 ### 验收问题（读完 ③ 必须能答）
 
@@ -241,11 +243,11 @@ tryCommitOffset(...)
 
 ### 4.1 `PullAPIWrapper.processPullResult`：响应体五道工序
 
-（执行线程：remoting 回调完成处——与 broker 端 `executeInvokeCallback` 同构的**客户端 netty 线程**；真正换线程是在 4.3 投递消费池之后。**这就是 pullBatchSize=32 保守的原因之一：解码 32 条也发生在 IO 线程上**。）
+（**本节就是 2.4 那个 `PullCallback.onSuccess` 的第一跳**——`processPullResult` 在 onSuccess 顶部、进 switch 之前被调（Impl L349）。执行线程：`pullCallback.onSuccess` 由 `MQClientAPIImpl.pullMessageAsync`（L1061）在 remoting 回调完成处直接调用——与 broker 端 `executeInvokeCallback` 同构的**客户端 netty 线程**；真正换线程是在 4.3 投递消费池之后。**这就是 pullBatchSize=32 保守的原因之一：解码 32 条也发生在 IO 线程上**。）
 
 1. 位点起点回写：`updatePullFromWhichNode(mq, suggestWhichBrokerId)`——③ 3.2 那个"消费慢建议去从库"的提示，在这里变成**下一发 pull 的目标节点**。
-2. `MessageDecoder.decodesBatch`（⑥篇 6.2 预告的收口）：整段响应字节 → N 个 MessageExt；
-3. **批记录拆包**：`INNER_BATCH_FLAG + NEED_UNWRAP_FLAG` 的消息再过一道 `decodeMessage` 拆成逻辑消息（⑥篇 6.5 "SimpleCQ 一条单元、客户端拆 N 条"的第二半）；
+2. `MessageDecoder.decodesBatch`（发送篇 §6.5 那条解码腿的收口）：整段响应字节 → N 个 MessageExt；
+3. **批记录拆包**：`INNER_BATCH_FLAG + NEED_UNWRAP_FLAG` 的消息再过一道 `decodeMessage` 拆成逻辑消息（发送篇 §6.3/§6.5 "CQ 一条单元、客户端拆 N 条"的第二半）；
 4. **tag 二次精筛**：broker 端过滤用的是 8 字节 tagCode（**hash，有误命中概率**），这里用订阅的 tag **字符串**再筛一遍（msgListFilterAgain）——经典的"hash 粗筛省 IO、字符串精筛保正确"双层；
 5. FilterMessageHook 钩子 + msgId/offsetMsgId 规范化。
 
@@ -322,7 +324,7 @@ RPC 本性两条（L198-222）：**默认 ONEWAY**（丢了不追，下轮补发
 
 ### 5.2 端到端位点账的"最坏情况"
 
-两段节拍串联：客户端 5s persist（oneway）+ broker 5s 落盘（⑥篇 6.4）→ **双进程接连崩溃，位点最多回退 ~10s 的已消费量**——这是 at-least-once 里"重复度预算"的出处；重复消费的根治手段只能是业务幂等（`UNIQ_KEY` + ⑥篇 §5.4 的 index 查询正是"按 key 查重放工具"的实现底座）。
+两段节拍串联：客户端 5s persist（oneway）+ broker 5s 落盘（发送篇 §6.4）→ **双进程接连崩溃，位点最多回退 ~10s 的已消费量**——这是 at-least-once 里"重复度预算"的出处；重复消费的根治手段只能是业务幂等（`UNIQ_KEY` + 发送篇 §5.4 的 index 查询正是"按 key 查重放工具"的实现底座）。
 
 ### 5.3 orderly 对照速查（五维）
 
@@ -341,7 +343,7 @@ start 九步(①) ── registerConsumer ──► MQClientInstance（心跳/�
 首次 rebalance(①): route→allocate→computePullFromWhere(初见策略!)→首个 PullRequest 入队→总线②
 循环体：
   [七道闸门②] ──pull(V2, sysFlag=commit|suspend|subVer)──► PullMessageProcessor③
-      store.getMessage: CQ定位→clamp三元组→commitlog取字节（⑥篇 §6.4 的读路径）
+      store.getMessage: CQ定位→clamp三元组→commitlog取字节（发送篇 §6.5 的读路径）
       FOUND ──FileRegion 零拷贝/堆双路③──► 回调(netty线程)
         processPullResult④(解码+拆批+tag精筛) → pq.putMessage → ConsumeRequest(池20) → listener
         ack 前缀 → offsetTable → ③拉账/pull搭车/5s oneway → broker 双账 → 5s flush consumerOffset.json⑥
