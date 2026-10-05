@@ -46,13 +46,15 @@ nanoTime 不用 currentTimeMillis"的官方说法）；② `execute`/`submit` �
 **前置：最小堆是什么形状**。三层认知，缺一个就看不动 DelayedWorkQueue：
 
 1. **逻辑上是一棵完全二叉树 + 堆序性**。形状约束：除末层外全满、末层从左向右贴边；序约束：父 ≤ 子（最小堆，`queue[0]` 即全局最小=最早到期——**take() 只盯堆顶这一件事的全部合法性来源**）。注意它只保证父子关系，兄弟间、跨层间不排序——**堆≠有序**（PriorityQueue 的 toArray 无序同理）。
-2. **物理上是一个数组，不是树**。完全二叉树的编号规律让指针成为多余：父 `(i−1)/2`，左子 `2i+1`，右子 `2i+2`。上面那棵树就是扁平的 `[1,3,2,7,5,4]`——这正是本节开头"`Object[]` 直接存、无节点对象分配"的几何前提，顺带买到数组局部性、树高恒 ≤ log₂n。
+2. **物理上是一个数组，不是树**。完全二叉树的编号规律让指针成为多余：父 `(i−1)/2`，左子 `2i+1`，右子 `2i+2`。示例树压平就是 `[1, 3, 2, 7, 5, 4]`——这正是本节开头"`Object[]` 直接存、无节点对象分配"的几何前提，顺带买到数组局部性、树高恒 ≤ log₂n：
 
-       1                    ← 堆顶 = 最早到期
-      /                    索引:  0  1  2  3  4  5
-     3   2                  值:   [1, 3, 2, 7, 5, 4]
-    /  /
-   7  5 4
+   ```
+        1                  ← 堆顶 = 最早到期
+       / \                 索引: 0  1  2  3  4  5
+      3   2                值:   [1, 3, 2, 7, 5, 4]
+     / \ /
+    7  5 4
+   ```
 
 3. **不变式只靠两个动作维持**：插入 `siftUp`（上浮）、摘顶 `siftDown`（下沉）。而"删任意节点"不是堆的原生操作（定位就要 O(n)）——第七节 `removeOnCancelPolicy` 能做 O(log n) 删除，全靠 `ScheduledFutureTask.heapIndex` 把"任务→数组下标"做成显式反向索引，sift 时同步记账。
 
@@ -72,6 +74,26 @@ nanoTime 不用 currentTimeMillis"的官方说法）；② `execute`/`submit` �
 **leader 是什么**：不是选举协议，就是一个 `private Thread leader` 字段（L947）——leader-follower 模式（DNS 服务器文献起源）的"leader"指**代表全堆承担精确定时等待的那个人**：谁先走到 L1178 的 else 分支，谁把自己写进字段（L1180）去 `awaitNanos(delay)`；后来者看到 `leader != null` 就退化成 follower 睡不定时 `await()`，靠点名叫醒。收益：N 个 worker 等同一个到期时刻时，`parkNanos` 定时器只挂 1 次，而不是 N 次到点唤醒后 N-1 次空手而归——"堆里任何时刻最多一次精确定时"。
 
 三条配套不变式：① 交棒——leader 在 finally 里清字段（L1184-1185），外层 finally 见 `leader == null && queue[0] != null` 就 `available.signal()`（L1191-1192）点名新 leader，正常取走/中断/更早任务插入三路退出都保证闹钟有人接手；② `awaitNanos` 本身走 ③ 站的 ConditionObject 链：`addConditionWaiter` → `fullyRelease` **释放堆锁**（等待期间 offer/remove 不受阻）→ `parkNanos` 每圈补差防超时丢失 → 醒后 `reacquire` 抢回锁回到 `for(;;)` 圈首重算 `getDelay`；③ offer 侧只在 `queue[0] == e`（新任务成了新队首）时 signal（L1105-1114）——对等待者唯一有意义的事件是"最早到期提前了"。
+
+**场景推演：corePoolSize=2，两个同周期定时任务——两个人怎么分工等**。前置节律：`runWorker` 跑完一轮任务，先 `setNextRunTime + reExecutePeriodic`（带着下一拍到期时刻重新进堆）再回到 `take()`；fixedRate 的 `time += p` 对齐使两个任务的下一到期时刻 **T 精确相同**。
+
+```
+线程1 先到 take():  peek 队首 delay = T−now > 0
+                    leader==null → 自任 leader（L1180）→ awaitNanos(delay)（L1182，全堆唯一闹钟）
+                    await 原子释放 available 锁 → 放行线程2
+线程2 晚数百μs:      队首仍未到期 且 leader!=null → await()（L1177，不定时、无闹钟）
+T 到点:              leader 定时醒 → 循环重查 → delay<=0 → finishPoll 取走任务A
+                     finally 置 leader=null；堆非空 → signal()（L1191-92）点名 follower
+                     follower 重查：任务B 同拍已到期 → 直接取走，不再等
+```
+
+典型结局不是"两个都 awaitNanos"，是**"一个定时等、一个不定时等"**。三个分支各自成立：
+
+1. **双双到期则无人等**：两线程进 `take()` 时队首 `delay<=0`，各自锁内 peek+finishPoll 一人一个直取——take() 没有"一次只发一个号"的语义，原子性由 `available` 锁保证。
+2. **fixedDelay 必错拍**：`time = triggerTime(−p)` 是"跑完再推"，执行时长差异使两拍错开；leader 取走早拍、signal 唤醒 follower，重查发现晚拍未到期 → **follower 变成新 leader 挂新闹钟**。闹钟换了人，仍只有一只。
+3. **晚到者可能先动水位**：慢的那个 `reExecutePeriodic` 进堆若成为新队首，offer 的"队首变化才 signal"会戳醒等待者——协议保证**最坏晚拿、绝不丢**，不要求线程步调一致。
+
+回到"会在同一时刻调 take() 吗"：严格意义的同刻不存在也不必存在——**可以同时身处 take()，绝不同处决策临界区**（peek-判定-摘除都在 `available.lock()` 内）。正确性建立在"锁内重查"上，而非线程同步上——这是 leader-follower 全段的判词。
 
 ## 三、ScheduledFutureTask —— 无自有状态机
 
