@@ -63,6 +63,39 @@ nanoTime 不用 currentTimeMillis"的官方说法）；② `execute`/`submit` �
 
 `siftUp/siftDown`，`Object[]` 直接存，无节点对象分配。与 `DelayQueue` 的关系：同一问题（取最近到期）的演化实现——LBQ 的 put/take Condition 换成了 `available` + `q.size()` 双检 + "队首变化才 signal" 的 leader 式优化。
 
+**与 take 相对的一侧：offer——元素怎么找到自己的位置（siftUp，L967）**
+
+take/offer 是堆的一对入口出口：take 摘顶后 `siftDown` 把补进来的尾元素往下压（见 L1163 段的 `finishPoll→siftDown`），offer 则从**数组尾部开洞**、让新元素沿父链上浮。`offer`（L1095）把这个循环**内联**了一份（`i = size++` 起步），具名 `siftUp(int k, key)` 真正服务的是 `remove(Object)` 任意摘除后的再平衡（与 `siftDown`（L985）成对调用，元素只会朝一个方向走，另一把零步退出）。逐行看这个洞技术：
+
+前提：调用方已把 `key` 从位置 `k` **取出**——`queue[k]` 是个空洞，算法找的是"回填到哪"。
+
+```java
+while (k > 0) {                          // 洞还能上浮（index 0 是堆顶，无父即终点）
+    int parent = (k - 1) >>> 1;          // 父下标 ⌊(k−1)/2⌋：数组存树的另一条索引公式
+    RunnableScheduledFuture<?> e = queue[parent];
+    if (key.compareTo(e) >= 0)           // key 不比父更早到期 → 已满足 父≤子，就地停
+        break;
+    queue[k] = e;                        // ★ 父下沉填洞——是移位不是交换：每层一次写
+    setIndex(e, k);                      //   同步记账：任务→下标 反向索引
+    k = parent;                          //   洞上移一层
+}
+queue[k] = key;                          // 归宿找到，回填
+setIndex(key, k);
+```
+
+`compareTo` 比的是到期时刻（`ScheduledFutureTask.compareTo`：先 `time`，平手按 `sequenceNumber` 提交序决胜）——"谁小"="谁先到期"。走一遍 `[1,3,2,7,5,4]` 的洞 `k=6` 插 `key=0`：
+
+```
+洞6  父2(值2) 0<2 → 2 下沉       [1,3,_ ,7,5,4,2]
+洞2  父0(值1) 0<1 → 1 下沉       [_,3,1,7,5,4,2]
+洞0  k==0 出环 → 回填             [0,3,1,7,5,4,2] ✓  三步，每步一写
+```
+
+三个设计点：
+1. **"洞+下沉"而非交换**：每层一次写入+一次记账（交换要三步写），最后统一回填——插入排序的移位技巧，摊到 O(log n) 层。
+2. **`setIndex` 是 `remove` 的前置**：上浮途中同步维护 `heapIndex`，"删任意任务"才能 O(1) 定位、O(log n) 补位——第七节 `removeOnCancelPolicy` 的成本账全靠这两行记账撑着（前置§第3层说的"显式反向索引"就是它）。
+3. **`>=0` 即 break（等于也停）**：不比父更早就地住，不无谓上浮——省步数之外还让堆形态唯一、行为可复现。
+
 **take() 里的三行"等"（L1163-1195）**——到期判断 `delay <= 0` 之外，未到期时线程全在这三行里：
 
 | 行 | 谁在等 | 等什么 |
@@ -74,6 +107,44 @@ nanoTime 不用 currentTimeMillis"的官方说法）；② `execute`/`submit` �
 **leader 是什么**：不是选举协议，就是一个 `private Thread leader` 字段（L947）——leader-follower 模式（DNS 服务器文献起源）的"leader"指**代表全堆承担精确定时等待的那个人**：谁先走到 L1178 的 else 分支，谁把自己写进字段（L1180）去 `awaitNanos(delay)`；后来者看到 `leader != null` 就退化成 follower 睡不定时 `await()`，靠点名叫醒。收益：N 个 worker 等同一个到期时刻时，`parkNanos` 定时器只挂 1 次，而不是 N 次到点唤醒后 N-1 次空手而归——"堆里任何时刻最多一次精确定时"。
 
 三条配套不变式：① 交棒——leader 在 finally 里清字段（L1184-1185），外层 finally 见 `leader == null && queue[0] != null` 就 `available.signal()`（L1191-1192）点名新 leader，正常取走/中断/更早任务插入三路退出都保证闹钟有人接手；② `awaitNanos` 本身走 ③ 站的 ConditionObject 链：`addConditionWaiter` → `fullyRelease` **释放堆锁**（等待期间 offer/remove 不受阻）→ `parkNanos` 每圈补差防超时丢失 → 醒后 `reacquire` 抢回锁回到 `for(;;)` 圈首重算 `getDelay`；③ offer 侧只在 `queue[0] == e`（新任务成了新队首）时 signal（L1105-1114）——对等待者唯一有意义的事件是"最早到期提前了"。
+
+**摘除动作：finishPoll + siftDown——take 的下半场（L1140 / L985）**。上面三行"等"只管**何时醒来**；醒来判定 `delay<=0` 之后，摘走堆顶这一步与"等"完全无关，take（L1174）与 timed poll（L1213）共用这个 `finishPoll`：
+
+```java
+private RunnableScheduledFuture<?> finishPoll(RunnableScheduledFuture<?> f) {
+    int s = --size;                        // 缩号：末位 s 成为可摘走的"自由位"
+    RunnableScheduledFuture<?> x = queue[s];   // 取末叶——二叉堆删除的标准起手：尾补头
+    queue[s] = null;                       // 清空尾："堆只活在 [0,size)" 的不变式复原 + 防泄漏
+    if (s != 0)                            // size 已为 0（原堆只剩 f，x==f 刚被置 null）就不必堆化
+        siftDown(0, x);                    // x 当洞从根位下沉找归宿
+    setIndex(f, -1);                       // 销账：f 已出堆——heapIndex 生命周期到这里闭合
+    return f;
+}
+```
+
+三个点：**① 尾补头**保数组永远紧凑——完全二叉树的"形状"不被破坏，这是 O(1) 摘顶的前提（链式堆做不到）；**② `setIndex(f,-1)`** 与入堆时 sift 沿途的记账成对——之后谁再 `remove(f)` 按 -1 即知"已出堆"；**③ `siftDown` 单向就够**：x 被放在**堆顶**，index 0 无父，只可能向下违例——对比 `remove(Object)` 的任意位置，那里才需要 `siftUp`+`siftDown` 双向各试一把。
+
+`siftDown`（L985-1001）逐行：
+
+```java
+int half = size >>> 1;                 // 非叶下标上界：跌进叶子层即归宿，不去比不存在的子
+while (k < half) {
+    int child = (k << 1) + 1;          // 左子 2k+1
+    RunnableScheduledFuture<?> c = queue[child];
+    int right = child + 1;
+    if (right < size && c.compareTo(queue[right]) > 0)
+        c = queue[child = right];      // 两个孩子里选更小的（右可能不存在）
+    if (key.compareTo(c) <= 0)         // key 不大于最小子 → 洞位放它即保住 父≤子
+        break;
+    queue[k] = c;                      // ★ 小子往上提填洞——与 siftUp 镜像的洞技术
+    setIndex(c, k);                    //   同样每层一次写 + 一次记账
+    k = child;
+}
+queue[k] = key;
+setIndex(key, k);
+```
+
+核心一条：**必须往"更小的孩子"沉**——往大了沉，小的那个孩子就和父违例了。`>=break/<=break` 的对称（siftUp 是 `key≥父` 停，siftDown 是 `key≤小子` 停）加上"每层一写+setIndex"，两把 sift 其实是同一个洞技术朝两个方向各推一遍——**堆的写路径全部动作，就这两段共 30 行**。
 
 **场景推演：corePoolSize=2，两个同周期定时任务——两个人怎么分工等**。前置节律：`runWorker` 跑完一轮任务，先 `setNextRunTime + reExecutePeriodic`（带着下一拍到期时刻重新进堆）再回到 `take()`；fixedRate 的 `time += p` 对齐使两个任务的下一到期时刻 **T 精确相同**。
 
