@@ -33,7 +33,7 @@
 | 拿/建工厂 | L938 | `MQClientManager.getOrCreateMQClientInstance` | 按 clientId 复用——同 JVM 第二、三、N 个 consumer 共享一个 MQClientInstance（心跳/路由/拉取线程全共用） |
 | 装 rebalance/pullAPI | L940-950 | 注入 group/strategy/factory | `allocateMessageQueueStrategy` 默认**平均分配** |
 | **选 OffsetStore** | L952-967 | CLUSTERING → `RemoteBrokerOffsetStore`（L960） | 广播才走 LocalFile（L957）——⑥篇 6.4 两本账在这一行的分岔；L967 `load()`：集群版**空实现**（权威账本在 broker，本地无账可读；取账发生在 `readOffset(READ_FROM_STORE)` 按需拉，见 1.4），广播版回读本地 offsets.json |
-| **选消费服务** | L969-986 | 按 listener 类型 `instanceof` 分叉：`MessageListenerOrderly` → `consumeOrderly=true` + `ConsumeMessageOrderlyService`（L969-974）；`MessageListenerConcurrently` → `ConsumeMessageConcurrentlyService`（L975-978，本样本走这支） | **listener 类型就是消费引擎的开关**；它与 push/pop 正交，组合成 2×2 四引擎。POP 变体也被一并 new+start（L974/980-981、986）但 push 路径不消费它——双引擎并存的过渡形态。`consumeOrderly` 标志的伏笔遍布全篇：②闸门 7 走 span 还是 isLocked、ProcessQueue `processMsgTreeMap` 双树仅 orderly 启用、④.4 与 ⑥.5 两套失败语义（sendBack vs 挂起重投）、cleanExpiredMsg 对 orderly 直接 return |
+| **选消费服务** | L969-986 | 按 listener 类型 `instanceof` 分叉：`MessageListenerOrderly` → `consumeOrderly=true` + `ConsumeMessageOrderlyService`（L969-974）；`MessageListenerConcurrently` → `ConsumeMessageConcurrentlyService`（L975-978，本样本走这支） | **listener 类型就是消费引擎的开关**；它与 push/pop 正交，组合成 2×2 四引擎。POP 变体也被一并 new+start（L974/980-981、986）但 push 路径不消费它——双引擎并存的过渡形态。`consumeOrderly` 标志的伏笔遍布全篇：②闸门 7 走 span 还是 isLocked、ProcessQueue `processMsgTreeMap` 双树仅 orderly 启用、④.4 与 ⑤.3 两套失败语义（sendBack vs 挂起重投）、cleanExpiredMsg 对 orderly 直接 return |
 | 注册进工厂 | L988-994 | `registerConsumer(group, this)` | 同 JVM 同 group 二次注册抛 "has been created before"（L992） |
 | 工厂启动 | L997 | `mQClientFactory.start()` | 见 1.2 |
 | **start 末尾触发三连** | L1013-1016 | 更新订阅版路由 → `checkClientInBroker` → `sendHeartbeatToAllBrokerWithLock()` 成功才 `rebalanceImmediately()`（L1015-1016） | 第一次 rebalance 是**事件触发**，不等周期——心跳即注册，注册完立刻分队列 |
@@ -57,7 +57,7 @@ fetchNameServerAddr(未配地址才需要, L346-347) → mQClientAPIImpl.start(L
 | **persistAllConsumerOffset（提交位点）** | `persistConsumerOffsetInterval` **5s**，首次 10s | L66——⑥篇 6.4 broker 侧 5s 落盘，客户端侧 5s 上交，两头节拍巧合地同数 |
 | adjustThreadPool（消费线程池按堆积自适应） | 1min | L425-431 |
 
-- **rebalance 不是定时任务，是独立线程**（RebalanceService L356 起）：`run()` 里 `waitForRunning(realWaitInterval)`，`waitInterval` 默认 **20s**（system property `rocketmq.client.rebalance.waitInterval`，L25-27），`minInterval` 1s（L28-30）；被 `rebalanceImmediately()` wakeup 时若距上次不足 1s，会**补足 minInterval 再跑**（L48-50）——所以 1.1 start 末尾的"立即 rebalance"实际最快 ~1s 后执行；`balanced` 结果还决定下轮间隔（未收敛就回到快档）。另一头 `rebalanceLater(500)`（MQClientInstance L1221-1226，就是延时 500ms 再 `rebalanceService.wakeup()`）服务的是**顺序消费独有**的场景：新队列入队生成 PullRequest 前，要先向 broker 申请队列锁（`lock(mq)` = `lockBatchMQ` RPC，1s 超时，RebalanceImpl L152-175；拿到才 `pq.setLocked(true)`），RPC 失败或没批到 → 该队列本轮不开工、置 `allMQLocked=false`（L468-470）→ 500ms 后催一轮 rebalance 重试锁。并发消费 `needLockMq=false`，此路径根本不触发（⑥.5"队列所有权"行的运行时另一半）。
+- **rebalance 不是定时任务，是独立线程**（RebalanceService L356 起）：`run()` 里 `waitForRunning(realWaitInterval)`，`waitInterval` 默认 **20s**（system property `rocketmq.client.rebalance.waitInterval`，L25-27），`minInterval` 1s（L28-30）；被 `rebalanceImmediately()` wakeup 时若距上次不足 1s，会**补足 minInterval 再跑**（L48-50）——所以 1.1 start 末尾的"立即 rebalance"实际最快 ~1s 后执行；`balanced` 结果还决定下轮间隔（未收敛就回到快档）。另一头 `rebalanceLater(500)`（MQClientInstance L1221-1226，就是延时 500ms 再 `rebalanceService.wakeup()`）服务的是**顺序消费独有**的场景：新队列入队生成 PullRequest 前，要先向 broker 申请队列锁（`lock(mq)` = `lockBatchMQ` RPC，1s 超时，RebalanceImpl L152-175；拿到才 `pq.setLocked(true)`），RPC 失败或没批到 → 该队列本轮不开工、置 `allMQLocked=false`（L468-470）→ 500ms 后催一轮 rebalance 重试锁。并发消费 `needLockMq=false`，此路径根本不触发（⑤.3"队列所有权"行的运行时另一半）。
 
 ### 1.3 rebalance：N 个实例各自独立计算的分配引擎（本篇核心）
 
@@ -76,7 +76,7 @@ fetchNameServerAddr(未配地址才需要, L346-347) → mQClientAPIImpl.start(L
 **这一步动的账本本身**——`RebalanceImpl` 类头四张表（L51-56）：
 
 - `processQueueTable: ConcurrentMap<MessageQueue, ProcessQueue>`（L51）：**key=逻辑队列**（topic+brokerName+queueId 判等），**value=本实例对该队列的消费快照**——一队一账、`get(mq)` O(1) 定位（拉取回调/lock/提交位点全靠它）。用 CHM 不是防御性写法而是必然：**写者四方交叉**——rebalance 线程 put/remove（本步）、netty 回调线程 putMessage（④.2）、消费线程 removeMessage/commit（④.4）、定时任务遍历（锁续期/过期清理）。姊妹三表同排：`popProcessQueueTable`（L52，pop 对应）、`topicSubscribeInfoTable`（L53-54，**第 1 步的 mqSet 就从这来**）、`subscriptionInner`（L55-56，1.1 copySubscription 写的和策略读的同一张）。
-- `ProcessQueue`（类注释自述 *Queue consumption snapshot*）五类职责，各回指本篇落点：**① 缓存树** `TreeMap<queueOffset, msg>`（L46，④.2）+ `consumingMsgOrderlyTreeMap`（L53，顺序"在途子集"——`commit()` L267 / `rollback()` L253-258 整树倒回 / `makeMessageToConsumeAgain` L296，即 ⑥.5"双树+显式 COMMIT"的实体）；**② 位点水位** `queueOffsetMax`（L55，空树时 ack 兜底 `+1` 的出处，④.4）；**③ 流控仪表** `msgCount/msgSize/msgAccCnt`（L62；②闸门 5/6 读前两个，第 3 个由 broker **借消息属性 `PROPERTY_MAX_OFFSET` 随货捎回**——`maxOffset − 本批末条 queueOffset` 即"broker 还剩多少没给你"（L149-156），②闸门外还有 pullThreshold*ForTopic 摊薄也依赖这类水位）。**④ 状态旗** `dropped/locked + lastLock/lastPull/lastConsume` 时间戳（②闸门 1、1.3 自愈判据、isLockExpired L64）；**⑤ 过期清理** cleanExpiredMsg（④.2）。
+- `ProcessQueue`（类注释自述 *Queue consumption snapshot*）五类职责，各回指本篇落点：**① 缓存树** `TreeMap<queueOffset, msg>`（L46，④.2）+ `consumingMsgOrderlyTreeMap`（L53，顺序"在途子集"——`commit()` L267 / `rollback()` L253-258 整树倒回 / `makeMessageToConsumeAgain` L296，即 ⑤.3"双树+显式 COMMIT"的实体）；**② 位点水位** `queueOffsetMax`（L55，空树时 ack 兜底 `+1` 的出处，④.4）；**③ 流控仪表** `msgCount/msgSize/msgAccCnt`（L62；②闸门 5/6 读前两个，第 3 个由 broker **借消息属性 `PROPERTY_MAX_OFFSET` 随货捎回**——`maxOffset − 本批末条 queueOffset` 即"broker 还剩多少没给你"（L149-156），②闸门外还有 pullThreshold*ForTopic 摊薄也依赖这类水位）。**④ 状态旗** `dropped/locked + lastLock/lastPull/lastConsume` 时间戳（②闸门 1、1.3 自愈判据、isLockExpired L64）；**⑤ 过期清理** cleanExpiredMsg（④.2）。
 - 一句话总装：**`processQueueTable` 是"我负责哪些队列、每队消费得怎么样"的总账本；第 5 步是它唯一的结构性写者，第 6 步的 `balanced` 就是"策略算出的应得"与"账本里的实持"的一次对账。**
 
 **两个排序背后没说的三件事**（rebalance 的真实语义）：
@@ -87,7 +87,7 @@ fetchNameServerAddr(未配地址才需要, L346-347) → mQClientAPIImpl.start(L
 
 **BROADCASTING 对照**（L270-286）：不查 cid、不 allocate、不排序——全员对全量 mqSet 各消费各的（"每条消息每台都过一遍"），代价与无重叠语义完全不同；位点也因此只能本地存（⑤.1 两本账的另一半）。
 
-**另一条轨：broker 端 rebalance**（`getRebalanceResultFromBroker`，L345-390）：`clientRebalance(topic)=false` 时每轮改发 `queryAssignment` RPC（MQClientInstance L1373-1381，同样打给任一 topic broker，带 strategyName）——**分配由 broker 统一算**，返回 `Set<MessageQueueAssignment>`（每队列自带 mode）→ `updateMessageQueueAssignment`（L508+）按 mode 分流：PUSH 队列仍建 PullRequest（L646），**POP 队列建 PopRequest + PopProcessQueue**（L677 区）——⑥.1 讲的那条线就从这里进来。两条轨的取舍一句话：**push 时代把函数发给 N 台各自算，pop 时代把答案集中算好发回来**；代价分别是"输入快照不原子"与"多一跳 RPC+broker 要维护视图"。
+**另一条轨：broker 端 rebalance**（`getRebalanceResultFromBroker`，L345-390）：`clientRebalance(topic)=false` 时每轮改发 `queryAssignment` RPC（MQClientInstance L1373-1381，同样打给任一 topic broker，带 strategyName）——**分配由 broker 统一算**，返回 `Set<MessageQueueAssignment>`（每队列自带 mode）→ `updateMessageQueueAssignment`（L508+）按 mode 分流：PUSH 队列仍建 PullRequest（L646），**POP 队列建 PopRequest + PopProcessQueue**（L677 区）——pop 路径由此进入（invisibleTime/服务端对账语义曾开专章，现已删；⑤.3 表仍覆盖其对照结论）。两条轨的取舍一句话：**push 时代把函数发给 N 台各自算，pop 时代把答案集中算好发回来**；代价分别是"输入快照不原子"与"多一跳 RPC+broker 要维护视图"。
 
 ### 1.4 `ConsumeFromWhere` 的真实生效条件（最容易记错的一格）
 
@@ -351,72 +351,3 @@ start 九步(①) ── registerConsumer ──► MQClientInstance（心跳/�
 ```
 
 三条贯穿性收口：①**主语永远是 PullRequest**，push 是 15s 挂起 + 派发唤醒合谋的视效；②**位点是三轨流水**（拉轨 nextOffset / 账轨 ack 前缀 / 盘轨两段 5s），谁都不阻塞谁；③**一切故障处理同构**——扔掉局部状态（dropped/freeze/closeMaster/rebuild），靠周期性幂等重算收敛，没有原地修补协议。
-
----
-
-## ⑥ POP 全链路：一条 CK 的生死（PopBufferMergeService / invisibleTime / Revive）
-
-> 范围：经典客户端内源 pop（②.1 消息总线的另一分派）。broker/pop 下的 `PopConsumerService`（RocksDB KV 态、Lite 顺序 pop）未钻，仅点名。
-> 与 push 的本质分野：**位点提交被"不可见时间 + 服务端对账"替代**——ack 从"推进 offset"变成"销账凭证"。
-
-### 6.1 客户端：一台总线的另一条分派
-
-- 前提·拨开关：assignment 里的 `mode=POP` 不是默认值，来自朝 broker 的 `SET_MESSAGE_REQUEST_MODE`（MQClientAPIImpl L3300）——两条正路：**编程式** `DefaultMQAdminExt.setMessageRequestMode(brokerAddr, topic, group, POP, popShareQueueNum, timeout)`（官方示例 `PopConsumer.java` 就是启动时自己拨，L62；LMQ 版 LMQPushPopConsumer L98 同款）或**运维式** `mqadmin setConsumeMode`（SubCommand L102）。broker 端存进 `MessageRequestModeManager extends ConfigManager`（JSON 持久化，QueryAssignmentProcessor L85/L107 接收）——**粒度 = per (topic, group)**，可灰度（同 topic 的 A 组 pop、B 组 push 互不干扰）；且 **per-broker 存储，主备要各拨一遍**（测试 PopSlaveActingMasterIT L502/505 即此坑）；`popShareQueueNum` 是 pop 下逻辑队列共享的物理队列数提示。
-- 客户端侧唯一动作：`setClientRebalance(false)`（PopConsumer L50）——rebalance 从本地改为问 broker（QUERY_ASSIGNMENT），业务 listener 零改动。
-- 入口：分配表带 `mode=POP` 的队列（`RebalanceImpl.updateMessageQueueAssignment` L508+ → `new PopRequest` L677）→ ②.1 总线 `getMessageRequestMode()==POP` 分派 `popMessage`。
-- POP RPC（`MQClientAPIImpl.popMessage` L844）：带 `invisibleTime`、`pollTime`（broker 侧长轮询）、`initMode`（首拉位点策略）；响应每消息附 **extraInfo** 串（`ExtraInfoUtil.split` 解出 reviveQid/queueId/ckQueueOffset/popTime/invisibleTime…）——**ack 的凭证从 broker 来、原样还给 broker**，客户端只保管不理解。
-- 消费完（`ConsumeMessagePopConcurrentlyService`）：
-  - 成功 → `DefaultMQPushConsumerImpl.ackMessageAsync`（L287）/**batchAck**（L311）——`MQClientAPIImpl` L919-938 按 `retry@queueId@ckOffset@popTime` 做 mergeKey，**把同一 CK 的多条 ack 合成一个 BATCH_ACK**；
-  - 失败 → `changeInvisibleTimeAsync`（L337）把 nextVisible 改近=快速重投；或**干脆不 ack**，让 invisible 到期走服务端兜底。
-- 与 push 对照：**没有 sendBack 了**——重试的主动权整个交给服务端。
-
-### 6.2 broker 弹出：一批一 CK 一钉
-
-`PopMessageProcessor.processRequest`（L220）：
-
-1. `compensateBasicConsumerInfo(CONSUME_POP, CLUSTERING)`（L240，注释明示 **pop 只支持集群模式**）；`isTimeoutTooMuch` 拒陈旧请求（L244）。
-2. `popMsgFromTopic`（L667）：`getPopOffset`（含 reset 检查）→ **并发闸**"Too much msgs unacked"（未销账超配额停弹，L310 区）→ 复用量链读门面 `messageStore.getMessageAsync`——**pop 不是新读引擎，是账本引擎**。
-3. **一批一 CK**（`appendCheckPoint` L952-980）：`PopCheckPoint{num, startOffset, diffs[], bitMap, popTime, invisibleTime, reviveQid, ...}`——弹 N 条只立 **1 条账**；先塞 `popBufferMergeService.addCk`（L490）内存，buffer 拒收才走落盘路径。
-4. CK 落盘 = `buildCkMsg`（L935）：checkpoint JSON 化成一条普通消息写进 **revive topic**（queueId 由 `ckMessageNumber` 轮转分散，L496），**`deliverTimeMs = reviveTime - ackTimeInterval`——invisible 到期检查交给 timer wheel 定时投递**，不需要任何扫描线程找过期项。
-
-### 6.3 `PopBufferMergeService`：多层削减，让正常路径零 revive 写
-
-`commitOffsets: "topic@cid@queueId" → Queue<PopCheckPointWrapper>`（L51），扫描循环（L240-300）：
-
-| 情形 | 处置 | 意义 |
-|---|---|---|
-| ack 已齐（bitMap 覆盖，`isCkDone`） | 出队即弃，**CK 永不落盘** | 快路径 pop→ack 全程内存 |
-| 逼近 `popCkStayBufferTimeOut`（快到期）/ 滞留超 `popCkStayBufferTime` | `putCkToStore` 落盘（可 async append） | 慢路径，交给 revive |
-| 已落盘 CK 等齐 ack 且 `enablePopBatchAck` | ack 合并成 batch 写 | 慢路径再省 |
-| justOffset（仅推位点占位） | 不在库必须补写 | offset 不丢账 |
-
-`commitOffset`（L387-412）：buffer 消化即推进 `consumerOffsetManager.commitOffset`——**pop 的 offset 由 broker 凭销账推进，不走客户端 5s persist**：push"客户端报进度"，pop"服务端记账等销账"。
-
-### 6.4 `PopReviveService`：对账与重投（一 revive 队列一线程，仅 master）
-
-拉取 revive topic 当内部消费者（`getReviveMessage` L208/354），两类记录配对：
-
-- **CK 到点（无人配对的 ack）→ `reviveMsgFromCk`（L553）**：按 bitMap 跳过已销、`ackOffsetByIndex(j)` 还原各 msgOffset → `getBizMessage` 回读消息体（**已物理清理则静默跳过**）→ `reviveRetry`：**重投 `buildPopRetryTopic` 的 pop 重试队**（retry 队本身则回自己——"续命即重试"，delay 走 retry 阶梯）；
-- **重投失败 → `rePutCK`（L602）**：新 CK 回写 revive，退避阶梯 `ckRewriteIntervalsInSeconds`，到顶按 `skipWhenCKRePutReachMaxTimes` 弃账——**连 CK 自己都有重试策略**；
-- 处理完**按序** commit revive offset（`inflightReviveRequestMap` 前序不毕不后移，L585-597）——revive 是严格有序的状态日志，乱序会让 offset 跳号漏账。
-
-### 6.5 push vs pop 结算表
-
-| 维度 | push（①-⑤） | pop（本节） |
-|---|---|---|
-| 重试驱动 | 客户端 sendBack → `%RETRY%`（④.4） | 服务端：不 ack → 到期 revive → pop 重试队；`changeInvisibleTime` 可加速 |
-| 位点主权 | 客户端 ack 前缀 → 上报 → broker 记账（③双账/⑤三进路） | **broker 凭销账自推**（6.3 尾），客户端只持 extraInfo |
-| 重复窗口 | 两段 5s（≈10s） | **invisibleTime 本身**，业务可调 |
-| 在途状态 | ProcessQueue 内存树（④.2），客户端死账不动 | 服务端 CK 账，实例死亡不影响对账 |
-| 并发弹性 | 队列数封顶消费者数（rebalance 分派） | **队列不再是独占单位**——组内任意实例可抢任意消息，LMQ/多租户友好 |
-| 写放大削减 | （无此问题） | 批 CK / 内存 buffer 免写 / batch ack 合并 / timer 代扫描，层层设卡 |
-
-### 验收问题（读完 ⑥ 必须能答）
-
-- [ ] invisible 到期为什么用"定时消息回投"而不是扫描？6.3 的 buffer 与 timer 的 reviveTime 在时间上怎么衔接（`- ackTimeInterval` 那个提前量是干嘛的）？
-- [ ] 一批 32 条的 pop，最顺与最惨各产生几次 revive 写？逐层指出触发点。
-- [ ] pop 的 offset 由谁在什么事件推进？为什么 pop 重复窗口=invisibleTime 而 push 是两段 5s？
-- [ ] 为什么 revive 必须按序消费、`inflightReviveRequestMap` 在防什么？
-- [ ] `changeInvisibleTime`（主动快重试）与"不 ack 等兜底"（被动）各适合什么业务画像？
-- [ ] batchAck 的 mergeKey 为什么要含 popTime？（同队列先后多批 CK 的区分）
-- [ ] 为什么说"pop 不是新读引擎，是账本引擎"？它的复用点在哪个函数？
