@@ -10,7 +10,7 @@
 ```
 ① 启动装配   DefaultMQPushConsumerImpl.start → MQClientInstance（任务族+两大服务线程）
               → 首次 rebalance → computePullFromWhere（ConsumeFromWhere 生效点！）
-              → dispatchPullRequest：第一颗种子
+              → dispatchPullRequest：首个 PullRequest 入队
 ② 拉取引擎   PullMessageService 循环 → 流控闸门群 → MQClientAPIImpl.pullMessage ── TCP ──►
 ③ broker 应答 PullMessageProcessor → DefaultMessageStore.getMessage（⑥篇 §6.4 已读过）
               → transferMessage 零拷贝 / 长轮询 PullRequestHoldService 挂起-唤醒
@@ -28,15 +28,15 @@
 
 | 步 | 行号 | 干什么 | 值得注意 |
 |---|---|---|---|
-| 校验/拷贝订阅 | L930-932 | `checkConfig` + `copySubscription`（用户 subscribe 进内部表） | 一个实例内 group 名重复直接拒 |
+| 校验/拷贝订阅 | L930-932 | `checkConfig`（只查 group 名合法性等，重复 group 是下一行 registerConsumer 拒的）+ `copySubscription`（L1212） | **对现代写法它实际只做一件事**：CLUSTERING 加订 `%RETRY%group`（L1226-1234，广播 break——④"广播无重试"的出处）。前两段空转：①订阅复制循环只对废弃的 `setSubscription(Map)` 有意义——现代 `subscribe()`（impl L1265）写进的就是同一个 `subscriptionInner` 表，5.x 已无 4.x 那种"从 consumer 表拷到 impl"的两张表；②listener 绑定被 `messageListenerInner != null` 短路——`registerMessageListener`（impl L737）早就置了它 |
 | **CLUSTERING 专属** | L934-936 | `changeInstanceNameToPID()` | 集群模式把 instanceName 改成 **PID**——clientId 必须每进程唯一，rebalance 才认得出"我"；广播不改（本地位点文件按 clientId 分目录，撞了会共享文件，这是广播用户的责任） |
 | 拿/建工厂 | L938 | `MQClientManager.getOrCreateMQClientInstance` | 按 clientId 复用——同 JVM 第二、三、N 个 consumer 共享一个 MQClientInstance（心跳/路由/拉取线程全共用） |
 | 装 rebalance/pullAPI | L940-950 | 注入 group/strategy/factory | `allocateMessageQueueStrategy` 默认**平均分配** |
-| **选 OffsetStore** | L952-967 | CLUSTERING → `RemoteBrokerOffsetStore`（L960） | 广播才走 LocalFile（L957）——⑥篇 6.4 两本账在这一行的分岔；L967 `load()` 集群版只清表不发 RPC |
-| **选消费服务** | L969-982 | 按 listener 类型 | 我们的 `MessageListenerConcurrently` → `ConsumeMessageConcurrentlyService`（L977）；顺带看：5.x 还把 POP 变体也 new 了（L980），push 路径不用它——两套服务并存，POP 蚕食 push 的过渡形态 |
+| **选 OffsetStore** | L952-967 | CLUSTERING → `RemoteBrokerOffsetStore`（L960） | 广播才走 LocalFile（L957）——⑥篇 6.4 两本账在这一行的分岔；L967 `load()`：集群版**空实现**（权威账本在 broker，本地无账可读；取账发生在 `readOffset(READ_FROM_STORE)` 按需拉，见 1.4），广播版回读本地 offsets.json |
+| **选消费服务** | L969-986 | 按 listener 类型 `instanceof` 分叉：`MessageListenerOrderly` → `consumeOrderly=true` + `ConsumeMessageOrderlyService`（L969-974）；`MessageListenerConcurrently` → `ConsumeMessageConcurrentlyService`（L975-978，本样本走这支） | **listener 类型就是消费引擎的开关**；它与 push/pop 正交，组合成 2×2 四引擎。POP 变体也被一并 new+start（L974/980-981、986）但 push 路径不消费它——双引擎并存的过渡形态。`consumeOrderly` 标志的伏笔遍布全篇：②闸门 7 走 span 还是 isLocked、ProcessQueue `processMsgTreeMap` 双树仅 orderly 启用、④.4 与 ⑥.5 两套失败语义（sendBack vs 挂起重投）、cleanExpiredMsg 对 orderly 直接 return |
 | 注册进工厂 | L988-994 | `registerConsumer(group, this)` | 同 JVM 同 group 二次注册抛 "has been created before"（L992） |
 | 工厂启动 | L997 | `mQClientFactory.start()` | 见 1.2 |
-| **点火三连** | L1013-1016 | 更新订阅版路由 → `checkClientInBroker` → `sendHeartbeatToAllBrokerWithLock()` 成功才 `rebalanceImmediately()`（L1015-1016） | 第一次 rebalance 是**事件触发**，不等周期——心跳即注册，注册完立刻分队列 |
+| **start 末尾触发三连** | L1013-1016 | 更新订阅版路由 → `checkClientInBroker` → `sendHeartbeatToAllBrokerWithLock()` 成功才 `rebalanceImmediately()`（L1015-1016） | 第一次 rebalance 是**事件触发**，不等周期——心跳即注册，注册完立刻分队列 |
 
 ### 1.2 `MQClientInstance.start()`（L338-376）：起什么、多久跑一次
 
@@ -46,7 +46,7 @@ fetchNameServerAddr(未配地址才需要, L346-347) → mQClientAPIImpl.start(L
 → 内建 defaultMQProducer.start(false)(L358)
 ```
 
-- 注释叫 "Start push service" 的 L358 其实起的是**工厂自带的 producer**——心跳、注册 offset、查位点这些客户端管理面 RPC 全借它的通道。**消费者自己不发 RPC，管理面走内建 producer**，这是个很少被提起的装配事实。
+- 注释 "Start push service"（L358）起的是**工厂内建 producer**（`CLIENT_INNER_PRODUCER` 组，L218）——但它**不承载任何管理面 RPC**（此话为早先错记，已纠）：心跳/提交位点/查位点/pull/ack 全部走 `MQClientAPIImpl` 自持的**那一个共享 `NettyRemotingClient`**（全类 116 处 `invoke*`；`updateConsumerOffset(Oneway)` L1538/1559）。内建 producer 的唯一实职是 **sendBack 的降级通道**：`sendMessageBack` 的 RPC（`consumerSendMessageBack` L772）抛错时，catch 里 `sendMessageBackAsNormalMessage`（L786-801）以普通生产者身份把消息直接 `send()` 进 `%RETRY%group`（带 originMsgId/RETRY_TOPIC/reconsumeTimes+1、**delayLevel=3+n 退避**）。同款调用点四处：push L801 / orderly L355 / popOrderly L268 / pull L679——非废弃遗产，是活的兜底路径。
 - 定时任务族（`startScheduledTask` L389-432，默认值 ClientConfig 实证）：
 
 | 任务 | 周期 | 默认值行号 |
@@ -57,15 +57,15 @@ fetchNameServerAddr(未配地址才需要, L346-347) → mQClientAPIImpl.start(L
 | **persistAllConsumerOffset（提交位点）** | `persistConsumerOffsetInterval` **5s**，首次 10s | L66——⑥篇 6.4 broker 侧 5s 落盘，客户端侧 5s 上交，两头节拍巧合地同数 |
 | adjustThreadPool（消费线程池按堆积自适应） | 1min | L425-431 |
 
-- **rebalance 不是定时任务，是独立线程**（RebalanceService L356 起）：`run()` 里 `waitForRunning(realWaitInterval)`，`waitInterval` 默认 **20s**（system property `rocketmq.client.rebalance.waitInterval`，L25-27），`minInterval` 1s（L28-30）；被 `rebalanceImmediately()` wakeup 时若距上次不足 1s，会**补足 minInterval 再跑**（L48-50）——所以 1.1 点火那次"立即 rebalance"实际最快 ~1s 后执行；`balanced` 结果还决定下轮间隔（未收敛就回到快档）。另一头 `rebalanceLater(500)`（MQClientInstance L1225）给锁不齐队列的场景留了延时补刀。
+- **rebalance 不是定时任务，是独立线程**（RebalanceService L356 起）：`run()` 里 `waitForRunning(realWaitInterval)`，`waitInterval` 默认 **20s**（system property `rocketmq.client.rebalance.waitInterval`，L25-27），`minInterval` 1s（L28-30）；被 `rebalanceImmediately()` wakeup 时若距上次不足 1s，会**补足 minInterval 再跑**（L48-50）——所以 1.1 start 末尾的"立即 rebalance"实际最快 ~1s 后执行；`balanced` 结果还决定下轮间隔（未收敛就回到快档）。另一头 `rebalanceLater(500)`（MQClientInstance L1221-1226，就是延时 500ms 再 `rebalanceService.wakeup()`）服务的是**顺序消费独有**的场景：新队列入队生成 PullRequest 前，要先向 broker 申请队列锁（`lock(mq)` = `lockBatchMQ` RPC，1s 超时，RebalanceImpl L152-175；拿到才 `pq.setLocked(true)`），RPC 失败或没批到 → 该队列本轮不开工、置 `allMQLocked=false`（L468-470）→ 500ms 后催一轮 rebalance 重试锁。并发消费 `needLockMq=false`，此路径根本不触发（⑥.5"队列所有权"行的运行时另一半）。
 
-### 1.3 首次 rebalance 怎么播下第一颗 PullRequest（RebalanceImpl L426）
+### 1.3 首次 rebalance 如何生成并派发第一个 PullRequest（RebalanceImpl L426）
 
 `doRebalance → rebalanceByTopic`（route 拿 mqSet → `strategy.allocate` 分给本 clientId）→ **`updateProcessQueueTableInRebalance` L426** 三段：
 
 1. **删旧**（L440-461）：不在名下的 / `pullExpired` 的 pq 置 dropped 并 `removeUnnecessaryMessageQueue`——注意 L442-446 那条 `[BUG]...try to fixed it`：**拉取停摆超过阈值会主动扔掉队列重建**，rebalance 兼职做自愈，push 消费端的心跳就是这 20s 一轮。
 2. **加新**（L463-497）：`removeDirtyOffset` → `createProcessQueue` → **`computePullFromWhere(mq)` L477** → 组装 `PullRequest{group, nextOffset, mq, pq}`（L484-489）。
-3. **派发**（L499-503）：有没锁齐的 → `rebalanceLater(500)`；`dispatchPullRequest(list, 500)` → RebalancePushImpl L261-267：这批是新增队列（非 rebalance 中途换主），**逐个 `executePullRequestImmediately` 投进 PullMessageService 的 `pullRequestQueue`**——第一颗种子落地，②篇接力。
+3. **派发**（L499-503）：有队列锁没申请到的（仅顺序消费可能，机制见 1.2 末段）→ `rebalanceLater(500)` 补一轮；`dispatchPullRequest(list, 500)` → RebalancePushImpl L261-267：这批是新增队列（非 rebalance 中途换主），**逐个 `executePullRequestImmediately` 投进 PullMessageService 的 `pullRequestQueue`**——首个 PullRequest 入队，拉取循环见 ②。
 
 ### 1.4 `ConsumeFromWhere` 的真实生效条件（最容易记错的一格）
 
@@ -259,7 +259,7 @@ new ThreadPoolExecutor(consumeThreadMin, consumeThreadMax, 60s, new LinkedBlocki
 | RECONSUME_LATER | **强制 -1** | 全量 sendBack |
 
 - sendBack 前置 `containsMessage` 复核（L243-248）：已被 TTL 清掉的**不再 sendBack**（防重复入重试）。
-- `sendMessageBack` → `CONSUMER_SEND_MSG_BACK` RPC → **链路篇 §1.4 拆过的 `consumerSendMsgBack`**（换 topic 为 `%RETRY%group`、延迟等级由 broker 按 reconsumeTimes 定）——②埋的"重试从哪进"在这闭合。RPC 失败兜底：`reconsumeTimes+1` 后本地重投（L252-258）。
+- `sendMessageBack` → `CONSUMER_SEND_MSG_BACK` RPC → **链路篇 §1.4 拆过的 `consumerSendMsgBack`**（换 topic 为 `%RETRY%group`、延迟等级由 broker 按 reconsumeTimes 定）——②埋的"重试从哪进"在这闭合。失败降级共三层：①正常 RPC；②RPC 抛错 → impl 层 `sendMessageBackAsNormalMessage`（L786-801）借**内建 producer** 直接 `send()` 进 `%RETRY%group`（delayLevel=3+n）；③连降级 send 也失败返回 false → service 层 `reconsumeTimes+1` 本地重投（L252-258）。
 - **BROADCASTING 分支只打 warn 不重试**（L231-237）——广播没有重试 topic，失败即事实。
 - **ack 推进的精确语义**（L266-270 + removeMessage 体）：
 
@@ -316,7 +316,7 @@ RPC 本性两条（L198-222）：**默认 ONEWAY**（丢了不追，下轮补发
 
 ```
 start 九步(①) ── registerConsumer ──► MQClientInstance（心跳/路由/5s位点 任务族 + pull/rebalance 两线程）
-首次 rebalance(①): route→allocate→computePullFromWhere(初见策略!)→PullRequest 种子→总线②
+首次 rebalance(①): route→allocate→computePullFromWhere(初见策略!)→首个 PullRequest 入队→总线②
 循环体：
   [七道闸门②] ──pull(V2, sysFlag=commit|suspend|subVer)──► PullMessageProcessor③
       store.getMessage: CQ定位→clamp三元组→commitlog取字节（⑥篇 §6.4 的读路径）
@@ -341,7 +341,7 @@ start 九步(①) ── registerConsumer ──► MQClientInstance（心跳/�
 
 - 前提·拨开关：assignment 里的 `mode=POP` 不是默认值，来自朝 broker 的 `SET_MESSAGE_REQUEST_MODE`（MQClientAPIImpl L3300）——两条正路：**编程式** `DefaultMQAdminExt.setMessageRequestMode(brokerAddr, topic, group, POP, popShareQueueNum, timeout)`（官方示例 `PopConsumer.java` 就是启动时自己拨，L62；LMQ 版 LMQPushPopConsumer L98 同款）或**运维式** `mqadmin setConsumeMode`（SubCommand L102）。broker 端存进 `MessageRequestModeManager extends ConfigManager`（JSON 持久化，QueryAssignmentProcessor L85/L107 接收）——**粒度 = per (topic, group)**，可灰度（同 topic 的 A 组 pop、B 组 push 互不干扰）；且 **per-broker 存储，主备要各拨一遍**（测试 PopSlaveActingMasterIT L502/505 即此坑）；`popShareQueueNum` 是 pop 下逻辑队列共享的物理队列数提示。
 - 客户端侧唯一动作：`setClientRebalance(false)`（PopConsumer L50）——rebalance 从本地改为问 broker（QUERY_ASSIGNMENT），业务 listener 零改动。
-- 种子：分配表带 `mode=POP` 的队列（`RebalanceImpl.updateMessageQueueAssignment` L508+ → `new PopRequest` L677）→ ②.1 总线 `getMessageRequestMode()==POP` 分派 `popMessage`。
+- 入口：分配表带 `mode=POP` 的队列（`RebalanceImpl.updateMessageQueueAssignment` L508+ → `new PopRequest` L677）→ ②.1 总线 `getMessageRequestMode()==POP` 分派 `popMessage`。
 - POP RPC（`MQClientAPIImpl.popMessage` L844）：带 `invisibleTime`、`pollTime`（broker 侧长轮询）、`initMode`（首拉位点策略）；响应每消息附 **extraInfo** 串（`ExtraInfoUtil.split` 解出 reviveQid/queueId/ckQueueOffset/popTime/invisibleTime…）——**ack 的凭证从 broker 来、原样还给 broker**，客户端只保管不理解。
 - 消费完（`ConsumeMessagePopConcurrentlyService`）：
   - 成功 → `DefaultMQPushConsumerImpl.ackMessageAsync`（L287）/**batchAck**（L311）——`MQClientAPIImpl` L919-938 按 `retry@queueId@ckOffset@popTime` 做 mergeKey，**把同一 CK 的多条 ack 合成一个 BATCH_ACK**；
