@@ -59,13 +59,35 @@ fetchNameServerAddr(未配地址才需要, L346-347) → mQClientAPIImpl.start(L
 
 - **rebalance 不是定时任务，是独立线程**（RebalanceService L356 起）：`run()` 里 `waitForRunning(realWaitInterval)`，`waitInterval` 默认 **20s**（system property `rocketmq.client.rebalance.waitInterval`，L25-27），`minInterval` 1s（L28-30）；被 `rebalanceImmediately()` wakeup 时若距上次不足 1s，会**补足 minInterval 再跑**（L48-50）——所以 1.1 start 末尾的"立即 rebalance"实际最快 ~1s 后执行；`balanced` 结果还决定下轮间隔（未收敛就回到快档）。另一头 `rebalanceLater(500)`（MQClientInstance L1221-1226，就是延时 500ms 再 `rebalanceService.wakeup()`）服务的是**顺序消费独有**的场景：新队列入队生成 PullRequest 前，要先向 broker 申请队列锁（`lock(mq)` = `lockBatchMQ` RPC，1s 超时，RebalanceImpl L152-175；拿到才 `pq.setLocked(true)`），RPC 失败或没批到 → 该队列本轮不开工、置 `allMQLocked=false`（L468-470）→ 500ms 后催一轮 rebalance 重试锁。并发消费 `needLockMq=false`，此路径根本不触发（⑥.5"队列所有权"行的运行时另一半）。
 
-### 1.3 首次 rebalance 如何生成并派发第一个 PullRequest（RebalanceImpl L426）
+### 1.3 rebalance：N 个实例各自独立计算的分配引擎（本篇核心）
 
-`doRebalance → rebalanceByTopic`（route 拿 mqSet → `strategy.allocate` 分给本 clientId）→ **`updateProcessQueueTableInRebalance` L426** 三段：
+**为什么是核心**：消费组的队列归属**没有任何协调者**——没有 leader、没有锁、没有两阶段协商，N 个实例各自"算"出一份互不重叠、互不遗漏的答案。整个机制就一句话：**让 rebalance 成为纯函数 `allocate(mqAll, cidAll, self)`，靠"所有实例输入相同、函数相同"达成结果一致**。集群模式（CLUSTERING 分支，RebalanceImpl L287-338）六步：
 
-1. **删旧**（L440-461）：不在名下的 / `pullExpired` 的 pq 置 dropped 并 `removeUnnecessaryMessageQueue`——注意 L442-446 那条 `[BUG]...try to fixed it`：**拉取停摆超过阈值会主动扔掉队列重建**，rebalance 兼职做自愈，push 消费端的心跳就是这 20s 一轮。
-2. **加新**（L463-497）：`removeDirtyOffset` → `createProcessQueue` → **`computePullFromWhere(mq)` L477** → 组装 `PullRequest{group, nextOffset, mq, pq}`（L484-489）。
-3. **派发**（L499-503）：有队列锁没申请到的（仅顺序消费可能，机制见 1.2 末段）→ `rebalanceLater(500)` 补一轮；`dispatchPullRequest(list, 500)` → RebalancePushImpl L261-267：这批是新增队列（非 rebalance 中途换主），**逐个 `executePullRequestImmediately` 投进 PullMessageService 的 `pullRequestQueue`**——首个 PullRequest 入队，拉取循环见 ②。
+1. **取队列**（L288）：`mqSet = topicSubscribeInfoTable.get(topic)`——不是现查，是 1.2 那趟 30s 路由刷新的缓存产物。空且非重试 topic → 以空集回调 `messageQueueChanged` 后 break（L289-294，"topic 不存在"路径）。
+2. **取同组消费者**（L297）：`findConsumerIdList(topic, group)`——**分配计算里唯一一次 RPC**：MQClientInstance L1355-1364 `getConsumerIdListByGroup`，发给该 topic 路由下的**任意一台 broker**（findBrokerAddrByTopic）；broker 的名单来自**组内全员心跳注册**的 `ConsumerRegisterInfo`（1.1"心跳即注册"的消费向复用——同一通道，第 3 种用途）。拿不到只 warn，不抛：本轮视作未均衡。
+3. **双排序**（L302-303）：`Collections.sort(mqAll); Collections.sort(cidAll)`——**这是整个协议的一致性地基**：队列名按 topic/queueId、clientId 按字典序。Set 的迭代序跨进程不可复现，不排序则"同一个函数"在两台机器上算出完全不同的答案。
+4. **套策略**（L304-318）：`strategy.allocate(group, clientId, mqAll, cidAll)`——策略模式，`consumer/rebalance` 包七实现：Averagely（默认，连续取余切段）/ AveragelyByCircle / **ConsistentHash** / MachineRoomNearby（机房就近，内部再委托）/ ByConfig / ByMachineRoom / Abstract 基类。抛异常 → `return false`（本轮作废，交给 1.2 快档重试）。
+5. **落到账本**（L325 → L426 `updateProcessQueueTableInRebalance`）三段式：
+   - **删旧**（L440-461）：不在名下的、以及 `pullExpired` 的 pq 置 dropped 走 `removeUnnecessaryMessageQueue`——L442-446 那条 `[BUG]...try to fixed it`：**拉取停摆超时会被主动扔队列重建**，rebalance 兼职自愈（心跳 20s 一班喂它）。
+   - **加新**（L463-497）：`removeDirtyOffset` → `createProcessQueue` → 顺序模式先 `lock(mq)`（L468-471，机制见 1.2 末段）→ `computePullFromWhere(mq)`（L477，初见策略生效点，1.4）→ 组装 PullRequest（L484-489）。
+   - **派发**（L499-503）：锁有没批到的 → `rebalanceLater(500)`；`dispatchPullRequest(list,500)` → RebalancePushImpl L261-267 投进 ②.1 总线。changed 时回调 `messageQueueChanged`（订阅 subVersion  bump + pullThreshold 按队列数摊薄 + 心跳上报，2.2/②.3 的源头）。
+6. **均衡判定**（L338）：`balanced = allocateResultSet.equals(getWorkingMessageQueue(topic))`——"应得"与"实际在手"（processQueue+popProcessQueue 两表未 dropped 者，L388/414）对齐才算收敛。false 把 RebalanceService 拉进 minInterval 快档，true 回 20s——**rebalance 的最终一致由它自己闭环**，1.2 的双档节奏就是为它服务的。
+
+**这一步动的账本本身**——`RebalanceImpl` 类头四张表（L51-56）：
+
+- `processQueueTable: ConcurrentMap<MessageQueue, ProcessQueue>`（L51）：**key=逻辑队列**（topic+brokerName+queueId 判等），**value=本实例对该队列的消费快照**——一队一账、`get(mq)` O(1) 定位（拉取回调/lock/提交位点全靠它）。用 CHM 不是防御性写法而是必然：**写者四方交叉**——rebalance 线程 put/remove（本步）、netty 回调线程 putMessage（④.2）、消费线程 removeMessage/commit（④.4）、定时任务遍历（锁续期/过期清理）。姊妹三表同排：`popProcessQueueTable`（L52，pop 对应）、`topicSubscribeInfoTable`（L53-54，**第 1 步的 mqSet 就从这来**）、`subscriptionInner`（L55-56，1.1 copySubscription 写的和策略读的同一张）。
+- `ProcessQueue`（类注释自述 *Queue consumption snapshot*）五类职责，各回指本篇落点：**① 缓存树** `TreeMap<queueOffset, msg>`（L46，④.2）+ `consumingMsgOrderlyTreeMap`（L53，顺序"在途子集"——`commit()` L267 / `rollback()` L253-258 整树倒回 / `makeMessageToConsumeAgain` L296，即 ⑥.5"双树+显式 COMMIT"的实体）；**② 位点水位** `queueOffsetMax`（L55，空树时 ack 兜底 `+1` 的出处，④.4）；**③ 流控仪表** `msgCount/msgSize/msgAccCnt`（L62；②闸门 5/6 读前两个，第 3 个由 broker **借消息属性 `PROPERTY_MAX_OFFSET` 随货捎回**——`maxOffset − 本批末条 queueOffset` 即"broker 还剩多少没给你"（L149-156），②闸门外还有 pullThreshold*ForTopic 摊薄也依赖这类水位）。**④ 状态旗** `dropped/locked + lastLock/lastPull/lastConsume` 时间戳（②闸门 1、1.3 自愈判据、isLockExpired L64）；**⑤ 过期清理** cleanExpiredMsg（④.2）。
+- 一句话总装：**`processQueueTable` 是"我负责哪些队列、每队消费得怎么样"的总账本；第 5 步是它唯一的结构性写者，第 6 步的 `balanced` 就是"策略算出的应得"与"账本里的实持"的一次对账。**
+
+**两个排序背后没说的三件事**（rebalance 的真实语义）：
+
+- **纯函数合同**：排序保证"输入一致"，策略保证"函数一致"，于是**无需通信即可全员得到同一划分**——这是无协调设计的成本转移：一致性不靠共识，靠"大家都是同一函数的确定性求值器"。
+- **但它不是原子快照**：mqAll 来自本地路由缓存（30s 老），cidAll 来自某台 broker 此刻的注册表；实例 A 和实例 B 可能各自看到"上一秒的组"与"这一秒的组"。**扩缩容/上下线窗口内，短暂的双主消费或无人消费是设计内必然**，靠下一轮收敛（快档秒级、慢档 20s）自愈。RocketMQ 从不试图消除这个窗口——这正是"消费侧 at-least-once、幂等归业务"铁律的制度根源（对照：位点重复窗口 ≤10s 在 ⑤.2，这个窗口在再平衡时刻叠加其上）。
+- **同 topic 多 broker 名单可能互不一致**：每台 broker 只见过朝它心跳过的成员（组订阅该 topic 的队列分布在多台时）——cidAll 质量取决于"topic 路由下第一台 broker"的运气。这也是 broker 端 rebalance（下段）存在的动机之一。
+
+**BROADCASTING 对照**（L270-286）：不查 cid、不 allocate、不排序——全员对全量 mqSet 各消费各的（"每条消息每台都过一遍"），代价与无重叠语义完全不同；位点也因此只能本地存（⑤.1 两本账的另一半）。
+
+**另一条轨：broker 端 rebalance**（`getRebalanceResultFromBroker`，L345-390）：`clientRebalance(topic)=false` 时每轮改发 `queryAssignment` RPC（MQClientInstance L1373-1381，同样打给任一 topic broker，带 strategyName）——**分配由 broker 统一算**，返回 `Set<MessageQueueAssignment>`（每队列自带 mode）→ `updateMessageQueueAssignment`（L508+）按 mode 分流：PUSH 队列仍建 PullRequest（L646），**POP 队列建 PopRequest + PopProcessQueue**（L677 区）——⑥.1 讲的那条线就从这里进来。两条轨的取舍一句话：**push 时代把函数发给 N 台各自算，pop 时代把答案集中算好发回来**；代价分别是"输入快照不原子"与"多一跳 RPC+broker 要维护视图"。
 
 ### 1.4 `ConsumeFromWhere` 的真实生效条件（最容易记错的一格）
 
