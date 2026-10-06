@@ -143,13 +143,13 @@ Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
 - ⑤ 的 DelayedWorkQueue：`available = lock.newCondition()`，take 线程 `awaitNanos` 挂起全靠本站机制。
 - 番外：Netty `SingleThreadEventExecutor` 的 waker 是同款 ReentrantLock + Condition 模型。
 
-### 现场笔记：RocketMQ 源码里的两个本站用户
+### 现场笔记：RocketMQ 源码里的一个本站用户
 
 **③-1 Semaphore 当"预算"用——一个化石层上的案例**（`DefaultMQProducerImpl` L121-123）
 
 RocketMQ 带 timeout 的异步 `send` 三重载（L552/L1265/L1391）**全部 @Deprecated**（判词自 4.4 挂账：中间池把 timeout 语义拧成"含排队总预算"、异常 throws/callback 双通道打架；公开接口没标弃用只是委托进已弃用方法；5.x 现代路径 `request(msg, RequestCallback)` L1652 调用者线程直达 remoting，闸门对它不可达）。但这具化石里的 Semaphore 用法是三个正确姿势的标本：**许可与资源计量同构**（条数↔num、字节↔size 拆两枚 fair，非一枚混账）、**acquire 配时限**（`tryAcquire(timeout-costTime)`，L647-670，抢不到回 `RemotingTooMuchRequestException`）、**release 配回执旗**（成败布尔随 callback 带走按旗还账 L599-609，另有用 `release(±delta)` 在线扩缩额度的冷门招 L612-630）。教训两条：模式照学，但别据此给自家异步客户端加中间池——**中间池正是语义烂掉的根因**；jaws 的 `callbackMap.size()` 软阈值 fast-fail（`AbstractClient` L140-146，在途天然记账在 requestId→Future 中枢，无需第二结构）反而与 5.x 演进方向同构。
 
-**③-2 LockSupport 的 sticky permit——ServiceThread 的"点名瞌睡"**（`common/.../ServiceThread.java` L105-142）
+LockSupport 的 sticky permit——ServiceThread 的"点名瞌睡"（`common/.../ServiceThread.java` L105-142）
 
 ```java
 public void wakeup() {
@@ -173,9 +173,9 @@ protected void waitForRunning(long interval) {
 }
 ```
 
-这个场景是 **park 原语的主场、锁的错位**：一睡一叫、无共享临界区、不要求原子读走——用 ReentrantLock+Condition 的话，唤醒方必须持锁才能 signal，多付一套 AQS 排队/再抢锁的重型协议，还只是把"丢唤醒"从"signal 在 await 前到达"的坑挪到 predicate loop 的坑。LockSupport 的 sticky permit（每线程一个，unpark 先行则下个 park 直接返回）+ `hasNotified` CAS flag 双层，让"wakeup 先于 park 到达"天然不丢。铁证是演进本身：5.5.1 里两代实现并存——`remoting/common/ServiceThread.java` 还是老式 `volatile boolean + Object.wait/notify`（L32/L53-54），`common` 包这版已重写成上述结构并特意留注释解释 sticky。**Condition 何时才值得上**：需要多路等待、点名唤醒、带谓词队列时——本站 ③ 的 DelayedWorkQueue leader-follower 就是另一边（java-base-5 §二）。
+这个场景是 **park 原语的主场、锁的错位**：一睡一叫、无共享临界区、不要求原子读走——用 ReentrantLock+Condition 的话，唤醒方必须持锁才能 signal，多付一套 AQS 排队/再抢锁的重型协议，还只是把"丢唤醒"从"signal 在 await 前到达"的坑挪到 predicate loop 的坑。LockSupport 的 sticky permit（每线程一个，unpark 先行则下个 park 直接返回）+ `hasNotified` CAS flag 双层，让"wakeup 先于 park 到达"天然不丢。铁证是演进本身：5.5.1 里两代实现并存——`remoting/common/ServiceThread.java` 还是老式 `volatile boolean + Object.wait/notify`（L32/L53-54），`common` 包这版已重写成上述结构并特意留注释解释 sticky。**Condition 何时才值得上**：多路等待、点名唤醒、带谓词队列时——见下节《锁选型判据》第 4 问（DWQ leader-follower 那条"单栏 + 协议"的对照也在其中）。
 
-**③-3 判据清单：什么等待拓扑必须上 ReentrantLock**
+### 锁选型判据：什么等待拓扑必须上 ReentrantLock
 
 synchronized vs ReentrantLock 的选择点自 JDK 6 起不在性能（偏向锁 JDK 15 已废、锁消除两家用谁都一样），只在**表达能力**：synchronized 是语言原语，只能表达"获取—执行—必然释放"；ReentrantLock 把这三步拆成方法，拆开的每一步都是能力、也都是责任。决策程序五问，**任何一问答案是"要"，synchronized 出局**：
 
@@ -184,6 +184,12 @@ synchronized vs ReentrantLock 的选择点自 JDK 6 起不在性能（偏向锁 
 3. **公平？**（`new ReentrantLock(true)`）严格 FIFO 防 barging 饥饿。synchronized 永远是悲观 barging 模型，不可配置。
 4. **一把锁几路等待？**（多 Condition）严格意义只有 **LinkedBlockingQueue** 是此判据的真样本：`notEmpty`（L160，挂 takeLock）+ `notFull`（L167，挂 putLock）——**不同谓词的等待者分住不同条件队列，signal 各点各的人**。对照 DWQ：只有一枚 `available`（L953），leader 定时 awaitNanos / follower 不定时 await / offer signal 是**一个 Condition、三种参与方式**（java-base-5 §二），点名精度靠 leader-follower 协议限制等待集，不靠多队列。synchronized 的监视器只有一条隐式等待集——LBQ 若用 synchronized 写，两类谓词线程混住一栏，只能 `notifyAll` 惊群后全员重筛，且无法针对"哪路人"点名。另记防坑：JDK 21 的 ReentrantReadWriteLock 内部已无 notEmpty/notInterested/noWaiters 条件组（网上多条件例证多已过时），判据级说法须先 grep 当前版本。
 5. **读写分离？**（ReadWriteLock 族）synchronized 连变体都没有；顺带记一笔专属能力：写锁内的**锁降级**（持写锁拿读锁再放写锁），StampedLock 一族又反过来不提供可重入。
+
+**辨析："多路等待"是不是就等价于"多个等待队列"？**——在数据结构层面字面成立：每个 `ConditionObject` 自带一条条件队列（`firstWaiter/lastWaiter` + `ConditionNode.nextWaiter` 串的 FIFO，AQS L1520-1522，入队 `addConditionWaiter` L1602-1607），一把锁 N 枚 Condition = **N 条条件队列 + 1 条主同步队列**。synchronized 的 monitor 是"每对象一条 wait set"，ReentrantLock 相当于把"每锁一栏"升级成"每条件一栏"——判据 4 的全部机制就这句。但三点限定，不然这个等价会误导：
+
+- **"路"数的是谓词类别，不是等待人数**：LBQ 里 50 个 producer 堵 notFull、3 个 consumer 堵 notEmpty——人数 53，路数 2；
+- **主同步队列永远只有一条**：`signal → transferForSignal` 之后大家回同一条 CLH 抢锁——**分栏分的是"谁在等哪个事件"，不分"谁有资格抢锁"**，别把条件队列理解成平行世界；
+- **分栏不是精确点名的唯一手段**：DWQ 单栏照样精确点名——leader-follower 用**协议**（栏内同时只有一位定时者、身份记在 `leader` 字段）实现"点名"。完整表述：**多 Condition = 结构性分栏（谓词天然隔离），单 Condition + 协议约束 = 语义性分栏（同栏里靠角色/票据控制谁有资格等）**。选哪条看等待者所候的**事件是否异类**：异类事件（非空 vs 非满）值得开第二栏；同类事件只是时限不同（队首变化，leader 定时/follower 不定时）用协议裁一下即可。Go 的 `sync.Cond` 与 Java monitor 同为单栏，多谓词只能靠外部协议——与 DWQ 思路同源；栏的有无，决定你是在"用能力"还是在"发明能力"。
 
 五问全"不要"→ **synchronized 更优**：释放责任编译进结构（不可能忘 unlock/泄漏/乱序），逃逸分析下整锁可消除。RocketMQ 的正面样本 `ManyPullRequest`（longpolling L23-36）：synchronized 方法包 ArrayList，其中 `cloneListAndClear` 的"克隆+清空"必须整体原子——**这正是"一把互斥锁罩住 indivisible 状态转移"的教科书形状**，任何无锁容器都组合不出这个原子性。
 
