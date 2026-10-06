@@ -145,19 +145,9 @@ Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
 
 ### 现场笔记：RocketMQ 源码里的两个本站用户
 
-**③-1 Semaphore 当"预算"用——异步发送的背压闸门**（`DefaultMQProducerImpl` L121-123 声明，L651/L664 申请，L602-625 归还）
+**③-1 Semaphore 当"预算"用——一个化石层上的案例**（`DefaultMQProducerImpl` L121-123）
 
-```java
-// backpressure related（L121-123 声明，L142-151 构造，均 fair=true）
-private Semaphore semaphoreAsyncSendNum;    // 在途条数预算 = backPressureForAsyncSendNum（下限 10）
-private Semaphore semaphoreAsyncSendSize;   // 在途字节预算 = backPressureForAsyncSendSize（下限 1MB）
-```
-
-`sendDefaultImpl` 交棒异步池之前的闸门（L647-670）是**带时限的 tryAcquire**：`timeout - costTime` 从发送总预算里扣，两个 permit（1 条 + msgLen 字节）都要抢到才 `executor.submit`，抢不到回 `RemotingTooMuchRequestException`——**信号量从"互斥工具"升格为"发送超时预算的一个等待项"**，许可是"额度"不是"锁"。归还精确配平：申请成败记在 `isSemaphoreAsyncNumAcquired/isSemaphoreAsyncSizeAcquired` 布尔上随 callback 带走，成功/异常收尾都走 `semaphoreProcessor()`（L599-609）按旗还账——没抢过就不许还，杜绝凭空增额。这站的收获是看清 Semaphore 的三个正确姿势：**许可数量与所保护资源的计量单位同构**（条数↔num、字节↔size，所以拆两个信号量而不是一个）；**acquire 配时限、release 配回执旗**；还见识了教科书少讲的一招——`semaphoreAsyncAdjust`（L612-630）用 `release(delta)` / `acquire(-delta)` 一对负戏法**在线扩缩许可总量**（broker 打回too much request 时自适应收拢额度），信号量原来不止能"消耗"，还能当可调容量的额度池。
-
-对照 jaws：`AbstractClient.registerCallback`（L140-146）用 `callbackMap.size() >= MAX_INFLIGHT_REQUESTS` 直接拒——**没有第二个数据结构**，因为全链路异步的在途请求天然记账在 requestId→Future 的关联中枢里，size 这个弱一致快照（CHM 条带求和）当软阈值绰绰有余。语义也因此不同：RocketMQ 抢不到 permit 会**等**（预算内排队），jaws 越线直接抛（fast-fail）。何时值得引信号量：需要"等待而非拒绝"的准入语义、或队列本身无界（RocketMQ 的 `asyncSenderThreadPoolQueue` 是 LinkedBlockingQueue，不靠它兜底）；jaws 两条都不占，size 阈值是更廉价的解。另一个细节差异：RocketMQ 在 tryAcquire/release 外面又包了一层 producer 自己的 ReentrantLock（`acquireBackPressureForAsyncSendNumLock`）——那把锁护的不是许可消耗，而是**信号量实例的换代与额度调整**（L193/197 整个 new 掉），消耗本身交给 semaphore 自同步。
-
-> **但先看清这套机器的服役状态**：`executeAsyncMessageSend` 的三个调用方——带 timeout 的异步 `send` 三重载（Impl L552/L1265/L1391）——**全部 @Deprecated**，判词自 4.4 版挂账："*removed at 4.4.0 cause for exception handling and the wrong Semantics of timeout*"。超时错位：同一个 timeout 参数，同步版="这一发从头到尾"，异步版="含在执行池排队的总预算"（runnable 里 `timeout > costTime` 预检 + 发送前再扣）；异常错位：javadoc 承诺 callback at most once，实现却 throws/callback 两条通道并存。而公开接口 `DefaultMQProducer.send(Message, SendCallback, timeout)`（L540）**没标弃用**，只是委托进已弃用的 impl 方法——接口层把信号吞了。5.x 的现代异步路径 `request(msg, RequestCallback, timeout)`（L1652-1678）在调用者线程直接 `sendDefaultImpl(ASYNC)`，异步化交给 remoting，**根本不过这个池子**，Semaphore 闸门对它不可达（`enableBackpressureForAsyncMode` 还默认 false）。所以这尊 Semaphore 是**化石层上的精致机械**——设计模式照学（额度同构/时限/回执旗/在线扩缩），但别据此给自家异步客户端加中间池：中间池正是语义烂掉的根因，jaws 的"调用者线程直达 remoting"才与 5.x 演进方向同构。
+RocketMQ 带 timeout 的异步 `send` 三重载（L552/L1265/L1391）**全部 @Deprecated**（判词自 4.4 挂账：中间池把 timeout 语义拧成"含排队总预算"、异常 throws/callback 双通道打架；公开接口没标弃用只是委托进已弃用方法；5.x 现代路径 `request(msg, RequestCallback)` L1652 调用者线程直达 remoting，闸门对它不可达）。但这具化石里的 Semaphore 用法是三个正确姿势的标本：**许可与资源计量同构**（条数↔num、字节↔size 拆两枚 fair，非一枚混账）、**acquire 配时限**（`tryAcquire(timeout-costTime)`，L647-670，抢不到回 `RemotingTooMuchRequestException`）、**release 配回执旗**（成败布尔随 callback 带走按旗还账 L599-609，另有用 `release(±delta)` 在线扩缩额度的冷门招 L612-630）。教训两条：模式照学，但别据此给自家异步客户端加中间池——**中间池正是语义烂掉的根因**；jaws 的 `callbackMap.size()` 软阈值 fast-fail（`AbstractClient` L140-146，在途天然记账在 requestId→Future 中枢，无需第二结构）反而与 5.x 演进方向同构。
 
 **③-2 LockSupport 的 sticky permit——ServiceThread 的"点名瞌睡"**（`common/.../ServiceThread.java` L105-142）
 
