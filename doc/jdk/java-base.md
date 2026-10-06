@@ -183,7 +183,21 @@ protected void waitForRunning(long interval) {
 }
 ```
 
-这个场景是 **park 原语的主场、锁的错位**：一睡一叫、无共享临界区、不要求原子读走——用 ReentrantLock+Condition 的话，唤醒方必须持锁才能 signal，多付一套 AQS 排队/再抢锁的重型协议，还只是把"丢唤醒"从"signal 在 await 前到达"的坑挪到 predicate loop 的坑。LockSupport 的 sticky permit（每线程一个， unpark 先行则下个 park 直接返回）+ `hasNotified` CAS flag 双层，让"wakeup 先于 park 到达"天然不丢。铁证是演进本身：5.5.1 里两代实现并存——`remoting/common/ServiceThread.java` 还是老式 `volatile boolean + Object.wait/notify`（L32/L53-54），`common` 包这版已重写成上述结构并特意留注释解释 sticky。**Condition 何时才值得上**：需要多路等待、点名唤醒、带谓词队列时——本站 ③ 的 DelayedWorkQueue leader-follower 就是另一边（java-base-5 §二）。
+这个场景是 **park 原语的主场、锁的错位**：一睡一叫、无共享临界区、不要求原子读走——用 ReentrantLock+Condition 的话，唤醒方必须持锁才能 signal，多付一套 AQS 排队/再抢锁的重型协议，还只是把"丢唤醒"从"signal 在 await 前到达"的坑挪到 predicate loop 的坑。LockSupport 的 sticky permit（每线程一个，unpark 先行则下个 park 直接返回）+ `hasNotified` CAS flag 双层，让"wakeup 先于 park 到达"天然不丢。铁证是演进本身：5.5.1 里两代实现并存——`remoting/common/ServiceThread.java` 还是老式 `volatile boolean + Object.wait/notify`（L32/L53-54），`common` 包这版已重写成上述结构并特意留注释解释 sticky。**Condition 何时才值得上**：需要多路等待、点名唤醒、带谓词队列时——本站 ③ 的 DelayedWorkQueue leader-follower 就是另一边（java-base-5 §二）。
+
+**③-3 判据清单：什么等待拓扑必须上 ReentrantLock**
+
+synchronized vs ReentrantLock 的选择点自 JDK 6 起不在性能（偏向锁 JDK 15 已废、锁消除两家用谁都一样），只在**表达能力**：synchronized 是语言原语，只能表达"获取—执行—必然释放"；ReentrantLock 把这三步拆成方法，拆开的每一步都是能力、也都是责任。决策程序五问，**任何一问答案是"要"，synchronized 出局**：
+
+1. **限时抢锁？**（`tryLock(t, unit)`）例：NettyRemotingClient 的 channelTables 维护，`lockChannelTables.tryLock(3000ms)`（L104 常量、L429/L474/L705 使用）——抢不到本轮放弃，不让路由刷新堵死调用线程。synchronized 无法表达"等但等不过 X"。
+2. **可中断地抢锁？**（`lockInterruptibly()`）关停序列里等待中的线程要能被 interrupt 召回。注意 `Object.wait` 自带可中断，所以"可中断地**等待条件**"≠"可中断地**获取锁**"——后者只有显式锁给。
+3. **公平？**（`new ReentrantLock(true)`）严格 FIFO 防 barging 饥饿。synchronized 永远是悲观 barging 模型，不可配置。
+4. **一把锁几路等待？**（多 Condition）DelayedWorkQueue 的 `available` 三路（定时 awaitNanos / 交棒点名 signal / 新队首 signal，java-base-5 §二）、LinkedBlockingQueue 的 notEmpty+notFull 双路——多路点名 synchronized 只能 `notifyAll` 惊群后各自 predicates 重筛，白醒 N-1 次。
+5. **读写分离？**（ReadWriteLock 族）synchronized 连变体都没有；顺带记一笔专属能力：写锁内的**锁降级**（持写锁拿读锁再放写锁），StampedLock 一族又反过来不提供可重入。
+
+五问全"不要"→ **synchronized 更优**：释放责任编译进结构（不可能忘 unlock/泄漏/乱序），逃逸分析下整锁可消除。RocketMQ 的正面样本 `ManyPullRequest`（longpolling L23-36）：synchronized 方法包 ArrayList，其中 `cloneListAndClear` 的"克隆+清空"必须整体原子——**这正是"一把互斥锁罩住 indivisible 状态转移"的教科书形状**，任何无锁容器都组合不出这个原子性。
+
+一个纪律：ReentrantLock 的 `lock()` 与 `try{}finally{}` 之间不能有任何语句（unlock 进 finally 天经地义，lock 出 try 才是对的——lock 和 finally 之间崩掉，锁就永远没人解）。
 
 ### 验收问题
 
