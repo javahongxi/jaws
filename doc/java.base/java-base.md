@@ -204,7 +204,7 @@ synchronized vs ReentrantLock 的选择点自 JDK 6 起不在性能（偏向锁 
 - [ ] 新版 `WAITING/COND/CANCELLED` 位模型下，park/unpark 之间的 Dekker 协议如何避免丢失唤醒？为什么 JDK 8 的 SIGNAL/PROPAGATE 传播链能被删掉？`tryAcquireShared` 返回负值意味着什么，返回 0 与正值在本机实现里行为有区别吗？
 - [ ] 公平与非公平 ReentrantLock 的 `tryAcquire` 差别在哪一行？为什么重入判断挪到了 `initialTryLock`？barging 实际发生在哪一处？
 - [ ] `signal()` 之后等待线程去了哪里（提示：它没醒）？为什么叫 transfer 而不是唤醒？`getAndUnsetStatus(COND)` 的原子认领在防什么竞态？
-- [ ] AQS 为什么用模板方法而非组合？`getState/setState` 的"语义留给子类"设计利弊？（代价的现成证据：`AbstractQueuedLongSynchronizer` 是整份 long 版副本）
+- [ ] AQS 为什么用模板方法而非组合？`getState/setState` 的"语义留给子类"设计利弊？（代价的现成证据：`AbstractQueuedLongSynchronizer` 是与 AQS 同步重写的 long-state 孪生版，JDK 内部却零消费者——见清单第 9 条末项）
 
 ---
 
@@ -323,7 +323,7 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
     - park/unpark 靠 Dekker 协议：置 `WAITING` → 重试 acquire → 复查 status → 才 park；唤醒方 `getAndUnsetStatus(WAITING)` 后 unpark（注释 L345-349）。
     - `ReentrantLock` 重入分支已从 `tryAcquire` 上移到 `initialTryLock`：非公平 L223（裸 CAS，barging 点）/ 公平 L259（多 `!hasQueuedThreads()`）；两者 `tryAcquire` 的唯一差别是公平版 L280 的 `!hasQueuedPredecessors()`。`hasQueuedPredecessors` 新实现先乐观读 `head.next.waiter`，快照失效再从 tail 反向走（L1291-1297）。
     - `signal()` 不唤醒任何线程：`doSignal` 用 `getAndUnsetStatus(COND)` 原子认领节点后 `enqueue` 入主队列（L1540-1553 + L606-625），正常路径不 unpark；线程真正醒来是靠持锁者 `release → signalNext(head)`（L1092-1098）。这就是"叫 transfer 不叫唤醒"的根据。
-    - 模板方法的代价实证：`AbstractQueuedLongSynchronizer.java`（1606 行）是 AQS（1984 行）的 int→long 整份副本。
+    - 模板方法的代价实证（JDK 21 复核修正）：`AbstractQueuedLongSynchronizer.java`（1606 行）不再是"停在老版的整份副本"——它与 AQS **同代重写**（Node 成员 `prev/next/waiter/status` 逐行同款、`WAITING=1/COND=2/CANCELLED=0x80000000` 位模型、`signalNext/signalNextIfShared` 链式点名两版都有；AQLS 侧 L83-121/L262/L271）。真正的差异只剩三样：**state 字宽**（`volatile long state` L157，模板签名随之换宽）、**类 javadoc 一个天一个地**（AQS 类声明前约 290 行设计手册，AQLS 仅约 55 行）、**JDK 内部零消费者**（全 src 除自身外只在 `locks/package-info` 点名一次，Semaphore/CountDownLatch 全长在 AQS 上）。"每次演进同步两遍"的代价由 javadoc 归零与古董 import（`java.util.Date` 伺候已弃用签名）坐实——代码跟到了新一代，关注没跟到。
 10. **`ScheduledFutureTask` 的状态机在 JDK 17/21 同样已不存在**（旧版 `WAITING → PROPAGATE → RUNNING → CANCELLED` 中的 `PROPAGATE` 服务于 `stopCompoundTask`，随 FutureTask 重写一并删除）：
     - `run()` 只剩四个分支：`!canRunInCurrentRunState → cancel(false)` / 非周期 → `super.run()` / 周期 → `super.runAndReset()` 成功才 `setNextRunTime() + reExecutePeriodic(outerTask)`（STPE.java L300-309）。
     - 方法名是 `setNextRunTime()`（L279，旧名 `setNextTime`）：`p > 0 → time += p`（fixedRate 追赶），否则 `time = triggerTime(-p)`（fixedDelay 重排）。
