@@ -43,6 +43,11 @@
         <module>jaws-sample-harborx-consumer</module>
     </modules>
 
+    <properties>
+        <spring-boot.version>3.5.16</spring-boot.version>
+        <grpc.version>1.84.0</grpc.version>
+    </properties>
+
     <dependencies>
         <!-- samples are runnable applications, provide a logging implementation -->
         <dependency>

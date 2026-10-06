@@ -12,10 +12,6 @@
     <artifactId>jaws-sample-wire-interop</artifactId>
     <description>Bidirectional interop demos: WireClient ↔ grpc-java (baseline, metadata, gzip, deadline, health check, business call via WireCallContext)</description>
 
-    <properties>
-        <grpc.version>1.81.0</grpc.version>
-    </properties>
-
     <dependencies>
         <dependency>
             <groupId>org.hongxi</groupId>
