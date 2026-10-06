@@ -143,6 +143,46 @@ Condition 等待队列      →  只有 ReentrantLock 暴露 newCondition；
 - ⑤ 的 DelayedWorkQueue：`available = lock.newCondition()`，take 线程 `awaitNanos` 挂起全靠本站机制。
 - 番外：Netty `SingleThreadEventExecutor` 的 waker 是同款 ReentrantLock + Condition 模型。
 
+### 现场笔记：RocketMQ 源码里的两个本站用户
+
+**③-1 Semaphore 当"预算"用——异步发送的背压闸门**（`DefaultMQProducerImpl` L121-123 声明，L651/L664 申请，L602-625 归还）
+
+```java
+// backpressure related（L121-123 声明，L142-151 构造，均 fair=true）
+private Semaphore semaphoreAsyncSendNum;    // 在途条数预算 = backPressureForAsyncSendNum（下限 10）
+private Semaphore semaphoreAsyncSendSize;   // 在途字节预算 = backPressureForAsyncSendSize（下限 1MB）
+```
+
+`sendDefaultImpl` 交棒异步池之前的闸门（L647-670）是**带时限的 tryAcquire**：`timeout - costTime` 从发送总预算里扣，两个 permit（1 条 + msgLen 字节）都要抢到才 `executor.submit`，抢不到回 `RemotingTooMuchRequestException`——**信号量从"互斥工具"升格为"发送超时预算的一个等待项"**，许可是"额度"不是"锁"。归还精确配平：申请成败记在 `isSemaphoreAsyncNumAcquired/isSemaphoreAsyncSizeAcquired` 布尔上随 callback 带走，成功/异常收尾都走 `semaphoreProcessor()`（L599-609）按旗还账——没抢过就不许还，杜绝凭空增额。这站的收获是看清 Semaphore 的三个正确姿势：**许可数量与所保护资源的计量单位同构**（条数↔num、字节↔size，所以拆两个信号量而不是一个）；**acquire 配时限、release 配回执旗**；还见识了教科书少讲的一招——`semaphoreAsyncAdjust`（L612-630）用 `release(delta)` / `acquire(-delta)` 一对负戏法**在线扩缩许可总量**（broker 打回too much request 时自适应收拢额度），信号量原来不止能"消耗"，还能当可调容量的额度池。
+
+对照 jaws：`AbstractClient.registerCallback`（L140-146）用 `callbackMap.size() >= MAX_INFLIGHT_REQUESTS` 直接拒——**没有第二个数据结构**，因为全链路异步的在途请求天然记账在 requestId→Future 的关联中枢里，size 这个弱一致快照（CHM 条带求和）当软阈值绰绰有余。语义也因此不同：RocketMQ 抢不到 permit 会**等**（预算内排队），jaws 越线直接抛（fast-fail）。何时值得引信号量：需要"等待而非拒绝"的准入语义、或队列本身无界（RocketMQ 的 `asyncSenderThreadPoolQueue` 是 LinkedBlockingQueue，不靠它兜底）；jaws 两条都不占，size 阈值是更廉价的解。另一个细节差异：RocketMQ 在 tryAcquire/release 外面又包了一层 producer 自己的 ReentrantLock（`acquireBackPressureForAsyncSendNumLock`）——那把锁护的不是许可消耗，而是**信号量实例的换代与额度调整**（L193/197 整个 new 掉），消耗本身交给 semaphore 自同步。
+
+**③-2 LockSupport 的 sticky permit——ServiceThread 的"点名瞌睡"**（`common/.../ServiceThread.java` L105-142）
+
+```java
+public void wakeup() {
+    if (hasNotified.get()) return;                       // 已约，不重复打扰
+    if (hasNotified.compareAndSet(false, true)) {
+        LockSupport.unpark(this.thread);                 // 信号写在 flag 上，也落在许可上
+    }
+}
+protected void waitForRunning(long interval) {
+    this.thread = Thread.currentThread();
+    if (hasNotified.compareAndSet(true, false)) { onWaitEnd(); return; }   // 先查旗，压根不睡
+    // LockSupport permits are sticky: an unpark delivered before park makes the next park
+    // return at once, and the loop re-checks hasNotified, so no wakeup can be lost.        ← L123-124 原注释
+    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(interval);
+    while (!hasNotified.get()) {                         // predicate loop 防的是"sticky 之外的 spurious return"
+        ...
+        LockSupport.parkNanos(this, remain);             // 睡满 deadline 为止，每圈补差
+    }
+    hasNotified.set(false);
+    this.onWaitEnd();
+}
+```
+
+这个场景是 **park 原语的主场、锁的错位**：一睡一叫、无共享临界区、不要求原子读走——用 ReentrantLock+Condition 的话，唤醒方必须持锁才能 signal，多付一套 AQS 排队/再抢锁的重型协议，还只是把"丢唤醒"从"signal 在 await 前到达"的坑挪到 predicate loop 的坑。LockSupport 的 sticky permit（每线程一个， unpark 先行则下个 park 直接返回）+ `hasNotified` CAS flag 双层，让"wakeup 先于 park 到达"天然不丢。铁证是演进本身：5.5.1 里两代实现并存——`remoting/common/ServiceThread.java` 还是老式 `volatile boolean + Object.wait/notify`（L32/L53-54），`common` 包这版已重写成上述结构并特意留注释解释 sticky。**Condition 何时才值得上**：需要多路等待、点名唤醒、带谓词队列时——本站 ③ 的 DelayedWorkQueue leader-follower 就是另一边（java-base-5 §二）。
+
 ### 验收问题
 
 - [ ] 新版 `WAITING/COND/CANCELLED` 位模型下，park/unpark 之间的 Dekker 协议如何避免丢失唤醒？为什么 JDK 8 的 SIGNAL/PROPAGATE 传播链能被删掉？`tryAcquireShared` 返回负值意味着什么，返回 0 与正值在本机实现里行为有区别吗？
