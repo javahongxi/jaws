@@ -192,7 +192,7 @@ synchronized vs ReentrantLock 的选择点自 JDK 6 起不在性能（偏向锁 
 1. **限时抢锁？**（`tryLock(t, unit)`）例：NettyRemotingClient 的 channelTables 维护，`lockChannelTables.tryLock(3000ms)`（L104 常量、L429/L474/L705 使用）——抢不到本轮放弃，不让路由刷新堵死调用线程。synchronized 无法表达"等但等不过 X"。
 2. **可中断地抢锁？**（`lockInterruptibly()`）关停序列里等待中的线程要能被 interrupt 召回。注意 `Object.wait` 自带可中断，所以"可中断地**等待条件**"≠"可中断地**获取锁**"——后者只有显式锁给。
 3. **公平？**（`new ReentrantLock(true)`）严格 FIFO 防 barging 饥饿。synchronized 永远是悲观 barging 模型，不可配置。
-4. **一把锁几路等待？**（多 Condition）DelayedWorkQueue 的 `available` 三路（定时 awaitNanos / 交棒点名 signal / 新队首 signal，java-base-5 §二）、LinkedBlockingQueue 的 notEmpty+notFull 双路——多路点名 synchronized 只能 `notifyAll` 惊群后各自 predicates 重筛，白醒 N-1 次。
+4. **一把锁几路等待？**（多 Condition）严格意义只有 **LinkedBlockingQueue** 是此判据的真样本：`notEmpty`（L160，挂 takeLock）+ `notFull`（L167，挂 putLock）——**不同谓词的等待者分住不同条件队列，signal 各点各的人**。对照 DWQ：只有一枚 `available`（L953），leader 定时 awaitNanos / follower 不定时 await / offer signal 是**一个 Condition、三种参与方式**（java-base-5 §二），点名精度靠 leader-follower 协议限制等待集，不靠多队列。synchronized 的监视器只有一条隐式等待集——LBQ 若用 synchronized 写，两类谓词线程混住一栏，只能 `notifyAll` 惊群后全员重筛，且无法针对"哪路人"点名。另记防坑：JDK 21 的 ReentrantReadWriteLock 内部已无 notEmpty/notInterested/noWaiters 条件组（网上多条件例证多已过时），判据级说法须先 grep 当前版本。
 5. **读写分离？**（ReadWriteLock 族）synchronized 连变体都没有；顺带记一笔专属能力：写锁内的**锁降级**（持写锁拿读锁再放写锁），StampedLock 一族又反过来不提供可重入。
 
 五问全"不要"→ **synchronized 更优**：释放责任编译进结构（不可能忘 unlock/泄漏/乱序），逃逸分析下整锁可消除。RocketMQ 的正面样本 `ManyPullRequest`（longpolling L23-36）：synchronized 方法包 ArrayList，其中 `cloneListAndClear` 的"克隆+清空"必须整体原子——**这正是"一把互斥锁罩住 indivisible 状态转移"的教科书形状**，任何无锁容器都组合不出这个原子性。
