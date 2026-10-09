@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -103,6 +104,51 @@ class Http2StreamServerHandlerTest {
 
         // The counter incremented before execute() must be balanced
         assertEquals(0, inflightRequests.get(), "inflightRequests leaked on rejection");
+        ch.finishAndReleaseAll();
+    }
+
+    /**
+     * The gate that keeps the drain set shrinking. {@code stopAccept()} cannot
+     * reach connections that are already open, so a stream arriving afterwards
+     * must be refused at this boundary rather than served — otherwise the wait
+     * in {@code drainInflightRequests} never bounds anything but its own timeout.
+     */
+    @Test
+    void streamArrivingAfterGateClosesIsRefusedWithoutCounting() throws Exception {
+        AtomicInteger inflightRequests = new AtomicInteger();
+        AtomicInteger handled = new AtomicInteger();
+        AtomicBoolean accepting = new AtomicBoolean(true);
+        MessageHandler counting = message -> {
+            handled.incrementAndGet();
+            return CompletableFuture.completedFuture(null);
+        };
+        EmbeddedChannel ch = new EmbeddedChannel(new Http2StreamServerHandler(
+                counting, DIRECT_EXECUTOR, "hessian2", inflightRequests,
+                MAX_CONTENT_LENGTH, accepting));
+
+        Serialization serialization = Http2PayloadCodec.resolveSerialization("hessian2");
+        byte[] payload = Http2PayloadCodec.encodeRequest(request(), serialization);
+
+        // Control: with the gate open the same frames are dispatched
+        ch.writeInbound(new DefaultHttp2HeadersFrame(streamHeaders(StreamType.UNARY), false));
+        ch.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(payload), true));
+        assertEquals(1, handled.get(), "gate open: request must reach the business handler");
+        // Drain the control's own response so the frames asserted below are the
+        // refusal's and not a leftover 200
+        ch.<Http2HeadersFrame>readOutbound();
+        ((Http2DataFrame) ch.readOutbound()).release();
+
+        accepting.set(false);
+
+        ch.writeInbound(new DefaultHttp2HeadersFrame(streamHeaders(StreamType.UNARY), false));
+        ch.writeInbound(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(payload), true));
+
+        assertEquals(1, handled.get(), "gate closed: request must not reach the business handler");
+        Http2HeadersFrame refused = ch.readOutbound();
+        assertEquals(Http2Constants.STATUS_SERVICE_UNAVAILABLE,
+                refused.headers().status().toString(), "refusal must be the retryable 503");
+        assertTrue(((Http2DataFrame) ch.readOutbound()).isEndStream());
+        assertEquals(0, inflightRequests.get(), "refused request must not join the drain set");
         ch.finishAndReleaseAll();
     }
 

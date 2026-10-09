@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -42,6 +43,13 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
     private ExecutorService serverExecutor;
     /** Tracks in-flight requests for graceful shutdown; null on the client side. */
     private AtomicInteger inflightRequests;
+    /**
+     * The server's accept gate; {@code null} on the client side, where there is
+     * nothing to gate. Cleared by {@code stopAccept()} — requests already
+     * travelling on an open connection must be refused then, because the jaws
+     * binary protocol has no GOAWAY equivalent to make the client migrate.
+     */
+    private AtomicBoolean accepting;
 
     public NettyChannelHandler(MessageHandler messageHandler) {
         this.messageHandler = messageHandler;
@@ -60,10 +68,30 @@ public class NettyChannelHandler extends ChannelDuplexHandler {
         this.inflightRequests = inflightRequests;
     }
 
+    public NettyChannelHandler(MessageHandler messageHandler,
+                               ExecutorService serverExecutor,
+                               AtomicInteger inflightRequests,
+                               AtomicBoolean accepting) {
+        this(messageHandler, serverExecutor, inflightRequests);
+        this.accepting = accepting;
+    }
+
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (msg instanceof DecodedFrame frame) {
             try {
+                if (frame.isRequest() && accepting != null && !accepting.get()) {
+                    // Draining. Answer with SERVICE_SHUTDOWN rather than the
+                    // SERVICE_REJECT a full pool uses: this connection will
+                    // never serve traffic again, so the client should drop it
+                    // and move on, which is exactly the action that code
+                    // triggers. The finally block below still releases the
+                    // decoder's reference.
+                    sendResponse(ctx, RpcUtils.buildErrorResponse(frame.requestId(),
+                            new JawsServiceException("request rejected by server shutdown: "
+                                    + ctx.channel().localAddress(), JawsErrorCode.SERVICE_SHUTDOWN)));
+                    return;
+                }
                 if (serverExecutor != null) {
                     try {
                         // Retain the ByteBuf for async processing (pipeline may release after this method returns)

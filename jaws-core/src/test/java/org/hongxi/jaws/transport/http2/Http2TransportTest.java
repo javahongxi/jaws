@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -120,6 +121,7 @@ class Http2TransportTest {
         client.request(newRequest("echo", "drain"));
         assertEquals(0, server.getInflightRequestCount());
         server.stopAccept();
+        assertFalse(server.isAccepting(), "stopAccept must lower the accept gate");
         server.drainInflightRequests(1000);
     }
 

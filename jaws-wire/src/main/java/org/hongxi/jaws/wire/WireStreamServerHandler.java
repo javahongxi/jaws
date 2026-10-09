@@ -158,6 +158,13 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
     private final AtomicInteger inflightRequests;
     /** Set while this stream holds a slot in {@link #inflightRequests}. */
     private boolean inflightCounted;
+    /**
+     * The server's accept gate, or {@code null} when this handler was built
+     * without one. GOAWAY asks clients to stop opening streams here; this gate
+     * is what makes that request unnecessary, so draining does not depend on
+     * every peer honouring GOAWAY.
+     */
+    private final AtomicBoolean accepting;
 
     WireStreamServerHandler(WireCallDispatcher dispatcher,
                             WireReflectionService reflectionService,
@@ -209,6 +216,25 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                             DecompressorRegistry decompressorRegistry,
                             ServerStreamTracer.Factory tracerFactory,
                             AtomicInteger inflightRequests) {
+        this(dispatcher, reflectionService, serverExecutor, maxMessageSize,
+                maxInboundMetadataSize, responseCompressor, decompressorRegistry,
+                tracerFactory, inflightRequests, null);
+    }
+
+    /**
+     * @param accepting             the server's accept gate; {@code null} lets
+     *                              every stream through regardless of shutdown
+     *                              state
+     */
+    WireStreamServerHandler(WireCallDispatcher dispatcher,
+                            WireReflectionService reflectionService,
+                            ExecutorService serverExecutor,
+                            int maxMessageSize, int maxInboundMetadataSize,
+                            Compressor responseCompressor,
+                            DecompressorRegistry decompressorRegistry,
+                            ServerStreamTracer.Factory tracerFactory,
+                            AtomicInteger inflightRequests,
+                            AtomicBoolean accepting) {
         this.dispatcher = dispatcher;
         this.reflectionService = reflectionService;
         this.serverExecutor = serverExecutor;
@@ -220,6 +246,7 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 ? decompressorRegistry : DecompressorRegistry.getDefaultInstance();
         this.tracerFactory = tracerFactory;
         this.inflightRequests = inflightRequests;
+        this.accepting = accepting;
     }
 
     @Override
@@ -331,6 +358,15 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
 
         if (!reflectionPath && !dispatcher.resolvePath(ctx, path)) {
             sendError(ctx, WireConstants.STATUS_NOT_FOUND, "Method not found: " + path);
+            return;
+        }
+
+        // A stream opened after stopAccept() is refused rather than served:
+        // serving it would keep renewing the set graceful shutdown waits to
+        // drain. UNAVAILABLE is the code the client's own retry policy treats
+        // as safe to move elsewhere, so the refusal costs the caller nothing.
+        if (!reflectionPath && accepting != null && !accepting.get()) {
+            sendError(ctx, WireConstants.STATUS_UNAVAILABLE, "Server is shutting down");
             return;
         }
 

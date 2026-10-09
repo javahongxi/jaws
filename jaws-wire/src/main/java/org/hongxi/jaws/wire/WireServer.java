@@ -284,7 +284,7 @@ public class WireServer extends AbstractHttp2Server {
                 new WireStreamServerHandler(dispatcher, reflectionService,
                         serverExecutor, maxMessageSize, maxInboundMetadataSize,
                         resolveResponseCompressor(), decompressorRegistry, streamTracerFactory,
-                        inflightRequests));
+                        inflightRequests, accepting));
     }
 
     // ========================================================================

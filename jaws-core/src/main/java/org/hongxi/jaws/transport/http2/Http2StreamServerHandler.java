@@ -68,6 +68,13 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
     private final ExecutorService serverExecutor;
     private final String defaultSerializationName;
     private final AtomicInteger inflightRequests;
+    /**
+     * The server's accept gate, or {@code null} when this handler is built
+     * without one. Refusing at the stream boundary is what makes the drain set
+     * shrink-only: {@code stopAccept()} closes the listening socket, but that
+     * does nothing to connections already open.
+     */
+    private final AtomicBoolean accepting;
     private final int maxContentLength;
 
     private Serialization serialization;
@@ -85,11 +92,22 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
                              String defaultSerializationName,
                              AtomicInteger inflightRequests,
                              int maxContentLength) {
+        this(messageHandler, serverExecutor, defaultSerializationName,
+                inflightRequests, maxContentLength, null);
+    }
+
+    public Http2StreamServerHandler(MessageHandler messageHandler,
+                             ExecutorService serverExecutor,
+                             String defaultSerializationName,
+                             AtomicInteger inflightRequests,
+                             int maxContentLength,
+                             AtomicBoolean accepting) {
         this.messageHandler = messageHandler;
         this.serverExecutor = serverExecutor;
         this.defaultSerializationName = defaultSerializationName;
         this.inflightRequests = inflightRequests;
         this.maxContentLength = maxContentLength;
+        this.accepting = accepting;
     }
 
     @Override
@@ -113,6 +131,14 @@ public class Http2StreamServerHandler extends ChannelInboundHandlerAdapter {
         // Health check: GET /health returns immediately without dispatching
         if ("GET".equals(method) && Http2Constants.HEALTH_PATH.equals(path)) {
             sendHealthResponse(ctx);
+            return;
+        }
+
+        // A stream opened after stopAccept() must not join the set the drain is
+        // waiting to empty. 503 is the same answer a saturated pool gives, so
+        // the client's failover treats it uniformly.
+        if (accepting != null && !accepting.get()) {
+            sendError(ctx, Http2Constants.STATUS_SERVICE_UNAVAILABLE, "Server is shutting down");
             return;
         }
 

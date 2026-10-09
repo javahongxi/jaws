@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -58,6 +59,16 @@ public abstract class AbstractNettyServer implements Server {
 
     /** Tracks in-flight business requests for graceful shutdown draining. */
     protected final AtomicInteger inflightRequests = new AtomicInteger(0);
+
+    /**
+     * Cleared by {@link #stopAccept()} and consulted by every request accept
+     * path. Closing the listening socket does nothing to connections that are
+     * already open, so without this gate those connections keep feeding new
+     * work into the very counter {@link #drainInflightRequests(long)} is
+     * waiting to reach zero: the drain window then bounds only how long we
+     * wait, never what we wait for.
+     */
+    protected final AtomicBoolean accepting = new AtomicBoolean(true);
 
     /** Accepted connections still open; the denominator of the connection cap. */
     private final AtomicInteger openConnections = new AtomicInteger(0);
@@ -242,6 +253,10 @@ public abstract class AbstractNettyServer implements Server {
 
     @Override
     public void stopAccept() {
+        // Close the gate before touching the socket: a request that races with
+        // this method on an existing connection must be refused rather than
+        // served after we decided to start draining.
+        accepting.set(false);
         if (serverChannel != null && serverChannel.isOpen()) {
             // Close the listening socket only; existing connections and
             // in-flight requests are left untouched so they can drain naturally.
@@ -276,5 +291,13 @@ public abstract class AbstractNettyServer implements Server {
      */
     public int getInflightRequestCount() {
         return inflightRequests.get();
+    }
+
+    /**
+     * @return whether this server still takes on new requests; {@code false}
+     *         from {@link #stopAccept()} until the process exits
+     */
+    public boolean isAccepting() {
+        return accepting.get();
     }
 }

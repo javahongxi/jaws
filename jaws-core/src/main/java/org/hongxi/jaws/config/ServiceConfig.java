@@ -38,8 +38,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>
  * {@code export()} builds the service URL, creates a {@link Provider} and
  * {@link Exporter} via the protocol SPI (wrapped with filters), while
- * {@code unexport()} performs a graceful multi-phase shutdown: stop accepting
- * requests, drain in-flight calls, unregister from registries, then release
+ * {@code unexport()} performs a graceful multi-phase shutdown: unregister from
+ * the registries, stop accepting requests, drain in-flight calls, then release
  * resources.
  *
  * @see ReferenceConfig
@@ -148,8 +148,18 @@ public class ServiceConfig<T> extends InterfaceConfig {
             // Determine graceful shutdown timeout from the first exporter's URL config
             long gracefulTimeout = exporters.get(0).getUrl().getIntParameter(UrlParam.Server.GRACEFUL_SHUTDOWN_TIMEOUT);
 
-            // Phase 1: Stop accepting new requests
-            log.info("[GracefulShutdown] Phase 1: Stop accepting new requests, exporters={}", exporters.size());
+            // Phase 1: Unregister first, so consumers start refreshing their
+            // address lists as early as possible. This cannot eliminate the
+            // propagation delay to each consumer, which is what Phase 2 covers.
+            log.info("[GracefulShutdown] Phase 1: Unregister from registry");
+            for (Exporter<T> exporter : exporters) {
+                unRegister(registryUrls, exporter.getUrl());
+            }
+
+            // Phase 2: Stop accepting new requests. Closes the listening socket
+            // and, on the drain gate inside the server, refuses work that
+            // arrives on connections which are already open.
+            log.info("[GracefulShutdown] Phase 2: Stop accepting new requests, exporters={}", exporters.size());
             for (Exporter<T> exporter : exporters) {
                 try {
                     exporter.stopAccept();
@@ -158,20 +168,15 @@ public class ServiceConfig<T> extends InterfaceConfig {
                 }
             }
 
-            // Phase 2: Wait for in-flight requests to complete
-            log.info("[GracefulShutdown] Phase 2: Waiting for in-flight requests to complete, timeout={}ms", gracefulTimeout);
+            // Phase 3: Wait for in-flight requests to complete. Only the streams
+            // accepted before Phase 2 are in this set; new ones were refused.
+            log.info("[GracefulShutdown] Phase 3: Waiting for in-flight requests to complete, timeout={}ms", gracefulTimeout);
             for (Exporter<T> exporter : exporters) {
                 try {
                     exporter.drainInflightRequests(gracefulTimeout);
                 } catch (Exception e) {
                     log.warn("[GracefulShutdown] Failed to drainInflightRequests for exporter: {}", exporter.getUrl(), e);
                 }
-            }
-
-            // Phase 3: Unregister from registry
-            log.info("[GracefulShutdown] Phase 3: Unregister from registry");
-            for (Exporter<T> exporter : exporters) {
-                unRegister(registryUrls, exporter.getUrl());
             }
 
             // Phase 4: Close connections and release resources

@@ -18,6 +18,8 @@ import org.hongxi.jaws.common.util.ExceptionUtils;
 import org.hongxi.jaws.common.util.RpcUtils;
 import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
+import org.hongxi.jaws.exception.JawsAbstractException;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
@@ -245,12 +247,37 @@ public class NettyClient extends AbstractClient {
                 return CompletableFuture.completedFuture(null);
             }
             if (response.getThrowable() != null) {
+                // Drop the connection before releasing the waiter, so a caller
+                // that observes the refusal also observes a transport that has
+                // already moved on rather than racing the close.
+                Throwable refusal = response.getThrowable();
+                dropConnectionIfPeerShuttingDown(refusal, ch);
                 responseFuture.onFailure(response);
             } else {
                 responseFuture.onSuccess(response);
             }
             return CompletableFuture.completedFuture(null);
         }));
+    }
+
+    /**
+     * Drop the connection a provider refused because it is shutting down.
+     * <p>
+     * The jaws binary protocol has no GOAWAY, so that refusal is the only signal
+     * this connection is finished with — leaving it open means every later call
+     * keeps paying a round trip to a node that will keep refusing it. Closing
+     * here hands the next {@link #request(Request)} to the existing
+     * transport-level reconnect path, which also gives the refreshed address
+     * list a chance to be applied. {@code ch} is the connection this handler was
+     * installed on, never a later one.
+     */
+    private void dropConnectionIfPeerShuttingDown(Throwable t, io.netty.channel.Channel ch) {
+        if (t instanceof JawsAbstractException jae
+                && jae.getErrorCode() == JawsErrorCode.SERVICE_SHUTDOWN) {
+            log.info("peer is shutting down, dropping connection: url={} local={}",
+                    url.getUri(), localAddress);
+            ch.close();
+        }
     }
 
     @Override

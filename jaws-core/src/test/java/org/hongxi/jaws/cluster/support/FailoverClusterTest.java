@@ -2,6 +2,7 @@ package org.hongxi.jaws.cluster.support;
 
 import org.hongxi.jaws.cluster.LoadBalance;
 import org.hongxi.jaws.exception.JawsBizException;
+import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.Reference;
@@ -18,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -195,6 +197,66 @@ class FailoverClusterTest {
 
         assertEquals("retry-ok", result.getValue());
         assertEquals(2, ref.getCallCount());
+    }
+
+    /**
+     * A provider that is shutting down refuses the call at its accept gate, which
+     * means no node has run it — so moving to another reference cannot duplicate
+     * the business effect, and the caller should get a real answer rather than a
+     * refusal.
+     */
+    @Test
+    void shutdownRefusalResponseShouldMoveToAnotherNode() {
+        URL url = urlWithRetries(2);
+        StubReference draining = new StubReference(url).thenReturn(new StubResponse(null,
+                new JawsServiceException("server is shutting down", JawsErrorCode.SERVICE_SHUTDOWN)));
+        StubReference healthy = new StubReference(url).thenReturn(new StubResponse("moved-on"));
+        StubLoadBalance lb = new StubLoadBalance(draining, healthy);
+        FailoverCluster<String> cluster = newCluster(url, lb);
+
+        Response result = cluster.call(new StubRequest());
+
+        assertNull(result.getThrowable(), "the retry should have hidden the refusal");
+        assertEquals("moved-on", result.getValue());
+        assertEquals(1, draining.getCallCount());
+        assertEquals(1, healthy.getCallCount());
+    }
+
+    /**
+     * The guard on the above: an error response whose throwable says nothing about
+     * whether the business method already ran must NOT be retried, or every
+     * provider-side error becomes a duplicate-execution risk.
+     */
+    @Test
+    void ordinaryErrorResponseIsReturnedWithoutRetrying() {
+        URL url = urlWithRetries(2);
+        StubReference ref = new StubReference(url).thenReturn(new StubResponse(null,
+                new JawsServiceException("pool full", JawsErrorCode.SERVICE_REJECT)))
+                .thenReturn(new StubResponse("should-not-be-reached"));
+        StubLoadBalance lb = new StubLoadBalance(ref);
+        FailoverCluster<String> cluster = newCluster(url, lb);
+
+        Response result = cluster.call(new StubRequest());
+
+        assertEquals(JawsErrorCode.SERVICE_REJECT,
+                ((JawsServiceException) result.getThrowable()).getErrorCode());
+        assertEquals(1, ref.getCallCount(), "non-shutdown error responses must not be retried");
+    }
+
+    /** Exhausting the budget must surface the refusal, not fall out of the loop. */
+    @Test
+    void shutdownRefusalWithoutRetriesIsReturnedToCaller() {
+        URL url = urlWithRetries(0);
+        StubReference draining = new StubReference(url).thenReturn(new StubResponse(null,
+                new JawsServiceException("server is shutting down", JawsErrorCode.SERVICE_SHUTDOWN)));
+        StubLoadBalance lb = new StubLoadBalance(draining);
+        FailoverCluster<String> cluster = newCluster(url, lb);
+
+        Response result = cluster.call(new StubRequest());
+
+        assertEquals(JawsErrorCode.SERVICE_SHUTDOWN,
+                ((JawsServiceException) result.getThrowable()).getErrorCode());
+        assertEquals(1, draining.getCallCount());
     }
 
     @Test

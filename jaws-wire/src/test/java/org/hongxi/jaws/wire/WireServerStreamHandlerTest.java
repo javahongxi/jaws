@@ -24,6 +24,8 @@ import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.hongxi.jaws.transport.StreamSubject;
@@ -226,6 +228,49 @@ class WireServerStreamHandlerTest {
         assertEquals(String.valueOf(WireConstants.STATUS_NOT_FOUND),
                 trailersOnly.headers().get(WireConstants.GRPC_STATUS).toString());
         assertNull(ch.readOutbound(), "no further frames after trailers-only");
+        ch.finishAndReleaseAll();
+    }
+
+    /**
+     * GOAWAY asks a client to stop opening streams here; the accept gate is what
+     * makes that ask unnecessary. A stream that still arrives once the gate is
+     * closed must be refused with the retryable UNAVAILABLE and must not enter
+     * the in-flight set the drain waits to empty.
+     */
+    @Test
+    void streamOpenedAfterGateClosesIsRefusedWithoutCounting() {
+        WireHandlerRegistry registry = new WireHandlerRegistry();
+        registry.register("test.Health", "Echo", echoHandler());
+        AtomicInteger inflight = new AtomicInteger();
+        AtomicBoolean accepting = new AtomicBoolean(true);
+        EmbeddedChannel ch = new EmbeddedChannel(
+                new WireStreamServerHandler(
+                        new WireCallDispatcher.HandlerCallDispatcher(registry, Set.of()),
+                        null, DIRECT_EXECUTOR, MAX_MESSAGE_SIZE, 0, null,
+                        null, null, inflight, accepting));
+
+        // Control: the same stream is served normally while the gate is open
+        ch.writeInbound(requestHeaders("/test.Health/Echo"));
+        ch.writeInbound(new DefaultHttp2DataFrame(
+                WireFrameCodec.encode(REQUEST, ch.alloc()), true));
+        assertEquals("200", ((Http2HeadersFrame) ch.readOutbound()).headers().status().toString());
+        ((Http2DataFrame) ch.readOutbound()).release();
+        assertEquals("0", ((Http2HeadersFrame) ch.readOutbound()).headers()
+                .get(WireConstants.GRPC_STATUS).toString());
+        int servedInflight = inflight.get();
+
+        accepting.set(false);
+
+        ch.writeInbound(requestHeaders("/test.Health/Echo"));
+
+        Http2HeadersFrame refused = ch.readOutbound();
+        assertNotNull(refused, "refusal must answer the caller so it can retry elsewhere");
+        assertTrue(refused.isEndStream(), "refusal is trailers-only");
+        assertEquals(String.valueOf(WireConstants.STATUS_UNAVAILABLE),
+                refused.headers().get(WireConstants.GRPC_STATUS).toString());
+        assertNull(ch.readOutbound(), "no response payload may follow a refusal");
+        assertEquals(servedInflight, inflight.get(),
+                "refused stream must not join the set the drain waits for");
         ch.finishAndReleaseAll();
     }
 

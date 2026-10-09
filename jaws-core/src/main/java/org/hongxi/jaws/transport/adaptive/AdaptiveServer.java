@@ -170,7 +170,7 @@ public class AdaptiveServer extends AbstractNettyServer {
                     protected void initChannel(io.netty.channel.Channel streamChannel) {
                         streamChannel.pipeline().addLast(new Http2StreamServerHandler(
                                 messageHandler, serverExecutor, serializationName,
-                                inflightRequests, maxContentLength));
+                                inflightRequests, maxContentLength, accepting));
                     }
                 }));
     }

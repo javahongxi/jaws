@@ -74,7 +74,19 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
             try {
                 ((DefaultRequest) request).setRetries(i);
                 RpcContext.getContext().setServerUrl(refer.getUrl());
-                return refer.call(request);
+                Response response = refer.call(request);
+                // A shutdown refusal is the one error response safe to retry: the
+                // provider refused it at the accept gate, before dispatching to
+                // the business handler, so no other node can have run it. Error
+                // responses in general stay out of this loop precisely because a
+                // returned throwable says nothing about whether the business
+                // method already ran.
+                if (isShutdownRefusal(response) && i < tryCount) {
+                    log.warn("FailoverCluster got shutdown refusal from {}, retrying: {}",
+                            refer.getUrl().getUri(), RpcUtils.toString(request));
+                    continue;
+                }
+                return response;
             } catch (RuntimeException e) {
                 if (ExceptionUtils.isBizException(e)) {
                     throw e;
@@ -86,6 +98,16 @@ public class FailoverCluster<T> extends AbstractCluster<T> {
         }
 
         throw new JawsFrameworkException("FailoverCluster.call should never reach here after the retry loop");
+    }
+
+    /**
+     * @param response a completed call, possibly carrying an error
+     * @return whether the provider refused this call because it is shutting down
+     */
+    private static boolean isShutdownRefusal(Response response) {
+        return response != null
+                && response.getThrowable() instanceof JawsAbstractException jae
+                && jae.getErrorCode() == JawsErrorCode.SERVICE_SHUTDOWN;
     }
 
     /**

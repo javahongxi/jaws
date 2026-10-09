@@ -14,6 +14,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -156,6 +158,54 @@ class NettyChannelHandlerTest {
         ByteBuf outbound = pollOutbound(embeddedChannel);
         assertNotNull(outbound);
         outbound.release();
+    }
+
+    // ---------- shutdown gate: refuse work that arrives after stopAccept ----------
+
+    /**
+     * Closing the listening socket leaves already-open connections untouched, so
+     * the only thing that keeps the drain set shrinking is this gate. The control
+     * half of the test runs the same shape with the gate open, which is what
+     * proves the refusal below is the gate and not something unrelated.
+     */
+    @Test
+    void requestArrivingAfterGateClosesIsRefusedAndNotCounted() {
+        CountingHandler messageHandler = new CountingHandler();
+        AtomicInteger inflight = new AtomicInteger();
+        AtomicBoolean accepting = new AtomicBoolean(true);
+        // No executor: the sync path runs inline on the event loop, so every
+        // counter and outbound write has settled by the time writeInbound returns
+        NettyChannelHandler handler =
+                new NettyChannelHandler(messageHandler, null, inflight, accepting);
+        embeddedChannel = new EmbeddedChannel(handler);
+
+        // Control: with the gate open the same frame is dispatched as usual
+        ByteBuf early = Unpooled.buffer();
+        encodeSampleRequest(early, 200L);
+        early.skipBytes(JawsCodec.HEADER_LENGTH);
+        embeddedChannel.writeInbound(new DecodedFrame(true, 200L, JawsCodec.FLAG_REQUEST, early));
+        assertEquals(1, messageHandler.handled.get(), "gate open: request must reach the handler");
+        ByteBuf servedResponse = embeddedChannel.readOutbound();
+        assertNotNull(servedResponse, "gate open: control request must be answered");
+        servedResponse.release();
+        assertEquals(0, inflight.get(), "control request must give its drain slot back");
+
+        // stopAccept() clears the gate; the connection stays open
+        accepting.set(false);
+
+        ByteBuf late = Unpooled.buffer();
+        encodeSampleRequest(late, 201L);
+        late.skipBytes(JawsCodec.HEADER_LENGTH);
+        embeddedChannel.writeInbound(new DecodedFrame(true, 201L, JawsCodec.FLAG_REQUEST, late));
+
+        assertEquals(1, messageHandler.handled.get(),
+                "gate closed: request must not reach the handler");
+        ByteBuf refusal = embeddedChannel.readOutbound();
+        assertNotNull(refusal, "refusal must still answer the caller so it fails over");
+        assertEquals(JawsCodec.MAGIC, refusal.readShort());
+        refusal.release();
+        assertEquals(0, inflight.get(), "refused request must not join the drain set");
+        assertEquals(0, late.refCnt(), "ByteBuf leaked on the shutdown refusal path");
     }
 
     // ---------- unsupported message type ----------

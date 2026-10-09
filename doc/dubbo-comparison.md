@@ -118,7 +118,7 @@ Dubbo 3.3 将 REST 重新定位为 Triple 协议之上的访问层（Triple REST
 | **心跳**       | 双向心跳，flag event 位标记                                 | 同    | **持平** |
 | **OOM 保护**   | NettyDecoder maxContentLength + 线程池拒绝                  | 同    | **持平** |
 | **连接预热**   | warmup 线性加权                                             | 同    | **持平** |
-| **优雅停机**   | 四阶段（stopAccept → awaitInactive → unregister → destroy） | 同    | **持平** |
+| **优雅停机**   | 四阶段（unregister → stopAccept → drainInflight → destroy） | 同    | **持平** |
 
 ## 八、安全
 

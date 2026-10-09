@@ -44,6 +44,7 @@ public class NettyServer extends AbstractNettyServer {
         int maxContentLength = url.getIntParameter(UrlParam.Transport.MAX_CONTENT_LENGTH);
         pipeline.addLast("decoder", new NettyDecoder(maxContentLength));
         // serverExecutor is ready before bind, so it is safe to build the handler here
-        pipeline.addLast("handler", new NettyChannelHandler(messageHandler, serverExecutor, inflightRequests));
+        pipeline.addLast("handler", new NettyChannelHandler(
+                messageHandler, serverExecutor, inflightRequests, accepting));
     }
 }
