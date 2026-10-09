@@ -7,6 +7,14 @@
 
 set -e
 
+# The port probing below uses bash's /dev/tcp pseudo-device, and the progress
+# output relies on bash's echo/printf behaviour. `sh run-sample.sh` gets a POSIX
+# shell in which both quietly misbehave (echo -n prints a literal "-n", and a
+# failed probe looks like a provider problem), so re-exec instead.
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec bash "$0" "$@"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -299,6 +307,34 @@ cmd_stop() {
 }
 
 #
+# PID currently holding a TCP listen port; empty when nothing listens.
+#
+port_holder_pid() {
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null | head -1
+}
+
+#
+# Whether something accepts connections on 127.0.0.1:<port>.
+#
+port_open() {
+    (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+#
+# Stop a provider started by this script and drop its pid file. Idempotent, so
+# it is safe for both the normal path and a signal trap firing twice.
+#
+cleanup_provider() {
+    local pid="${1:-}" pid_file="${2:-}"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    fi
+    [ -n "$pid_file" ] && rm -f "$pid_file"
+    return 0
+}
+
+#
 # Generic one-shot run: start provider -> run consumer -> stop provider.
 # $1 name  $2 provider module  $3 provider main  $4 consumer module  $5 consumer main
 # $6 default port  $7 prerequisite hint  $8 port
@@ -318,6 +354,26 @@ run_pair() {
     [ -n "$hint" ] && echo "$hint"
     echo ""
 
+    # 0. Refuse to start on a port someone else already holds. The readiness
+    #    probe cannot tell this run's provider from a leftover one, so without
+    #    this check a stale process makes the probe print "ready (0s)", our own
+    #    provider dies on bind, and the consumer reports "no available
+    #    references" with nothing pointing at the real cause.
+    local holder holder_main
+    holder=$(port_holder_pid "$port")
+    if [ -n "$holder" ]; then
+        holder_main=$(jps -l 2>/dev/null | awk -v p="$holder" '$1 == p {print $2}')
+        echo "Port $port is already held by PID $holder${holder_main:+ ($holder_main)}." >&2
+        echo "That is a provider left behind by an earlier run, not the one this run starts." >&2
+        # The exact kill is listed first: when the provider was started through
+        # the Maven wrapper, "jps | grep <main class>" inside cmd_stop does not
+        # see it, so the sweep is not always enough.
+        echo "Stop it first:  kill $holder     (or: ./run-sample.sh stop)" >&2
+        exit 1
+    fi
+    # A pid file with no live process behind it is residue from a killed run.
+    rm -f "$pid_file"
+
     # 1. Start provider in background
     echo "[1/4] Starting Provider port=$port ..."
     java -cp "$cp:$provider_module/target/classes" \
@@ -326,46 +382,68 @@ run_pair() {
     local pid=$!
     echo "$pid" > "$pid_file"
 
-    # 2. Wait for provider to accept connections on the port (max 15 seconds)
-    echo -n "[2/4] Waiting for Provider ready "
+    # Reap the provider on every exit path. A failing consumer or a Ctrl-C used
+    # to leave it running forever, which then poisoned the next run through the
+    # check above.
+    trap "cleanup_provider $pid '$pid_file'" EXIT
+    trap "cleanup_provider $pid '$pid_file'; exit 130" INT TERM
+
+    # 2. Wait for the provider we started to accept connections on the port
+    printf '[2/4] Waiting for Provider ready '
     local max_wait=15
     local waited=0
+    local ready=0
     while [ $waited -lt $max_wait ]; do
-        if (echo >/dev/tcp/127.0.0.1/$port) 2>/dev/null; then
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo ""
+            echo "Provider died before it was ready. Tail of $log_file:" >&2
+            tail -5 "$log_file" >&2 || true
+            exit 1
+        fi
+        if port_open "$port"; then
+            ready=1
             echo " ready (${waited}s)"
             break
         fi
         sleep 1
         waited=$((waited + 1))
-        echo -n "."
+        printf '.'
     done
-    if [ $waited -ge $max_wait ]; then
-        echo " timeout (${max_wait}s), continuing..."
+    if [ $ready -eq 0 ]; then
+        echo ""
+        echo "Provider not ready after ${max_wait}s; continuing anyway, the consumer may fail." >&2
     fi
 
     # 3. Run consumer
     echo "[3/4] Running Consumer ..."
     echo "--------------------------------------------"
     local consumer_cp
+    local consumer_exit=0
     consumer_cp=$(build_classpath "$consumer_module")
-    java -cp "$consumer_cp:$consumer_module/target/classes" \
+    # Not "java ...; rc=$?": under set -e a failing consumer would end the script
+    # on that line, before the provider below it could ever be stopped.
+    if java -cp "$consumer_cp:$consumer_module/target/classes" \
         -DdirectUrl="127.0.0.1:$port" \
-        "$consumer_main"
-    local consumer_exit=$?
+        "$consumer_main"; then
+        consumer_exit=0
+    else
+        consumer_exit=$?
+    fi
     echo "--------------------------------------------"
 
     # 4. Stop provider and clean up
     echo "[4/4] Stopping Provider ..."
-    if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null
-        wait "$pid" 2>/dev/null || true
-    fi
-    rm -f "$pid_file" "$log_file"
+    cleanup_provider "$pid" "$pid_file"
+    trap - EXIT INT TERM
 
     if [ $consumer_exit -ne 0 ]; then
+        # Keep the log when the run failed: that is exactly when it is needed,
+        # and deleting it left nothing to diagnose afterwards.
         echo "Consumer exit code: $consumer_exit"
+        echo "Provider log kept for inspection: $log_file"
         exit $consumer_exit
     fi
+    rm -f "$log_file"
     echo "=== Done ==="
 }
 
