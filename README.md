@@ -182,6 +182,7 @@ public class MyRunner implements CommandLineRunner {
 | [架构总览](doc/architecture.md)              | Maven 模块地图 + core 六层骨架 + 门面口径 |
 | [编解码设计](doc/codec-comparison.md)        | Jaws 与 Dubbo 编解码架构对比分析          |
 | [全链路异步](doc/async-full-chain.md)        | 一根 CompletableFuture 贯穿七层           |
+| [HTTP/2 与裸 TCP 对比](doc/http2-vs-tcp.md)  | 帧结构 / 关联机制 / HPACK / HTTP/1.1 明文 |
 | [gRPC 线格式兼容](doc/wire-grpc-compat.md)   | jaws-wire 零 grpc-java 实现与双向互通     |
 | [与 Dubbo 对比](doc/dubbo-comparison.md)     | 八个维度的系统性能力对比                  |
 | [Netty 性能解读](doc/netty-performance.md)   | 传输层性能实践与踩坑                      |

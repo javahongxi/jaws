@@ -1,0 +1,140 @@
+# HTTP/2 传输与裸 TCP 传输对比
+
+jaws 采用单端口多传输自适应（裸 TCP / HTTP/2 / HTTP/1.1），同一套协议可跑在不同传输之上。本文以 **裸 TCP 与 HTTP/2** 两种传输的对比为主线（帧结构、请求-响应关联、固有开销），并单列 **HTTP/1.1 的明文分帧特征**，顺带说明 HTTP/2 的分帧语义、HPACK 头压缩，以及 gRPC 线格式的来源。
+
+> 性能数字（QPS/延迟）一律以 [`benchmark.md`](benchmark.md) 的实测为准；本文只描述结构与机制差异，不给出未经实测的百分比。wire 协议与 gRPC 的互通细节见 [`wire-grpc-compat.md`](wire-grpc-compat.md)。
+
+## 一、两个正交轴：协议 × 传输
+
+jaws 有两个彼此独立的维度，不要混为一谈：
+
+- **协议（帧的语义）**：jaws 协议（自定义二进制头，以 Java 接口为契约）/ wire 协议（gRPC 线格式，以 IDL 为契约）。
+- **传输（字节怎么搬）**：裸 TCP / HTTP/2 / HTTP/1.1，由 adaptive 层在单端口上探测分流。
+
+本文主角是 **jaws 协议 × {裸 TCP, HTTP/2}**；gRPC（wire）作为参照系。
+
+## 二、帧结构：一次一元调用发了几帧
+
+| 传输 | 请求 | 响应（一元成功） | 收尾方式 |
+|---|---|---|---|
+| **裸 TCP** | 1 帧（自定义头 + body） | 1 帧 | 单帧即完整消息 |
+| **jaws over HTTP/2** | HEADERS + DATA(`endStream=true`) | HEADERS + DATA(`endStream=true`) | DATA 带 endStream，**无 trailers** |
+| **gRPC（wire）** | HEADERS + DATA(5 字节 prefix + 消息) | HEADERS + DATA + **HEADERS(trailers)** | 结尾独立 trailers 帧 |
+
+一次一元往返的帧数：裸 TCP = 1+1；jaws-over-h2 = 2+2；gRPC = 2+3。
+
+```
+裸 TCP:      [ 自定义头 | body ]                      ← 请求 1 帧
+jaws over h2: [HEADERS] [DATA(endStream)]             ← 请求 2 帧；HEADERS 带 x-jaws-* 镜像元数据 + 固定 :path，body 是权威 payload
+gRPC:         [HEADERS] [DATA(5B prefix + protobuf)]  ← 请求 2 帧
+              响应额外多一个 [HEADERS(trailers: grpc-status)]
+```
+
+jaws-over-h2 的帧证据：客户端 `Http2Client` 发 `DefaultHttp2HeadersFrame` + `DefaultHttp2DataFrame(payload, endStream=true)`；服务端 `Http2StreamServerHandler` 同样 `write(HEADERS)` 后 `writeAndFlush(DATA, endStream=true)`。**用 endStream 的 DATA 收尾，省掉了 gRPC 强制的 trailers 帧。**
+
+**路由信息是"两头都有"**：payload body 才是权威（`Http2PayloadCodec.encodeRequest` 写 `interfaceName / methodName / paramDesc / requestId / retries / args / attachments`）；同时把 interface/method/param-desc/group/version 以 `x-jaws-*` 头**镜像**进 HEADERS（`Http2Constants` 注释：*"mirrored from payload for gateway visibility"*），让 L7 网关不解析 body 就能路由/观测。`:path` 固定为 `/jaws/rpc`（不像 gRPC 的 `/pkg.Svc/Method` 每方法变化），响应状态走 HTTP `:status`（200/400/500/503）。
+
+### HEADERS 字段并排对照（jaws-over-h2 vs gRPC）
+
+| HEADERS 字段 | jaws-over-h2 | gRPC（wire） |
+|---|---|---|
+| `:method` | POST | POST |
+| `:scheme` | http / https | http / https |
+| `:authority` | host:port | host:port |
+| `:path` | **固定 `/jaws/rpc`**（路由在 payload，镜像头辅助） | **`/package.Service/Method`**（每方法变化，网关靠它路由） |
+| `content-type` | `application/jaws` | `application/grpc(+proto / grpc-web)` |
+| 序列化 | `x-jaws-serialization`（hessian2/fastjson2/…） | 隐含 protobuf；`grpc-encoding` 只管消息压缩 |
+| 接口 / 方法 / 参数签名 | `x-jaws-interface` / `x-jaws-method` / `x-jaws-param-desc`（**从 payload 镜像**，供网关可见） | 编码在 `:path` 里，无独立镜像头 |
+| 分组 / 版本 | `x-jaws-group` / `x-jaws-version`（可选） | 无对应（走自定义 metadata） |
+| 流式模式 | `x-jaws-streaming`（unary/server/bidi/client） | 由调用类型决定，无专门头 |
+| 超时 | 框架层处理（不在头里） | `grpc-timeout` |
+| 压缩协商 | — | `grpc-encoding` / `grpc-accept-encoding` |
+| trailers 预告 | **无**（用 endStream 收尾） | `te: trailers` |
+| 状态 | HTTP `:status`（200/400/500/503）+ 结果/异常在 body | HTTP `:status` + **`grpc-status`/`grpc-message` 在结尾 trailers 帧** |
+
+**读法**：jaws-over-h2 的 HEADERS 其实**不薄**——一组 `x-jaws-*` 镜像头 + content-type/serialization/streaming。它相对 gRPC 真正省的是：`:path` 固定（不随方法变）、无 `te:trailers`、**无结尾 trailers 帧**、无 5 字节消息前缀。而 gRPC 把路由信息塞进 `:path`，jaws 改用**独立镜像头**表达，目的是让网关既能路由、又不必解析 payload。
+
+> 字段来源：请求头 `Http2Client.buildRequestHeaders`（Http2Client.java:532-571）、常量 `Http2Constants`、响应 `:status` 见 `Http2StreamServerHandler`、body 权威字段见 `Http2PayloadCodec.encodeRequest`。
+
+### HTTP/1.1 的明文分帧特征
+
+jaws 的 HTTP/1.1 分支由 `HttpServerCodec` + `HttpObjectAggregator` 承载，落到 `HttpRequestHandler`（消费 `FullHttpRequest`）：`POST /invoke` 把 JSON body 派发给 RPC，另有注解式 REST 路由与 `GET /health`。
+
+**"明文"体现在分帧（头部编码），不在 body**：
+
+```
+POST /invoke HTTP/1.1\r\n
+Host: 127.0.0.1:20880\r\n
+Content-Type: application/json\r\n
+Content-Length: 57\r\n
+\r\n
+{"interface":"…","method":"…","args":[…]}
+```
+
+- 请求行 + 头部是 **ASCII 行式文本**，`\r\n` 分隔、空行 `\r\n\r\n` 结束——三种传输里唯一"头部能肉眼直读"的。对比：HTTP/2 是**二进制帧**（HEADERS 经 HPACK、DATA 带 9 字节二进制帧头），裸 TCP 是**自定义二进制头**。
+- **body 是不是明文取决于内容类型**（这里恰好是 JSON 文本，但 HTTP/1.1 同样能传二进制），与协议无关——**HTTP/2 也能带 JSON body**。所以"body 是 UTF-8 文本"**不能用来区分 HTTP/1.1 与 HTTP/2**，真正的差异在头部/分帧。
+- **"一次性写 socket"不是协议保证**：`Content-Length` 定长时头+体通常一次 flush；但 `Transfer-Encoding: chunked` 会把 body 切成 `<hexlen>\r\n<data>\r\n` 多段分次写，keep-alive/pipelining 还会在同连接串多条报文。"明文"说的是头部编码，不是"整条一次写"。
+- 到 `HttpRequestHandler` 这一层，头部**已被 `HttpServerCodec` 解析成 `FullHttpRequest`**，看到的是解析后的结果；明文分帧的证据在上游 codec，不在 handler。
+
+## 三、请求-响应如何关联
+
+- **裸 TCP**：payload 头里带 `requestId(long)`，客户端维护 `requestId → ResponseFuture` 表做关联；requestId 是唯一的 demux 键。
+- **HTTP/2**：**两层各管一段**——
+  - 传输层：每个 RPC 用 `Http2StreamChannelBootstrap` 开一条 HTTP/2 stream，Netty 的 frame codec 按 **stream-id** 自动把响应帧路由回对应 stream channel；
+  - 协议层：payload 里**仍带 `requestId`**（`Http2PayloadCodec` 读写），客户端回调用它匹配。
+
+为什么 h2 上 requestId 看似冗余仍要保留：requestId 属于**协议层**，jaws 的 request/response 模型要跨 TCP 与 HTTP/2 复用同一套 codec 与 callback 表；stream-id 属于**传输层**。这正是"协议 × 传输"解耦带来的约束与好处。
+
+## 四、HTTP/2 为什么把 HEADERS 与 DATA 分成两帧
+
+不是因为"方便中间设备识别"，根因是它要继承 HTTP 语义并承载流模型：
+
+1. **HTTP 本就是头/体分离**：HTTP/2 是 HTTP/1 的多路复用传输层，请求头/响应头 + body 的模型是 HTTP 自带的，h2 只是编码成两种帧。
+2. **HEADERS 是开流标志**：收到一个流的 HEADERS 帧，这个 stream 才算建立；DATA 帧依附于已存在的流。
+3. **头与体编码方式不同**：HEADERS 走 HPACK 压缩（头可字典化），DATA 是原始字节（是否压缩由应用决定）。分帧才能分别用不同编码。
+4. **扩展性**：分开才能承载 PUSH_PROMISE、1xx 中间响应、以及 gRPC 的 trailers。
+
+**中间设备能路由只是副产品**：路由所需的 `:method/:path/:scheme/:authority` 放在 HEADERS 里，L7 网关不必解析 body 就能转发（Envoy 读 `:path` 即知调用哪个 gRPC 方法）。而 h2 的二进制分帧，初衷恰恰是**减少中间设备对明文的魔改**，更偏端到端。
+
+## 五、HPACK 是什么
+
+HPACK（RFC 7541）是 HTTP/2 的头部压缩算法，由三个机制组成：
+
+- **静态表**：预定义常见头名/值（如 `:method: GET`），发索引即代表整条头。
+- **动态表**：**连接级** FIFO 缓存（默认 4KB），发过的头存表，后续同头只引用索引；发送端与接收端各维护一份**同步**的动态表——**这是有状态的**。
+- **Huffman 编码**：未命中的新字符串用一套静态 Huffman 码表逐字段压缩。
+
+代价：动态表两端必须状态一致（连接不可随意迁移、代理要重建表）；表不跨连接共享（新连接需预热）；存在 HPACK bomb（撑爆内存）与表复用侧信道风险。
+
+对 jaws 的意义：jaws-over-h2 的 HEADERS 并不"空"——它带一组 `x-jaws-*` 镜像头 + 固定 `:path`，只是**没有 gRPC 的 `te:trailers`/`grpc-*` 那套、也不需要结尾 trailers 帧**，所以 HPACK 负担比 gRPC 轻，但仍有自定义头的编码成本；**裸 TCP 根本没有"头"，完全绕开 HPACK**。
+
+## 六、HTTP/2 相对裸 TCP 的固有开销
+
+jaws 走 HTTP/2 时，即便不碰 gRPC 语义，也要付 HTTP/2 框架层的成本，而裸 TCP 全无：
+
+- **帧头开销**：每个 HTTP/2 帧 9 字节固定头（length 3 + type 1 + flags 1 + streamId 4）。
+- **每流状态**：每条并发 stream 一个 `Http2StreamChannel` 状态对象，随并发增长。
+- **流控**：连接级 + 流级 flow control，需要 `WINDOW_UPDATE` 帧与窗口维护。
+- **二进制分帧层**：帧的编解码、交错与重组的 CPU 成本。
+
+## 七、多路复用与队头阻塞
+
+- 裸 TCP：一条长连接靠 requestId 并发复用多个在途请求。
+- HTTP/2：一条连接上多 stream 复用，省连接数。
+- **注意**：HTTP/2 并未解决 TCP 层的丢包队头阻塞——一个 TCP 段丢失会阻塞该连接上所有 stream；解决 TCP HOL 是 QUIC / HTTP/3 的范畴。两种传输都跑在 TCP 上时，这一层风险相同。
+
+## 八、权衡与选型
+
+- **裸 TCP**：帧最省、无 HTTP/2 框架层，适合私有 RPC 的内部高频调用。
+- **HTTP/1.1**：头部 ASCII 行式、无二进制分帧/HPACK，最容易被通用工具（curl / 浏览器 / 任意 HTTP 代理）直读直写与调试；代价是无多路复用（一条连接同一时刻一问一答，靠连接池撑并发）、头部明文冗余大。jaws 用它做 REST / 网关入口。
+- **HTTP/2**：换来生态互通、网关可路由、标准 HTTP 语义，代价是框架开销。
+- **jaws-over-h2**：折中——用 HTTP/2 传输但**不套用 gRPC 语义**：`:path` 固定、无 5 字节消息前缀、用 endStream 的 DATA 收尾（不建 trailers）；同时把 interface/method 等镜像进 `x-jaws-*` 头，保留 L7 网关可路由 / 可观测。从而在保住 h2 互操作性的同时压低框架开销。
+
+一句话：**jaws-over-h2 比 gRPC 轻，省在"无 5 字节消息前缀、无 trailers 帧、`:path` 固定"；比裸 TCP 重，贵在"背了 HTTP/2 的帧/流/流控框架层 + 一组镜像头"。** 具体差多少，以 `benchmark.md` 实测为准。
+
+## 九、关联文档
+
+- wire 协议与 gRPC 线格式互通：[`wire-grpc-compat.md`](wire-grpc-compat.md)
+- 编解码与线上数据格式：[`codec-comparison.md`](codec-comparison.md)
+- 单端口多传输自适应：[`architecture.md`](architecture.md)
+- 性能实测：[`benchmark.md`](benchmark.md)
