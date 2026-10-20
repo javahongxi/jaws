@@ -30,6 +30,8 @@ gRPC:         [HEADERS] [DATA(5B prefix + protobuf)]  ← 请求 2 帧
               响应额外多一个 [HEADERS(trailers: grpc-status)]
 ```
 
+> **gRPC 的 5 字节前缀是 per-message 的 Length-Prefixed-Message，不是 per-frame**：它是 DATA 帧 payload 开头的 `1 字节压缩标志 + 4 字节消息长度`，紧跟在 9 字节帧头之后，且 9 字节帧头里的 `Length` 字段把这 5 字节连同消息一起计入。一条消息大于单帧（受 max frame size / 流控窗口限制）会**跨多个 DATA 帧**，前缀只出现在首帧；多条小消息也能**挤进同一个 DATA 帧**，各自带一个前缀。所以"每个 DATA 帧多 5 字节"不准确，应是"每条消息多 5 字节、落在承载它的首个 DATA 帧 payload 开头"。
+
 jaws-over-h2 的帧证据：客户端 `Http2Client` 发 `DefaultHttp2HeadersFrame` + `DefaultHttp2DataFrame(payload, endStream=true)`；服务端 `Http2StreamServerHandler` 同样 `write(HEADERS)` 后 `writeAndFlush(DATA, endStream=true)`。**用 endStream 的 DATA 收尾，省掉了 gRPC 强制的 trailers 帧。**
 
 **路由信息是"两头都有"**：payload body 才是权威（`Http2PayloadCodec.encodeRequest` 写 `interfaceName / methodName / paramDesc / requestId / retries / args / attachments`）；同时把 interface/method/param-desc/group/version 以 `x-jaws-*` 头**镜像**进 HEADERS（`Http2Constants` 注释：*"mirrored from payload for gateway visibility"*），让 L7 网关不解析 body 就能路由/观测。`:path` 固定为 `/jaws/rpc`（不像 gRPC 的 `/pkg.Svc/Method` 每方法变化），响应状态走 HTTP `:status`（200/400/500/503）。
