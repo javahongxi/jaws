@@ -56,12 +56,23 @@ jaws-registry-nacos/target/classes:jaws-samples/jaws-sample-wire-sweet/target/cl
 
 ```
 resolving sweet.example.v1.Greeter through nacos, group=DEFAULT_GROUP, namespace=(none)
-Greet          => Hello, jaws!   server=127.0.0.1:20001
-GreetStream    => [Hello #1, jaws!, Hello #2, jaws!, Hello #3, jaws!]   server=127.0.0.1:20001
-GreetAll       => Hello, alice, bob, charlie!   server=127.0.0.1:20001
-GreetChat      => [Hello, alice!, Hello, bob!, Hello, charlie!]   server=127.0.0.1:20001
+Greet       <= "Hello, jaws!"   server=127.0.0.1:20001
+GreetStream <= 1 "Hello #1, jaws!"
+GreetStream <= 2 "Hello #2, jaws!"
+GreetStream <= 3 "Hello #3, jaws!"
+GreetStream == 3 frames, closed by server
+GreetChat   <= 1 "Hello, alice!"
+GreetChat   <= 2 "Hello, bob!"
+GreetChat   <= 3 "Hello, charlie!"
+GreetChat   == 3 frames from 3 requests, closed by server
+GreetAll    <= "Hello, alice, bob, charlie!"
+GreetAll    == 1 frame from 3 requests
 done.
 ```
+
+流式方法**每收到一帧打一行**（`<=` 带帧号），`==` 那行是流被服务端正常关闭后的收尾计数。这与
+sweet 侧 `example/greeter/cmd/client` 的输出逐字同形（两边的调用顺序也对齐：一元 → 服务端流 →
+双向流 → 客户端流），这样同一件事在两个仓库里可以对拍。
 
 `server=...` 那半行来自 `RpcContext#getServerUrl`，是集群层真正拨出去的地址。它之所以算证据而不
 是装饰，是因为消费端命令行里没有任何 host:port——地址只能来自这一次订阅：
@@ -88,14 +99,28 @@ stopped: deregistered then drained
 消费端这边（同一次运行，按真实时序；前两行是四发成功之后才有 holding）：
 
 ```
-Greet          => Hello, jaws!   server=127.0.0.1:20001
+resolving sweet.example.v1.Greeter through nacos, group=DEFAULT_GROUP, namespace=(none)
+Greet       <= "Hello, jaws!"   server=127.0.0.1:20001
+GreetStream <= 1 "Hello #1, jaws!"
+GreetStream <= 2 "Hello #2, jaws!"
+GreetStream <= 3 "Hello #3, jaws!"
+GreetStream == 3 frames, closed by server
+GreetChat   <= 1 "Hello, alice!"
+GreetChat   <= 2 "Hello, bob!"
+GreetChat   <= 3 "Hello, charlie!"
+GreetChat   == 3 frames from 3 requests, closed by server
+GreetAll    <= "Hello, alice, bob, charlie!"
+GreetAll    == 1 frame from 3 requests
 --- holding 12s: kill the Go server now to watch the instance list empty out ---
-INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- service list change: serviceName=sweet.example.v1.Greeter, group=DEFAULT_GROUP, instanceCount=1
-INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- service list change: serviceName=sweet.example.v1.Greeter, group=DEFAULT_GROUP, instanceCount=0
+02:26:45.306 [nacos.publisher-com.alibaba.nacos.client.naming.event.InstancesChangeEvent] INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- service list change: serviceName=sweet.example.v1.Greeter, group=DEFAULT_GROUP, instanceCount=1
+02:26:51.653 [nacos.publisher-com.alibaba.nacos.client.naming.event.InstancesChangeEvent] INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- service list change: serviceName=sweet.example.v1.Greeter, group=DEFAULT_GROUP, instanceCount=0
 --- calling again after the hold ---
-Greet          => failed: error_message: AdaptiveLoadBalance No available references for call : references_size=1 requestId=8 interface=sweet.example.v1.Greeter method=Greet(org.hongxi.jaws.sample.wire.sweet.proto.GreetRequest), error_code: 40001
+Greet       => failed: error_message: AdaptiveLoadBalance No available references for call : references_size=1 requestId=8 interface=sweet.example.v1.Greeter method=Greet(org.hongxi.jaws.sample.wire.sweet.proto.GreetRequest), error_code: 40001
 done.
 ```
+
+（同一次运行的日志原样，时间戳是日志自己的前缀；上半段与上一节重复，是因为这一次运行就是
+"四发成功后再挂住等推送"的完整过程。）
 
 `instanceCount` 从 1 走到 0 是 Nacos 推过来的：没有人告诉消费端"服务端下线了"，它是订阅回调收到
 的。等待期结束后那一发失败在**发出请求之前**——`AbstractLoadBalance#selectCandidates`
@@ -109,12 +134,20 @@ Go 侧四个入口共用的那条 `status.Error(codes.InvalidArgument, "name is 
 这一发里以 gRPC 状态原样回到 Java：
 
 ```
-Greet          => failed: error_message: gRPC INVALID_ARGUMENT: name is required, error_code: 40001   (从 JawsServiceException 的 cause 链里取出)
-GreetStream    => failed: error_message: gRPC INVALID_ARGUMENT: name is required, error_code: 40001
+Greet       => failed: error_message: gRPC INVALID_ARGUMENT: name is required, error_code: 40001   (从 JawsServiceException 的 cause 链里取出)
+GreetStream => failed after 0 frames: error_message: gRPC INVALID_ARGUMENT: name is required, error_code: 40001
+GreetChat   <= 1 "Hello, alice!"
+GreetChat   <= 2 "Hello, bob!"
+GreetChat   <= 3 "Hello, charlie!"
+GreetChat   == 3 frames from 3 requests, closed by server
+GreetAll    <= "Hello, alice, bob, charlie!"
+GreetAll    == 1 frame from 3 requests
+done.
 ```
 
 两种形态的落点不同：一元经 `FailoverCluster`，状态在 cause 链里；服务端流的顶层异常本身就是
-`StatusException`。示例里 `failureMessage` 把两者统一到同一行输出上，所以读起来是同一句话。
+`StatusException`，且它一帧没收到就断了（`after 0 frames`）。示例里 `failureMessage` 把两者统一到
+同一行输出上，所以读起来是同一句话。后面两发用的是 `-names`，不受 `-name ""` 影响，照常成功。
 
 ## 不在这里的东西
 

@@ -15,8 +15,6 @@ import org.hongxi.jaws.transport.StreamSubject;
 import org.hongxi.jaws.wire.StatusException;
 import sweet.example.v1.Greeter;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -82,10 +80,11 @@ public class SweetGreeterConsumer {
         Greeter greeter = ref.getRef();
         System.out.println("resolving " + SERVICE_NAME + " through nacos, group=DEFAULT_GROUP, namespace=(none)");
 
+        // 与 sweet 侧 example/greeter/cmd/client 同一顺序、同一行格式，便于两边逐行对拍
         unary(greeter, name);
         serverStreaming(greeter, name, times);
-        clientStreaming(greeter, names);
         bidirectional(greeter, names);
+        clientStreaming(greeter, names);
 
         if (holdSeconds > 0) {
             System.out.println("\n--- holding " + holdSeconds + "s: kill the Go server now to watch the instance list empty out ---");
@@ -101,21 +100,24 @@ public class SweetGreeterConsumer {
     private static void unary(Greeter greeter, String name) {
         try {
             GreetReply reply = greeter.Greet(GreetRequest.newBuilder().setName(name).build());
-            System.out.println("Greet          => " + reply.getMessage() + "   " + dialedServer());
+            System.out.println("Greet       <= \"" + reply.getMessage() + "\"   " + dialedServer());
         } catch (Exception e) {
-            System.out.println("Greet          => failed: " + failureMessage(e));
+            System.out.println("Greet       => failed: " + failureMessage(e));
         }
     }
 
     private static void serverStreaming(Greeter greeter, String name, int times) throws Exception {
-        List<String> got = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
         Throwable[] failure = new Throwable[1];
+        int[] frames = new int[1];
         greeter.GreetStream(GreetRequest.newBuilder().setName(name).setTimes(times).build())
                 .subscribe(new StreamObserver<>() {
                     @Override
                     public void onNext(GreetReply item) {
-                        got.add(item.getMessage());
+                        // One line per frame, printed as it lands — collecting the
+                        // stream and printing it once would hide both that this is a
+                        // stream and how much had arrived if it broke early.
+                        System.out.println("GreetStream <= " + (++frames[0]) + " \"" + item.getMessage() + "\"");
                     }
 
                     @Override
@@ -126,11 +128,15 @@ public class SweetGreeterConsumer {
 
                     @Override
                     public void onCompleted() {
+                        System.out.println("GreetStream == " + plural(frames[0], "frame") + ", closed by server");
                         latch.countDown();
                     }
                 });
         await(latch);
-        report("GreetStream    ", got, failure[0]);
+        if (failure[0] != null) {
+            System.out.println("GreetStream => failed after " + plural(frames[0], "frame")
+                    + ": " + failureMessage(failure[0]));
+        }
     }
 
     /**
@@ -150,24 +156,25 @@ public class SweetGreeterConsumer {
 
         try {
             GreetReply reply = greeter.GreetAll(requests);
-            System.out.println("GreetAll       => " + reply.getMessage() + "   " + dialedServer());
+            System.out.println("GreetAll    <= \"" + reply.getMessage() + "\"");
+            System.out.println("GreetAll    == " + plural(1, "frame") + " from " + plural(names.length, "request"));
         } catch (Exception e) {
-            System.out.println("GreetAll       => failed: " + failureMessage(e));
+            System.out.println("GreetAll    => failed: " + failureMessage(e));
         }
         feeder.join(TimeUnit.SECONDS.toMillis(5));
     }
 
     private static void bidirectional(Greeter greeter, String[] names) throws Exception {
-        List<String> got = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
         Throwable[] failure = new Throwable[1];
+        int[] frames = new int[1];
 
         StreamSubject<GreetRequest> requests = new StreamSubject<>();
         StreamSource<GreetReply> responses = greeter.GreetChat(requests);
         responses.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(GreetReply item) {
-                got.add(item.getMessage());
+                System.out.println("GreetChat   <= " + (++frames[0]) + " \"" + item.getMessage() + "\"");
             }
 
             @Override
@@ -178,6 +185,8 @@ public class SweetGreeterConsumer {
 
             @Override
             public void onCompleted() {
+                System.out.println("GreetChat   == " + plural(frames[0], "frame") + " from "
+                        + plural(names.length, "request") + ", closed by server");
                 latch.countDown();
             }
         });
@@ -187,15 +196,10 @@ public class SweetGreeterConsumer {
         }
         requests.onCompleted();
         await(latch);
-        report("GreetChat      ", got, failure[0]);
-    }
-
-    private static void report(String label, List<String> got, Throwable failure) {
-        if (failure != null) {
-            System.out.println(label + "=> failed: " + failureMessage(failure));
-            return;
+        if (failure[0] != null) {
+            System.out.println("GreetChat   => failed after " + plural(frames[0], "frame")
+                    + ": " + failureMessage(failure[0]));
         }
-        System.out.println(label + "=> " + got + "   " + dialedServer());
     }
 
     /**
@@ -228,6 +232,11 @@ public class SweetGreeterConsumer {
         if (!latch.await(10, TimeUnit.SECONDS)) {
             throw new IllegalStateException("stream did not finish within 10s");
         }
+    }
+
+    /** Counts a noun the way these lines should read: "1 frame", "3 frames". */
+    private static String plural(int n, String noun) {
+        return n == 1 ? "1 " + noun : n + " " + noun + "s";
     }
 
     private static String arg(String[] args, String key, String defaultValue) {
