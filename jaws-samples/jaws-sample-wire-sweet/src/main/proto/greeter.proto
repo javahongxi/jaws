@@ -1,0 +1,47 @@
+// Vendored from sweet (github.com/javahongxi/sweet), example/greeter/greeter.proto —
+// package, service, method and field definitions are unchanged, because they are the
+// wire contract this consumer has to match. Only the java_* options below were added,
+// which affect nothing on the wire. Apache License 2.0 as in the source repository.
+//
+// The service is served by grpc-go; see sweet's example/greeter for the provider side.
+// Keep the two files in sync by hand: regenerate nothing here unless the proto in sweet
+// actually changed.
+
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "org.hongxi.jaws.sample.wire.sweet.proto";
+option java_outer_classname = "SweetGreeterProto";
+option go_package = "github.com/javahongxi/sweet/example/greeter/greeterpb";
+
+package sweet.example.v1;
+
+// Greeter covers all four gRPC method shapes. Greet and GreetStream are the two
+// shapes example/helloworld/ping hand-writes, so those pair up line by line;
+// GreetAll and GreetChat add client-streaming and bidirectional streaming, which
+// the hand-written example does not attempt.
+service Greeter {
+  // Greet answers one name with one greeting.
+  rpc Greet (GreetRequest) returns (GreetReply) {}
+
+  // GreetStream answers one name with `times` greetings, one per message.
+  rpc GreetStream (GreetRequest) returns (stream GreetReply) {}
+
+  // GreetAll takes a stream of names and answers with a single greeting once the
+  // client half-closes.
+  rpc GreetAll (stream GreetRequest) returns (GreetReply) {}
+
+  // GreetChat answers each name as it arrives, in both directions at once.
+  rpc GreetChat (stream GreetRequest) returns (stream GreetReply) {}
+}
+
+// One request shape serves all four methods. `times` is read only by
+// GreetStream; the streaming methods take one name per message and ignore it.
+message GreetRequest {
+  string name = 1;
+  int32 times = 2;
+}
+
+message GreetReply {
+  string message = 1;
+}
