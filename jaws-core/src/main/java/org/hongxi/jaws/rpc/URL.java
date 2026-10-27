@@ -284,6 +284,15 @@ public class URL {
         return getParameter(UrlParam.Identity.GROUP.getName(), UrlParam.Identity.GROUP.value());
     }
 
+    /**
+     * Registry service-name namespace. An explicitly empty value means "no
+     * namespace": registries that consult it store and look up {@link #getPath()}
+     * verbatim, which is how a service registered by a non-Jaws client appears.
+     */
+    public String getRegistryNamespace() {
+        return getParameter(UrlParam.Identity.REGISTRY_NAMESPACE.getName(), UrlParam.Identity.REGISTRY_NAMESPACE.value());
+    }
+
     public String getApplication() {
         return getParameter(UrlParam.Identity.APPLICATION.getName(), UrlParam.Identity.APPLICATION.value());
     }

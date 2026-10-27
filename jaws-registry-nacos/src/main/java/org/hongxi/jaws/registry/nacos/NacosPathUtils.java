@@ -10,7 +10,10 @@ import org.hongxi.jaws.rpc.URL;
  * The mapping is:
  * <ul>
  *   <li>Nacos group = Jaws group</li>
- *   <li>Nacos serviceName = "jaws/{path}" (e.g. jaws/org.hongxi.jaws.sample.api.DemoService)</li>
+ *   <li>Nacos serviceName = "jaws/{path}" (e.g. jaws/org.hongxi.jaws.sample.api.DemoService),
+ *       or the bare {@code path} when the URL carries an explicitly empty
+ *       {@code registryNamespace} — which is what it takes to reach a service that
+ *       some non-Jaws process registered under its own name</li>
  *   <li>Nacos instance metadata carries URL parameters (protocol, path, etc.)</li>
  * </ul>
  * <p>
@@ -20,10 +23,16 @@ public class NacosPathUtils {
 
     /**
      * Build the Nacos service name from Jaws URL.
-     * Format: "jaws/{path}"
+     * Format: "jaws/{path}", or just "{path}" when the namespace is empty.
      */
     public static String toServiceName(URL url) {
-        return JawsConstants.REGISTRY_SERVICE_NAMESPACE + JawsConstants.PATH_SEPARATOR + url.getPath();
+        String namespace = url.getRegistryNamespace();
+        if (namespace.isEmpty()) {
+            // A non-Jaws provider registered this name verbatim; adding our own
+            // namespace would look up a service that does not exist.
+            return url.getPath();
+        }
+        return namespace + JawsConstants.PATH_SEPARATOR + url.getPath();
     }
 
     /**

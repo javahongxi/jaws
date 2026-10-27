@@ -55,6 +55,21 @@ class NacosRegistryTest {
     }
 
     @Test
+    void emptyNamespaceDropsThePrefixSoAForeignServiceNameIsReachable() {
+        // Something that is not jaws registered this service, under its own name
+        // and with no namespace in front of it. An explicitly empty namespace is
+        // the only way to look that name up, and it has to be spelled out:
+        // getParameter falls back to the default only when the key is absent, so
+        // "unset" and "empty" are different answers on purpose.
+        assertEquals("sweet.example.v1.Greeter", NacosPathUtils.toServiceName(
+                new URL("wire", "10.0.0.1", 20000, "sweet.example.v1.Greeter",
+                        withParam(UrlParam.Identity.REGISTRY_NAMESPACE.getName(), ""))));
+        // Unset still means the framework namespace, so every existing leg is
+        // unaffected by the branch above.
+        assertEquals("jaws/" + SERVICE_PATH, NacosPathUtils.toServiceName(providerUrl()));
+    }
+
+    @Test
     void groupComesFromUrlParameterAndFallsBackToItsDefault() {
         assertEquals("gray", NacosPathUtils.toGroup(
                 providerUrl(withParam(UrlParam.Identity.GROUP.getName(), "gray"))));
