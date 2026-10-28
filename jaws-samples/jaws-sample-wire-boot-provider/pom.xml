@@ -41,6 +41,15 @@
             <artifactId>jaws-sample-wire-api</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- registry SPI for the "nacos" address in application-nacos.yml. The
+             default profile needs neither of these: it registers into the
+             in-JVM "local" registry, which keeps this sample runnable with
+             nothing else started. -->
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-registry-nacos</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
