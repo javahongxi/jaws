@@ -13,10 +13,13 @@ jaws:
     port: 50051
     # Compress responses with gzip for callers advertising grpc-accept-encoding
     compression: gzip
-  # Direct-connect demo: the built-in "local" registry keeps registrations inside
-  # this JVM only, so no external registry center is required and consumers
-  # reach this provider through directUrl.
+  # Publish to Nacos so a peer that knows nothing about this sample can resolve it
+  # by service name: jaws/<interface FQN> in group default_rpc, with the
+  # protocol/path sentinel keys in the instance metadata. The in-JVM "local"
+  # registry would keep the registration invisible outside this process, which
+  # makes the discovery half of "wire protocol" impossible to demo from here.
+  # Nacos must be listening on 127.0.0.1:8848.
   registry:
-    address: local://127.0.0.1:0
+    address: nacos://127.0.0.1:8848
   service:
     check: true
