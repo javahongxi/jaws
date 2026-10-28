@@ -2,7 +2,8 @@ package org.hongxi.jaws.wire;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http2.DefaultHttp2GoAwayFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2DataFrame;
@@ -25,8 +26,10 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>{@code GRPC_ARG_HTTP2_MIN_RECV_PING_INTERVAL_WITHOUT_DATA_MS} —
  *       {@code permitPingIntervalMs}, default 300000. The interval is only
- *       judged <b>without data</b>: PINGs that bracket real traffic are legal,
- *       which is how a healthy grpcurl client behaves (probe, call, probe).</li>
+ *       judged <b>without data</b>, and "data" means frames in either direction:
+ *       a PING that follows a server push or a response DATA is legal. Judging
+ *       inbound only would condemn every server-streaming call, because the
+ *       client sends nothing while the response is in flight.</li>
  *   <li>{@code GRPC_ARG_HTTP2_MAX_PING_STRIKES} — {@code permitPingStrikes},
  *       default 2. Violations accumulate as strikes; GOAWAY goes out when the
  *       allowance is exhausted, not on the first violation, because GOAWAY
@@ -42,7 +45,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author shenhongxi
  */
-public class WireKeepaliveHandler extends ChannelInboundHandlerAdapter {
+public class WireKeepaliveHandler extends ChannelDuplexHandler {
     private static final Logger log = LoggerFactory.getLogger(WireKeepaliveHandler.class);
 
     /** ASCII for "too_many_pings", the gRPC-conventional GOAWAY debug data. */
@@ -83,8 +86,7 @@ public class WireKeepaliveHandler extends ChannelInboundHandlerAdapter {
             // gRFC A8 judges the interval "without data": traffic on the
             // connection restarts the judgment window for the next PING.
             lastDataTimeNanos = System.nanoTime();
-        }
-        if (!(msg instanceof Http2PingFrame ping)) {
+        }        if (!(msg instanceof Http2PingFrame ping)) {
             // Not a PING — stream frames and other connection frames pass through
             super.channelRead(ctx, msg);
             return;
@@ -126,5 +128,23 @@ public class WireKeepaliveHandler extends ChannelInboundHandlerAdapter {
         // guard above is its only server-side consumer. No downstream handler
         // needs a connection-level PING, so it is consumed here rather than
         // forwarded.  (Non-PING frames were already passed through above.)
+    }
+
+    /**
+     * Outbound HEADERS/DATA count as traffic too, which is what keeps a
+     * server-streaming response alive: during one, the client sends nothing
+     * inbound for the whole duration, so an inbound-only view of "data" turns
+     * every client PING inside that window into a violation. Measured before this
+     * override existed: {@code grpcurl -d '{"name":"x"}' …/greeter.Greeter/SayHelloStream}
+     * against the Spring Boot wire provider got GOAWAY {@code too_many_pings}
+     * twice out of two attempts, because the two counted PINGs landed 100ms apart
+     * with no inbound frame between them, while the server was still streaming.
+     */
+    @Override
+    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
+        if (msg instanceof Http2HeadersFrame || msg instanceof Http2DataFrame) {
+            lastDataTimeNanos = System.nanoTime();
+        }
+        ctx.write(msg, promise);
     }
 }

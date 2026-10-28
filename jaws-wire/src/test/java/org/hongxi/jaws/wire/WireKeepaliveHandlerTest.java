@@ -164,6 +164,33 @@ class WireKeepaliveHandlerTest {
         assertTrue(ch.isOpen());
     }
 
+    /**
+     * The server-streaming case, which is what a standard grpc-go client hits most
+     * of the time: the client sends nothing while the response is in flight, so if
+     * only inbound frames counted as "data", its PINGs during that window would
+     * burn the strikes and the call would die with GOAWAY too_many_pings. Measured
+     * that way against grpcurl calling greeter.Greeter/SayHelloStream before the
+     * handler had a write() override — two attempts, both killed.
+     */
+    @Test
+    void outboundFramesCountAsDataToo() {
+        EmbeddedChannel ch = channel(INTERVAL, 1); // one violation and it's GOAWAY
+        ch.writeInbound(ping(1));
+        ch.writeOutbound(new DefaultHttp2DataFrame(io.netty.buffer.Unpooled.EMPTY_BUFFER, false));
+        assertNotNull(ch.readOutbound(), "outbound DATA must not be swallowed by the guard");
+        ch.writeInbound(ping(2)); // ≈0ms after ping(1), but a frame went out between
+        assertNull(ch.readOutbound(), "a PING bracketed by outbound traffic is not a violation");
+        assertTrue(ch.isOpen());
+
+        // The other half of the same rule: a genuinely idle connection pinging
+        // twice in a row is still caught, so this fix does not simply switch off
+        // the guard.
+        EmbeddedChannel idle = channel(INTERVAL, 1);
+        idle.writeInbound(ping(1));
+        idle.writeInbound(ping(2));
+        assertNotNull(idle.readOutbound(), "data-free pings must still trigger GOAWAY");
+    }
+
     private static Http2PingFrame ping(long content) {
         return new DefaultHttp2PingFrame(content, false);
     }
