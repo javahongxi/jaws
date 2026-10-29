@@ -86,7 +86,8 @@ public class WireKeepaliveHandler extends ChannelDuplexHandler {
             // gRFC A8 judges the interval "without data": traffic on the
             // connection restarts the judgment window for the next PING.
             lastDataTimeNanos = System.nanoTime();
-        }        if (!(msg instanceof Http2PingFrame ping)) {
+        }
+        if (!(msg instanceof Http2PingFrame ping)) {
             // Not a PING — stream frames and other connection frames pass through
             super.channelRead(ctx, msg);
             return;
