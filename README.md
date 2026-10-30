@@ -183,7 +183,7 @@ public class MyRunner implements CommandLineRunner {
 | [编解码设计](doc/codec-comparison.md)        | Jaws 与 Dubbo 编解码架构对比分析          |
 | [全链路异步](doc/async-full-chain.md)        | 一根 CompletableFuture 贯穿七层           |
 | [HTTP/2 与裸 TCP 对比](doc/http2-vs-tcp.md)  | 帧结构 / 关联机制 / HPACK / HTTP/1.1 明文 |
-| [gRPC 线格式兼容](doc/wire-grpc-compat.md)   | jaws-wire 零 grpc-java 实现与双向互通     |
+| [gRPC 线格式兼容](doc/wire-grpc-compat.md)   | 零 grpc-java 实现，与 Go 对端双向实测     |
 | [与 Dubbo 对比](doc/dubbo-comparison.md)     | 八个维度的系统性能力对比                  |
 | [Netty 性能解读](doc/netty-performance.md)   | 传输层性能实践与踩坑                      |
 | [注册中心对比](doc/registry-comparison.md)   | Nacos 与 ZooKeeper 实现对比               |

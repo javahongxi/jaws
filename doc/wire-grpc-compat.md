@@ -161,8 +161,25 @@ wire 有两副面孔。**管线模式**走 core 的配置与协议链（`Service
 - Direct 的地址级 failover 只捕获同步抛出（`ManagedChannel.java:626-632`），而 `WireClient.request()` 返回 future（`:194-222`）：建流期失败会换后端，对端回了 `UNAVAILABLE` 不会。
 - 服务端拦截器与 Filter 链是**分工**而非重复：`WireServerInterceptor` 只作用于 Direct API 的 `WireHandlerRegistry`，管线模式用 core 的 Filter 链（`WireServerInterceptor.java:35-36` 已写明）。
 
+## 14. 跨语言对端：sweet（Go）
+
+§11 立的规矩，目前兑现得最完整的一路不是 grpc-java 也不是 `grpcurl`，而是 [sweet](https://github.com/javahongxi/sweet)——一个 Go RPC 框架，客户端是原生 `grpc-go` 桩，服务端用**手写**的 Nacos 命名协议注册自己。两边之间是**两个方向各有一个样例**，不是同一对程序跑两遍：
+
+- **jaws → sweet**：`jaws-samples/jaws-sample-wire-sweet`。jaws 的 wire 客户端经**完整管线**（cluster → 负载均衡 → filter 链 → `WireReference` → `WireClient`）调 sweet 的 grpc-go 服务端，地址全部来自 Nacos 订阅，四种方法形态（一元 / 服务端流 / 双向流 / 客户端流）实测全通（2026-10-28）。输出里 `server=127.0.0.1:20001` 那半行取自 `RpcContext#getServerUrl`，而消费端命令行里没有任何 host:port——地址只能来自这一次订阅，所以它算证据不是装饰。
+- **sweet → jaws**：在 sweet 仓的 `example/jaws-wire`，Go 侧用 `greeter.proto` 生成的标准桩调 jaws 的 `WireBootProvider`（`jaws-samples/jaws-sample-wire-boot-provider`，监听 50051），`-registry=nacos` 与 `-registry=direct` 两条寻址都通。jaws 侧只改了导出配置（registry 地址 + 一个 `jaws-registry-nacos` 依赖），`GreeterService` 与它的 proto 一行未动。
+
+跨语言真正咬人的是三处对齐，缺一处就 `UNIMPLEMENTED`：
+
+1. **服务名** — jaws 默认把注册名写成 `jaws/<path>`，grpc-go 侧不认。于是加了开关 `UrlParam.Identity.REGISTRY_NAMESPACE`（`common/UrlParam.java:71`，默认值取 `JawsConstants.REGISTRY_SERVICE_NAMESPACE`），`URL.java:293` 读出它，显式置空时 `NacosPathUtils.toServiceName`（`registry/nacos/NacosPathUtils.java:28`）原样返回 `path`。默认不变，所以现存 8 个 nacos 样例与 `jaws↔jaws` 的注册/查询行为一字未改。
+2. **group** — jaws 默认 `default_rpc`，grpc-go 侧默认 `DEFAULT_GROUP`，要 `ref.setGroup("DEFAULT_GROUP")` 显式对上。
+3. **出站 `:path`** — 服务段取 `interfaceClass.getName()`、方法段取 `method.getName()`，全程无转换、也没有任何注解或配置能覆盖。所以样例里那个 Java 接口**必须**叫 `sweet.example.v1.Greeter`，方法必须是大写入头的 `Greet` / `GreetStream` / `GreetAll` / `GreetChat`；把它改成 `org.hongxi...` 那样"顺手"的名字，四个方法会全部变成 `UNIMPLEMENTED`。包名在 Java 侧合法但不合习惯，这是为命中 grpc-go 付的代价。
+
+另外两条实测值得单记，因为它们证明互通不止于"调用返回了"。**优雅下线**：Go 服务端 `SIGTERM` 后先注销再 drain，jaws 消费端在订阅回调里看到 `instanceCount` 从 1 走到 0；等待期后那一发失败在**发出请求之前**——`AbstractLoadBalance#selectCandidates`（`cluster/loadbalance/AbstractLoadBalance.java:88-109`）先按路由过滤出 reference、再按 `isAvailable()` 筛候选，筛完为空就抛，所以错误里的 `references_size=1` 是列表长度不是候选数，这条也不是 gRPC 状态码。**状态码跨语言**：Go 侧 `status.Error(codes.InvalidArgument, "name is required")` 以 gRPC 状态原样回到 Java，但两种形态落点不同——一元经 `FailoverCluster`、状态在 cause 链里；服务端流的顶层异常本身就是 `StatusException`，且 `after 0 frames` 就断了。
+
+不在这一路里的：反向（grpc-go 调 jaws 注册的服务）要 sweet 侧解释 Java 那套 `protocol`/`path` 哨兵元数据，属另一件事；`run-sample.sh` 也还没接这个样例，跑法是它 README 里那串 `java -cp`。
+
 ## 小结
 
 wire 的价值有两层：一层是**能力**——Jaws 因此能进 gRPC 生态当一等公民；另一层是**认知**——它逼着把 gRPC 线格式的每一条约定都实现并读懂，于是这个模块本身成了"gRPC over HTTP/2 到底规定了什么"的可读参考。它和 jaws 二进制协议是同一套骨架（core 六层）之上的两种对外齿形：一个对等 gRPC，一个对等 Dubbo。
 
-> 源码：`jaws-wire`（约 1.0 万行）+ `jaws-wire-proto`（生成码）。运行：`./run-sample.sh wire`（直连，兼容 grpcurl）、`./run-sample.sh interop`（grpc-java ↔ jaws-wire 双向互操作）、`./run-sample.sh bench-wire` / `bench-grpc`（性能基准，含互操作口径与 gRPC 参照口径）。
+> 源码：`jaws-wire`（约 1.0 万行）+ `jaws-wire-proto`（生成码）。运行：`./run-sample.sh wire`（直连，兼容 grpcurl）、`./run-sample.sh interop`（grpc-java ↔ jaws-wire 双向互操作）、`./run-sample.sh bench-wire` / `bench-grpc`（性能基准，含互操作口径与 gRPC 参照口径）。跨语言的 Go 对端见 §14，那两个样例还没进 `run-sample.sh`，跑法在各自 README 里。
