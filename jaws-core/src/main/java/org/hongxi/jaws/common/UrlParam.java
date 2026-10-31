@@ -214,8 +214,14 @@ public final class UrlParam {
         public static final Def<Integer> GRACEFUL_SHUTDOWN_TIMEOUT = new Def<>("gracefulShutdownTimeout", 10000);
 
         /**
-         * gRPC server: max time a connection may stay idle (no streams) before
-         * the server sends GOAWAY and closes it (ms). 0 disables (default).
+         * Server: max time a connection may stay idle before the server closes
+         * it (ms). 0 disables (default).
+         * <ul>
+         *   <li>wire (gRPC) server: sends GOAWAY first, then closes
+         *       ({@code WireServer});</li>
+         *   <li>HTTP/1.1 server: closes directly ({@code HttpServer}) — this is
+         *       what reaps idle keep-alive connections.</li>
+         * </ul>
          */
         public static final Def<Long> MAX_CONNECTION_IDLE_MS = new Def<>("maxConnectionIdleMs", 0L);
 

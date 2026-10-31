@@ -176,9 +176,14 @@ public class AdaptiveServer extends AbstractNettyServer {
     }
 
     /**
-     * Build the HTTP/1.1 pipeline: HttpServerCodec → HttpObjectAggregator → HttpRequestHandler.
+     * Build the HTTP/1.1 pipeline: [idle_state] → HttpServerCodec → HttpObjectAggregator → HttpRequestHandler.
+     * The idle reaper mirrors {@link org.hongxi.jaws.transport.http.HttpServer}.
      */
     void addHttp1Pipeline(ChannelPipeline pipeline) {
+        long idleMs = url.getLongParameter(UrlParam.Server.MAX_CONNECTION_IDLE_MS);
+        if (idleMs > 0) {
+            pipeline.addLast("idle_state", new IdleStateHandler(0, 0, idleMs, TimeUnit.MILLISECONDS));
+        }
         pipeline.addLast("http_codec", new HttpServerCodec());
         pipeline.addLast("aggregator", new HttpObjectAggregator(maxContentLength));
         pipeline.addLast("http_handler", new HttpRequestHandler(

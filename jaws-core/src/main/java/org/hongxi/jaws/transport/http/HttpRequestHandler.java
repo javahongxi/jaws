@@ -3,11 +3,11 @@ package org.hongxi.jaws.transport.http;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.QueryStringDecoder;
+import io.netty.handler.timeout.IdleStateEvent;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Request;
@@ -94,16 +94,20 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
+        // Honor the peer's keep-alive preference on every response written for
+        // this request; captured before dispatch because the request object is
+        // released when channelRead0 returns.
+        boolean keepAlive = HttpUtil.isKeepAlive(request);
         String uri = request.uri();
 
         // Health check: GET /health
         if (HEALTH_PATH.equals(uri) || uri.startsWith(HEALTH_PATH + "?")) {
             if (!HttpMethod.GET.equals(request.method())) {
                 sendHttpResponse(ctx, HttpResponseStatus.METHOD_NOT_ALLOWED,
-                        errorJson("Only GET is supported for /health"));
+                        errorJson("Only GET is supported for /health"), keepAlive);
                 return;
             }
-            sendHealthResponse(ctx);
+            sendHealthResponse(ctx, keepAlive);
             return;
         }
 
@@ -112,10 +116,10 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         if (MCP_PATH.equals(path)) {
             if (!HttpMethod.POST.equals(request.method())) {
                 sendHttpResponse(ctx, HttpResponseStatus.METHOD_NOT_ALLOWED,
-                        errorJson("Only POST is supported for /mcp"));
+                        errorJson("Only POST is supported for /mcp"), keepAlive);
                 return;
             }
-            mcpHandler.handlePost(ctx, request);
+            mcpHandler.handlePost(ctx, request, keepAlive);
             return;
         }
 
@@ -124,7 +128,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
             Optional<RestMappingRegistry.MatchedMapping> matched =
                     restMappingRegistry.match(request.method(), path);
             if (matched.isPresent()) {
-                handleRestRequest(ctx, request, matched.get(), uri);
+                handleRestRequest(ctx, request, matched.get(), uri, keepAlive);
                 return;
             }
         }
@@ -132,12 +136,12 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         // RPC invoke: POST /invoke
         if (!INVOKE_PATH.equals(uri) && !uri.startsWith(INVOKE_PATH + "?")) {
             sendHttpResponse(ctx, HttpResponseStatus.NOT_FOUND,
-                    errorJson("Unknown endpoint: " + uri + ". Use POST /invoke, POST /mcp, or GET /health"));
+                    errorJson("Unknown endpoint: " + uri + ". Use POST /invoke, POST /mcp, or GET /health"), keepAlive);
             return;
         }
         if (!HttpMethod.POST.equals(request.method())) {
             sendHttpResponse(ctx, HttpResponseStatus.METHOD_NOT_ALLOWED,
-                    errorJson("Only POST is supported for /invoke"));
+                    errorJson("Only POST is supported for /invoke"), keepAlive);
             return;
         }
 
@@ -148,7 +152,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
             json = JSON.parseObject(body);
         } catch (Exception e) {
             sendHttpResponse(ctx, HttpResponseStatus.BAD_REQUEST,
-                    errorJson("Invalid JSON: " + e.getMessage()));
+                    errorJson("Invalid JSON: " + e.getMessage()), keepAlive);
             return;
         }
 
@@ -156,12 +160,12 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         String methodName = json.getString("method");
         if (interfaceName == null || interfaceName.isEmpty()) {
             sendHttpResponse(ctx, HttpResponseStatus.BAD_REQUEST,
-                    errorJson("'interface' is required"));
+                    errorJson("'interface' is required"), keepAlive);
             return;
         }
         if (methodName == null || methodName.isEmpty()) {
             sendHttpResponse(ctx, HttpResponseStatus.BAD_REQUEST,
-                    errorJson("'method' is required"));
+                    errorJson("'method' is required"), keepAlive);
             return;
         }
 
@@ -182,7 +186,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         }
 
         // Dispatch on business thread pool
-        dispatch(ctx, rpcRequest);
+        dispatch(ctx, rpcRequest, keepAlive);
     }
 
     /**
@@ -190,7 +194,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
      * query string, and JSON body, then dispatch to the RPC pipeline.
      */
     private void handleRestRequest(ChannelHandlerContext ctx, FullHttpRequest request,
-                                   RestMappingRegistry.MatchedMapping matched, String uri) {
+                                   RestMappingRegistry.MatchedMapping matched, String uri, boolean keepAlive) {
         RestMapping mapping = matched.getMapping();
         Map<String, String> pathVariables = matched.getPathVariables();
         Method javaMethod = mapping.getJavaMethod();
@@ -210,7 +214,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
                 jsonBody = JSON.parseObject(body);
             } catch (Exception e) {
                 sendHttpResponse(ctx, HttpResponseStatus.BAD_REQUEST,
-                        errorJson("Invalid JSON body: " + e.getMessage()));
+                        errorJson("Invalid JSON body: " + e.getMessage()), keepAlive);
                 return;
             }
         }
@@ -229,7 +233,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         rpcRequest.setMethodName(mapping.getMethodName());
         rpcRequest.setArguments(args);
 
-        dispatch(ctx, rpcRequest);
+        dispatch(ctx, rpcRequest, keepAlive);
     }
 
     /**
@@ -330,7 +334,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         return queryIndex >= 0 ? uri.substring(0, queryIndex) : uri;
     }
 
-    private void dispatch(ChannelHandlerContext ctx, Request request) {
+    private void dispatch(ChannelHandlerContext ctx, Request request, boolean keepAlive) {
         long startTime = System.currentTimeMillis();
         try {
             serverExecutor.execute(() -> {
@@ -355,7 +359,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
                             return response;
                         })
                         .thenAccept(response ->
-                                sendHttpResponse(ctx, HttpResponseStatus.OK, responseJson(response)))
+                                sendHttpResponse(ctx, HttpResponseStatus.OK, responseJson(response), keepAlive))
                         .exceptionally(e -> {
                             log.error("Failed to send HTTP response: requestId={}",
                                     request.getRequestId(), e);
@@ -366,7 +370,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         } catch (RejectedExecutionException e) {
             log.warn("HTTP request rejected: server thread pool is full");
             sendHttpResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
-                    errorJson("Server thread pool is full"));
+                    errorJson("Server thread pool is full"), keepAlive);
         }
     }
 
@@ -463,22 +467,23 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         return JSON.parseObject(jsonStr, targetType);
     }
 
-    private void sendHealthResponse(ChannelHandlerContext ctx) {
+    private void sendHealthResponse(ChannelHandlerContext ctx, boolean keepAlive) {
         byte[] body = "OK".getBytes(StandardCharsets.UTF_8);
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, HttpResponseStatus.OK, Unpooled.wrappedBuffer(body));
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=utf-8");
         HttpUtil.setContentLength(response, body.length);
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        HttpResponses.write(ctx, response, keepAlive);
     }
 
-    private void sendHttpResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String jsonBody) {
+    private void sendHttpResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String jsonBody,
+                                  boolean keepAlive) {
         byte[] body = jsonBody.getBytes(StandardCharsets.UTF_8);
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, status, Unpooled.copiedBuffer(body));
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, JSON_CONTENT_TYPE);
         HttpUtil.setContentLength(response, body.length);
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        HttpResponses.write(ctx, response, keepAlive);
     }
 
     private static String responseJson(Response response) {
@@ -503,12 +508,28 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         return json.toJSONString();
     }
 
+    /**
+     * Close the connection when {@code maxConnectionIdleMs} elapses with no
+     * read and no write, reaping idle keep-alive connections. The
+     * {@link io.netty.handler.timeout.IdleStateHandler} is only installed when
+     * the parameter is positive, so with the default (0) this never fires.
+     */
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof IdleStateEvent) {
+            log.debug("HTTP/1.1 connection idle, closing: {}", ctx.channel());
+            ctx.close();
+        } else {
+            super.userEventTriggered(ctx, evt);
+        }
+    }
+
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("HTTP handler unexpected error", cause);
         if (ctx.channel().isActive()) {
             sendHttpResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR,
-                    errorJson("Internal server error: " + cause.getMessage()));
+                    errorJson("Internal server error: " + cause.getMessage()), false);
         }
     }
 }

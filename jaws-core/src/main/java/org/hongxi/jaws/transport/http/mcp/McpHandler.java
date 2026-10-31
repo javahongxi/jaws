@@ -2,9 +2,9 @@ package org.hongxi.jaws.transport.http.mcp;
 
 import com.alibaba.fastjson2.JSON;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.*;
+import org.hongxi.jaws.transport.http.HttpResponses;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,12 +46,12 @@ public class McpHandler {
      * Handle a POST /mcp request. Parses the JSON-RPC message and dispatches
      * to the appropriate handler.
      */
-    public void handlePost(ChannelHandlerContext ctx, FullHttpRequest request) {
+    public void handlePost(ChannelHandlerContext ctx, FullHttpRequest request, boolean keepAlive) {
         // Validate Accept header
         String accept = request.headers().get(ACCEPT);
         if (accept == null || (!accept.contains(TEXT_EVENT_STREAM) && !accept.contains("application/json"))) {
             sendStatusResponse(ctx, HttpResponseStatus.BAD_REQUEST,
-                    "Accept header must include text/event-stream or application/json");
+                    "Accept header must include text/event-stream or application/json", keepAlive);
             return;
         }
 
@@ -64,38 +64,38 @@ public class McpHandler {
             log.warn("Failed to parse JSON-RPC message: {}", e.getMessage());
             sendJsonResponse(ctx, HttpResponseStatus.BAD_REQUEST,
                     McpMessageCodec.errorResponse(null, McpMessageCodec.PARSE_ERROR,
-                            "Invalid JSON-RPC: " + e.getMessage()));
+                            "Invalid JSON-RPC: " + e.getMessage()), keepAlive);
             return;
         }
 
         // Dispatch by message type
         if (message instanceof McpMessageCodec.Request req) {
-            handleRequest(ctx, req);
+            handleRequest(ctx, req, keepAlive);
         } else {
             // Response or other — just accept
-            sendStatusResponse(ctx, HttpResponseStatus.ACCEPTED, "Accepted");
+            sendStatusResponse(ctx, HttpResponseStatus.ACCEPTED, "Accepted", keepAlive);
         }
     }
 
-    private void handleRequest(ChannelHandlerContext ctx, McpMessageCodec.Request request) {
+    private void handleRequest(ChannelHandlerContext ctx, McpMessageCodec.Request request, boolean keepAlive) {
         // Dispatch to business thread pool
         try {
             serverExecutor.execute(() -> {
                 try {
                     McpMessageCodec.Response response = dispatchMethod(request);
-                    sendJsonResponse(ctx, HttpResponseStatus.OK, response);
+                    sendJsonResponse(ctx, HttpResponseStatus.OK, response, keepAlive);
                 } catch (Exception e) {
                     log.error("Failed to handle MCP request: method={}", request.method(), e);
                     McpMessageCodec.Response errorResp = McpMessageCodec.errorResponse(
                             request.id(), McpMessageCodec.INTERNAL_ERROR, e.getMessage());
-                    sendJsonResponse(ctx, HttpResponseStatus.OK, errorResp);
+                    sendJsonResponse(ctx, HttpResponseStatus.OK, errorResp, keepAlive);
                 }
             });
         } catch (RejectedExecutionException e) {
             log.warn("MCP request rejected: server thread pool is full");
             sendJsonResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE,
                     McpMessageCodec.errorResponse(request.id(), McpMessageCodec.INTERNAL_ERROR,
-                            "Server thread pool is full"));
+                            "Server thread pool is full"), keepAlive);
         }
     }
 
@@ -177,22 +177,23 @@ public class McpHandler {
     // ---- Response helpers ----
 
     private static void sendJsonResponse(ChannelHandlerContext ctx, HttpResponseStatus status,
-                                         McpMessageCodec.Response response) {
+                                         McpMessageCodec.Response response, boolean keepAlive) {
         String json = McpMessageCodec.encode(response);
         byte[] body = json.getBytes(StandardCharsets.UTF_8);
         FullHttpResponse httpResponse = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, status, Unpooled.wrappedBuffer(body));
         httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, APPLICATION_JSON);
         HttpUtil.setContentLength(httpResponse, body.length);
-        ctx.writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
+        HttpResponses.write(ctx, httpResponse, keepAlive);
     }
 
-    private static void sendStatusResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String message) {
+    private static void sendStatusResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String message,
+                                           boolean keepAlive) {
         byte[] body = message.getBytes(StandardCharsets.UTF_8);
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, status, Unpooled.wrappedBuffer(body));
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=utf-8");
         HttpUtil.setContentLength(response, body.length);
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        HttpResponses.write(ctx, response, keepAlive);
     }
 }
