@@ -1,6 +1,5 @@
 # JVM 演进笔记：17/21 对比 8/11 —— 内存布局 · GC · 特性
 
-> 本文是 [`java-base.md`](java-base.md) 系列的 JVM 侧补充：库和并发类读的是 `src.zip`，
 > JVM 本体（HotSpot）读的是 JEP 与实测行为。三条主线——内存布局、GC、特性（语言 + 运行时）——
 > 都按"8/11 旧基线 → 17/21 现状"对比展开，文末附 22~26 走向（截至 2026-09）。
 >
@@ -25,7 +24,7 @@
 | 堆外内存入口 | `sun.misc.Unsafe` 事实标准 | 官方替代 FFM API；Unsafe 内存方法 23 起废弃 | 21 三次预览（JEP 442）→ 22 转正 |
 | 语言基线 | lambda / try-with-resources | + var、switch 表达式、文本块、record、instanceof/switch 模式匹配、sealed | 10~21 逐版本 |
 
-三条主线的阅读顺序照旧有依赖：**布局是地基（对象在哪个区、长什么样）→ GC 是对布局的消费
+三条主线的阅读顺序有依赖：**布局是地基（对象在哪个区、长什么样）→ GC 是对布局的消费
 （ barriers/RSet 都围着布局转）→ 特性里只有 Loom 反过来动了布局**（栈从线程私有搬到堆）。
 
 ---
@@ -161,6 +160,9 @@ JDK 9+  -Xlog:gc*:file=gc.log:time,uptime:filecount=10,filesize=10m   # JEP 158 
 **JFR 开源**（JEP 328）：长期在线的性能记录，21 上 `jfr` 命令行工具可直接读——
 低开销剖析这件事从此不需要第三方 agent。
 
+> 基于这套日志实战定位 Full GC（触发原因字段对照、回收效果判读、dump/MAT/Arthas 排查动线）
+> 见展开笔记 [`jvm-2.md`](jvm-2.md)。
+
 ---
 
 ## 三、特性（语言 + 运行时）
@@ -240,8 +242,8 @@ Leyden 启动加速路线：AOT 类加载链接（24，JEP 483）→ 26 的 AOT 
 - **统一日志 ↔ benchmark 脚本**：`../../run-sample.sh`/benchmark 里任何 `-XX:+PrintGC*` 残留
   在 17/21 上都会让 JVM 起不来，参数必须换 `-Xlog:gc*` 口径。
 - **偏向锁移除 ↔ 锁开销叙事**：网上"偏向锁降低无竞争 synchronized 开销"的文章全是
-  8/11 口径，17/21 上无竞争加锁就是轻量锁 CAS 写 mark word——`java-base.md` ③ 站读的
-  新版 AQS park 路径正是这套布局之上的机制。
+  8/11 口径，17/21 上无竞争加锁就是轻量锁 CAS 写 mark word——新版 AQS park 路径（17/21 已 go-dark）
+  正是这套布局之上的机制。
 
 ## 五、验收问题
 
@@ -283,7 +285,3 @@ Leyden 启动加速路线：AOT 类加载链接（24，JEP 483）→ 26 的 AOT 
 7. **未逐行取证项**：8/11 的默认 GC 与 flag 行为按对应版本文档口径（8 = Parallel，
    9 = G1 默认）；22/25/26/27 的个别 JEP（519/521/534/516）来自二手来源与 OpenJDK 公告，
    升级引用前建议再对一次 openjdk.org 对应项目页。
-
-> 与 [`java-base.md`](java-base.md) 的分工：那边管 `java.base` 源码里看得见的东西
-> （容器/同步器/线程池），本文管看不见的那台机器（布局/GC/flag）。AQS 重写版口径
-> （17/21 已 go-dark）与本文 3.3 的 Loom 是同一批工作的两面，两文互链阅读。
