@@ -179,6 +179,7 @@ public class MyRunner implements CommandLineRunner {
 | 主题                                         | 说明                                      |
 |----------------------------------------------|-------------------------------------------|
 | [性能测试](doc/benchmark.md)                 | Benchmark 环境变量与参数选择建议          |
+| [尾延迟归因](doc/tail-latency.md)            | P99.9 毛刺的分层归因方法与 jaws 实测案例  |
 | [架构总览](doc/architecture.md)              | Maven 模块地图 + core 六层骨架 + 门面口径 |
 | [编解码设计](doc/codec-comparison.md)        | Jaws 与 Dubbo 编解码架构对比分析          |
 | [全链路异步](doc/async-full-chain.md)        | 一根 CompletableFuture 贯穿七层           |

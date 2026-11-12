@@ -201,6 +201,8 @@ jaws + netty + fastjson2，20 线程、WARMUP=5s、DURATION=40s，各 5 轮：
 - **尾延迟差距更大**：netty P99.9 为 662us，http2/wire 约 2ms（3 倍），说明 HTTP/2 帧处理在偶发毛刺时开销更明显。
 - 对于追求 gRPC 互操作的场景，wire/http2 的 ~73k QPS 已是合理水平；对于纯内网高性能场景，netty TCP 仍是首选。
 
+> 尾延迟的分层归因动线与案例复盘见 [tail-latency.md](tail-latency.md)；本节只记录口径数据，归因方法论以彼处为准。
+
 ### wire 写路径合批与分进程基线（2026-09-24）
 
 改动：连接 pipeline 在 `ssl` 与 `http2_codec` 之间加装 `FlushConsolidationHandler(64, true)`（commit `1bac5643`）。wire 的响应写全部来自业务线程的逐消息 `writeAndFlush`，不在 `channelRead` 期间，`consolidateWhenNoReadInProgress=true` 使 event loop 一轮内的多次 flush 收敛为一次；`handlerRemoved` / `channelInactive` 均会补刷 pending 写，连接关闭不丢帧。两个 HTTP/2 传输基类（`AbstractHttp2Server` / `AbstractHttp2Client`）同时生效。
