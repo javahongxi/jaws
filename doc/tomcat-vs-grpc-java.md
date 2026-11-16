@@ -110,10 +110,26 @@ keep-alive 等待期间 `readTimeout` 被设成 `keepAliveTimeout`
 | `minSpareThreads` | 10 | 常驻 worker |
 | `maxConnections` | 8192（AbstractEndpoint.java:584） | 连接数门闩，Acceptor 达到上限即停 accept |
 | `acceptCount` | 100（AbstractEndpoint.java:751） | OS backlog，门闩满后新连接在此排队，再满则拒绝 |
+| `maxQueueSize` | `Integer.MAX_VALUE`（AbstractEndpoint.java:913） | worker 池任务队列容量，默认无界 |
+
+**并发超过 200 时是等待，不是拒绝**。worker 池用的 `TaskQueue` 的 offer 语义与 JDK 默认队列
+**相反**（TaskQueue.java:65-84）：线程数未达 max 时 offer 返回 false，逼 `ThreadPoolExecutor`
+先创建新线程；达到 200 后才入队——即"先扩线程到 200，再排队"，而非 JDK 默认的
+"先排队、队列满才扩线程"。第 201 个请求起全部进 TaskQueue 等待，默认队列无界，
+**永远不会触发 `RejectedExecutionException`**。两个细节：
+
+- **排队本身没有超时**：Poller 派发前会 `unreg` 掉该 socket 的读写兴趣
+  （NioEndpoint.processKey），而 `Poller.timeout()` 只巡检带 OP_READ/OP_WRITE 兴趣的连接——
+  排队中的 socket 不在巡检范围，会一直等到有 worker 空出来，通常是客户端超时先放弃。
+- 拒绝只发生在三种情况：显式调小 `maxQueueSize` 且队列满、executor 已 shutdown、
+  或连接数限制先顶住（见下）。
 
 过载链条：慢请求占住 worker → 200 个线程耗尽 → 新请求进 TaskQueue **无界排队**（延迟爬升）→
 连接数顶到 8192 → Acceptor 停 accept → backlog 100 满 → 连接被拒。
+注意**真正的"拒绝"在连接层而非 worker 层**：表现为建不上连接（connection refused/timeout），
+而不是"连上了但请求被拒"。
 **没有内建的 per-request admission control**，限并发要自己加（信号量 / 网关限流）。
+对照 Jaws 业务池的相反取舍（有界队列 + fail-fast 拒绝）见第八节。
 
 ### 3.6 虚拟线程：换 executor，不换模型
 
@@ -252,8 +268,8 @@ gRPC 走 HTTP/2 一条连接跑满 N 个 stream，握手一次性摊销。但注
 ### 6.3 并发上限的形状（比"谁更快"更该关心）
 
 - Tomcat：200 线程 = 200 个并发阻塞请求。**一个慢下游（DB、第三方 HTTP）就能占满全池**，
-  快请求跟着排队——thread pool exhaustion 是 Spring MVC 最经典的过载形态。
-  池是有界的，进程通常活着，表现为延迟雪崩。
+  快请求跟着排队（排队机制与"为何不拒绝"见 3.5）——thread pool exhaustion 是 Spring MVC
+  最经典的过载形态。池是有界的，进程通常活着，表现为延迟雪崩。
 - grpc-java：默认 cached pool 无界，慢 handler 不会"排队"而是**持续创建新线程**，
   过载形态是线程数膨胀 → `OutOfMemoryError: unable to create native thread` 或调度恶化。
   生产上应显式 `executor(...)` 换有界池，把过载形态拉回"排队 + 拒绝"。
