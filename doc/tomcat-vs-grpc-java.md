@@ -91,6 +91,17 @@ immediately and thread should be freed"*；无数据即 break 出 service 循环
 相关默认值：`maxKeepAliveRequests=100`（AbstractEndpoint.java:976，同连接最多服务 100 个请求后关闭）、
 `connectionTimeout=60000ms`（http11/Constants.java:26）。
 
+**空闲连接不会一直活着**：`keepAliveTimeout` 未单独设置时回落到 `connectionTimeout`
+（AbstractEndpoint.java:787-795），即默认 **60 秒**等不到下一个请求就关。它计的是
+"请求结束后等下一个请求"的空闲时间，不是连接总寿命。执行者仍是 Poller：
+keep-alive 等待期间 `readTimeout` 被设成 `keepAliveTimeout`
+（Http11InputBuffer.parseRequestLine，`wrapper.setReadTimeout(keepAliveTimeout)`），
+`Poller.timeout()`（NioEndpoint.java:997，每轮 select 循环调用但受 `timeoutInterval` 节流）
+巡检所有注册连接，`now - lastRead > readTimeout` 即置 `SocketTimeoutException` 并派发
+`SocketEvent.ERROR` 关连接。所以本节"空闲连接不占线程"的完整图景是：
+不占线程，但占 Poller 注册 + 缓冲，且默认最多占 60 秒；计数上限（100 个请求）与
+空闲超时是两条独立的回收机制。
+
 ### 3.5 默认参数与过载链条
 
 | 参数 | 默认值 | 含义 |
@@ -132,6 +143,21 @@ event loop 默认数量（netty/Utils.java:124-134、490-507）：boss 1 个，w
 grpc 特意把 Netty 默认的 2×核数减半（注释写明线程成本含 FD 与 PooledByteBufAllocator chunk）。
 线程均为 daemon，名字 `grpc-default-boss-ELG-*` / `grpc-default-worker-ELG-*`，
 经 `SharedResourceHolder` 全 JVM 共享。**C 条连接不产生 C 份线程，只产生 C 份协议状态。**
+
+**与 Tomcat 相反，grpc-java 默认不关健康的空闲连接**：`maxConnectionIdle` / `maxConnectionAge`
+默认都是禁用（`Long.MAX_VALUE`，NettyServerBuilder.java:77、113-114），没有"空闲 N 秒就关"
+的默认行为——这是 gRPC 长连接模型的设计意图：连接昂贵，靠多路复用摊销，能留则留。
+默认存在的是**探活而非回收**：
+
+| 机制 | 默认值 | 行为 |
+| --- | --- | --- |
+| 服务端 keepalive PING | 空闲 **2 小时**后发（GrpcUtil.java:237） | **20 秒**内无 ACK 判死关闭（:242）；对端活着就不动 |
+| 客户端 keepalive | 整体禁用（`KEEPALIVE_TIME_NANOS_DISABLED`，GrpcUtil.java:232） | 需显式 `keepAliveTime(...)` 开启 |
+| 对端 PING 保护 | `permitKeepAliveTime` 默认 **5 分钟**（GrpcUtil.java:247-248） | 无数据穿插且过频的 PING 累计 strike，达上限发 `GOAWAY ENHANCE_YOUR_CALM (too_many_pings)` 断连 |
+
+想主动回收空闲/老化连接，必须显式配 `maxConnectionIdle(...)` / `maxConnectionAge(...)`。
+一句话对比：**Tomcat 默认"空闲 60 秒就关"（HTTP/1.1 连接廉价、随用随建）；
+grpc-java 默认"探活通过就永远留着"（HTTP/2 连接昂贵、靠复用摊销）**。
 
 ### 4.2 RPC 级：任务，不是线程
 
