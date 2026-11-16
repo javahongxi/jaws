@@ -171,6 +171,15 @@ grpc 特意把 Netty 默认的 2×核数减半（注释写明线程成本含 FD 
 | 客户端 keepalive | 整体禁用（`KEEPALIVE_TIME_NANOS_DISABLED`，GrpcUtil.java:232） | 需显式 `keepAliveTime(...)` 开启 |
 | 对端 PING 保护 | `permitKeepAliveTime` 默认 **5 分钟**（GrpcUtil.java:247-248） | 无数据穿插且过频的 PING 累计 strike，达上限发 `GOAWAY ENHANCE_YOUR_CALM (too_many_pings)` 断连 |
 
+表中第一行与第三行是**同一 PING 机制的出/入两个方向**：前者是 KeepAliveManager
+"我探你活没活"（本端发出），后者是 KeepAliveEnforcer"我管你怎么探我"（本端收到，
+`MAX_PING_STRIKES=2`，KeepAliveEnforcer.java:27）。入站管制是"能留则留"政策的必要配套：
+没有它，对端可用高频 PING 让连接永远"健康"地活着、白占资源。数值上三处咬合：
+客户端 `keepAliveTime` 必须 ≥ 对端 `permitKeepAliveTime`，否则自己的探活会被对端踢掉；
+无在途 call 时收 PING 的隐式许可间隔恰好也是 2 小时（`IMPLICIT_PERMIT_TIME_NANOS`，
+KeepAliveEnforcer.java:29），与发送间隔对齐，默认行为自洽；有数据收发时 enforcer
+重置计数，活跃流量中的 PING 永远合法——忙时靠数据保活，闲时才轮到 PING。
+
 想主动回收空闲/老化连接，必须显式配 `maxConnectionIdle(...)` / `maxConnectionAge(...)`。
 一句话对比：**Tomcat 默认"空闲 60 秒就关"（HTTP/1.1 连接廉价、随用随建）；
 grpc-java 默认"探活通过就永远留着"（HTTP/2 连接昂贵、靠复用摊销）**。
