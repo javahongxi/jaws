@@ -331,6 +331,20 @@ Jaws 的服务端线程模型与 grpc-java 同构，而不是 Tomcat 式 thread-
   （wire/HTTP2 的流式派发已在各自 handler 里处理帧序）。过载闸门位置也随之不同：
   Jaws 在池入口接住 `RejectedExecutionException` 当场回 `SERVICE_REJECT`
   （NettyChannelHandler.java:106-116），grpc-java 的背压则积压在 per-call 队列里。
+- **wire 流式不需要另加 SerializingExecutor**：它解决的问题已被两个现有机制覆盖——
+  入站消息的串行投递由 `StreamSubject` 的 drain 循环承担（单 owner drain、terminal
+  严格排在所有 item 之后、锁外投递，StreamSubject.java:121-182），出站帧序由
+  `commitFrame` 把所有写弹回 stream 的 event loop 保证（WireStreamServerHandler.java:670-676，
+  避免业务线程 DATA 排到 in-loop END_STREAM 之后）；unary 则由 `dispatched` 标志
+  保证每 call 只派发一个任务（:506-533）。即 wire 的串行层是"drain 循环 + event loop"，
+  而非"每 call 一个 executor 队列"，形状不同、职责等价。一处真实的边界差异：
+  grpc 的串行层把回调**入队到业务池**，event loop 永不执行应用代码；StreamSubject
+  的 drain 是"谁抢到 drain 权谁投递"，event loop 解码后调 onNext 时若业务 subscriber
+  已挂上，observer.onNext 就直接跑在 event loop 上——隐含契约是"observer 只做轻量
+  桥接，重活留给派发出去的业务线程"，契约被打破时才需要考虑给入站投递加 executor
+  卸载。另注意：grpc 的 SerializingExecutor 并不解决出站并发（应用多线程并发调
+  onNext 在 grpc-java 里同样不安全），wire 的 commitFrame 解决的恰是出站顺序——
+  两者是互补关系，不是同一个东西的两种实现。
 - **两处刻意的取舍不同**：Jaws 用**有界** `EagerThreadPoolExecutor` +
   `AbortPolicyWithStats` fail-fast（AbstractNettyServer.java:95-103，min/max/queue 全部配置驱动），
   拒绝时由 pipeline 回错误响应，而不是 grpc-java 默认的无界 cached pool；
