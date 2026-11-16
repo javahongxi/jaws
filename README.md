@@ -187,6 +187,7 @@ public class MyRunner implements CommandLineRunner {
 | [gRPC 线格式兼容](doc/wire-grpc-compat.md)   | 零 grpc-java 实现，与 Go 对端双向实测     |
 | [与 Dubbo 对比](doc/dubbo-comparison.md)     | 八个维度的系统性能力对比                  |
 | [Netty 性能解读](doc/netty-performance.md)   | 传输层性能实践与踩坑                      |
+| [Tomcat 与 grpc-java 线程模型](doc/tomcat-vs-grpc-java.md) | 线程归属 / 并发上限 / 过载形态对比与 jaws 取舍 |
 | [注册中心对比](doc/registry-comparison.md)   | Nacos 与 ZooKeeper 实现对比               |
 | [自研注册中心解读](doc/harbor-vs-nacos.md)   | 内置注册中心与 Nacos 的详细设计对比       |
 | [Nacos Config 原理解读](doc/nacos-config.md) | 配置域从写 DB 到客户端收变更的设计剖析    |
