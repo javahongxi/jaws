@@ -318,6 +318,19 @@ Jaws 的服务端线程模型与 grpc-java 同构，而不是 Tomcat 式 thread-
   `WireStreamServerHandler`（WireStreamServerHandler.java:713-717）。
   event loop 只做解帧与派发，业务全部跑在业务池上——与 4.2 节 grpc-java 的
   JumpToApplicationThread 是同一个形状。
+- **同形之下，派发粒度不同**：grpc-java 一个 call 有多个异步事件
+  （MethodLookup / HandleServerCall / onMessage×N / onHalfClose / onCancel），
+  每个事件是独立任务，全部排进该 call 专属的 SerializingExecutor 队列——
+  串行是显式机制，哪怕 handler 还在跑，event loop 投递的 onCancel 也得入队等。
+  Jaws 裸 TCP 是单帧 unary：**一个请求帧 = 一个 Runnable**
+  （NettyChannelHandler.java:99-105），"业务 → 编码 → 写回"的顺序由
+  CompletableFuture 链（handle/thenAccept，NettyChannelHandler.java:159-188）保证，
+  没有 per-call 队列包装。等于 grpc 用"每 call 一条队列"做的事，Jaws 用
+  "每请求一条 future 链"做了——单帧模型下更轻，省掉每 call 一个队列对象与入队同步；
+  若裸 TCP 将来支持多帧流式，就会遇到 grpc 同款问题，届时才需要 per-call 串行层
+  （wire/HTTP2 的流式派发已在各自 handler 里处理帧序）。过载闸门位置也随之不同：
+  Jaws 在池入口接住 `RejectedExecutionException` 当场回 `SERVICE_REJECT`
+  （NettyChannelHandler.java:106-116），grpc-java 的背压则积压在 per-call 队列里。
 - **两处刻意的取舍不同**：Jaws 用**有界** `EagerThreadPoolExecutor` +
   `AbortPolicyWithStats` fail-fast（AbstractNettyServer.java:95-103，min/max/queue 全部配置驱动），
   拒绝时由 pipeline 回错误响应，而不是 grpc-java 默认的无界 cached pool；
