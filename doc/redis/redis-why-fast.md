@@ -62,7 +62,7 @@ Redis 为每种类型设计了"小数据紧凑、大数据高效"的双层编码
 ## 5. 协议与持久化：固定成本挪出关键路径
 
 - **RESP 协议极简**：文本行协议，解析就是按 `\r\n` 切分与长度前缀读取，没有 Thrift/Protobuf 式的 schema 编解码成本；简单到可以用 telnet 手敲命令。
-- **持久化不在写路径上**：
+- **持久化不在写路径上**（机制详解见 [redis-persistence.md](./redis-persistence.md)）：
   - RDB：fork 子进程 + 写时复制（COW）生成快照，主线程只在 fork 瞬间有毫秒级停顿；
   - AOF：命令先写内存缓冲，`appendfsync everysec`（默认）由后台线程每秒 fsync 一次——写请求不等磁盘。
   - 对比 MySQL 的 redo log 组提交：Redis 干脆**默认不把持久性放进关键路径**，用"最多丢一秒数据"换吞吐。
