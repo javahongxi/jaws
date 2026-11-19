@@ -42,6 +42,17 @@ package org.hongxi.jaws.stream;
  * In summary: only the initial business-method invocation on the provider
  * side runs on the server executor. All streaming callbacks run on I/O
  * threads and must be non-blocking.
+ * <p>
+ * <b>Heavy work is the observer's own responsibility</b> — the framework
+ * deliberately performs no thread handoff before invoking these callbacks
+ * (zero-handoff delivery). An observer that needs to do blocking or
+ * CPU-intensive work must hand the item off to its own executor inside
+ * {@link #onNext} and return immediately. Blocking an I/O thread stalls
+ * every connection sharing that event loop; inline delivery also couples
+ * consumption speed to network reads, so a slow observer naturally throttles
+ * the peer through HTTP/2 flow control — handing off removes that implicit
+ * backpressure, and the observer then owns the buffering of its executor's
+ * queue.
  *
  * @param <T> the type of items observed
  * @author shenhongxi

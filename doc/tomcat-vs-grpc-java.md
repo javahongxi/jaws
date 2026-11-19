@@ -349,8 +349,9 @@ Jaws 的服务端线程模型与 grpc-java 同构，而不是 Tomcat 式 thread-
   而非"每 call 一个 executor 队列"，形状不同、职责等价。一处真实的边界差异：
   grpc 的串行层把回调**入队到业务池**，event loop 永不执行应用代码；StreamSubject
   的 drain 是"谁抢到 drain 权谁投递"，event loop 解码后调 onNext 时若业务 subscriber
-  已挂上，observer.onNext 就直接跑在 event loop 上——隐含契约是"observer 只做轻量
-  桥接，重活留给派发出去的业务线程"，契约被打破时才需要考虑给入站投递加 executor
+  已挂上，observer.onNext 就直接跑在 event loop 上——契约是"observer 只做轻量
+  桥接，重活自行交接到自己的 executor"（已明文写入 `StreamObserver` 的 javadoc
+  threading contract，含零交接与隐式背压的取舍说明），契约被打破时才需要考虑给入站投递加 executor
   卸载。另注意：grpc 的 SerializingExecutor 并不解决出站并发（应用多线程并发调
   onNext 在 grpc-java 里同样不安全），wire 的 commitFrame 解决的恰是出站顺序——
   两者是互补关系，不是同一个东西的两种实现。

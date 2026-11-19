@@ -19,6 +19,10 @@ public interface StreamSource<T> {
     /**
      * Subscribe a {@link StreamObserver} to receive all items from the
      * beginning. Late subscribers receive the full replay.
+     * <p>
+     * Callbacks are delivered on I/O threads with no framework handoff;
+     * see the threading contract on {@link StreamObserver} before
+     * subscribing an observer that does heavy work.
      *
      * @param observer the observer to receive items
      */
