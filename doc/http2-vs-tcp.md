@@ -89,14 +89,21 @@ Content-Length: 57\r\n
 
 ## 四、HTTP/2 为什么把 HEADERS 与 DATA 分成两帧
 
-不是因为"方便中间设备识别"，根因是它要继承 HTTP 语义并承载流模型：
+不是因为"方便中间设备识别"，根因是它要继承 HTTP 语义并承载流模型；拆开后在**流式、流控、复用、编码**四个层面各有独立收益：
 
 1. **HTTP 本就是头/体分离**：HTTP/2 是 HTTP/1 的多路复用传输层，请求头/响应头 + body 的模型是 HTTP 自带的，h2 只是编码成两种帧。
 2. **HEADERS 是开流标志**：收到一个流的 HEADERS 帧，这个 stream 才算建立；DATA 帧依附于已存在的流。
-3. **头与体编码方式不同**：HEADERS 走 HPACK 压缩（头可字典化），DATA 是原始字节（是否压缩由应用决定）。分帧才能分别用不同编码。
-4. **扩展性**：分开才能承载 PUSH_PROMISE、1xx 中间响应、以及 gRPC 的 trailers。
+3. **流式发送：头部先行，body 边生成边发**：HEADERS 在 body 还没产生时就已确定，先发 HEADERS，对端立刻开始路由、鉴权、分配资源，body 随后以任意多个 DATA 帧增量到达——**不需要预先知道 Content-Length，也不需要缓冲完整 body**。若合成一帧，发送方必须等整个 body 就绪才能发出第一个字节，首字节延迟（TTFB）从"头部就绪"退化到"全部数据就绪"，对大文件上传、gRPC server-streaming、SSE 是致命的。
+4. **流控只作用于 DATA，控制信息永不被阻塞**：HTTP/2 的流量控制窗口**只消耗在 DATA 帧上**，HEADERS 不受流控限制。即使对端窗口耗尽（window = 0），HEADERS、RST_STREAM、WINDOW_UPDATE 依然能送达；接收方可以"先看到请求是什么，再决定给不给窗口"，甚至读完 HEADERS 直接 RST_STREAM 拒绝，**省掉整个 body 的传输**。合并成一帧，元数据会被 body 的流控一起卡死，拒绝请求、报错、协商这些控制路径全部失效。
+5. **多路复用的调度粒度**：帧默认上限 16KB（SETTINGS_MAX_FRAME_SIZE），HEADERS 通常很小（HPACK 压缩后几十字节），DATA 可切成多个小帧与其他 stream 交错——一个上传大文件的 stream 不会独占连接，避免**帧层面的队头阻塞**（注意与第七节的 TCP 层 HOL 是两回事：前者靠分帧调度解决，后者 TCP 自身无解）。若头部与几 MB 的 body 合成一帧，要么超过帧大小上限，要么被迫先缓冲再切片，切片时头部还得保证原子性（HEADERS + CONTINUATION 之间不能插入其他帧），复杂度反而更高。
+6. **头与体编码/处理路径不同**：HEADERS 走 HPACK **有状态**压缩，必须按序解码（动态表依赖顺序，见第五节），且必须原子交付；DATA 是不透明字节，可任意切分，是否压缩由应用决定。中间代理必须解析 HEADERS（路由、改写、缓存判断、鉴权），DATA 可以完全不碰直接转发。合并后代理被迫解析整个 body 才能拿到头部，性能与分层都是倒退。
+7. **灵活的消息形态组合**：END_STREAM / END_HEADERS 两个 flag 独立控制，天然表达各种形态——GET 请求 / 304 响应：一个 HEADERS 帧带 END_STREAM，零个 DATA 帧；普通 POST：HEADERS → DATA… → 最后一个 DATA 带 END_STREAM；**trailers**：HEADERS → DATA… → 再来一个 HEADERS 带 END_STREAM。"body 之后还有元数据"在单帧模型里无处安放。分开也才能承载 PUSH_PROMISE、1xx 中间响应。
 
-**中间设备能路由只是副产品**：路由所需的 `:method/:path/:scheme/:authority` 放在 HEADERS 里，L7 网关不必解析 body 就能转发（Envoy 读 `:path` 即知调用哪个 gRPC 方法）。而 h2 的二进制分帧，初衷恰恰是**减少中间设备对明文的魔改**，更偏端到端。
+**对照 gRPC**（帧序列见第二节）：HEADERS（`:path=/Service/Method`，服务端据此路由）→ DATA（length-prefixed 消息，streaming 时逐条推送）→ 尾部 HEADERS（`grpc-status`，流结束时才确定成败）。合一帧则流式语义（消息逐条推送）与 trailer 语义（状态最后才知道）都无法实现。jaws-over-h2 同样受益于此，只是省掉 trailers、用 endStream 的 DATA 收尾。
+
+**中间设备能路由只是副产品**：路由所需的 `:method/:path/:scheme/:authority` 放在 HEADERS 里，L7 网关不必解析 body 就能转发（Envoy 读 `:path` 即知调用哪个 gRPC 方法；jaws-over-h2 靠 `x-jaws-*` 镜像头达到同样效果）。而 h2 的二进制分帧，初衷恰恰是**减少中间设备对明文的魔改**，更偏端到端。
+
+一句话：**HEADERS 是"小而关键、必须先达、不受流控、代理要解析"的控制面信息；DATA 是"大而透明、可切片、受流控、可增量生成"的数据面载荷。** 两者在大小、时序、处理方、流控属性上全都不同，合成一帧会同时牺牲流式能力、多路复用公平性和控制通道的独立性——分开是分层解耦的必然结果。
 
 ## 五、HPACK 是什么
 
