@@ -21,6 +21,11 @@ import org.hongxi.jaws.rpc.URL;
  *   Or via system property:
  *     java -Dharbor.clusterMembers=10.0.0.2:19848,10.0.0.3:19848 ...HarborBootstrap 19848
  *
+ *   Bind host defaults to 127.0.0.1 and must literally match this node's entry
+ *   in the cluster list (raft self-exclusion compares host:port strings).
+ *   For a cross-host cluster, bind the advertised address:
+ *     java -Dharbor.host=10.0.0.1 ...HarborBootstrap 19848 --cluster 10.0.0.1:19848,10.0.0.2:19848,10.0.0.3:19848
+ *
  *   Raft durability directory for persistent instances
  *   (default ~/.harbor/data, each node under raft-<port>):
  *     java ...HarborBootstrap 19848 --data-dir /var/harbor
@@ -48,7 +53,13 @@ public class HarborBootstrap {
             }
         }
 
-        URL url = new URL("harbor", "0.0.0.0", port, "");
+        // Bind loopback by default: ClusterManager derives the raft/dist self
+        // address from this host, and it must literally match the entry in
+        // --cluster (the sample script lists 127.0.0.1). A 0.0.0.0 bind would
+        // resolve self to the LAN IP, fail self-exclusion, and leave every node
+        // treating its own loopback entry as a phantom fourth raft peer.
+        String host = System.getProperty("harbor.host", "127.0.0.1");
+        URL url = new URL("harbor", host, port, "");
         if (!clusterMembers.isEmpty()) {
             url.addParameter(HarborServer.PARAM_CLUSTER_MEMBERS, clusterMembers);
         }
