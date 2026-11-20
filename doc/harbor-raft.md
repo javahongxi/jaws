@@ -183,7 +183,27 @@ ConfigService.publishConfig / removeConfig（nacos-client、HarborClient 或 HTT
 | `client/HarborClientConfigTest` | 原生 SDK config 面：晚订阅拿当前值、删除-as-null、unlisten 后 redo 收集、**重连回放 listen 后变更仍到达**、无变更重连不重复回调 |
 | `HarborDynamicConfigurationTest`（jaws-registry-harbor） | config SPI 对齐 nacos 腿：按 protocol 加载、config 独立连接（与 naming 各一条）、per-key 发布/远端变更/删除-as-null/unlisten 静默/晚读远端已提交值 |
 
-## 10. 边界（本期不做）
+## 10. ZAB 对照：同代协议的另一种形状
+
+ZAB（ZooKeeper Atomic Broadcast）是 ZooKeeper 自研的共识协议，随 ZooKeeper 以 Apache 2.0 开源（实现在 `org.apache.zookeeper.server.quorum`，核心类 `Leader`/`Follower`/`FastLeaderElection`）。它与 Raft 同属强 leader + 过半提交 + 任期号的 primary-backup 家族，Raft 论文把 Zab 列为同谱系的相关工作。区别在视角：**Raft 以「日志复制」为中心设计，ZAB 以「原子广播 + 崩溃恢复」为中心设计**——后者服务于 ZooKeeper 的 watch/通知语义，保证状态变更的全局有序投递。
+
+ZAB 把运行分为两种模式。**崩溃恢复**：FastLeaderElection 按 `(epoch, zxid, myid)` 投票，优先选数据最新者；选出 leader 后进入**显式同步阶段**——leader 与 follower 双向对账，按差异程度补发事务（DIFF）、截断多余事务（TRUNC）或全量快照（SNAP），同步完成前不对外服务。**消息广播**：写全部转发 leader，每个写生成 **zxid**（64 位：高 32 位 epoch 任期号，低 32 位单调计数器），以类 2PC 的方式 PROPOSAL → 过半 ACK → COMMIT；与标准 2PC 不同，follower 不能否决提案、过半即可提交，不会被单节点阻塞。
+
+| 维度 | ZAB | Raft（harbor 实现） |
+|---|---|---|
+| 设计目标 | 原子广播：状态变更的全局有序投递，服务 watch 语义 | 复制状态机：日志即真相，强调可理解性与通用性 |
+| 任期与编号 | zxid 一个数编码 epoch + 计数器，epoch 在选举投票时递增 | term 与 log index 独立（`meta.json` 的 currentTerm + 日志索引） |
+| 选举限制 | 选 zxid 最大者，新 leader 数据天然最全 | 先比 lastLogTerm 再比 lastLogIndex（§3.2），保证等价 |
+| 选举后对齐 | 独立同步阶段，双向对账（DIFF 补 / TRUNC 截 / SNAP 全量），完成前不服务 | 无独立阶段：prevLog 检查 + 冲突截断（§3.3）在每次 AppendEntries 里隐式对齐；新 leader 提交 NOOP 确认 commitIndex |
+| 未提交数据处理 | 恢复阶段集中 TRUNC 回滚 | 分布式截断：follower 在 term 冲突处截断取 leader 版本；重启后缀只进结构不进状态机（§3.5） |
+| 读语义 | follower 本地读可能旧，需 `sync()` 才线性一致 | 经典 Raft 读走 leader（或 ReadIndex）；harbor 刻意 stale read（§7），反而更接近 ZK 的常态读 |
+| 成员变更 | 早期需重启集群，3.5+ 支持动态 reconfig | 论文原生 joint consensus；harbor 静态成员（§7） |
+
+正确性上两者等价（线性一致写、顺序投递）；工程上 Raft 更模块化、易实现，后来者几乎一律选 Raft——etcd、TiKV、CockroachDB、JRaft（Nacos CP 用它）、Kafka KRaft 皆是。ZAB 则基本是 ZooKeeper 的专属协议，没有像 Raft 那样抽成通用库，存量活在 ZK 生态里：HBase、Hadoop HA、Dubbo 的 ZK 注册中心（本仓库 `jaws-registry-zookeeper` 走 Curator 即此路）都间接依赖它；Kafka 弃 ZK 转 KRaft 是这一趋势最标志性的事件。
+
+对 harbor 的映照：ZAB 用一个独立同步阶段完成的事，Raft 拆成两处日常机制——冲突截断分摊进每次 AppendEntries，「已提交不丢、未提交不生效」由选举限制 + NOOP + 恢复时序（§3.5）联合担保。harbor 的 `RaftLog.appendFollower` 截断与 ZAB 的 TRUNC 同构，差别只在触发时机：ZAB 集中在恢复期，Raft 分散在复制期。
+
+## 11. 边界（本期不做）
 
 - Raft 成员变更（joint consensus）、ReadIndex/线性一致读、PreVote、日志分块 InstallSnapshot。
 - 持久实例不支持 batch；config 不做 console、版本回滚、灰度发布、审计（fuzzy watch 仍是边界）；不做服务元数据独立 CP 存储。
