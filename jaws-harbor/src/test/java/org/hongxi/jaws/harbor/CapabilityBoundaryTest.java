@@ -7,6 +7,7 @@ import org.hongxi.jaws.harbor.client.HarborClientConfig;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.Request;
 import org.hongxi.jaws.harbor.model.request.InstanceRequest;
+import org.hongxi.jaws.harbor.model.request.PersistentInstanceRequest;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.rpc.DefaultRequest;
 import org.hongxi.jaws.rpc.URL;
@@ -21,16 +22,19 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * What a refusal looks like, and that it happens before anything is changed.
+ * What a refusal looks like, and that it happens before anything is changed —
+ * plus where the old persistent-instance boundary moved to.
  * <p>
- * Harbor's scope is ephemeral-instance naming only. A request for something
- * outside it has to read as a boundary rather than as a broken server — to the
- * caller in the exception text, and to whoever reads the log afterwards.
+ * Persistent instances are now served, but only through their own request type
+ * and the CP log: an {@code InstanceRequest} carrying {@code ephemeral=false}
+ * is still refused (it would ride the connection-liveness model), while a
+ * {@code PersistentInstanceRequest} commits through Raft and outlives the
+ * connection that sent it. Everything else outside scope (fuzzy watch, config
+ * center) still has to read as a boundary rather than as a broken server.
  * <p>
  * The server-side cases are driven with a raw unary call on purpose: a real
  * nacos-client would never send {@code InstanceRequest} with
@@ -49,9 +53,12 @@ class CapabilityBoundaryTest {
         try (ServerSocket socket = new ServerSocket(0)) {
             port = socket.getLocalPort();
         }
-        harborServer = new HarborServer(new URL("harbor", "0.0.0.0", port, ""));
+        URL url = new URL("harbor", "0.0.0.0", port, "");
+        url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
+        harborServer = new HarborServer(url);
         harborServer.start();
         awaitListening(port);
+        awaitRaftLeader();
     }
 
     @AfterAll
@@ -60,12 +67,25 @@ class CapabilityBoundaryTest {
     }
 
     @Test
-    void persistentInstanceRequestReadsAsABoundaryNotAsAMissingHandler() {
-        JSONObject reply = callUnary(new PersistentInstanceRequest());
-        assertTrue(reply.getString("message").contains("not supported"),
-                "an out-of-scope request must name the boundary: " + reply);
-        assertTrue(!reply.getString("message").contains("Unknown request type"),
-                "it must not be lumped in with unrecognised tokens: " + reply);
+    void persistentInstanceRequestCommitsThroughTheCpPath() {
+        Instance persistent = new Instance();
+        persistent.setIp("127.0.0.1");
+        persistent.setPort(9911);
+        persistent.setEphemeral(false);
+
+        PersistentInstanceRequest request = new PersistentInstanceRequest();
+        request.setNamespace("public");
+        request.setGroupName("DEFAULT_GROUP");
+        request.setServiceName("persistent-via-cp");
+        request.setType(HarborProtocol.REGISTER_INSTANCE);
+        request.setInstance(persistent);
+
+        JSONObject reply = callUnary(request);
+        assertTrue(reply.getBooleanValue("success"), "the CP entrance must serve it: " + reply);
+        List<Instance> stored = harborServer.getServiceStorage()
+                .getInstances("public", "DEFAULT_GROUP", "persistent-via-cp");
+        assertEquals(1, stored.size(), "a committed REGISTER must be readable: " + stored);
+        assertFalse(stored.get(0).isEphemeral(), "the stored instance stays persistent");
     }
 
     @Test
@@ -109,20 +129,22 @@ class CapabilityBoundaryTest {
     }
 
     @Test
-    void clientRefusesAPersistentRegistrationBeforeTouchingItsOwnTable() {
+    void clientPersistentRegistrationOutlivesTheConnectionThatSentIt() {
+        Instance persistent = new Instance();
+        persistent.setIp("127.0.0.1");
+        persistent.setPort(9912);
+        persistent.setEphemeral(false);
+
         try (HarborClient client = new HarborClient(HarborClientConfig.of("127.0.0.1", port))) {
-            Instance persistent = new Instance();
-            persistent.setIp("127.0.0.1");
-            persistent.setPort(9912);
-            persistent.setEphemeral(false);
-
-            IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                    () -> client.registerInstance("refused-locally", persistent));
-            assertTrue(thrown.getMessage().contains("ephemeral=false"), thrown.getMessage());
-
-            List<Instance> seen = client.getInstances("refused-locally");
-            assertTrue(seen.isEmpty(), "refused locally, so nothing may be owed either");
+            client.registerInstance("persistent-outlives-connection", persistent);
+            List<Instance> seen = client.getInstances("persistent-outlives-connection");
+            assertEquals(1, seen.size(), "the persistent registration must be readable: " + seen);
         }
+        // The connection is gone; the CP-owned instance must not be swept with it.
+        List<Instance> stored = harborServer.getServiceStorage()
+                .getInstances("public", "DEFAULT_GROUP", "persistent-outlives-connection");
+        assertEquals(1, stored.size(),
+                "a persistent instance belongs to the log, not to the connection: " + stored);
     }
 
     // ========================================================================
@@ -155,9 +177,6 @@ class CapabilityBoundaryTest {
     }
 
     /** Stands in for the Nacos request of the same name; harbor never parses it. */
-    static class PersistentInstanceRequest extends Request {
-    }
-
     static class NamingFuzzyWatchRequest extends Request {
     }
 
@@ -179,6 +198,18 @@ class CapabilityBoundaryTest {
             }
         }
         fail("harbor port " + listenPort + " never accepted a connection");
+    }
+
+    /** A single-node group elects itself at start; wait for that before proposing. */
+    private static void awaitRaftLeader() throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (harborServer.getRaftProtocol().raftNode().isLeader()) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        fail("the single-node raft group never elected itself");
     }
 
 }

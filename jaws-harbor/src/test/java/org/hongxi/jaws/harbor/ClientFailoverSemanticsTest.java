@@ -107,10 +107,14 @@ class ClientFailoverSemanticsTest {
         for (int attempt = 0; attempt < 3; attempt++) {
             portA = freePort();
             portB = freePort();
-            serverA = new HarborServer(new URL("harbor", "0.0.0.0", portA, ""));
+            URL urlA = new URL("harbor", "0.0.0.0", portA, "");
+            urlA.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
+            serverA = new HarborServer(urlA);
             try {
                 serverA.start();
-                serverB = new HarborServer(new URL("harbor", "0.0.0.0", portB, ""));
+                URL urlB = new URL("harbor", "0.0.0.0", portB, "");
+                urlB.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
+                serverB = new HarborServer(urlB);
                 serverB.start();
                 awaitListening(portA);
                 awaitListening(portB);

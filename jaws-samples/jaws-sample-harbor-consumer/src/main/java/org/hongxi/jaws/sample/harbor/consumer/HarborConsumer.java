@@ -31,7 +31,9 @@ import java.util.Map;
  * 4. group/version configuration
  * </pre>
  *
- * <p>Start {@code jaws-sample-harbor} (HarborBootstrap) and HarborProvider first.</p>
+ * <p>Start {@code jaws-sample-harbor} (HarborBootstrap) and HarborProvider first.
+ * The persistent-instance (Raft CP) demo lives in jaws-sample-raft-provider /
+ * jaws-sample-raft-consumer instead.</p>
  */
 public class HarborConsumer {
 

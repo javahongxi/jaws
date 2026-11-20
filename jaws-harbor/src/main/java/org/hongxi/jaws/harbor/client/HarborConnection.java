@@ -150,7 +150,8 @@ final class HarborConnection implements Closeable {
         if (!response.isSuccess()) {
             throw new JawsServiceException("harbor rejected "
                     + HarborProtocol.typeToken(request.getClass()) + ": resultCode="
-                    + response.getResultCode());
+                    + response.getResultCode()
+                    + (response.getMessage() != null ? ", " + response.getMessage() : ""));
         }
         return response;
     }

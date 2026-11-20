@@ -130,6 +130,7 @@ class ConfigBroadcastClusterTest {
     private HarborServer node(int selfPort, int peerPort) throws Exception {
         URL url = new URL("harbor", "0.0.0.0", selfPort, "");
         url.addParameter(HarborServer.PARAM_CLUSTER_MEMBERS, "127.0.0.1:" + peerPort);
+        url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
         HarborServer server = new HarborServer(url);
         server.start();
         awaitListening(selfPort);

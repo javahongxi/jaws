@@ -37,6 +37,7 @@ class HarborServerIntegrationTest {
         System.setProperty("nacos.server.grpc.port.offset", "0");
 
         URL url = new URL("harbor", "0.0.0.0", port, "");
+        url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
         harborServer = new HarborServer(url);
         harborServer.start();
 

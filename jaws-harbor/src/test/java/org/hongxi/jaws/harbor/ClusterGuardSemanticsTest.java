@@ -95,6 +95,7 @@ class ClusterGuardSemanticsTest {
         int port = freePort();
         URL url = new URL("harbor", "127.0.0.1", port, "");
         url.addParameter(HarborServer.PARAM_CLUSTER_MEMBERS, "127.0.0.1:" + (port + 1));
+        url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
         HarborServer server = new HarborServer(url);
         server.start();
         try {

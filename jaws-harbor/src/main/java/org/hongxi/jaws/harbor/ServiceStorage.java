@@ -120,6 +120,7 @@ public class ServiceStorage {
     public void registerInstance(String namespace, String group, String serviceName,
                                  Instance instance, String connectionId) {
         ServiceKey key = ServiceKey.of(namespace, group, serviceName);
+        refuseIfPersistentPublishers(key);
 
         // Write to ClientSession (source of truth)
         ClientSession session = connectionManager.getClientSession(connectionId);
@@ -225,6 +226,173 @@ public class ServiceStorage {
 
     private static String addressKey(Instance instance) {
         return instance.getIp() + "#" + instance.getPort();
+    }
+
+    // ========================================================================
+    // Persistent (CP) instance operations — driven ONLY by the raft apply thread
+    // ========================================================================
+
+    /**
+     * Apply a committed REGISTER command: write the instance into the stable
+     * {@code ip:port#persistent} session (created on first sight) and share the
+     * same publisher index the ephemeral path uses, so reads and pushes need no
+     * CP-aware branch — the Nacos {@code PersistentClientOperationServiceImpl}
+     * onApply shape. Mixing is refused deterministically here, at apply time,
+     * so every node reaches the same verdict on the same log.
+     */
+    public void registerPersistentInstance(String namespace, String group, String serviceName,
+                                           String clientId, Instance instance) {
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
+        if (hasEphemeralPublishers(key)) {
+            log.warn("[harbor] persistent register skipped, service already has ephemeral publishers: {}", key);
+            return;
+        }
+        ClientSession session = connectionManager.getClientSession(clientId);
+        if (session == null) {
+            session = ClientSession.persistent(clientId);
+            connectionManager.putClientSession(clientId, session);
+        }
+        session.addInstance(key, instance);
+        publisherIndexes.computeIfAbsent(key, k -> new CopyOnWriteArraySet<>()).add(clientId);
+        invalidateServiceCache(key);
+        log.info("[harbor] persistent instance registered: {} -> {}:{} (client {})",
+                key, instance.getIp(), instance.getPort(), clientId);
+        changeListener.onServiceChange(key);
+    }
+
+    /**
+     * Apply a committed DEREGISTER command. The session itself is retired once
+     * its last published instance is gone — a persistent client has no
+     * subscribers, so an empty shell would only leak.
+     */
+    public void deregisterPersistentInstance(String namespace, String group, String serviceName,
+                                             String clientId, Instance instance) {
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
+        ClientSession session = connectionManager.getClientSession(clientId);
+        if (session == null || !session.isPersistent()) {
+            log.debug("[harbor] persistent deregister (no session): {} -> {}:{}",
+                    key, instance.getIp(), instance.getPort());
+            return;
+        }
+        session.removeInstance(key, instance.getIp(), instance.getPort());
+        if (session.getInstances(key).isEmpty()) {
+            removeFromPublisherIndex(key, clientId);
+        }
+        invalidateServiceCache(key);
+        log.info("[harbor] persistent instance deregistered: {} -> {}:{} (client {})",
+                key, instance.getIp(), instance.getPort(), clientId);
+        announceChange(key);
+        retireIfEmpty(key);
+        if (session.getAllPublishedServices().isEmpty()) {
+            connectionManager.removeClientSession(clientId);
+        }
+    }
+
+    /**
+     * Apply a committed HEALTH command: flip the healthy flag of an existing
+     * persistent instance. Health is CP data (Nacos replicates it through
+     * {@code PersistentHealthStatusSynchronizer}); the probe verdict travels as
+     * a log entry so every node flips at the same log position. Only the flag
+     * moves — the registered instance's metadata stays untouched.
+     */
+    public void updatePersistentHealth(String namespace, String group, String serviceName,
+                                       String clientId, Instance instance) {
+        ServiceKey key = ServiceKey.of(namespace, group, serviceName);
+        ClientSession session = connectionManager.getClientSession(clientId);
+        if (session == null || !session.isPersistent()) {
+            return;
+        }
+        for (Instance held : session.getInstances(key)) {
+            if (held.getIp().equals(instance.getIp()) && held.getPort() == instance.getPort()) {
+                if (held.isHealthy() == instance.isHealthy()) {
+                    return;
+                }
+                held.setHealthy(instance.isHealthy());
+                session.recalculateRevision();
+                invalidateServiceCache(key);
+                log.info("[harbor] persistent health flipped: {} -> {}:{} healthy={}",
+                        key, held.getIp(), held.getPort(), held.isHealthy());
+                announceChange(key);
+                return;
+            }
+        }
+    }
+
+    /** @return every Raft-replicated persistent session this node holds. */
+    public List<ClientSession> allPersistentSessions() {
+        List<ClientSession> result = new ArrayList<>();
+        for (ClientSession session : connectionManager.allClientSessions()) {
+            if (session.isPersistent()) {
+                result.add(session);
+            }
+        }
+        return result;
+    }
+
+    /** Whether any connection-bound (ephemeral) client publishes this service. */
+    public boolean hasEphemeralPublishers(ServiceKey key) {
+        return anyPublisher(key, false);
+    }
+
+    /** Whether any Raft-replicated persistent client publishes this service. */
+    public boolean hasPersistentPublishers(ServiceKey key) {
+        return anyPublisher(key, true);
+    }
+
+    private boolean anyPublisher(ServiceKey key, boolean persistent) {
+        Set<String> publishers = publisherIndexes.get(key);
+        if (publishers == null) {
+            return false;
+        }
+        for (String clientId : publishers) {
+            ClientSession session = connectionManager.getClientSession(clientId);
+            if (session != null && session.isPersistent() == persistent) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Replace the whole persistent state with a snapshot image (raft recovery
+     * or InstallSnapshot). Existing persistent sessions are dropped first, then
+     * the image is rebuilt through the same index-writing path as a live apply.
+     */
+    public void loadPersistentSnapshot(List<ClientSyncData> dataList) {
+        for (ClientSession session : allPersistentSessions()) {
+            removeSyncedClient(session.getConnectionId());
+        }
+        if (dataList == null) {
+            return;
+        }
+        for (ClientSyncData data : dataList) {
+            ClientSession session = ClientSession.persistent(data.getConnectionId());
+            List<String> serviceKeys = data.getServiceKeys();
+            List<Instance> instances = data.getInstances();
+            for (int i = 0; i < serviceKeys.size() && i < instances.size(); i++) {
+                ServiceKey key = ServiceKey.parse(serviceKeys.get(i));
+                session.addInstance(key, instances.get(i));
+                publisherIndexes.computeIfAbsent(key, k -> new CopyOnWriteArraySet<>())
+                        .add(data.getConnectionId());
+                invalidateServiceCache(key);
+                changeListener.onServiceChange(key);
+            }
+            connectionManager.putClientSession(data.getConnectionId(), session);
+        }
+        log.info("[harbor] persistent snapshot loaded: {} clients", dataList.size());
+    }
+
+    /**
+     * Ephemeral and persistent publishers must not share a service: their
+     * lifecycles are governed by different protocols (beat vs CP log), and a
+     * mixed service could never decide which rule retires it. Nacos enforces
+     * the same mutual exclusion between its two ClientOperationService impls.
+     */
+    private void refuseIfPersistentPublishers(ServiceKey key) {
+        if (hasPersistentPublishers(key)) {
+            throw new IllegalArgumentException("service " + key
+                    + " already has persistent (ephemeral=false) publishers; mixing is not allowed");
+        }
     }
 
     // ========================================================================
@@ -629,6 +797,11 @@ public class ServiceStorage {
         ClientSession existing = connectionManager.getClientSession(connectionId);
         if (existing != null && existing.isNativeClient()) {
             log.debug("[harbor] skipping client sync for native client: {}", connectionId);
+            return;
+        }
+        // Persistent sessions belong to the CP log; an AP sync must never touch them.
+        if (existing != null && existing.isPersistent()) {
+            log.debug("[harbor] skipping client sync for persistent client: {}", connectionId);
             return;
         }
 

@@ -4,6 +4,7 @@ import com.alibaba.nacos.api.NacosFactory;
 import com.alibaba.nacos.api.naming.NamingService;
 import org.hongxi.jaws.harbor.HarborProtocol;
 import org.hongxi.jaws.harbor.HarborServer;
+import org.hongxi.jaws.harbor.HarborTestDataDirs;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
 import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
@@ -51,7 +52,9 @@ class HarborClientTest {
             port = socket.getLocalPort();
         }
         System.setProperty("nacos.server.grpc.port.offset", "0");
-        harborServer = new HarborServer(new URL("harbor", "0.0.0.0", port, ""));
+        URL url = new URL("harbor", "0.0.0.0", port, "");
+        url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
+        harborServer = new HarborServer(url);
         harborServer.start();
         Thread.sleep(500);
 

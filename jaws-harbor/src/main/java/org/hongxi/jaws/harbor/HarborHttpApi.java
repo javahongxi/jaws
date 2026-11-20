@@ -8,6 +8,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.hongxi.jaws.harbor.cluster.ClusterManager;
 import org.hongxi.jaws.harbor.cluster.ClusterMember;
 import org.hongxi.jaws.harbor.model.Instance;
+import org.hongxi.jaws.harbor.raft.RaftNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +31,8 @@ import java.util.stream.Collectors;
  *   <li>{@code GET /api/services} — all registered services</li>
  *   <li>{@code GET /api/cluster} — cluster members</li>
  *   <li>{@code GET /api/connections} — active connection count</li>
+ *   <li>{@code GET /api/raft} — Raft role/term/leader and log positions, plus the
+ *       persistent-client count (the CP observability window)</li>
  *   <li>{@code POST /api/connections/reset} — ask one client to reconnect, optionally
  *       elsewhere; the load-shedding hook Nacos has on its loader endpoint</li>
  *   <li>{@code POST /api/config} — broadcast a dynamic-config change to every
@@ -56,6 +59,7 @@ public class HarborHttpApi {
         // Longer path wins in JDK HttpServer, so this shadows the read-only listing.
         this.httpServer.createContext("/api/connections/reset", new ConnectionResetHandler());
         this.httpServer.createContext("/api/config", new ConfigChangeHandler());
+        this.httpServer.createContext("/api/raft", new RaftHandler());
         this.httpServer.setExecutor(null); // use daemon threads
     }
 
@@ -184,6 +188,27 @@ public class HarborHttpApi {
             result.put("key", key);
             result.put("deleted", deleted);
             result.put("pushed", pushed);
+            sendJson(exchange, 200, result.toJSONString());
+        }
+    }
+
+    private class RaftHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
+                return;
+            }
+            RaftNode.RaftStatus status = harborServer.getRaftProtocol().raftNode().status();
+            JSONObject result = new JSONObject();
+            result.put("nodeId", harborServer.getClusterManager().getSelfAddress());
+            result.put("role", status.role());
+            result.put("term", status.term());
+            result.put("leaderId", status.leaderId());
+            result.put("commitIndex", status.commitIndex());
+            result.put("lastApplied", status.lastApplied());
+            result.put("lastLogIndex", status.lastIndex());
+            result.put("persistentClients", harborServer.getServiceStorage().allPersistentSessions().size());
             sendJson(exchange, 200, result.toJSONString());
         }
     }

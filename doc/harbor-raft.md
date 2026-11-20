@@ -1,0 +1,156 @@
+# Harbor Raft：持久实例的 CP 设计精读
+
+> harbor 的第二套一致性档位。ephemeral 实例继续走「连接即活性 + Distro AP」；`ephemeral=false` 的持久实例走**自研最小 Raft**——数据只存**内存 + 本地日志/快照文件**，不依赖任何外部数据库，与 Nacos 的 JRaft 部署形态完全同构。本文既是 Raft 算法在 harbor 里的落地精读，也是与 Nacos CP 链路（Nacos 3.2.2 源码为准绳）的逐段对照。引用只到类/概念/默认值粒度，不钉行号（同 `harbor-vs-nacos.md` 的维护纪律）。
+
+## 0. 为什么是自研，以及范围
+
+两个已拍板的决策：
+
+1. **自研最小 Raft，不引入 SOFA JRaft**。目标是学习 Raft 本身：选举、日志复制、快照、持久化时序全部手写并可单步调试；JRaft 的 disruptor、复制流水线、成员变更、ReadIndex 等工程层在这里用不上，引入它反而把算法埋进框架。
+2. **仅 naming 持久实例**。config 仍走现有 AP 演示通道；不做服务元数据的独立 CP 存储（Nacos 的 `SERVICE_METADATA` group 那一路）。
+
+于是 harbor 一个进程里同时跑两套一致性协议，按请求类型分流——这正是 Nacos 的形状（naming v2 的 ephemeral 走 Distro，persistent 走 JRaft），只是 Nacos 把它们拆在 `consistency` 模块里，harbor 把它们放在 `distro/` 与 `raft/` 两个包里。
+
+## 1. 全景：一次持久注册的完整链路
+
+```
+HarborClient.registerInstance(ephemeral=false)
+  → PersistentInstanceRequest（独立请求类型，非 InstanceRequest）
+  → HarborServer.handlePersistentInstanceRequest
+      校验 + 混用预检 → clientId = ip:port#persistent
+      → NamingCommand.register(...)
+  → HarborRaftProtocol.write
+      本节点是 leader？ → RaftNode.propose
+      不是？ → RaftWriteForwardRequest 转发给 leader（最多 3 次尝试，NotLeader 带 hint）
+  → RaftNode：追加本地日志（fsync）→ AppendEntries 复制 → 多数派匹配 → commit → apply
+  → NamingStateMachine.onApply → ServiceStorage.registerPersistentInstance
+      （持久 ClientSession，与连接生命周期无关）
+  → future 完成 → InstanceResponse(success)
+```
+
+读路径不变：持久实例落在同一套 `publisherIndexes`/`serviceDataIndexes` 里，任何节点的查询/订阅/推送都照常工作——**CP 只改变「写怎么被担保」，不改变「读长什么样」**。
+
+## 2. 概念映射：harbor ↔ Nacos/JRaft
+
+| harbor | Nacos / JRaft 对应 | 说明 |
+|---|---|---|
+| `RaftNode` | JRaft `NodeImpl` + `Replicator` | 算法核心，单线程事件循环（JRaft 用 disruptor 达成同一单写者纪律） |
+| `RaftLog` | JRaft `LogManager` 的内存视图 | Log Matching Property：冲突截断、幂等重发、快照边界 |
+| `RaftStorage` | JRaft `RaftMetaStorage` + `LogStorage` + `SnapshotStorage` | 三个文件合成一处：`meta.json` / `log.jsonl` / `snapshot.json` |
+| `RaftTransport` / `WireRaftTransport` | JRaft RPC 层（`RpcService`） | 异步接口；实现照 `WireHarborNodeTransport` 的模式走 wire 一元 |
+| `StateMachine` / `NamingStateMachine` | JRaft `StateMachine` / Nacos `NacosStateMachine` | `onApply` 回放命令到内存索引；快照 = 持久 client 全量 |
+| `NamingCommand` | Nacos `WriteRequest`（ADD/DELETE/CHANGE） | REGISTER / DEREGISTER / HEALTH / NOOP 四种操作 |
+| `HarborRaftProtocol` | Nacos `CPProtocol`（JRaft 门面） | 写入口 + leader 转发；Nacos 由 JRaft 的 redirect 机制代劳 |
+| `PersistentInstanceRequest` | **同名**（nacos api 请求类） | 能力协商通过时 nacos-client 发的就是它 |
+| `ClientSession.persistent(clientId)` | `IpPortBasedClient`（`isEphemeral()=false`） | 出生定死身份，与连接无关；clientId = `ip:port#persistent` |
+| `ServiceStorage.registerPersistentInstance` 等 | `PersistentClientOperationServiceImpl` | 持久写操作只由 raft apply 线程驱动 |
+| `PersistentHealthProbe` | `HealthCheckTaskV2` + `TcpHealthCheckProcessor` | 服务端主动 TCP 探活 |
+| HEALTH 命令走 Raft | `PersistentHealthStatusSynchronizer` → `updateInstance` | healthy 标志本身是 CP 复制数据 |
+| `NamingStateMachine.saveSnapshot` | `PersistentInstanceSnapshotOperation` | 快照落本地文件，重启快照+日志恢复 |
+| `SetupAckRequest.abilityTable` 填 `supportPersistentInstanceByGrpc=true` | `ServerAbilities` + `AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC` | 客户端据此选 gRPC 持久路径而非降级 HTTP v1 |
+
+## 3. Raft 核心精读
+
+### 3.1 线程模型：一切状态迁移都是事件
+
+所有可变状态（term/vote/role/log/commitIndex/nextIndex…）**只活在一条 `harbor-raft` 线程上**。RPC 到达、transport 回包、timer tick、客户端 propose 全部 `post()` 成事件进队列；timer 线程只 post 不碰状态，transport 是纯异步（`CompletableFuture`）。算法本体因此**零锁**——这与 JRaft 用 disruptor 串行化 `NodeImpl` 事件是同一个判断：Raft 的状态机足够小，单写者比细粒度锁便宜得多。
+
+对外读（`status()`/`isLeader()`/`leaderId()`）走一个 volatile 的不可变 `RaftStatus` 快照，每个事件处理后刷新——读侧永远不阻塞算法线程。
+
+### 3.2 选举
+
+- **随机超时**：默认 1000–2000ms（`RaftOptions.defaults()`），心跳 300ms——论文建议的「选举超时远大于心跳」比例，避免 follower 把忙碌的 leader 误判为死。timer 以 `min/2` 节拍检查 deadline。
+- **投票限制（§5.4.1）**：candidate 的日志必须至少和自己一样新（先比 lastLogTerm，再比 lastLogIndex），否则拒票。这条保证选出的 leader 一定持有全部已提交条目。
+- **先持久化再应答（§5.2）**：授票前 `saveMeta(currentTerm, votedFor)` 原子写 + fsync；崩溃重启不会忘记本 term 已投过谁，杜绝双 leader。
+- **单节点 = 单成员组**：`start()` 时 peers 为空 → 立即发起选举、立即当选。standalone harbor 不需要任何特殊分支就拥有完整 CP 语义（同样写日志/快照，重启可恢复）。
+- 任期更高的回包一律 `stepDown`；stepDown 时所有 pending write 以 `NotLeaderException` 失败——**未提交的写宁可失败也不悬挂**，调用方（`HarborRaftProtocol`）据此换 leader 重试。
+
+### 3.3 日志复制与 commit
+
+- **prevLog 检查 + 冲突截断（§5.3）**：follower 在 `RaftLog.appendFollower` 里逐条比对——同 index 同 term 的条目幂等跳过，term 冲突则截断该位置及其后全部，再取 leader 版本。截断预测（`conflicts()`）驱动日志文件重写。
+- **快速 nextIndex 回退**：AppendEntries 被拒时不再一格一格退，直接跳到 `min(next-1, follower.lastLogIndex+1)`，**下限钳到 1**。钳制位置是刻意的：若 follower 落后到 leader 快照边界之下，`next <= lastIncludedIndex` 会自然落入 InstallSnapshot 分支——钳到 `lastIncludedIndex+1` 反而会让 prevLog 检查永远失败、死循环。
+- **commit 规则（§5.4.2，Figure 8）**：只有**当前 term** 的条目能靠数副本推进 commitIndex；旧 term 条目搭车提交。新 leader 当选即追加一条 **NOOP**，保证「当前 term 条目」必然存在——这也是重启恢复能重新担保旧日志的机制（见 §3.5）。
+- 批量上限 `MAX_ENTRIES_PER_APPEND=128`；成功后若仍有积压立即续发，不等下一拍心跳。
+- 批量心跳即空 AppendEntries，300ms 一拍。
+
+### 3.4 快照与 InstallSnapshot
+
+- **触发**：apply 计数达到 `snapshotThreshold`（默认 10000）即压实。
+- **取点**：快照永远取在 `lastApplied` 这个稳定点——`saveSnapshot()` 与随后读到的日志边界严格一致，InstallSnapshot 直接复用同一函数，不存在「镜像与边界错位」的窗口。
+- **压实顺序**：状态机镜像原子落盘 → `RaftLog.truncatePrefix` → 日志文件整体重写。
+- **落后 follower**：leader 发现 `nextIndex <= lastIncludedIndex` 时发 InstallSnapshot（整包 Base64，不分块——见 §7 偏离清单）；follower `reset` 日志到快照边界、`loadSnapshot` 重建状态机，之后正常追日志。
+
+### 3.5 持久化与恢复时序
+
+三个文件，一个目录（`dataDir/raft-<port>/`）：
+
+| 文件 | 内容 | 写时机 |
+|---|---|---|
+| `meta.json` | currentTerm + votedFor | 任何投票/任期变化**应答之前**，原子替换 + fsync |
+| `log.jsonl` | 每行一条 LogEntry（JSON + Base64 data） | AppendEntries 成功**回包之前** fsync；leader propose 同样先落盘 |
+| `snapshot.json` | 状态机镜像 + lastIncludedIndex/Term | 压实/InstallSnapshot 时原子替换 |
+
+**恢复顺序**：读 meta → 读快照（状态机 `loadSnapshot`，commitIndex=lastApplied=快照边界）→ 读快照边界之后的日志后缀进 `RaftLog`。**关键语义：日志后缀只进结构、不进状态机**——那些条目可能从未提交，重启后必须等新 leader（单节点即自己）的当前 term NOOP 提交时再一并 apply。这正是 Figure 8 规则在恢复路径上的体现：崩溃前没拿到多数派担保的写，重启后不会擅自生效。
+
+**撕裂尾行容忍**：崩溃在 append 半途会留下半行 JSON——它从未被应答过，恢复时直接丢弃（`RaftStorage.loadLog`），不是致命错误。
+
+## 4. 命名状态机与存储集成
+
+- **`NamingCommand`**：JSON 命令，四种操作——REGISTER / DEREGISTER / HEALTH / NOOP。对应 Nacos `WriteRequest` 的 ADD/DELETE/CHANGE；NOOP 是 Raft 自己的（JRaft 也有等价物）。
+- **`NamingStateMachine.onApply`**：按操作分发到 `ServiceStorage` 的持久操作区。这些方法**只允许 raft apply 线程调用**——与 AP 侧「写只发生在 owner」对称，CP 侧「写只发生在 apply」。
+- **持久 session**：`ClientSession.persistent(clientId)` 出生即 `native=false, persistent=true`。它没有 `ConnectionRecord`，所以连接看门狗、`reconcileHealth`、`isReplicaOrphaned` 全都结构性地看不见它——持久实例**活过发送它的那条连接**，这正是定义本身。注销到空时 session 一并移除（持久 client 没有「保留空壳等心跳」的理由）。
+- **混用守卫（双向）**：与 Nacos `EphemeralClientOperationServiceImpl`/`PersistentClientOperationServiceImpl` 的互斥同构。ephemeral 注册入口顶部 `refuseIfPersistentPublishers` 抛错；持久注册在 handler 预检 + apply 时确定性判定（apply 必须确定性——同一条日志在每个节点回放结果必须一致，所以守卫不能只靠 handler 侧的瞬时检查）。
+- **Distro 排除**：`doSyncChange` 与 `onSnapshot` 跳过持久 session——与 Nacos `DistroClientDataProcessor` 构造快照/对账时 `!client.isEphemeral()` 直接跳过逐字同构。持久数据的复制担保只来自 Raft，AP 通道不碰它，否则两套协议会互相覆盖。
+- **快照内容**：`allPersistentSessions()` → 逐 session `buildClientSyncData` → JSON list。复用 AP 侧已有的 client 级载荷结构，`loadPersistentSnapshot` 先清后建，幂等。
+
+## 5. 写转发、客户端与能力协商
+
+- **`HarborRaftProtocol.write`**：最多 3 次尝试。本节点是 leader 直接 propose（5s 等 commit+apply）；`NotLeaderException` 带 leaderId hint 则换目标重试；否则用 `raftNode.leaderId()` 猜一个，经 `RaftWriteForwardRequest`  relay。**被转发方（`onForwardWrite`）是 leader 就直接 propose、不再转发**——防环。没有可用 leader 时响亮失败（"no raft leader available; retry later"），不做无限等待。
+- **`HarborClient`**：`sendInstanceRequest` 按 `instance.isEphemeral()` 分叉——ephemeral 发 `InstanceRequest`，persistent 发 `PersistentInstanceRequest`，与 Nacos `NamingClientProxyDelegate` 的分流同形。redo 重放经过同一分叉，所以断线重连后持久注册以**幂等替换**的方式重放，不会重复。batch 仍仅限 ephemeral（持久实例不支持 batch，响亮拒绝）。
+- **能力协商**：`SetupAckRequest.abilityTable` 填 `supportPersistentInstanceByGrpc=true`。真 nacos-client 见到该能力即走 gRPC `PersistentInstanceRequest`，不再降级 HTTP v1——这是 Nacos 3.x 客户端选择持久路径的唯一开关。
+- **边界仍硬**：`InstanceRequest` 携带 `ephemeral=false` 依旧被拒（那会静默把持久实例降级成连接所有物）；拒绝文案指向 `PersistentInstanceRequest`。
+
+## 6. 健康探测：leader-only TCP
+
+`PersistentHealthProbe` 是 Nacos `HealthCheckTaskV2 + TcpHealthCheckProcessor` 的对应物，但有一处刻意收紧：**只有 leader 探测**。
+
+- 3s 一拍，对每个持久实例 TCP connect（1s 超时），4 worker、整轮 3s 预算（超预算按不可达计）。
+- 判定翻转不直接改内存——封装成 **HEALTH 命令走 Raft**，每个节点在**同一日志位置**翻转 healthy 标志（Nacos `PersistentHealthStatusSynchronizer` 的形状）。healthy 是 CP 数据，不是各节点各自的观测。
+- leader 易主无需交接状态：新 leader 下一拍自然接管探测。
+
+## 7. 刻意偏离清单（对 Nacos/JRaft）
+
+| 偏离 | Nacos/JRaft 怎么做 | harbor 怎么做 | 代价与理由 |
+|---|---|---|---|
+| **leader-only 探测** | 每个节点按一致性哈希分担探测任务，翻转经 CP 同步 | 只有 leader 探测 | 省掉任务分片与再平衡；探测量 = 持久实例数，注册中心规模下 leader 单点探测不构成瓶颈。实例数上万时再分片 |
+| **stale read** | JRaft 提供 ReadIndex/lease read 路线（Nacos naming 读实际也走内存索引） | 读直接查本地内存索引，可能落后 leader 一个复制窗口 | 与 Nacos naming 的实际读语义一致；线性一致读要 ReadIndex 心跳确认，收益对服务发现场景不成比例 |
+| **静态成员** | JRaft 支持 joint consensus 成员变更 | peers 在 `start()` 从 `ClusterManager` 捕获，终身不变 | 与 harbor AP 侧静态成员一致；改成员 = 改配置重启。论文 §6 成员变更是最易错的部分，最小实现不碰 |
+| **clientId 后缀 `#persistent`** | `ip:port#false` | `ip:port#persistent` | 语义自明；两侧 clientId 本就不互通（各自内部键），无兼容代价。**读 Nacos 源码时注意这个差异** |
+| **单文件 JSON 存储** | JRaft 分段日志文件 + 独立快照目录 + RocksDB 可选 | 三个文件、JSON 行、Base64 | 可读性优先（学习案例可以直接 `cat log.jsonl`）；万级条目后重写成本上升，届时分段是自然演进 |
+| **InstallSnapshot 整包** | JRaft 分块流式传输 | 单包 Base64 一元 | 与 harbor「节点间全一元」的既有边界一致；快照 = 持久 client 全量，规模大时再分块 |
+| **不做 PreVote** | JRaft 默认开启 | 无 | 分区恢复的旧 leader 靠 term 规则自然 stepDown（测试钉住）；PreVote 防的是「分区节点回来扰乱任期」，最小实现接受这个扰动 |
+| **探测仅 TCP** | tcp/http/mysql 三种 processor | 仅 TCP connect | http/mysql 探测是产品面；机制层 TCP 已覆盖「地址可达性」这一核心语义 |
+
+## 8. 配置与可观测性
+
+- **数据目录**：URL 参数 `dataDir`（默认 `~/.harbor/data`，固定在用户目录、不随进程工作目录漂移），每节点独占 `raft-<port>` 子目录；`HarborBootstrap --data-dir <dir>`（或 `-Dharbor.dataDir`）可覆写，启动横幅会打印实际目录。同机多节点共父目录不冲突。
+- **时序覆写**（测试用）：`raftElectionTimeoutMinMs` / `raftElectionTimeoutMaxMs` / `raftHeartbeatMs` / `raftSnapshotThreshold`。
+- **`GET /api/raft`**（管理端口 = grpcPort+10）：nodeId / role / term / leaderId / commitIndex / lastApplied / lastLogIndex / persistentClients。
+- 演示：`jaws-sample-raft-provider` 的 `RaftProvider`——一个 persistent DemoService 实例（group `persistent`），消费端用 `jaws-sample-raft-consumer` 的 `RaftConsumer`；类注释给出 kill -9 provider / kill -9 harbor 的完整验证步骤。
+
+## 9. 测试锚定
+
+| 测试 | 钉住的语义 |
+|---|---|
+| `raft/RaftLogTest` | Log Matching：冲突截断、幂等重发、快照边界代答 prevLog、reset、批量上限 |
+| `raft/RaftStorageTest` | term/vote 重开存活、日志有序持久、撕裂尾行丢弃、压实前缀跳过、重写后 append 句柄复用、快照往返 |
+| `raft/RaftNodeTest` | 内存 transport 上的算法本体：单节点立即自选、三节点单 leader 全复制、follower propose 带 leader hint、leader 死亡重选、**分区 leader 不能独自 commit 且愈合后 stepDown + 悬挂写失败**、落后 follower 经 InstallSnapshot 追上 |
+| `HarborPersistentInstanceTest` | 单节点端到端：注册/注销走 CP 日志、混用双向拒绝且不落状态、**同 dataDir 重启恢复**、探测打死端口翻 unhealthy / 复活翻回 healthy |
+| `HarborPersistentClusterTest` | 3 节点真 wire：follower 收写 → 转发 → 全节点可见；leader 宕机 → 重选 → 已提交数据仍在且接受新写 |
+| `CapabilityBoundaryTest` | 边界迁移：`PersistentInstanceRequest` 走 CP 成功、持久注册活过连接；`InstanceRequest` 带 `ephemeral=false` 仍先拒后写 |
+
+## 10. 边界（本期不做）
+
+- Raft 成员变更（joint consensus）、ReadIndex/线性一致读、PreVote、日志分块 InstallSnapshot。
+- 持久实例不支持 batch；config 仍走 AP；不做服务元数据独立 CP 存储。
+- 持久实例的订阅推送复用 AP 侧 `PushDelayTaskEngine`——推送本身不需要 CP 担保（到点重读当前全量、幂等收敛），CP 只担保数据。

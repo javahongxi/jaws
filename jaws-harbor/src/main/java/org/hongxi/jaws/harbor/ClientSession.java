@@ -49,6 +49,16 @@ public class ClientSession {
     private final boolean nativeClient;
 
     /**
+     * Whether this session holds PERSISTENT (ephemeral=false) instances replicated
+     * by Raft instead of connection-bound ephemeral ones. Its id is the stable
+     * {@code ip:port#persistent} client key, not a connection UUID: it outlives any
+     * TCP connection, is never judged by the beat tiers or the replica-orphan sweep,
+     * and only a committed DEREGISTER command may remove it — the harbor counterpart
+     * of Nacos's {@code IpPortBasedClient}.
+     */
+    private final boolean persistent;
+
+    /**
      * When the owning node last vouched for this session: a sync applied, or a verify
      * in which its revision matched ours. Never advanced by local mutation, or a
      * replica could keep itself alive. Only replicas are judged against it.
@@ -56,11 +66,24 @@ public class ClientSession {
     private volatile long lastRenewTime;
 
     public ClientSession(String connectionId, boolean nativeClient) {
+        this(connectionId, nativeClient, false);
+    }
+
+    private ClientSession(String connectionId, boolean nativeClient, boolean persistent) {
         this.connectionId = connectionId;
         this.nativeClient = nativeClient;
+        this.persistent = persistent;
         // A session born from a sync is confirmed by its owner right now; a native one
         // never consults this clock at all.
         this.lastRenewTime = System.currentTimeMillis();
+    }
+
+    /**
+     * A Raft-replicated persistent session: non-native (no local connection owns it)
+     * yet immortal — its lifecycle belongs to the CP log, not to any transport.
+     */
+    public static ClientSession persistent(String clientId) {
+        return new ClientSession(clientId, false, true);
     }
 
     public String getConnectionId() {
@@ -215,6 +238,10 @@ public class ClientSession {
         return nativeClient;
     }
 
+    public boolean isPersistent() {
+        return persistent;
+    }
+
     /**
      * Whether this REPLICATED session has gone unconfirmed by its owning node for
      * longer than {@code toleranceMs}. Mirrors Nacos
@@ -228,7 +255,7 @@ public class ClientSession {
      * @param toleranceMs how long owner silence is tolerated
      */
     public boolean isReplicaOrphaned(long nowMillis, long toleranceMs) {
-        return !nativeClient && nowMillis - lastRenewTime > toleranceMs;
+        return !nativeClient && !persistent && nowMillis - lastRenewTime > toleranceMs;
     }
 
     /**

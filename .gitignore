@@ -41,3 +41,6 @@ logs/
 # qoder ignore
 .qoder
 .build-timestamp
+
+# harbor raft runtime data (log/snapshot/meta)
+harbor-data/

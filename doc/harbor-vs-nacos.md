@@ -32,6 +32,10 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | `WireHarborNodeTransport` | `DistroClientTransportAgent` | 节点间传输是一个可替换的 agent 薄层 |
 | wire 的 `Request.request` 一元 + bidi 推送 | `nacos_grpc_service.proto`：`service Request{rpc request(Payload) returns(Payload)}`、`service BiRequestStream{rpc requestBiStream(stream…) returns(stream…)}` | 注册中心 RPC 面只有这两种形态，见 §5 |
 | `conn_cleanup` 写入父通道属性 → 调用上下文 | `Connection.getMetaInfo().getConnectionId()` | 连接 ID 要能在每一次调用中被业务侧拿到 |
+| `RaftNode` / `RaftLog` / `RaftStorage` | JRaft `NodeImpl` / `LogManager` / `RaftMetaStorage`+`LogStorage`+`SnapshotStorage` | 自研最小 Raft，不引 SOFA JRaft；精读见 `doc/harbor-raft.md` |
+| `NamingStateMachine` / `NamingCommand` | Nacos `NacosStateMachine` / `WriteRequest`（ADD/DELETE/CHANGE） | CP 命令回放到内存索引；四种操作 REGISTER/DEREGISTER/HEALTH/NOOP |
+| `ClientSession.persistent(clientId)` | `IpPortBasedClient`（`isEphemeral()=false`） | 持久身份出生定死，与连接无关；clientId = `ip:port#persistent`（Nacos 为 `#false`，刻意偏离见 harbor-raft.md §7） |
+| `PersistentHealthProbe` + HEALTH 命令 | `HealthCheckTaskV2`+`TcpHealthCheckProcessor` + `PersistentHealthStatusSynchronizer` | 服务端主动 TCP 探活，翻转经 Raft 复制——healthy 是 CP 数据；harbor 收紧为 leader-only |
 
 ## 2. 同源决策：照做的机制与默认值出处
 
@@ -50,7 +54,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | 空闲保活 = `HealthCheckRequest`，触发条件是「闲置够久」而非固定定时器 | 默认 `connectionKeepAlive = 5000`（`DefaultGrpcClientConfig`）；`reconnectionSignal.poll(keepAlive)` 超时后比对 `lastActiveTimeStamp` 才发（`RpcClient`） | 5s 巡检 + 90s 连接静默判死（`HealthCheckScheduler`） |
 | HTTP/2 PING 只是「无应用层心跳时」的兜底 | `channelKeepAlive = 6*60*1000`（`DefaultGrpcClientConfig`，用于 `GrpcClient`） | 不依赖 PING 做活性判定，PING strike 语义归 core |
 | 只有 owner 才对外 advertise 对账数据 | `getVerifyData()` 内 `if (clientManager.isResponsibleClient(client))` 才入列（`DistroClientDataProcessor`） | `runVerifyTask` 只遍历 `allNativeClientSessions()`（`DistroProtocol`） |
-| 只有 ephemeral，不做持久实例 | 持久实例走 Raft CP（`consistency` 模块），naming v2 的 `ConnectionBasedClient.isEphemeral()` 恒 true；快照与对账构造时 `!client.isEphemeral()` 直接跳过（`DistroClientDataProcessor`） | 只实现 AP 线，见 §5 |
+| 持久实例走 CP，Distro 不碰它 | 持久实例走 Raft CP（`consistency` 模块），naming v2 的 `ConnectionBasedClient.isEphemeral()` 恒 true；快照与对账构造时 `!client.isEphemeral()` 直接跳过（`DistroClientDataProcessor`） | 已实现：自研 Raft（`RaftNode` + `NamingStateMachine`），Distro 同步/快照同样跳过持久 session；精读见 `doc/harbor-raft.md` |
 
 ## 2.5 节点内的两种拓扑角色：分片层与全集群层
 
@@ -63,6 +67,7 @@ harbor 刻意采用 Nacos 的概念名，使得「读完 harbor 再去读 Nacos�
 | `ServiceStorage.subscriberIndexes` | 分片 | `addSubscriber` | 订阅只在本地；副本永不进这里（§3.8 收回的就是这一条） |
 | `clientSessions` 的 **native** 部分 | **本体** | `register` | 既非备份也非分片：我这个 shard 的权威写侧就在这里发生 |
 | `clientSessions` 的 **synced** 部分 | 备份 | `putClientSession` | 别人 shard 的只读副本，供本地答路由查询 |
+| `clientSessions` 的 **persistent** 部分 | 全集群（CP 复制） | 仅 raft apply 线程（`registerPersistentInstance` 等） | 担保来自 Raft 多数派而非 owner 外推；无 `ConnectionRecord`，活性层结构性看不见它，健康由 leader 探测经 HEALTH 命令翻转 |
 | `ServiceStorage.publisherIndexes` | 全集群 | 本地注册 + 副本落地两处 | 任何节点都要能回答任意服务的查询 |
 | `ServiceStorage.serviceDataIndexes` | 全集群（派生缓存） | 随写路径失效重建 | 由全集群数据算出，自然也是全量域 |
 
@@ -217,7 +222,10 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 | `HarborDistroProtocolTest` / `HarborDistroClusterTest` | verify 不一致 → owner 定向重推的修复方向 |
 | `ClusterFilterSemanticsTest` | `cluster` 白名单与 `healthyOnly` 是**读投影**而非装饰：query 与订阅响应丢 disabled、推送保留 disabled（让订阅者知道自己那台退了服务）；`clusterName` 要能穿过注册与投影往返 |
 | `ServiceListPagingSemanticsTest` | `pageNo/pageSize` 真分页（1-based、越界回空、尾页截断），而 `count` 是整个匹配集大小——页不满不等于还有下一页 |
-| `CapabilityBoundaryTest` | 范围外的请求要读成「能力边界」而不是「handler 丢了」：`PersistentInstanceRequest`/fuzzy watch 走显式不支持，未知 token 仍报 unknown；持久实例在 client 侧与 server 侧都先拒后写，拒了就不留任何状态 |
+| `CapabilityBoundaryTest` | 范围外的请求要读成「能力边界」而不是「handler 丢了」：fuzzy watch 走显式不支持，未知 token 仍报 unknown；持久实例的边界已迁移——`PersistentInstanceRequest` 走 CP 提交成功、持久注册活过发送它的连接，而 `InstanceRequest` 带 `ephemeral=false` 仍先拒后写（那会静默降级成连接所有物） |
+| `raft/RaftLogTest` / `raft/RaftStorageTest` | Log Matching（冲突截断/幂等重发/快照边界）与持久化时序（term/vote 重开存活、撕裂尾行丢弃、快照往返） |
+| `raft/RaftNodeTest` | 算法本体（内存 transport）：单节点立即自选、三节点单 leader 全复制、leader 死亡重选、分区 leader 不能独自 commit 且愈合后 stepDown、落后 follower 经 InstallSnapshot 追上 |
+| `HarborPersistentInstanceTest` / `HarborPersistentClusterTest` | CP 端到端：注册/注销走日志、混用双向拒、同 dataDir 重启恢复、探测翻转健康；3 节点真 wire 的 follower 转发复制与 leader failover（精读见 `doc/harbor-raft.md`） |
 | `ClusterGuardSemanticsTest` | 单端口下集群面只认成员地址（§5）：三个 Distro 入口对非成员来源一律拒，且**断言拒因文本而非只断言失败**（无守卫时畸形 body 也会回 `success=false`，只看标志会为错误的理由变绿）；同一来源在命名面必须照旧放行——只挡集群面才叫守卫，全挡就成了防火墙 |
 | `HandshakeSemanticsTest` | 原生 client 建连必须先做 `ServerCheckRequest` 一元握手：黑盒测不出它被跳过（bidi 的 setup 用同一个 per-TCP id 顺带就把连接注册了），所以钉在 `HarborServer.answeredServerChecks()` 这个计数上——新鲜节点从 0 到 1 |
 | `ConfigBroadcastClusterTest` | 配置广播是节点本地推送 + 集群转发：A 触发一次，挂 B 的客户端必须收到且**恰好一次**（对端只本地推不回转，防环）；删除广播同样转发。转发带正文——与 nacos 的元数据门铃不同，harbor 演示广播没有共享权威可读回 |
@@ -229,8 +237,8 @@ Nacos 的推送是「变更驱动」的：`PushDelayTaskExecuteEngine` 只在服
 
 ## 5. 已知边界（不是偏离，是尚未做）
 
-- **AP 线之外的东西一概不做，但一律响亮拒绝**：持久实例（要 CP/Raft 存储＋服务端主动探活＋活过连接的生命周期）、3.0 才有的模糊订阅（要 pattern→services 索引＋另一套订阅者身份与对账）、配置中心与鉴权/console/k8s-sync 都不在 harbor 范围内（产品面，研读优先级低于机制层）。成本参照：Nacos 的 `consistency/persistent` ＋ `healthcheck` 两处约 3.6k 行，再加 `PersistentClientOperationServiceImpl` 559 行——这不是补一个 DTO，是往「AP ＋ 连接即活性」里塞第二套一致性档位与第二个健康权威。
-  边界必须可听见：`HarborProtocol.UNSUPPORTED_REQUEST_TYPES` 里的已知类型回「not supported ＋ 一句范围说明」，未知 token 才回 unknown，日志与客户端异常据此能分清「不支持」和「我们漏了」。**自家 client 更严**：`ephemeral=false` 在 `HarborClient` 直接抛 `IllegalArgumentException`，服务端也拒带 `ephemeral=false` 的 `InstanceRequest`——Nacos 服务端只按请求类型分流、并不查这个字段，但 nacos-client 永远不会这么发，所以严格化不破兼容；否则它就是静默把持久实例降级成连接所有物，正是持久实例定义里不允许的那件事。
+- **持久实例已走 CP（自研 Raft），但只开一个入口**：`ephemeral=false` 必须经独立的 `PersistentInstanceRequest` 提交 Raft（`RaftNode` + `NamingStateMachine`，数据存内存 + 本地日志/快照，无外部 DB）；`InstanceRequest` 携带 `ephemeral=false` 依旧响亮拒绝（Nacos 服务端只按请求类型分流、并不查这个字段，但 nacos-client 永远不会这么发，严格化不破兼容），batch 仍仅限 ephemeral。混用双向拒绝：同一服务不得同时有 ephemeral 与 persistent publisher（与 Nacos 两个 OperationService 的互斥同构）。设计精读、与 JRaft 的逐段对照及刻意偏离清单见 `doc/harbor-raft.md`。**范围外仍一概不做且响亮拒绝**：3.0 才有的模糊订阅（要 pattern→services 索引＋另一套订阅者身份与对账）、配置中心与鉴权/console/k8s-sync 都不在 harbor 范围内（产品面，研读优先级低于机制层）。
+  边界必须可听见：`HarborProtocol.UNSUPPORTED_REQUEST_TYPES` 里的已知类型回「not supported ＋ 一句范围说明」，未知 token 才回 unknown，日志与客户端异常据此能分清「不支持」和「我们漏了」。
 - **命名面与集群面共用一个端口，靠来源地址守卫分开**：Nacos 服务端把两者拆成两个 `RpcServer` bean（SDK 面与 cluster 面各占一个端口，默认 9848 / 9849），先用端口把内外流量切开，鉴权只是 SDK 那一侧的事——第一道防线是网络边界。harbor 单端口，两种流量只由请求类型区分，于是**任何能连上该端口的进程都能发 `DistroSyncRequest` 改写服务视图、或发 `DistroSnapshotRequest` 读走全量**（这不是推测：加守卫前实测 `{"content":"W10=","success":true}`，非成员确实拉到了快照）。现按成员白名单拒：`HarborServer.refuseUnlessClusterMember()` 在三个 Distro 入口**解析 body 之前**判 `CONNECTION_PEER`（§3.7）是否命中 `ClusterManager.isMemberHost()`，不命中回显式错误并 WARN。不拆双端口是有意的——那要拿轻量去换 harbor 用不上的性质（同 §3.9 的判断）。粒度的账要算清：一，只按 **host** 匹配，不按 host:port，因为成员地址里的端口是它**监听**的端口，而它的连接带着随机源端口而来；二，同机多节点（含全部测试）彼此源地址都是 loopback，守卫在那种拓扑下不设防，这是 IP 级白名单的固有边界；三，host 按 `clusterMembers` 里写的**字面量**比对，用主机名登记就只信任呈现同一主机名的来源——要拿它挡流量就登记地址。
 - **节点间全是一元**：与 Nacos 同形——Nacos 注册中心自己的 gRPC 服务面只有 unary `request` + 一条 bidi 连接流（`nacos_grpc_service.proto`），仓库里带 streaming 的只有 vendored 的 Istio/MCP proto（`mcp.proto`），在 `istio/src/main/java` 里没有任何 `rpc` 实现引用；连 jraft-core 的 `installSnapshot` 都是分块多请求而非 gRPC 流。规模化风险点在启动快照——万级 client 时单包 JSON + 5s 一元超时会痛，届时 client-stream 是自然形态，属「用对原语超越 Nacos」而非补角。
 - **批注册的形状 = 整集合替换（已改，此前是偏离）**：`BatchInstanceRedoData extends InstanceRedoData`（与 Nacos 同形），重放按表项自己的形状决定发单个还是发批。关键事实：Nacos 的批量注销 `batchDeregisterService` **不是新请求**，而是**取本地余集、再整体 `batchRegister` 回去**（`getRetainInstance` → `batchRegisterService`）——因为它的**服务端把批注册当成「替换该 client 在该服务上的整个实例集」**，这也解释了 `NamingRemoteConstants` 只有 `BATCH_REGISTER_INSTANCE`、没有批注销常量，以及 `BatchInstanceRequestHandler` 的 switch 只认批注册。harbor 服务端原先是**累加式**（只把批内实例逐个 `registerInstance`、不删批外的旧实例），于是真 nacos-client 的批量注销会**静默失效**：小批只是把幸存者又加一遍、被删的那条仍留在表里——不兼容。现已改成与 Nacos 一致的**整集合替换**：`HarborServer.handleBatchInstanceRequest` → `ServiceStorage.batchReconcile`，登记/刷新批内实例、注销**本连接**先前持有但不在批内的实例，**空批即清空**（不再当 "Missing instances" 拒）。harbor 客户端 `batchDeregisterInstance` 同步对齐 Nacos：从现有 `BatchInstanceRedoData` 算余集、只发**一条** `sendBatchRegisterRequest(retain)`；且**先把 redo 表项改写成余集再发请求**（对应 Nacos 在其 redo 锁内 `cacheInstanceForRedo`→`doBatchRegisterService` 的顺序），这样丢响应时下次重放收敛、不会复活被删项。与 Nacos 同规：批只能从批收缩，非批表项直接拒（不做静默转换）。**同一性按 ip+port 判**（对齐 `ServiceStorage.deregisterInstance` 与 Nacos `getRetainInstance` 的 compareIpAndPort），此前那条按 ip+port+cluster 的 `sameInstance` 已随之删除。兼容性由 `HarborClientTest` 里三例**真 nacos-client 驱动**反向互证（部分注销、全量清空、native 写→nacos 读），并以 mutation（把 `batchReconcile` 的注销步置空）验过非假绿。
@@ -342,6 +350,7 @@ NamingGrpcClientProxy.doRegisterService
 | 客户端方法 | 发（metadata.type） | JSON body 里的 type | 期望响应 |
 |---|---|---|---|
 | `doRegisterService` | `InstanceRequest` | `registerInstance` | `InstanceResponse` / `Response` |
+| `doRegisterService`（`ephemeral=false` 且服务端声明能力） | `PersistentInstanceRequest` | `registerInstance` | `InstanceResponse`；能力开关见 §8.7，harbor 经 Raft CP 提交（`doc/harbor-raft.md`） |
 | `doDeregisterService` | `InstanceRequest` | `deregisterInstance` | `Response` |
 | `doBatchRegisterService` | `BatchInstanceRequest` | `batchRegisterInstance` | `BatchInstanceResponse` |
 | `doSubscribe` | `SubscribeServiceRequest`（subscribe=true） | — | `SubscribeServiceResponse`（带 ServiceInfo） |
@@ -374,7 +383,7 @@ v2 的 gRPC 路径**没有 `BeatReactor` / 心跳包**：临时实例的存活**
 - **包名 `gprc` 拼写反了，但只在 naming 客户端包**（`client/.../naming/remote/gprc/`）；传输层是 `common/.../remote/client/grpc/`（正常拼写）。别一律按 `gprc` 搜。
 - **DTO 不在 `api/.../naming/remote/gprc/`**：命名请求/响应在 `api/.../naming/remote/request/` 与 `.../response/`；连接层 DTO（`ServerCheckRequest` / `ConnectionSetupRequest` / `SetupAckRequest` / `ConnectResetRequest` / `HealthCheckRequest` / `ClientDetectionRequest`）在 `api/.../remote/request/`。
 - `metadata.type` 是**类简名**，别按动作名找分派入口。
-- 客户端对 SetupAck 是「可选」的（不协商就 sleep 通过）；但 harbor 当前**总是回 `SetupAckRequest`**——更保守，兼容带能力协商的新客户端。
+- 客户端对 SetupAck 是「可选」的（不协商就 sleep 通过）；但 harbor 当前**总是回 `SetupAckRequest`**，且 `abilityTable` 声明 `supportPersistentInstanceByGrpc=true`——真 nacos-client 据此把 `ephemeral=false` 的注册切到 gRPC `PersistentInstanceRequest`（对应 `AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC`），不再降级 HTTP v1。
 
 ### 8.8 与主体的对应关系
 

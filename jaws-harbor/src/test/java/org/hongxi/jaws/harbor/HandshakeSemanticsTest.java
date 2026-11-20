@@ -63,7 +63,9 @@ class HandshakeSemanticsTest {
         try (ServerSocket socket = new ServerSocket(0)) {
             port = socket.getLocalPort();
         }
-        server = new HarborServer(new URL("harbor", "0.0.0.0", port, ""));
+        URL url = new URL("harbor", "0.0.0.0", port, "");
+        url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
+        server = new HarborServer(url);
         server.start();
         awaitListening(port);
     }

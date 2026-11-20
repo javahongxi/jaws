@@ -4,7 +4,9 @@ package org.hongxi.jaws.harbor.model;
  * Base class for all Nacos-compatible response objects.
  * <p>
  * Every response carries {@code resultCode} and {@code success}
- * so that nacos-client can determine whether the call succeeded.
+ * so that nacos-client can determine whether the call succeeded; a refusal
+ * additionally carries {@code message}, the human-readable reason the server
+ * put in its error body (the Nacos {@code ErrorResponse} shape).
  *
  * @author shenhongxi
  */
@@ -12,6 +14,7 @@ public class Response {
 
     private int resultCode;
     private boolean success;
+    private String message;
 
     public Response() {
     }
@@ -43,5 +46,13 @@ public class Response {
 
     public void setSuccess(boolean success) {
         this.success = success;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
     }
 }

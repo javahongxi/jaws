@@ -42,6 +42,8 @@
         <module>jaws-sample-harbor-consumer</module>
         <module>jaws-sample-harborx-provider</module>
         <module>jaws-sample-harborx-consumer</module>
+        <module>jaws-sample-raft-provider</module>
+        <module>jaws-sample-raft-consumer</module>
     </modules>
 
     <properties>

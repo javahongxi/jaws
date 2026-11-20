@@ -54,7 +54,6 @@ public final class HarborProtocol {
      * out exactly as {@link #CONFIG_LISTEN_REQUEST} has to be.
      */
     public static final Set<String> UNSUPPORTED_REQUEST_TYPES = Set.of(
-            "PersistentInstanceRequest",
             "NamingFuzzyWatchRequest", "NamingFuzzyWatchSyncRequest",
             "NamingFuzzyWatchChangeNotifyRequest",
             "ConfigPublishRequest", "ConfigQueryRequest", "ConfigDeleteRequest",
@@ -62,8 +61,8 @@ public final class HarborProtocol {
 
     /** The reason behind every refusal, so client and log read the same sentence. */
     public static final String UNSUPPORTED_BOUNDARY =
-            "harbor is an ephemeral-instance naming registry only: no persistent "
-                    + "instances (which need a CP store and server-side probing), "
+            "harbor serves persistent instances only through PersistentInstanceRequest "
+                    + "(CP/Raft): no persistent instances inside InstanceRequest or batches, "
                     + "no fuzzy watch, no config center";
 
     /**

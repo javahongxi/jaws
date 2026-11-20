@@ -59,8 +59,9 @@ class ConnectResetSemanticsTest {
     private static HarborServer startServer() throws Exception {
         RuntimeException last = null;
         for (int attempt = 0; attempt < 3; attempt++) {
-            HarborServer server =
-                    new HarborServer(new URL("harbor", "0.0.0.0", freePort(), ""));
+            URL url = new URL("harbor", "0.0.0.0", freePort(), "");
+            url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
+            HarborServer server = new HarborServer(url);
             try {
                 server.start();
                 return server;

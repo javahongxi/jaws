@@ -154,6 +154,11 @@ public class DistroProtocol {
         if (data == null) {
             return;
         }
+        ClientSession session = connectionManager.getClientSession(connectionId);
+        if (session != null && session.isPersistent()) {
+            // Persistent clients replicate through Raft, never through Distro.
+            return;
+        }
         if (hasContent(data)) {
             syncChange(connectionId, OP_CHANGE, JSON.toJSONBytes(data));
         } else {
@@ -291,6 +296,10 @@ public class DistroProtocol {
         try {
             List<ClientSyncData> allClientData = new ArrayList<>();
             for (ClientSession session : connectionManager.allClientSessions()) {
+                if (session.isPersistent()) {
+                    // CP data travels in the raft snapshot, not the AP one.
+                    continue;
+                }
                 ClientSyncData data = serviceStorage.buildClientSyncData(session.getConnectionId());
                 if (data != null && hasContent(data)) {
                     allClientData.add(data);

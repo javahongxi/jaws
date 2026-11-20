@@ -16,6 +16,14 @@ import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.harbor.model.request.*;
 import org.hongxi.jaws.harbor.model.response.*;
+import org.hongxi.jaws.harbor.raft.HarborRaftProtocol;
+import org.hongxi.jaws.harbor.raft.NamingCommand;
+import org.hongxi.jaws.harbor.raft.NamingStateMachine;
+import org.hongxi.jaws.harbor.raft.PersistentHealthProbe;
+import org.hongxi.jaws.harbor.raft.RaftNode;
+import org.hongxi.jaws.harbor.raft.RaftOptions;
+import org.hongxi.jaws.harbor.raft.RaftTransport;
+import org.hongxi.jaws.harbor.raft.WireRaftTransport;
 import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
@@ -30,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -71,6 +80,22 @@ public class HarborServer {
      */
     public static final String PARAM_CLUSTER_MEMBERS = "clusterMembers";
 
+    /**
+     * URL parameter for the Raft durability directory (log/snapshot/meta files).
+     * Each node keeps its own {@code raft-<port>} subdirectory under it, so several
+     * nodes on one host never share files. Defaults to {@link #DEFAULT_DATA_DIR}.
+     */
+    public static final String PARAM_DATA_DIR = "dataDir";
+
+    /**
+     * Default durability directory when {@link #PARAM_DATA_DIR} is unset: a fixed
+     * spot under the user home, so data survives restarts regardless of the
+     * process's working directory (an IDE run would otherwise scatter relative
+     * {@code harbor-data} dirs across module folders).
+     */
+    public static final String DEFAULT_DATA_DIR =
+            Path.of(System.getProperty("user.home"), ".harbor", "data").toString();
+
     /** The URL this server was built from; its parameters are the config surface. */
     private final URL url;
     /** Peers parsed once from {@link #PARAM_CLUSTER_MEMBERS}, joined at {@link #start()}. */
@@ -80,6 +105,10 @@ public class HarborServer {
     private final ConnectionManager connectionManager;
     private final ClusterManager clusterManager;
     private final DistroProtocol distroProtocol;
+    private final RaftTransport raftTransport;
+    private final RaftNode raftNode;
+    private final HarborRaftProtocol raftProtocol;
+    private final PersistentHealthProbe persistentHealthProbe;
     private final ConnectionCleanup connectionCleanup;
     private final HealthCheckScheduler healthCheckScheduler;
     private final PushDelayTaskEngine pushEngine;
@@ -108,10 +137,14 @@ public class HarborServer {
     private HarborHttpApi httpApi;
 
     public HarborServer(URL url) {
-        this(url, new WireHarborNodeTransport());
+        this(url, new WireHarborNodeTransport(), new WireRaftTransport());
     }
 
     public HarborServer(URL url, HarborNodeTransport transport) {
+        this(url, transport, new WireRaftTransport());
+    }
+
+    public HarborServer(URL url, HarborNodeTransport transport, RaftTransport raftTransport) {
         this.url = url;
         this.cluster = ClusterSpec.fromServerAddr(url.getParameter(PARAM_CLUSTER_MEMBERS));
         this.connectionManager = new ConnectionManager();
@@ -126,6 +159,18 @@ public class HarborServer {
         this.clusterManager = new ClusterManager(url);
         this.distroProtocol = new DistroProtocol(
                 clusterManager, transport, serviceStorage, connectionManager);
+
+        // CP face: persistent instances replicate through a self-contained Raft
+        // group over the same peer set Distro uses. Data lives in memory plus the
+        // log/snapshot files under dataDir — no external database, like Nacos's
+        // JRaft deployment.
+        this.raftTransport = raftTransport;
+        String dataDir = url.getParameter(PARAM_DATA_DIR);
+        Path raftDir = Path.of(dataDir != null ? dataDir : DEFAULT_DATA_DIR, "raft-" + url.getPort());
+        this.raftNode = new RaftNode(clusterManager.getSelfAddress(), clusterManager,
+                raftTransport, new NamingStateMachine(serviceStorage), raftDir, raftOptions(url));
+        this.raftProtocol = new HarborRaftProtocol(raftNode, raftTransport);
+        this.persistentHealthProbe = new PersistentHealthProbe(serviceStorage, raftProtocol, raftNode);
 
         // The single connection-closure transaction, shared by the three
         // closure signals: DisconnectionHandler (channelInactive), the
@@ -178,10 +223,27 @@ public class HarborServer {
         return url.getPort();
     }
 
+    /** Raft timing knobs, overridable per node so tests can shrink elections. */
+    private static RaftOptions raftOptions(URL url) {
+        RaftOptions defaults = RaftOptions.defaults();
+        return new RaftOptions(
+                longParam(url, "raftElectionTimeoutMinMs", defaults.electionTimeoutMinMs()),
+                longParam(url, "raftElectionTimeoutMaxMs", defaults.electionTimeoutMaxMs()),
+                longParam(url, "raftHeartbeatMs", defaults.heartbeatMs()),
+                (int) longParam(url, "raftSnapshotThreshold", defaults.snapshotThreshold()));
+    }
+
+    private static long longParam(URL url, String name, long defaultValue) {
+        String value = url.getParameter(name);
+        return value != null ? Long.parseLong(value) : defaultValue;
+    }
+
     public void start() {
         joinCluster();
         wireServer.open();
         distroProtocol.start();
+        raftNode.start();
+        persistentHealthProbe.start();
         healthCheckScheduler.start();
         startHttpApi();
 
@@ -224,6 +286,9 @@ public class HarborServer {
         // engine or a distro protocol closed underneath them throws back into a
         // Netty worker thread (observed as RejectedExecutionException on close).
         wireServer.close();
+        persistentHealthProbe.shutdown();
+        raftNode.shutdown();
+        raftTransport.shutdown();
         healthCheckScheduler.shutdown();
         distroProtocol.shutdown();
         pushEngine.shutdown();
@@ -249,6 +314,15 @@ public class HarborServer {
 
     public DistroProtocol getDistroProtocol() {
         return distroProtocol;
+    }
+
+    public HarborRaftProtocol getRaftProtocol() {
+        return raftProtocol;
+    }
+
+    /** The Raft durability directory this node writes its log/snapshot/meta into. */
+    public Path getRaftDataDir() {
+        return raftNode.dataDir();
     }
 
     /**
@@ -370,6 +444,8 @@ public class HarborServer {
                 (payload, clientIp, context) -> handleServerCheck(clientIp,
                         connectionIdOf(context)));
         handlers.put(HarborProtocol.typeToken(InstanceRequest.class), this::handleInstanceRequest);
+        handlers.put(HarborProtocol.typeToken(PersistentInstanceRequest.class),
+                this::handlePersistentInstanceRequest);
         handlers.put(HarborProtocol.typeToken(BatchInstanceRequest.class),
                 this::handleBatchInstanceRequest);
         handlers.put(HarborProtocol.typeToken(SubscribeServiceRequest.class), this::handleSubscribe);
@@ -387,6 +463,14 @@ public class HarborServer {
                 (payload, clientIp, context) -> handleDistroSnapshot(context));
         handlers.put(HarborProtocol.typeToken(ConfigBroadcastSyncRequest.class),
                 (payload, clientIp, context) -> handleConfigBroadcastSync(payload, context));
+        handlers.put(HarborProtocol.typeToken(RaftVoteRequest.class),
+                (payload, clientIp, context) -> handleRaftVote(payload, context));
+        handlers.put(HarborProtocol.typeToken(RaftAppendRequest.class),
+                (payload, clientIp, context) -> handleRaftAppend(payload, context));
+        handlers.put(HarborProtocol.typeToken(RaftInstallSnapshotRequest.class),
+                (payload, clientIp, context) -> handleRaftInstallSnapshot(payload, context));
+        handlers.put(HarborProtocol.typeToken(RaftWriteForwardRequest.class),
+                (payload, clientIp, context) -> handleRaftWriteForward(payload, context));
         // Config center is out of scope for a naming registry; answer silently
         // so that nacos-client does not keep retrying the listen.
         handlers.put(HarborProtocol.CONFIG_LISTEN_REQUEST,
@@ -520,7 +604,11 @@ public class HarborServer {
                         // payload to Request, NOT Response. Sending a Response subclass
                         // causes ClassCastException → onError → switchServerAsync →
                         // infinite reconnection loop (~10s cycle).
-                        Payload setupAck = HarborProtocol.encodePush(new SetupAckRequest(Map.of()));
+                        // Capability negotiation: persistent instances are served over
+                        // their own request type, exactly the ability Nacos advertises
+                        // under AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC.
+                        Payload setupAck = HarborProtocol.encodePush(new SetupAckRequest(
+                                Map.of("supportPersistentInstanceByGrpc", true)));
                         log.debug("[harbor] sending SetupAckRequest to connId={}, clientIp={}",
                                 connectionId, ip);
                         pushSubject.onNext(setupAck);
@@ -611,12 +699,12 @@ public class HarborServer {
             return instanceError("Missing instance");
         }
         if (!instance.isEphemeral()) {
-            // Nacos sends a persistent instance over its own request type. One that
-            // arrives inside an InstanceRequest must not be served as ephemeral: it
-            // would ride the connection-liveness model and vanish on disconnect,
-            // which is precisely what persistent means it must not do.
-            return instanceError("ephemeral=false is not supported: "
-                    + HarborProtocol.UNSUPPORTED_BOUNDARY);
+            // A persistent instance must ride its own request type and the CP log.
+            // Served as ephemeral it would ride the connection-liveness model and
+            // vanish on disconnect, which is precisely what persistent means it
+            // must not do.
+            return instanceError("ephemeral=false is not supported inside InstanceRequest: "
+                    + "send a PersistentInstanceRequest instead (replicated via Raft)");
         }
 
         // Set default instanceId if not provided
@@ -655,6 +743,61 @@ public class HarborServer {
                 HarborProtocol.typeToken(InstanceResponse.class), message);
     }
 
+    /**
+     * The CP write entrance — Nacos's {@code PersistentInstanceRequestHandler}
+     * shape: the client key is the stable {@code ip:port#persistent} (no
+     * connection UUID), and the verb becomes a {@link NamingCommand} committed
+     * through Raft before the reply goes out. Any node may receive it; a
+     * non-leader relays to the leader inside {@link HarborRaftProtocol#write}.
+     */
+    private Payload handlePersistentInstanceRequest(Payload payload, String clientIp,
+                                                    WireCallContext context) {
+        PersistentInstanceRequest request =
+                HarborProtocol.parseBody(payload, PersistentInstanceRequest.class);
+        Instance instance = request.getInstance();
+        if (instance == null) {
+            return instanceError("Missing instance");
+        }
+        String type = request.getType();
+        if (!HarborProtocol.REGISTER_INSTANCE.equals(type)
+                && !HarborProtocol.DEREGISTER_INSTANCE.equals(type)) {
+            return instanceError("Unknown instance operation type: " + type);
+        }
+        String namespace = request.getNamespace();
+        String groupName = request.getGroupName();
+        String serviceName = request.getServiceName();
+        instance.setEphemeral(false);
+        if (instance.getInstanceId() == null || instance.getInstanceId().isEmpty()) {
+            instance.setInstanceId(instance.getIp() + "#" + instance.getPort()
+                    + "#" + groupName + "@@" + serviceName);
+        }
+        // Fast pre-check so a mixed registration fails with a clear message; the
+        // apply path re-checks deterministically, which is what keeps nodes agreed.
+        ServiceKey key = ServiceKey.of(namespace, groupName, serviceName);
+        if (HarborProtocol.REGISTER_INSTANCE.equals(type)
+                && serviceStorage.hasEphemeralPublishers(key)) {
+            return instanceError("service " + key
+                    + " already has ephemeral publishers; mixing is not allowed");
+        }
+        String clientId = instance.getIp() + ":" + instance.getPort() + "#persistent";
+        NamingCommand command;
+        if (HarborProtocol.REGISTER_INSTANCE.equals(type)) {
+            command = NamingCommand.register(namespace, groupName, serviceName, clientId, instance);
+        } else {
+            command = NamingCommand.deregister(namespace, groupName, serviceName, clientId, instance);
+        }
+        try {
+            raftProtocol.write(command);
+        } catch (Exception e) {
+            return instanceError(e.getMessage());
+        }
+        InstanceResponse response = new InstanceResponse();
+        response.setResultCode(200);
+        response.setSuccess(true);
+        response.setType(type);
+        return HarborProtocol.encodeResponse(response, clientIp);
+    }
+
     private Payload handleBatchInstanceRequest(Payload payload, String clientIp,
                                                WireCallContext context) {
         String connectionId = connectionIdOf(context);
@@ -675,8 +818,8 @@ public class HarborServer {
             if (!each.isEphemeral()) {
                 return HarborProtocol.encodeError(
                         HarborProtocol.typeToken(BatchInstanceResponse.class),
-                        "ephemeral=false is not supported: "
-                                + HarborProtocol.UNSUPPORTED_BOUNDARY);
+                        "ephemeral=false is not supported in a batch: send a "
+                                + "PersistentInstanceRequest per instance (replicated via Raft)");
             }
         }
 
@@ -903,6 +1046,66 @@ public class HarborServer {
         response.setResultCode(200);
         response.setSuccess(true);
         return HarborProtocol.encodeResponse(response);
+    }
+
+    // ========================================================================
+    // Raft inter-node handlers
+    // ========================================================================
+
+    private Payload handleRaftVote(Payload payload, WireCallContext context) {
+        Payload refusal = refuseUnlessClusterMember(RaftVoteRequest.class, context);
+        if (refusal != null) {
+            return refusal;
+        }
+        RaftVoteRequest request = HarborProtocol.parseBody(payload, RaftVoteRequest.class);
+        return awaitRaftReply(raftNode.handleVoteRequest(request), RaftVoteResponse.class);
+    }
+
+    private Payload handleRaftAppend(Payload payload, WireCallContext context) {
+        Payload refusal = refuseUnlessClusterMember(RaftAppendRequest.class, context);
+        if (refusal != null) {
+            return refusal;
+        }
+        RaftAppendRequest request = HarborProtocol.parseBody(payload, RaftAppendRequest.class);
+        return awaitRaftReply(raftNode.handleAppendRequest(request), RaftAppendResponse.class);
+    }
+
+    private Payload handleRaftInstallSnapshot(Payload payload, WireCallContext context) {
+        Payload refusal = refuseUnlessClusterMember(RaftInstallSnapshotRequest.class, context);
+        if (refusal != null) {
+            return refusal;
+        }
+        RaftInstallSnapshotRequest request =
+                HarborProtocol.parseBody(payload, RaftInstallSnapshotRequest.class);
+        return awaitRaftReply(raftNode.handleInstallSnapshot(request), RaftInstallSnapshotResponse.class);
+    }
+
+    private Payload handleRaftWriteForward(Payload payload, WireCallContext context) {
+        Payload refusal = refuseUnlessClusterMember(RaftWriteForwardRequest.class, context);
+        if (refusal != null) {
+            return refusal;
+        }
+        RaftWriteForwardRequest request =
+                HarborProtocol.parseBody(payload, RaftWriteForwardRequest.class);
+        return HarborProtocol.encodeResponse(raftProtocol.onForwardWrite(request));
+    }
+
+    /**
+     * Bridge the raft thread's async reply onto this synchronous handler: the
+     * wait is bounded, and a node mid-shutdown answers an error the peer treats
+     * as a lost packet rather than hanging the caller's IO thread.
+     */
+    private Payload awaitRaftReply(CompletableFuture<? extends org.hongxi.jaws.harbor.model.Response> reply,
+                                   Class<?> responseType) {
+        try {
+            return HarborProtocol.encodeResponse(reply.get(5, TimeUnit.SECONDS));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return HarborProtocol.encodeError(HarborProtocol.typeToken(responseType), "interrupted");
+        } catch (Exception e) {
+            return HarborProtocol.encodeError(HarborProtocol.typeToken(responseType),
+                    "raft node unavailable: " + e.getMessage());
+        }
     }
 
     // ========================================================================

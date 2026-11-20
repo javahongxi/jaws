@@ -20,6 +20,10 @@ import org.hongxi.jaws.rpc.URL;
  *
  *   Or via system property:
  *     java -Dharbor.clusterMembers=10.0.0.2:19848,10.0.0.3:19848 ...HarborBootstrap 19848
+ *
+ *   Raft durability directory for persistent instances
+ *   (default ~/.harbor/data, each node under raft-<port>):
+ *     java ...HarborBootstrap 19848 --data-dir /var/harbor
  * </pre>
  *
  * @author shenhongxi
@@ -31,11 +35,14 @@ public class HarborBootstrap {
     public static void main(String[] args) {
         int port = DEFAULT_PORT;
         String clusterMembers = System.getProperty("harbor.clusterMembers", "");
+        String dataDir = System.getProperty("harbor.dataDir", "");
 
-        // Parse args: [port] [--cluster host1:port1,host2:port2]
+        // Parse args: [port] [--cluster host1:port1,host2:port2] [--data-dir path]
         for (int i = 0; i < args.length; i++) {
             if ("--cluster".equals(args[i]) && i + 1 < args.length) {
                 clusterMembers = args[++i];
+            } else if ("--data-dir".equals(args[i]) && i + 1 < args.length) {
+                dataDir = args[++i];
             } else if (i == 0) {
                 port = Integer.parseInt(args[0]);
             }
@@ -44,6 +51,9 @@ public class HarborBootstrap {
         URL url = new URL("harbor", "0.0.0.0", port, "");
         if (!clusterMembers.isEmpty()) {
             url.addParameter(HarborServer.PARAM_CLUSTER_MEMBERS, clusterMembers);
+        }
+        if (!dataDir.isEmpty()) {
+            url.addParameter(HarborServer.PARAM_DATA_DIR, dataDir);
         }
 
         HarborServer server = new HarborServer(url);
@@ -57,6 +67,7 @@ public class HarborBootstrap {
             System.out.println("  Single-node mode (no cluster peers)");
         }
         System.out.println("  Nacos-compatible gRPC registry");
+        System.out.println("  Raft data dir: " + server.getRaftDataDir());
         System.out.println("  Management API: http://localhost:" + (port + 10) + "/api/*");
         System.out.println("========================================");
     }

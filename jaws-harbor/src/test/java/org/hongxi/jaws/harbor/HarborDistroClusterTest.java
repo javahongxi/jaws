@@ -254,6 +254,7 @@ class HarborDistroClusterTest {
 
     private static HarborServer createNode(String host, int port, InMemoryTransport transport) {
         URL url = new URL("harbor", host, port, "");
+        url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
         return new HarborServer(url, transport);
     }
 

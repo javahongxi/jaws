@@ -10,6 +10,7 @@ import org.hongxi.jaws.harbor.model.request.BatchInstanceRequest;
 import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
 import org.hongxi.jaws.harbor.model.request.InstanceRequest;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
+import org.hongxi.jaws.harbor.model.request.PersistentInstanceRequest;
 import org.hongxi.jaws.harbor.model.request.ServiceListRequest;
 import org.hongxi.jaws.harbor.model.request.ServiceQueryRequest;
 import org.hongxi.jaws.harbor.model.request.SubscribeServiceRequest;
@@ -116,7 +117,6 @@ public class HarborClient implements Closeable {
 
     public void registerInstance(String serviceName, String groupName, Instance instance) {
         ServiceKey key = keyOf(serviceName, groupName);
-        requireEphemeral(key, instance);
         // Cached before the call, with intent set: a reconnect that follows a lost
         // reply must still replay what the caller asked for. Re-registering the
         // same service replaces the payload, so the replay sends the newest value.
@@ -134,7 +134,6 @@ public class HarborClient implements Closeable {
 
     public void deregisterInstance(String serviceName, String groupName, Instance instance) {
         ServiceKey key = keyOf(serviceName, groupName);
-        requireEphemeral(key, instance);
         InstanceRedoData entry = registrations.get(key);
         if (entry == null) {
             // Nothing was owed to the registry here; send anyway so a caller that
@@ -151,14 +150,31 @@ public class HarborClient implements Closeable {
         // collects it, exactly as Nacos defers collection to its RedoScheduledTask.
     }
 
+    /**
+     * The ephemeral/persistent fork, mirroring Nacos's {@code NamingClientProxyDelegate}:
+     * a persistent instance rides its own request type into the CP log, an ephemeral
+     * one rides the connection-bound path. The redo replay funnels through here too,
+     * so a reconnect re-registers either kind with the right verb — and a persistent
+     * re-registration is an idempotent replace, not a duplicate.
+     */
     private void sendInstanceRequest(ServiceKey key, Instance instance, String operation) {
-        InstanceRequest request = new InstanceRequest();
-        request.setNamespace(key.namespace());
-        request.setGroupName(key.group());
-        request.setServiceName(key.name());
-        request.setType(operation);
-        request.setInstance(instance);
-        connection.call(request, InstanceResponse.class);
+        if (instance.isEphemeral()) {
+            InstanceRequest request = new InstanceRequest();
+            request.setNamespace(key.namespace());
+            request.setGroupName(key.group());
+            request.setServiceName(key.name());
+            request.setType(operation);
+            request.setInstance(instance);
+            connection.call(request, InstanceResponse.class);
+        } else {
+            PersistentInstanceRequest request = new PersistentInstanceRequest();
+            request.setNamespace(key.namespace());
+            request.setGroupName(key.group());
+            request.setServiceName(key.name());
+            request.setType(operation);
+            request.setInstance(instance);
+            connection.call(request, InstanceResponse.class);
+        }
     }
 
     /**
@@ -642,10 +658,12 @@ public class HarborClient implements Closeable {
         }
     }
 
+    /** Batches stay ephemeral-only: the CP path has no batch verb, one request per instance. */
     private static void requireEphemeral(ServiceKey key, Instance instance) {
         if (!instance.isEphemeral()) {
             throw new IllegalArgumentException(key.toKeyString()
-                    + " asks ephemeral=false; " + HarborProtocol.UNSUPPORTED_BOUNDARY);
+                    + " asks ephemeral=false in a batch; use registerInstance per instance "
+                    + "(persistent instances replicate via Raft)");
         }
     }
 

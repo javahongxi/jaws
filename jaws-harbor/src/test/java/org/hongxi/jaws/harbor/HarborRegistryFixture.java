@@ -44,7 +44,9 @@ abstract class HarborRegistryFixture {
         // A nacos-client derives the gRPC port from its server address; offset 0 keeps
         // both implementations on the same port we actually bound.
         System.setProperty("nacos.server.grpc.port.offset", "0");
-        harborServer = new HarborServer(new URL("harbor", "0.0.0.0", port, ""));
+        URL url = new URL("harbor", "0.0.0.0", port, "");
+        url.addParameter(HarborServer.PARAM_DATA_DIR, HarborTestDataDirs.fresh());
+        harborServer = new HarborServer(url);
         harborServer.start();
         awaitListening(port);
 
