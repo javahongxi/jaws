@@ -59,7 +59,6 @@ class SubscriptionStaysLocalTest {
             return true;
         }
         @Override public List<String> syncVerify(String a, List<ClientVerifyInfo> v) { return List.of(); }
-        @Override public boolean syncConfigBroadcast(String a, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest r) { return true; }
 
         @Override public byte[] getSnapshot(String a) { return null; }
         @Override public void shutdown() { }

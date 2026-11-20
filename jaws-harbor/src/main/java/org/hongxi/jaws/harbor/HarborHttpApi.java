@@ -35,9 +35,10 @@ import java.util.stream.Collectors;
  *       persistent-client count (the CP observability window)</li>
  *   <li>{@code POST /api/connections/reset} — ask one client to reconnect, optionally
  *       elsewhere; the load-shedding hook Nacos has on its loader endpoint</li>
- *   <li>{@code POST /api/config} — broadcast a dynamic-config change to every
- *       connected {@code jaws} client over its bi-stream (demo: harbor stores no
- *       config, it only relays; see {@link HarborServer#broadcastConfigChange})</li>
+ *   <li>{@code POST /api/config} — write one flat jaws key as its own config
+ *       (dataId = key, group {@code JAWS_CONFIG}) through the raft log; watchers
+ *       on every node are notified by their own node's apply</li>
+ *   <li>{@code GET /api/configs} — every stored config (the CP config view)</li>
  * </ul>
  * Runs on {@code grpcPort + 10}, zero external dependencies (JDK HttpServer only).
  *
@@ -59,6 +60,7 @@ public class HarborHttpApi {
         // Longer path wins in JDK HttpServer, so this shadows the read-only listing.
         this.httpServer.createContext("/api/connections/reset", new ConnectionResetHandler());
         this.httpServer.createContext("/api/config", new ConfigChangeHandler());
+        this.httpServer.createContext("/api/configs", new ConfigsHandler());
         this.httpServer.createContext("/api/raft", new RaftHandler());
         this.httpServer.setExecutor(null); // use daemon threads
     }
@@ -164,6 +166,13 @@ public class HarborHttpApi {
         }
     }
 
+    /**
+     * The jaws flat-key write entrance, kept at its original curl contract
+     * ({@code key=..&value=..[&remove=true]}). Each key is its own dataId under
+     * {@link HarborProtocol#JAWS_CONFIG_GROUP} — the same mapping the registry
+     * legs use — so a write is a single publish/remove committed through raft,
+     * no read-modify-write and no cross-key interference.
+     */
     private class ConfigChangeHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -183,11 +192,46 @@ public class HarborHttpApi {
                 sendJson(exchange, 400, "{\"error\":\"value is required unless remove=true\"}");
                 return;
             }
-            int pushed = harborServer.broadcastConfigChange(key, value, deleted);
+            try {
+                if (deleted) {
+                    harborServer.removeConfig(key, HarborProtocol.JAWS_CONFIG_GROUP, "");
+                } else {
+                    harborServer.publishConfig(key, HarborProtocol.JAWS_CONFIG_GROUP, "", value);
+                }
+            } catch (Exception e) {
+                log.warn("[harbor-http] config write failed: key={}", key, e);
+                sendJson(exchange, 503, "{\"error\":\"" + e.getMessage() + "\"}");
+                return;
+            }
             JSONObject result = new JSONObject();
             result.put("key", key);
             result.put("deleted", deleted);
-            result.put("pushed", pushed);
+            result.put("success", true);
+            sendJson(exchange, 200, result.toJSONString());
+        }
+    }
+
+    private class ConfigsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
+                return;
+            }
+            JSONArray configs = new JSONArray();
+            for (ConfigItem item : harborServer.getConfigStorage().allConfigs()) {
+                JSONObject obj = new JSONObject();
+                obj.put("dataId", item.getDataId());
+                obj.put("group", item.getGroup());
+                obj.put("tenant", item.getTenant());
+                obj.put("md5", item.getMd5());
+                obj.put("lastModified", item.getLastModified());
+                obj.put("content", item.getContent());
+                configs.add(obj);
+            }
+            JSONObject result = new JSONObject();
+            result.put("totalConfigs", configs.size());
+            result.put("configs", configs);
             sendJson(exchange, 200, result.toJSONString());
         }
     }

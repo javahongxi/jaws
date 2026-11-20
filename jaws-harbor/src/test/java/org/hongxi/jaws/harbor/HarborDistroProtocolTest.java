@@ -315,12 +315,7 @@ class HarborDistroProtocolTest {
             public List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
                 return List.of();
             }
-                        @Override
-            public boolean syncConfigBroadcast(String targetAddress, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest request) {
-                return true;
-            }
-
-@Override
+            @Override
             public byte[] getSnapshot(String targetAddress) {
                 return null;
             }
@@ -355,12 +350,7 @@ class HarborDistroProtocolTest {
             public List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
                 return List.of();
             }
-                        @Override
-            public boolean syncConfigBroadcast(String targetAddress, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest request) {
-                return true;
-            }
-
-@Override
+            @Override
             public byte[] getSnapshot(String targetAddress) {
                 return null;
             }

@@ -58,7 +58,6 @@ class SyncedSessionReclamationTest {
     private static class NoopTransport implements HarborNodeTransport {
         @Override public boolean syncData(String a, String c, String op, byte[] b) { return false; }
         @Override public List<String> syncVerify(String a, List<ClientVerifyInfo> v) { return List.of(); }
-        @Override public boolean syncConfigBroadcast(String a, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest r) { return true; }
 
         @Override public byte[] getSnapshot(String a) { return null; }
         @Override public void shutdown() { }
@@ -238,7 +237,7 @@ class SyncedSessionReclamationTest {
         ClusterManager cluster = new ClusterManager(new URL("harbor", "127.0.0.1", 19848, ""));
         DistroProtocol distro = new DistroProtocol(cluster, new NoopTransport(), storage, cm);
         HealthCheckScheduler health = new HealthCheckScheduler(cm, storage,
-                new ConnectionCleanup(cm, storage, distro));
+                new ConnectionCleanup(cm, storage, distro, new ConfigListenContext()));
 
         givenReplicaOf("remote", List.of(KEY), List.of(instance("10.0.0.9", 9090)));
         ageReplica("remote", WINDOW_MS + 1_000);

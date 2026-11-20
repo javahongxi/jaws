@@ -7,7 +7,11 @@ import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
 import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.harbor.model.request.BatchInstanceRequest;
-import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
+import org.hongxi.jaws.harbor.model.request.ConfigBatchListenRequest;
+import org.hongxi.jaws.harbor.model.request.ConfigChangeNotifyRequest;
+import org.hongxi.jaws.harbor.model.request.ConfigPublishRequest;
+import org.hongxi.jaws.harbor.model.request.ConfigQueryRequest;
+import org.hongxi.jaws.harbor.model.request.ConfigRemoveRequest;
 import org.hongxi.jaws.harbor.model.request.InstanceRequest;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
 import org.hongxi.jaws.harbor.model.request.PersistentInstanceRequest;
@@ -15,6 +19,10 @@ import org.hongxi.jaws.harbor.model.request.ServiceListRequest;
 import org.hongxi.jaws.harbor.model.request.ServiceQueryRequest;
 import org.hongxi.jaws.harbor.model.request.SubscribeServiceRequest;
 import org.hongxi.jaws.harbor.model.response.BatchInstanceResponse;
+import org.hongxi.jaws.harbor.model.response.ConfigChangeBatchListenResponse;
+import org.hongxi.jaws.harbor.model.response.ConfigPublishResponse;
+import org.hongxi.jaws.harbor.model.response.ConfigQueryResponse;
+import org.hongxi.jaws.harbor.model.response.ConfigRemoveResponse;
 import org.hongxi.jaws.harbor.model.response.InstanceResponse;
 import org.hongxi.jaws.harbor.model.response.QueryServiceResponse;
 import org.hongxi.jaws.harbor.model.response.ServiceListResponse;
@@ -38,8 +46,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
 /**
- * Native client of a harbor service registry, speaking the same wire protocol
- * the server answers for nacos-client.
+ * Native client of a harbor registry and config server, speaking the same wire
+ * protocol the server answers for nacos-client.
  * <p>
  * Two things it deliberately does not do:
  * <ul>
@@ -63,6 +71,7 @@ public class HarborClient implements Closeable {
     private final HarborConnection connection;
     private final Map<ServiceKey, InstanceRedoData> registrations = new ConcurrentHashMap<>();
     private final Map<ServiceKey, ServiceSubscription> subscriptions = new ConcurrentHashMap<>();
+    private final Map<ConfigKey, ConfigListenData> configListens = new ConcurrentHashMap<>();
     private final ExecutorService notifier;
     private final ScheduledExecutorService redoScheduler;
 
@@ -105,6 +114,11 @@ public class HarborClient implements Closeable {
     @VisibleForTesting
     int subscriptionCount() {
         return subscriptions.size();
+    }
+
+    @VisibleForTesting
+    int configListenCount() {
+        return configListens.size();
     }
 
     // ========================================================================
@@ -457,6 +471,196 @@ public class HarborClient implements Closeable {
     }
 
     // ========================================================================
+    // Config center
+    // ========================================================================
+
+    /**
+     * Read one config; {@code null} when the key does not exist — the server's
+     * {@code CONFIG_NOT_FOUND} is a state, not a failure.
+     */
+    public String getConfig(String dataId) {
+        return getConfig(dataId, config.defaultGroup());
+    }
+
+    public String getConfig(String dataId, String group) {
+        return getConfig(dataId, group, config.namespace());
+    }
+
+    public String getConfig(String dataId, String group, String tenant) {
+        ConfigQueryResponse response = queryConfig(configKeyOf(dataId, group, tenant));
+        return response == null ? null : response.getContent();
+    }
+
+    /**
+     * Publish one config. The write rides the server's raft log, so a successful
+     * reply means the change is committed and every node applies it —
+     * last-write-wins, no CAS.
+     */
+    public void publishConfig(String dataId, String content) {
+        publishConfig(dataId, config.defaultGroup(), content);
+    }
+
+    public void publishConfig(String dataId, String group, String content) {
+        publishConfig(dataId, group, config.namespace(), content);
+    }
+
+    public void publishConfig(String dataId, String group, String tenant, String content) {
+        ConfigKey key = configKeyOf(dataId, group, tenant);
+        ConfigPublishRequest request = new ConfigPublishRequest(
+                key.dataId(), key.group(), key.tenant(), content == null ? "" : content);
+        connection.call(request, ConfigPublishResponse.class);
+    }
+
+    /** Remove one config through the same raft path; a missing key still succeeds. */
+    public void removeConfig(String dataId) {
+        removeConfig(dataId, config.defaultGroup());
+    }
+
+    public void removeConfig(String dataId, String group) {
+        removeConfig(dataId, group, config.namespace());
+    }
+
+    public void removeConfig(String dataId, String group, String tenant) {
+        ConfigKey key = configKeyOf(dataId, group, tenant);
+        connection.call(new ConfigRemoveRequest(key.dataId(), key.group(), key.tenant()),
+                ConfigRemoveResponse.class);
+    }
+
+    /**
+     * Watch one config. The callback runs on the notifier thread and receives
+     * the current content immediately, then the new content on every change —
+     * and {@code null} when the config is removed. As with {@link #subscribe},
+     * a listener is removed by identity: keep the reference you pass in.
+     */
+    public void addConfigListener(String dataId, Consumer<String> listener) {
+        addConfigListener(dataId, config.defaultGroup(), listener);
+    }
+
+    public void addConfigListener(String dataId, String group, Consumer<String> listener) {
+        addConfigListener(dataId, group, config.namespace(), listener);
+    }
+
+    public void addConfigListener(String dataId, String group, String tenant,
+                                  Consumer<String> listener) {
+        if (listener == null) {
+            return;
+        }
+        ConfigKey key = configKeyOf(dataId, group, tenant);
+        ConfigListenData entry = configListens.computeIfAbsent(key, ConfigListenData::new);
+        boolean first = entry.listeners().isEmpty();
+        entry.addListener(listener);
+        if (!first) {
+            // Already watched: hand over what we believe without another round trip.
+            notifier.execute(() -> listener.accept(entry.content()));
+            return;
+        }
+        entry.expectRegistered();
+        // Pull first, then listen with the md5 we hold: the server only reports
+        // keys that moved past that md5, so the initial value is never notified
+        // twice.
+        ConfigQueryResponse current = queryConfig(key);
+        entry.cache(current == null ? null : current.getContent(),
+                current == null ? "" : current.getMd5());
+        ConfigChangeBatchListenResponse response = sendListen(key, entry.md5(), true);
+        entry.registered();
+        notifyListeners(entry, entry.content());
+        pullChanged(key, entry, response);
+    }
+
+    /**
+     * Stop watching one config, matching the listener by identity. The last
+     * listener out sends the unlisten; a lost reply leaves the removal owed to
+     * the redo pass, exactly as an unsubscribe does.
+     */
+    public void removeConfigListener(String dataId, Consumer<String> listener) {
+        removeConfigListener(dataId, config.defaultGroup(), listener);
+    }
+
+    public void removeConfigListener(String dataId, String group, Consumer<String> listener) {
+        removeConfigListener(dataId, group, config.namespace(), listener);
+    }
+
+    public void removeConfigListener(String dataId, String group, String tenant,
+                                     Consumer<String> listener) {
+        ConfigKey key = configKeyOf(dataId, group, tenant);
+        ConfigListenData entry = configListens.get(key);
+        if (entry == null) {
+            return;
+        }
+        entry.removeListener(listener);
+        if (entry.listeners().isEmpty()) {
+            entry.expectUnregistered();
+            sendListen(key, entry.md5(), false);
+            entry.unregistered();
+            // Collected by the redo pass, not here.
+        }
+    }
+
+    private ConfigQueryResponse queryConfig(ConfigKey key) {
+        ConfigQueryRequest request = new ConfigQueryRequest();
+        request.setDataId(key.dataId());
+        request.setGroup(key.group());
+        request.setTenant(key.tenant());
+        // tryCall, not call: CONFIG_NOT_FOUND is a legitimate answer ("gone"),
+        // not a rejection to throw on.
+        ConfigQueryResponse response = connection.tryCall(request, ConfigQueryResponse.class);
+        if (response.getResultCode() == ConfigQueryResponse.CONFIG_NOT_FOUND) {
+            return null;
+        }
+        if (!response.isSuccess()) {
+            throw new JawsServiceException("harbor rejected ConfigQueryRequest: resultCode="
+                    + response.getResultCode());
+        }
+        return response;
+    }
+
+    private ConfigChangeBatchListenResponse sendListen(ConfigKey key, String md5, boolean listen) {
+        ConfigBatchListenRequest request = new ConfigBatchListenRequest();
+        request.setListen(listen);
+        request.addConfigListenContext(key.group(), key.dataId(), key.tenant(), md5);
+        return connection.call(request, ConfigChangeBatchListenResponse.class);
+    }
+
+    /** Query the key a listen reply flagged as changed and notify if it moved. */
+    private void pullChanged(ConfigKey key, ConfigListenData entry,
+                             ConfigChangeBatchListenResponse response) {
+        if (response.getChangedConfigs() != null && !response.getChangedConfigs().isEmpty()) {
+            refreshConfig(key, entry);
+        }
+    }
+
+    /**
+     * Re-read one watched config and notify its listeners only when the content
+     * actually moved (md5 comparison, the nacos-client rule) — a removal reads
+     * as null content and notifies once.
+     */
+    private void refreshConfig(ConfigKey key, ConfigListenData entry) {
+        try {
+            ConfigQueryResponse latest = queryConfig(key);
+            String content = latest == null ? null : latest.getContent();
+            String md5 = latest == null || latest.getMd5() == null ? "" : latest.getMd5();
+            if (md5.equals(entry.md5())) {
+                return;
+            }
+            entry.cache(content, md5);
+            notifyListeners(entry, content);
+        } catch (Exception e) {
+            log.warn("[harbor-client] refresh of config {} failed: {}", key, e.getMessage());
+        }
+    }
+
+    private void notifyListeners(ConfigListenData entry, String content) {
+        List<Consumer<String>> listeners = new ArrayList<>(entry.listeners());
+        notifier.execute(() -> listeners.forEach(each -> each.accept(content)));
+    }
+
+    private ConfigKey configKeyOf(String dataId, String group, String tenant) {
+        return ConfigKey.of(dataId,
+                group == null || group.isEmpty() ? config.defaultGroup() : group,
+                tenant == null || tenant.isEmpty() ? config.namespace() : tenant);
+    }
+
+    // ========================================================================
     // Push handling and recovery
     // ========================================================================
 
@@ -478,30 +682,21 @@ public class HarborClient implements Closeable {
     }
 
     /**
-     * Where a server-broadcast dynamic-config change is handed off. The client is a
-     * pure protocol SDK (see the source guard that keeps it so): it parses the frame
-     * it speaks and emits it, and the embedding layer decides what to do. Wired by
-     * the registry-harbor leg to update this process's dynamic configuration; left a
-     * no-op for a bare client that never opted in.
-     */
-    private volatile Consumer<DynamicConfigChangeRequest> dynamicConfigListener =
-            change -> {
-            };
-
-    public void setDynamicConfigListener(Consumer<DynamicConfigChangeRequest> listener) {
-        this.dynamicConfigListener = listener == null ? change -> {
-        } : listener;
-    }
-
-    /**
-     * A server-broadcast dynamic-config change arrives on the bi-stream. Harbor does
-     * not store config; this client only decodes the frame it speaks and hands it to
-     * {@link #dynamicConfigListener} — applying it to the process's configuration is
-     * the embedding layer's decision, not this SDK's.
+     * A config-change notice arrives on the bi-stream carrying only the key
+     * (nacos {@code ConfigChangeNotifyRequest}); the new content is pulled with
+     * a query on the notifier thread, so a slow listener never stalls the
+     * stream and a dropped notice is healed by the next listen replay.
      */
     private void onConfigPush(Payload payload) {
-        dynamicConfigListener.accept(
-                HarborProtocol.parseBody(payload, DynamicConfigChangeRequest.class));
+        ConfigChangeNotifyRequest notice =
+                HarborProtocol.parseBody(payload, ConfigChangeNotifyRequest.class);
+        ConfigKey key = ConfigKey.of(notice.getDataId(), notice.getGroup(), notice.getTenant());
+        ConfigListenData entry = configListens.get(key);
+        if (entry == null || entry.listeners().isEmpty()) {
+            log.debug("[harbor-client] dropping config notice for unwatched key {}", key);
+            return;
+        }
+        notifier.execute(() -> refreshConfig(key, entry));
     }
 
     /**
@@ -528,16 +723,18 @@ public class HarborClient implements Closeable {
     private void replayOwnedState() {
         // The session that just died held all of these; without dirtying the
         // confirmations first, every entry reads RedoType.NONE and the replay is
-        // a no-op. This is what Nacos's onDisConnect does to both of its tables.
+        // a no-op. This is what Nacos's onDisConnect does to its redo tables.
         registrations.values().forEach(RedoData::markDirty);
         subscriptions.values().forEach(RedoData::markDirty);
+        configListens.values().forEach(RedoData::markDirty);
         reconcileOwnedState();
     }
 
     /**
-     * Walk both tables and do what each entry owes: re-register, complete a removal
-     * that was never confirmed, or collect a spent one. Nothing is sent for an entry
-     * that the server already agrees with, so an idle client stays idle.
+     * Walk the redo tables and do what each entry owes: re-register, complete a
+     * removal that was never confirmed, or collect a spent one. Nothing is sent
+     * for an entry that the server already agrees with, so an idle client stays
+     * idle.
      */
     private void reconcileOwnedState() {
         int replayed = 0;
@@ -547,10 +744,13 @@ public class HarborClient implements Closeable {
         for (Map.Entry<ServiceKey, ServiceSubscription> each : subscriptions.entrySet()) {
             replayed += replaySubscription(each.getKey(), each.getValue()) ? 1 : 0;
         }
+        for (Map.Entry<ConfigKey, ConfigListenData> each : configListens.entrySet()) {
+            replayed += replayConfigListen(each.getKey(), each.getValue()) ? 1 : 0;
+        }
         if (replayed > 0) {
-            log.info("[harbor-client] reconciled {} state change(s); {} registration(s) and"
-                    + " {} subscription(s) remain",
-                    replayed, registrations.size(), subscriptions.size());
+            log.info("[harbor-client] reconciled {} state change(s); {} registration(s),"
+                    + " {} subscription(s) and {} config listen(s) remain",
+                    replayed, registrations.size(), subscriptions.size(), configListens.size());
         }
     }
 
@@ -658,6 +858,48 @@ public class HarborClient implements Closeable {
         }
     }
 
+    /**
+     * Re-arm one config listen on the fresh connection, carrying the md5 we
+     * still hold: the reply names whatever moved while we were away, and only
+     * those keys are pulled and notified — the reconnect itself stays silent
+     * to listeners when nothing changed.
+     */
+    private boolean replayConfigListen(ConfigKey key, ConfigListenData entry) {
+        switch (entry.getRedoType()) {
+            case REGISTER -> {
+                try {
+                    ConfigChangeBatchListenResponse response = sendListen(key, entry.md5(), true);
+                    entry.registered();
+                    pullChanged(key, entry, response);
+                } catch (Exception e) {
+                    log.warn("[harbor-client] replay of config listen {} failed: {}",
+                            key, e.getMessage());
+                    return false;
+                }
+                return true;
+            }
+            case UNREGISTER -> {
+                try {
+                    sendListen(key, entry.md5(), false);
+                    entry.unregistered();
+                } catch (Exception e) {
+                    log.warn("[harbor-client] replay of pending config unlisten {} failed: {}",
+                            key, e.getMessage());
+                    return false;
+                }
+                configListens.remove(key);
+                return true;
+            }
+            case REMOVE -> {
+                configListens.remove(key);
+                return false;
+            }
+            default -> {
+                return false;
+            }
+        }
+    }
+
     /** Batches stay ephemeral-only: the CP path has no batch verb, one request per instance. */
     private static void requireEphemeral(ServiceKey key, Instance instance) {
         if (!instance.isEphemeral()) {
@@ -702,5 +944,6 @@ public class HarborClient implements Closeable {
         notifier.shutdownNow();
         registrations.clear();
         subscriptions.clear();
+        configListens.clear();
     }
 }

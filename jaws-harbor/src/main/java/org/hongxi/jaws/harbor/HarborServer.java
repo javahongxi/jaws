@@ -16,9 +16,10 @@ import org.hongxi.jaws.harbor.model.ServiceKey;
 import org.hongxi.jaws.harbor.proto.Payload;
 import org.hongxi.jaws.harbor.model.request.*;
 import org.hongxi.jaws.harbor.model.response.*;
+import org.hongxi.jaws.harbor.raft.ConfigCommand;
 import org.hongxi.jaws.harbor.raft.HarborRaftProtocol;
+import org.hongxi.jaws.harbor.raft.HarborStateMachine;
 import org.hongxi.jaws.harbor.raft.NamingCommand;
-import org.hongxi.jaws.harbor.raft.NamingStateMachine;
 import org.hongxi.jaws.harbor.raft.PersistentHealthProbe;
 import org.hongxi.jaws.harbor.raft.RaftNode;
 import org.hongxi.jaws.harbor.raft.RaftOptions;
@@ -45,7 +46,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Jaws Harbor — a Nacos-compatible service registry server.
+ * Jaws Harbor — a Nacos-compatible registry and config server.
  * <p>
  * Implements the Nacos 2.x gRPC protocol on top of the Jaws wire transport:
  * <ul>
@@ -112,6 +113,9 @@ public class HarborServer {
     private final ConnectionCleanup connectionCleanup;
     private final HealthCheckScheduler healthCheckScheduler;
     private final PushDelayTaskEngine pushEngine;
+    private final ConfigStorage configStorage;
+    private final ConfigListenContext configListenContext;
+    private final ConfigChangeNotifier configChangeNotifier;
     private final WireServer wireServer;
 
     /** Keeps a refused request type from being logged once per retry. */
@@ -155,20 +159,24 @@ public class HarborServer {
         this.serviceStorage = new ServiceStorage(this.connectionManager, this::onServiceChange,
                 this::syncClientDataToPeers);
         this.pushEngine = new PushDelayTaskEngine(this.serviceStorage, this.connectionManager);
+        this.configStorage = new ConfigStorage();
+        this.configListenContext = new ConfigListenContext();
+        this.configChangeNotifier = new ConfigChangeNotifier(this.configListenContext, this.connectionManager);
 
         this.clusterManager = new ClusterManager(url);
         this.distroProtocol = new DistroProtocol(
                 clusterManager, transport, serviceStorage, connectionManager);
 
-        // CP face: persistent instances replicate through a self-contained Raft
-        // group over the same peer set Distro uses. Data lives in memory plus the
-        // log/snapshot files under dataDir — no external database, like Nacos's
-        // JRaft deployment.
+        // CP face: persistent instances AND configs replicate through one
+        // self-contained Raft group over the same peer set Distro uses. Data
+        // lives in memory plus the log/snapshot files under dataDir — no
+        // external database, unlike Nacos's Derby/MySQL config storage.
         this.raftTransport = raftTransport;
         String dataDir = url.getParameter(PARAM_DATA_DIR);
         Path raftDir = Path.of(dataDir != null ? dataDir : DEFAULT_DATA_DIR, "raft-" + url.getPort());
         this.raftNode = new RaftNode(clusterManager.getSelfAddress(), clusterManager,
-                raftTransport, new NamingStateMachine(serviceStorage), raftDir, raftOptions(url));
+                raftTransport, new HarborStateMachine(serviceStorage, configStorage, configChangeNotifier),
+                raftDir, raftOptions(url));
         this.raftProtocol = new HarborRaftProtocol(raftNode, raftTransport);
         this.persistentHealthProbe = new PersistentHealthProbe(serviceStorage, raftProtocol, raftNode);
 
@@ -176,7 +184,8 @@ public class HarborServer {
         // closure signals: DisconnectionHandler (channelInactive), the
         // bi-stream onError/onCompleted callbacks, and the watchdog sweep.
         this.connectionCleanup = new ConnectionCleanup(
-                this.connectionManager, this.serviceStorage, this.distroProtocol);
+                this.connectionManager, this.serviceStorage, this.distroProtocol,
+                this.configListenContext);
         this.healthCheckScheduler = new HealthCheckScheduler(
                 this.connectionManager, this.serviceStorage, this.connectionCleanup);
 
@@ -292,11 +301,16 @@ public class HarborServer {
         healthCheckScheduler.shutdown();
         distroProtocol.shutdown();
         pushEngine.shutdown();
+        configChangeNotifier.shutdown();
         log.info("[harbor] server closed");
     }
 
     public ServiceStorage getServiceStorage() {
         return serviceStorage;
+    }
+
+    public ConfigStorage getConfigStorage() {
+        return configStorage;
     }
 
     /** How many {@link ServerCheckRequest} handshakes this node has answered. */
@@ -374,44 +388,20 @@ public class HarborServer {
     }
 
     /**
-     * Broadcast one dynamic-config change to every connected {@code jaws} client
-     * over its bi-stream. Harbor stores no configuration — this is a demo channel:
-     * each live client applies it to its own in-process configuration. Only native
-     * clients receive it (matched by {@link HarborProtocol#NATIVE_CLIENT_VERSION});
-     * a real nacos-client would misread a jaws-proprietary frame as bad naming
-     * traffic and reconnect-loop.
-     * <p>
-     * Pushing to local clients is a per-node behaviour, matching nacos where a
-     * node only notifies listeners registered with it: this method pushes to the
-     * clients attached to <em>this</em> node and relays the change to distro
-     * peers, each of which pushes to its own clients and never relays further.
-     *
-     * @return the number of native clients the change was pushed to on this node
+     * Commit one config publish through Raft — shared by the gRPC handler and
+     * the HTTP management endpoint. Any node may call it; a non-leader relays
+     * to the leader inside {@link HarborRaftProtocol#write}. Returns only after
+     * the entry is committed and applied locally. A blank tenant is normalized
+     * to {@code public} here, so every entrance (gRPC and HTTP) stores under
+     * the same namespace the readers query.
      */
-    public int broadcastConfigChange(String key, String value, boolean deleted) {
-        int pushed = broadcastLocally(key, value, deleted);
-        distroProtocol.syncConfigBroadcast(new ConfigBroadcastSyncRequest(key, value, deleted));
-        return pushed;
+    public void publishConfig(String dataId, String group, String tenant, String content) {
+        raftProtocol.write(ConfigCommand.publish(configTenant(tenant), group, dataId, content));
     }
 
-    /**
-     * Pushes to the native clients attached to this node only. The relayed
-     * broadcast handler calls this — and nothing else — which is what keeps the
-     * relay from looping.
-     */
-    private int broadcastLocally(String key, String value, boolean deleted) {
-        Payload frame = HarborProtocol.encodePush(
-                new DynamicConfigChangeRequest(key, value, deleted));
-        int pushed = 0;
-        for (ConnectionManager.ConnectionRecord each : connectionManager.allConnections()) {
-            if (HarborProtocol.NATIVE_CLIENT_VERSION.equals(each.clientVersion())
-                    && connectionManager.pushToConnection(each.connectionId(), frame)) {
-                pushed++;
-            }
-        }
-        log.info("[harbor] broadcast config change key={} deleted={} to {} native client(s)",
-                key, deleted, pushed);
-        return pushed;
+    /** Commit one config removal through the same raft path. Idempotent. */
+    public void removeConfig(String dataId, String group, String tenant) {
+        raftProtocol.write(ConfigCommand.remove(configTenant(tenant), group, dataId));
     }
 
     // ========================================================================
@@ -461,8 +451,14 @@ public class HarborServer {
                 (payload, clientIp, context) -> handleDistroVerify(payload, context));
         handlers.put(HarborProtocol.typeToken(DistroSnapshotRequest.class),
                 (payload, clientIp, context) -> handleDistroSnapshot(context));
-        handlers.put(HarborProtocol.typeToken(ConfigBroadcastSyncRequest.class),
-                (payload, clientIp, context) -> handleConfigBroadcastSync(payload, context));
+        handlers.put(HarborProtocol.typeToken(ConfigPublishRequest.class),
+                (payload, clientIp, context) -> handleConfigPublish(payload, clientIp));
+        handlers.put(HarborProtocol.typeToken(ConfigRemoveRequest.class),
+                (payload, clientIp, context) -> handleConfigRemove(payload, clientIp));
+        handlers.put(HarborProtocol.typeToken(ConfigQueryRequest.class),
+                (payload, clientIp, context) -> handleConfigQuery(payload));
+        handlers.put(HarborProtocol.typeToken(ConfigBatchListenRequest.class),
+                this::handleConfigBatchListen);
         handlers.put(HarborProtocol.typeToken(RaftVoteRequest.class),
                 (payload, clientIp, context) -> handleRaftVote(payload, context));
         handlers.put(HarborProtocol.typeToken(RaftAppendRequest.class),
@@ -471,11 +467,6 @@ public class HarborServer {
                 (payload, clientIp, context) -> handleRaftInstallSnapshot(payload, context));
         handlers.put(HarborProtocol.typeToken(RaftWriteForwardRequest.class),
                 (payload, clientIp, context) -> handleRaftWriteForward(payload, context));
-        // Config center is out of scope for a naming registry; answer silently
-        // so that nacos-client does not keep retrying the listen.
-        handlers.put(HarborProtocol.CONFIG_LISTEN_REQUEST,
-                (payload, clientIp, context) ->
-                        HarborProtocol.encodeResponse(ConfigBatchListenResponse.ok()));
         return handlers;
     }
 
@@ -615,6 +606,10 @@ public class HarborServer {
                     } else if (HarborProtocol.typeToken(NotifySubscriberResponse.class).equals(type)) {
                         // Client ack for a NotifySubscriberRequest — no action needed
                         log.debug("[harbor] received NotifySubscriberResponse ack");
+                    } else if (HarborProtocol.typeToken(ConfigChangeNotifyResponse.class).equals(type)) {
+                        // Client ack for a ConfigChangeNotifyRequest — delivery is
+                        // healed by the listen round, so the ack is only logged.
+                        log.debug("[harbor] received ConfigChangeNotifyResponse ack");
                     } else if (HarborProtocol.typeToken(ConnectResetResponse.class).equals(type)) {
                         CompletableFuture<Void> pending = resetAcks.get(connectionId);
                         if (pending != null) {
@@ -944,6 +939,108 @@ public class HarborServer {
     }
 
     // ========================================================================
+    // Config center handlers (CP: writes ride the raft log)
+    // ========================================================================
+
+    /**
+     * Publish one config — the nacos {@code ConfigPublishRequestHandler} shape
+     * minus the database: the content becomes a {@link ConfigCommand} committed
+     * through Raft before the reply goes out, and every node's apply notifies
+     * its own listeners. {@code casMd5} is ignored (last-write-wins).
+     */
+    private Payload handleConfigPublish(Payload payload, String clientIp) {
+        ConfigPublishRequest request = HarborProtocol.parseBody(payload, ConfigPublishRequest.class);
+        if (request.getDataId() == null || request.getDataId().isEmpty()) {
+            return HarborProtocol.encodeResponse(
+                    ConfigPublishResponse.fail("dataId is required"), clientIp);
+        }
+        try {
+            publishConfig(request.getDataId(), configGroup(request.getGroup()),
+                    request.getTenant(),
+                    request.getContent() == null ? "" : request.getContent());
+        } catch (Exception e) {
+            return HarborProtocol.encodeResponse(ConfigPublishResponse.fail(e.getMessage()), clientIp);
+        }
+        return HarborProtocol.encodeResponse(ConfigPublishResponse.ok(), clientIp);
+    }
+
+    /** Remove one config through the same raft path; a missing key still succeeds. */
+    private Payload handleConfigRemove(Payload payload, String clientIp) {
+        ConfigRemoveRequest request = HarborProtocol.parseBody(payload, ConfigRemoveRequest.class);
+        if (request.getDataId() == null || request.getDataId().isEmpty()) {
+            return HarborProtocol.encodeResponse(
+                    ConfigRemoveResponse.fail("dataId is required"), clientIp);
+        }
+        try {
+            removeConfig(request.getDataId(), configGroup(request.getGroup()),
+                    request.getTenant());
+        } catch (Exception e) {
+            return HarborProtocol.encodeResponse(ConfigRemoveResponse.fail(e.getMessage()), clientIp);
+        }
+        return HarborProtocol.encodeResponse(ConfigRemoveResponse.ok(), clientIp);
+    }
+
+    /**
+     * Read one config from this node's memory. A missing key answers
+     * {@link ConfigQueryResponse#CONFIG_NOT_FOUND} on the query type itself —
+     * nacos-client reads that as "gone" and hands its listeners null content.
+     */
+    private Payload handleConfigQuery(Payload payload) {
+        ConfigQueryRequest request = HarborProtocol.parseBody(payload, ConfigQueryRequest.class);
+        ConfigItem item = configStorage.get(request.getDataId(),
+                configGroup(request.getGroup()), configTenant(request.getTenant()));
+        if (item == null) {
+            return HarborProtocol.encodeResponse(ConfigQueryResponse.notFound());
+        }
+        return HarborProtocol.encodeResponse(ConfigQueryResponse.ok(item.getContent(), item.getMd5()));
+    }
+
+    /**
+     * Register or drop config listens — the nacos
+     * {@code ConfigChangeBatchListenRequestHandler} shape: each context's md5 is
+     * compared with the stored one, and only the stale keys come back in the
+     * reply for the client to query. The reply echoes each key exactly as the
+     * watcher named it (its cache is keyed by the tenant it sent).
+     */
+    private Payload handleConfigBatchListen(Payload payload, String clientIp,
+                                            WireCallContext context) {
+        String connectionId = connectionIdOf(context);
+        ConfigBatchListenRequest request =
+                HarborProtocol.parseBody(payload, ConfigBatchListenRequest.class);
+        ConfigChangeBatchListenResponse response = new ConfigChangeBatchListenResponse();
+        List<ConfigBatchListenRequest.ConfigListenContext> contexts =
+                request.getConfigListenContexts() == null ? List.of() : request.getConfigListenContexts();
+        for (ConfigBatchListenRequest.ConfigListenContext each : contexts) {
+            String tenant = configTenant(each.getTenant());
+            String group = configGroup(each.getGroup());
+            String groupKey = ConfigStorage.groupKey(each.getDataId(), group, tenant);
+            if (request.isListen()) {
+                boolean transferred = each.getTenant() == null || each.getTenant().isEmpty();
+                configListenContext.addListen(groupKey, each.getMd5(), connectionId, transferred);
+                ConfigItem item = configStorage.get(each.getDataId(), group, tenant);
+                String held = each.getMd5() == null ? "" : each.getMd5();
+                // No stored config and an empty held md5 agree: nothing to pull.
+                boolean upToDate = item == null ? held.isEmpty() : item.getMd5().equals(held);
+                if (!upToDate) {
+                    response.addChangeConfig(each.getDataId(), each.getGroup(), each.getTenant());
+                }
+            } else {
+                configListenContext.removeListen(groupKey, connectionId);
+            }
+        }
+        return HarborProtocol.encodeResponse(response, clientIp);
+    }
+
+    /** Blank tenant means the default namespace, which nacos stores as {@code public}. */
+    private static String configTenant(String tenant) {
+        return tenant == null || tenant.isEmpty() ? "public" : tenant;
+    }
+
+    private static String configGroup(String group) {
+        return group == null || group.isEmpty() ? "DEFAULT_GROUP" : group;
+    }
+
+    // ========================================================================
     // Distro inter-node handlers
     // ========================================================================
 
@@ -1027,27 +1124,6 @@ public class HarborServer {
         response.setSuccess(true);
         response.setContent(snapshot != null
                 ? Base64.getEncoder().encodeToString(snapshot) : "");
-        return HarborProtocol.encodeResponse(response);
-    }
-
-    /**
-     * A relayed broadcast from a peer: push it to the clients attached to this
-     * node — and nothing else. Relaying again here would loop the broadcast
-     * around the cluster forever.
-     */
-    private Payload handleConfigBroadcastSync(Payload payload, WireCallContext context) {
-        Payload refusal = refuseUnlessClusterMember(ConfigBroadcastSyncRequest.class, context);
-        if (refusal != null) {
-            return refusal;
-        }
-        ConfigBroadcastSyncRequest request =
-                HarborProtocol.parseBody(payload, ConfigBroadcastSyncRequest.class);
-        int pushed = broadcastLocally(request.getKey(), request.getValue(), request.isDeleted());
-        log.info("[harbor] relayed config broadcast key={} deleted={} pushed to {} local"
-                        + " client(s)", request.getKey(), request.isDeleted(), pushed);
-        ConfigBroadcastSyncResponse response = new ConfigBroadcastSyncResponse();
-        response.setResultCode(200);
-        response.setSuccess(true);
         return HarborProtocol.encodeResponse(response);
     }
 

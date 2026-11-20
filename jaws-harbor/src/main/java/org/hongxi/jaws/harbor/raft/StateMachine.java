@@ -14,7 +14,8 @@ public interface StateMachine {
 
     /**
      * Apply one committed log entry. The command bytes are a serialized
-     * {@link NamingCommand}; a NOOP entry carries no state change.
+     * {@link NamingCommand} or {@link ConfigCommand}; a NOOP entry carries no
+     * state change.
      */
     void onApply(LogEntry entry);
 

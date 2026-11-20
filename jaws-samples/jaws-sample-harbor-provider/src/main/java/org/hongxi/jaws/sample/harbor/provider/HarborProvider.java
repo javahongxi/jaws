@@ -65,6 +65,9 @@ public class HarborProvider {
         protocolConfig.setTransportFactory("netty");
         protocolConfig.setSerialization("fastjson2");
         protocolConfig.setPort(PORT);
+        // Enable the access-log filter (static URL parameter; the dynamic key
+        // jaws.filter.access.enabled can hot-disable it at runtime).
+        protocolConfig.setParameter("accessLog", "true");
         return protocolConfig;
     }
 

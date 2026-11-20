@@ -49,7 +49,15 @@ public class HarborRaftProtocol {
      * leader can be reached within the attempt budget.
      */
     public void write(NamingCommand command) {
-        byte[] bytes = command.toBytes();
+        writeBytes(command.toBytes());
+    }
+
+    /** Commit a config command through the same group and the same relay path. */
+    public void write(ConfigCommand command) {
+        writeBytes(command.toBytes());
+    }
+
+    private void writeBytes(byte[] bytes) {
         String target = null;
         for (int attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
             if (raftNode.isLeader()) {

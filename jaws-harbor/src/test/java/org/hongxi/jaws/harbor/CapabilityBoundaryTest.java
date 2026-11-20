@@ -33,8 +33,9 @@ import static org.junit.jupiter.api.Assertions.fail;
  * and the CP log: an {@code InstanceRequest} carrying {@code ephemeral=false}
  * is still refused (it would ride the connection-liveness model), while a
  * {@code PersistentInstanceRequest} commits through Raft and outlives the
- * connection that sent it. Everything else outside scope (fuzzy watch, config
- * center) still has to read as a boundary rather than as a broken server.
+ * connection that sent it. Everything else outside scope (fuzzy watch on either
+ * face) still has to read as a boundary rather than as a broken server; the
+ * config center itself is now served through the same CP log.
  * <p>
  * The server-side cases are driven with a raw unary call on purpose: a real
  * nacos-client would never send {@code InstanceRequest} with
@@ -92,6 +93,13 @@ class CapabilityBoundaryTest {
     void fuzzyWatchRequestReadsAsABoundaryToo() {
         JSONObject reply = callUnary(new NamingFuzzyWatchRequest());
         assertTrue(reply.getString("message").contains("NamingFuzzyWatchRequest"),
+                "the refusal should name what it refused: " + reply);
+    }
+
+    @Test
+    void configFuzzyWatchRequestReadsAsABoundaryToo() {
+        JSONObject reply = callUnary(new ConfigFuzzyWatchRequest());
+        assertTrue(reply.getString("message").contains("ConfigFuzzyWatchRequest"),
                 "the refusal should name what it refused: " + reply);
     }
 
@@ -178,6 +186,10 @@ class CapabilityBoundaryTest {
 
     /** Stands in for the Nacos request of the same name; harbor never parses it. */
     static class NamingFuzzyWatchRequest extends Request {
+    }
+
+    /** Stands in for the Nacos request of the same name; harbor never parses it. */
+    static class ConfigFuzzyWatchRequest extends Request {
     }
 
     static class SomethingNobodyAskedForRequest extends Request {

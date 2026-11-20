@@ -30,6 +30,8 @@ import org.slf4j.LoggerFactory;
  *       {@link ClientSession} to still exist, so it MUST run before eviction
  *       (see {@code WatchdogClosureTest#syncSnapshotIsCapturedBeforeSessionEviction});</li>
  *   <li>drop the connection's subscriber registrations;</li>
+ *   <li>drop the connection's config listens (node-local, no peer traffic —
+ *       the replayed listen round re-arms them on the new connection);</li>
  *   <li>deregister the connection's published instances (notifying subscribers);</li>
  *   <li>evict the connection record and its {@link ClientSession}, completing
  *       the push subject;</li>
@@ -50,13 +52,16 @@ public class ConnectionCleanup {
     private final ConnectionManager connectionManager;
     private final ServiceStorage serviceStorage;
     private final DistroProtocol distroProtocol;
+    private final ConfigListenContext configListenContext;
 
     ConnectionCleanup(ConnectionManager connectionManager,
                       ServiceStorage serviceStorage,
-                      DistroProtocol distroProtocol) {
+                      DistroProtocol distroProtocol,
+                      ConfigListenContext configListenContext) {
         this.connectionManager = connectionManager;
         this.serviceStorage = serviceStorage;
         this.distroProtocol = distroProtocol;
+        this.configListenContext = configListenContext;
     }
 
     /**
@@ -96,6 +101,11 @@ public class ConnectionCleanup {
         // (2) Drop the connection's subscriber registrations — done while the
         // session is still alive to own them.
         serviceStorage.removeAllSubscribersForConnection(connectionId);
+
+        // (2b) Drop the connection's config listens. These are node-local push
+        // routes, not replicated data — after a reconnect the client's listen
+        // round re-registers them, so no peer sync is needed here.
+        configListenContext.removeConnection(connectionId);
 
         // (3) Deregister the connection's published instances (notifying subscribers).
         int removed = serviceStorage.deregisterInstancesByConnectionId(connectionId);

@@ -80,12 +80,7 @@ class WatchdogClosureTest {
             return n == null ? List.of() : n.onVerify(v);
         }
 
-                @Override
-        public boolean syncConfigBroadcast(String targetAddress, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest request) {
-            return true;
-        }
-
-@Override
+        @Override
         public byte[] getSnapshot(String addr) {
             DistroProtocol n = nodes.get(addr);
             return n == null ? null : n.onSnapshot();
@@ -103,7 +98,7 @@ class WatchdogClosureTest {
         cluster.addMember(newClusterMember(ADDR2));
         transport = new Recording();
         distro = new DistroProtocol(cluster, transport, storage, cm);
-        health = new HealthCheckScheduler(cm, storage, new ConnectionCleanup(cm, storage, distro));
+        health = new HealthCheckScheduler(cm, storage, new ConnectionCleanup(cm, storage, distro, new ConfigListenContext()));
     }
 
     private static org.hongxi.jaws.harbor.cluster.ClusterMember newClusterMember(String addr) {

@@ -7,7 +7,6 @@ import org.hongxi.jaws.harbor.HarborServer;
 import org.hongxi.jaws.harbor.HarborTestDataDirs;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
-import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
 import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -26,6 +25,7 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -414,33 +414,26 @@ class HarborClientTest {
     }
 
     /**
-     * The demo dynamic-config channel end to end: a server broadcast reaches a
-     * native client over its bi-stream and surfaces to the listener the registry leg
-     * would wire (here we capture the frame; applying it to the process config is
-     * the registry-harbor leg's job, kept out of this pure-protocol client test).
+     * The config face end to end from the native SDK: publish rides the raft log,
+     * a watcher learns the value through the standard listen/push/query round,
+     * and a removal reaches the same watcher as null content.
      */
     @Test
-    void broadcastConfigChangeReachesNativeClientListener() throws Exception {
+    void nativePublishAndRemoveReachNativeConfigListener() throws Exception {
         try (HarborClient client = newClient()) {
-            List<DynamicConfigChangeRequest> received = new CopyOnWriteArrayList<>();
-            client.setDynamicConfigListener(received::add);
+            List<String> received = new CopyOnWriteArrayList<>();
+            client.addConfigListener("native-config-key", received::add);
+            awaitTrue(() -> received.contains(null), 5_000);
 
-            // The broadcast only targets registered native clients; wait until the
-            // server has this one (setup completed) in its connection table.
-            awaitTrue(() -> harborServer.getConnectionManager().allConnections().stream()
-                    .anyMatch(c -> HarborProtocol.NATIVE_CLIENT_VERSION.equals(c.clientVersion())),
-                    5_000);
+            client.publishConfig("native-config-key", "888");
+            awaitTrue(() -> received.contains("888"), 5_000);
+            assertEquals("888", client.getConfig("native-config-key"));
 
-            assertTrue(harborServer.broadcastConfigChange("jaws.requestTimeout", "888", false) >= 1,
-                    "the connected native client should be counted");
-            awaitTrue(() -> received.stream().anyMatch(
-                    c -> "jaws.requestTimeout".equals(c.getKey())
-                            && "888".equals(c.getValue()) && !c.isDeleted()), 5_000);
-
-            // Removal is an explicit flag, never a null value.
-            harborServer.broadcastConfigChange("jaws.requestTimeout", null, true);
-            awaitTrue(() -> received.stream().anyMatch(
-                    c -> "jaws.requestTimeout".equals(c.getKey()) && c.isDeleted()), 5_000);
+            // Removal is a null content to the listener, never a stale value.
+            client.removeConfig("native-config-key");
+            awaitTrue(() -> received.size() >= 2
+                    && received.get(received.size() - 1) == null, 5_000);
+            assertNull(client.getConfig("native-config-key"));
         }
     }
 

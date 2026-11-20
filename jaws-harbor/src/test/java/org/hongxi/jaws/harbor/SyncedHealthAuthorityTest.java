@@ -74,12 +74,7 @@ class SyncedHealthAuthorityTest {
             return n == null ? List.of() : n.onVerify(v);
         }
 
-                @Override
-        public boolean syncConfigBroadcast(String targetAddress, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest request) {
-            return true;
-        }
-
-@Override
+        @Override
         public byte[] getSnapshot(String addr) {
             DistroProtocol n = nodes.get(addr);
             return n == null ? null : n.onSnapshot();
@@ -109,8 +104,8 @@ class SyncedHealthAuthorityTest {
         transport.nodes.put(ADDR1, d1);
         transport.nodes.put(ADDR2, d2);
 
-        health1 = new HealthCheckScheduler(cm1, st1, new ConnectionCleanup(cm1, st1, d1));
-        health2 = new HealthCheckScheduler(cm2, st2, new ConnectionCleanup(cm2, st2, d2));
+        health1 = new HealthCheckScheduler(cm1, st1, new ConnectionCleanup(cm1, st1, d1, new ConfigListenContext()));
+        health2 = new HealthCheckScheduler(cm2, st2, new ConnectionCleanup(cm2, st2, d2, new ConfigListenContext()));
 
         d1.start();
         d2.start();

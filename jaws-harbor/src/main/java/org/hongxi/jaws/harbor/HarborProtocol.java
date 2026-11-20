@@ -35,35 +35,35 @@ public final class HarborProtocol {
     public static final String RPC_STREAM_METHOD = "requestBiStream";
 
     /**
-     * Version string our own {@code HarborClient} reports at setup. The server
-     * uses it to tell native clients from Nacos clients and Distro peers when it
-     * broadcasts a {@code DynamicConfigChangeRequest} (which only jaws speaks).
+     * Version string our own {@code HarborClient} reports at setup, which is
+     * how the connection listing tells native clients from nacos-client ones.
      */
     public static final String NATIVE_CLIENT_VERSION = "jaws-harbor-client/1.0";
 
     /**
-     * The one token with no DTO of its own: config listens are answered
-     * without their body ever being deserialized, so there is no class to
-     * name. Kept here so the exception is stated once, in words.
+     * The group jaws' flat dynamic-config keys live under, one key per dataId —
+     * the same mapping the nacos leg uses ({@code NacosDynamicConfiguration}),
+     * so a key written through either leg reads back from the other. The HTTP
+     * management endpoint writes a single key straight into its own dataId.
      */
-    public static final String CONFIG_LISTEN_REQUEST = "ConfigBatchListenRequest";
+    public static final String JAWS_CONFIG_GROUP = "JAWS_CONFIG";
 
     /**
-     * Nacos request types that are a deliberate boundary rather than a gap. They
-     * have no DTO here — their bodies are never parsed — so the token is spelled
-     * out exactly as {@link #CONFIG_LISTEN_REQUEST} has to be.
+     * Nacos request types that are a deliberate boundary rather than a gap.
+     * They have no DTO here — their bodies are never parsed — so each token
+     * is spelled out by hand, the one place the token rule is bent.
      */
     public static final Set<String> UNSUPPORTED_REQUEST_TYPES = Set.of(
             "NamingFuzzyWatchRequest", "NamingFuzzyWatchSyncRequest",
             "NamingFuzzyWatchChangeNotifyRequest",
-            "ConfigPublishRequest", "ConfigQueryRequest", "ConfigDeleteRequest",
-            "ConfigBatchGetRequest");
+            "ConfigFuzzyWatchRequest", "ConfigFuzzyWatchSyncRequest",
+            "ConfigFuzzyWatchChangeNotifyRequest");
 
     /** The reason behind every refusal, so client and log read the same sentence. */
     public static final String UNSUPPORTED_BOUNDARY =
             "harbor serves persistent instances only through PersistentInstanceRequest "
                     + "(CP/Raft): no persistent instances inside InstanceRequest or batches, "
-                    + "no fuzzy watch, no config center";
+                    + "no fuzzy watch";
 
     /**
      * Values of {@code InstanceRequest.type} / {@code BatchInstanceRequest.type}

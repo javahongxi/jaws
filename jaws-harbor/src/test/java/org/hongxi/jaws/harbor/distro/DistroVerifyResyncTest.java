@@ -58,12 +58,7 @@ class DistroVerifyResyncTest {
             return n == null ? List.of() : n.onVerify(verifyInfos);
         }
 
-                @Override
-        public boolean syncConfigBroadcast(String targetAddress, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest request) {
-            return true;
-        }
-
-@Override
+        @Override
         public byte[] getSnapshot(String targetAddress) {
             DistroProtocol n = nodes.get(targetAddress);
             return n == null ? null : n.onSnapshot();

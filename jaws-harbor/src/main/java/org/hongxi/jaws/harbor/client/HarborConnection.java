@@ -6,13 +6,14 @@ import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.harbor.HarborProtocol;
 import org.hongxi.jaws.harbor.model.Request;
 import org.hongxi.jaws.harbor.model.Response;
+import org.hongxi.jaws.harbor.model.request.ConfigChangeNotifyRequest;
 import org.hongxi.jaws.harbor.model.request.ConnectResetRequest;
 import org.hongxi.jaws.harbor.model.request.ConnectionSetupRequest;
-import org.hongxi.jaws.harbor.model.request.DynamicConfigChangeRequest;
 import org.hongxi.jaws.harbor.model.request.HealthCheckRequest;
 import org.hongxi.jaws.harbor.model.request.NotifySubscriberRequest;
 import org.hongxi.jaws.harbor.model.request.ServerCheckRequest;
 import org.hongxi.jaws.harbor.model.request.SetupAckRequest;
+import org.hongxi.jaws.harbor.model.response.ConfigChangeNotifyResponse;
 import org.hongxi.jaws.harbor.model.response.ConnectResetResponse;
 import org.hongxi.jaws.harbor.model.response.HealthCheckResponse;
 import org.hongxi.jaws.harbor.model.response.ServerCheckResponse;
@@ -22,6 +23,7 @@ import org.hongxi.jaws.rpc.URL;
 import org.hongxi.jaws.stream.StreamObserver;
 import org.hongxi.jaws.stream.StreamSource;
 import org.hongxi.jaws.transport.StreamSubject;
+import org.hongxi.jaws.wire.WireCallOptions;
 import org.hongxi.jaws.wire.WireClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -156,7 +158,13 @@ final class HarborConnection implements Closeable {
         return response;
     }
 
-    private <T extends Response> T tryCall(Request request, Class<T> responseType) {
+    /**
+     * One call with connection-level recovery and a single retry, returning the
+     * typed reply as-is — package-private so the client can read answers whose
+     * {@code success=false} is a state rather than a rejection (the config
+     * query's {@code CONFIG_NOT_FOUND}).
+     */
+    <T extends Response> T tryCall(Request request, Class<T> responseType) {
         try {
             return doCall(request, responseType);
         } catch (JawsServiceException e) {
@@ -377,8 +385,13 @@ final class HarborConnection implements Closeable {
         rpcRequest.setMethodName(HarborProtocol.RPC_STREAM_METHOD);
         rpcRequest.setArguments(new Object[0]);
 
+        // The notification stream lives as long as the connection: an ordinary
+        // RPC deadline would cut it mid-life (DEADLINE_EXCEEDED) and silence
+        // every push until something else noticed. nacos-client's bi-stream
+        // carries no deadline either.
         StreamSource<Object> inbound = wireClient.requestBidiStream(rpcRequest, requestStream,
-                Payload.getDefaultInstance().getParserForType());
+                Payload.getDefaultInstance().getParserForType(),
+                WireCallOptions.DEFAULT.withDeadlineMs(Integer.MAX_VALUE));
         inbound.subscribe(new StreamObserver<>() {
             @Override
             public void onNext(Object item) {
@@ -391,11 +404,13 @@ final class HarborConnection implements Closeable {
             public void onError(Throwable throwable) {
                 log.info("[harbor-client] notification stream error: {}",
                         throwable.getMessage());
+                recoverIfCurrent(requestStream);
             }
 
             @Override
             public void onCompleted() {
                 log.info("[harbor-client] notification stream closed by harbor");
+                recoverIfCurrent(requestStream);
             }
         });
 
@@ -417,6 +432,26 @@ final class HarborConnection implements Closeable {
         }
     }
 
+    /**
+     * A stream that died on its own (deadline, reset, transport error) must be
+     * reopened and its owned state replayed — the keep-alive tick cannot see it,
+     * because unary calls on the same channel still answer. Recovery runs off
+     * the stream thread, and only while the dead stream is still the current
+     * one: recover() itself completes the old stream, whose end event must not
+     * trigger another recovery.
+     */
+    private void recoverIfCurrent(StreamSubject<Object> stream) {
+        keepAliveScheduler.execute(() -> {
+            if (!closed && outbound == stream) {
+                try {
+                    recover();
+                } catch (Exception e) {
+                    log.warn("[harbor-client] recovery after stream loss failed: {}", e.getMessage());
+                }
+            }
+        });
+    }
+
     private void handleFrame(Payload payload) {
         String type = payload.getMetadata().getType();
         if (HarborProtocol.typeToken(SetupAckRequest.class).equals(type)) {
@@ -431,11 +466,16 @@ final class HarborConnection implements Closeable {
             pushSink.accept(payload);
             return;
         }
-        if (HarborProtocol.typeToken(DynamicConfigChangeRequest.class).equals(type)) {
-            // A config broadcast is control traffic, not instance traffic: it does
+        if (HarborProtocol.typeToken(ConfigChangeNotifyRequest.class).equals(type)) {
+            // A config notice is control traffic, not instance traffic: it does
             // not prove the server is answering naming calls, so it deliberately
-            // does not refresh the liveness clock.
+            // does not refresh the liveness clock. The ack mirrors nacos-client;
+            // delivery itself is healed by the listen replay, not by the ack.
             configSink.accept(payload);
+            StreamSubject<Object> stream = outbound;
+            if (stream != null) {
+                stream.onNext(HarborProtocol.encodeResponse(new ConfigChangeNotifyResponse()));
+            }
             return;
         }
         if (HarborProtocol.typeToken(ConnectResetRequest.class).equals(type)) {

@@ -43,7 +43,7 @@ class StaleStreamClosureTest {
         storage = new ServiceStorage(cm, key -> { });
         ClusterManager cluster = new ClusterManager(new URL("harbor", "127.0.0.1", 19848, ""));
         DistroProtocol distro = new DistroProtocol(cluster, new NoopTransport(), storage, cm);
-        cleanup = new ConnectionCleanup(cm, storage, distro);
+        cleanup = new ConnectionCleanup(cm, storage, distro, new ConfigListenContext());
     }
 
     @Test
@@ -97,7 +97,6 @@ class StaleStreamClosureTest {
         @Override public List<String> syncVerify(String addr, List<ClientVerifyInfo> infos) {
             return List.of();
         }
-        @Override public boolean syncConfigBroadcast(String a, org.hongxi.jaws.harbor.model.request.ConfigBroadcastSyncRequest r) { return true; }
 
         @Override public byte[] getSnapshot(String addr) {
             return new byte[0];
