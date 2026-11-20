@@ -192,6 +192,14 @@ public class NacosRegistry extends FailbackRegistry implements Closeable {
         List<URL> urls = new ArrayList<>();
         if (instances != null) {
             for (Instance instance : instances) {
+                // A persistent instance outlives its process: the registry keeps
+                // the address and flips healthy via server-side probing, so an
+                // unhealthy or disabled entry must not become a reference. For
+                // ephemeral entries this is a no-op — they are removed from the
+                // registry on disconnect instead of being flagged.
+                if (!instance.isHealthy() || !instance.isEnabled()) {
+                    continue;
+                }
                 Map<String, String> metadata = instance.getMetadata();
                 URL parsedUrl;
                 if (metadata != null && metadata.containsKey(METADATA_KEY_PROTOCOL)) {

@@ -681,7 +681,10 @@ public class HarborServer {
         response.setResultCode(200);
         response.setSuccess(true);
         response.setConnectionId(connectionId);
-        response.setSupportAbilityNegotiation(false);
+        // Must be true for nacos-client to keep the SetupAck ability table: it only
+        // arms the negotiation context when this flag is set, and without the table
+        // a persistent registration looks unsupported and falls back to HTTP v1.
+        response.setSupportAbilityNegotiation(true);
         return HarborProtocol.encodeResponse(response, clientIp);
     }
 

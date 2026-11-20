@@ -295,10 +295,11 @@ final class HarborConnection implements Closeable {
         }
         this.connectionId = assigned;
         if (check.isSupportAbilityNegotiation()) {
-            // Our own server always answers false; a client pointed at a negotiating
-            // node is told plainly instead of silently skipping the negotiation.
-            log.warn("[harbor-client] {}:{} requested ability negotiation, which the native"
-                    + " client does not implement", host, port);
+            // Harbor negotiates abilities for nacos-client's sake; the native client
+            // needs no table (it sends PersistentInstanceRequest directly), so the
+            // SetupAck's ability payload is simply ignored.
+            log.debug("[harbor-client] {}:{} negotiates abilities; the native client"
+                    + " ignores the table", host, port);
         }
     }
 

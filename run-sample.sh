@@ -43,6 +43,9 @@ HARBORX_CONSUMER_MODULE="jaws-samples/jaws-sample-harborx-consumer"
 # Persistent-instance (Raft CP) demo against the same HarborServer.
 RAFT_PROVIDER_MODULE="jaws-samples/jaws-sample-raft-provider"
 RAFT_CONSUMER_MODULE="jaws-samples/jaws-sample-raft-consumer"
+# The same Raft CP path, reached through the nacos leg (real nacos-client).
+RAFTX_PROVIDER_MODULE="jaws-samples/jaws-sample-raftx-provider"
+RAFTX_CONSUMER_MODULE="jaws-samples/jaws-sample-raftx-consumer"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -75,6 +78,8 @@ HARBORX_PROVIDER_MAIN="org.hongxi.jaws.sample.harborx.provider.HarborxProvider"
 HARBORX_CONSUMER_MAIN="org.hongxi.jaws.sample.harborx.consumer.HarborxConsumer"
 RAFT_PROVIDER_MAIN="org.hongxi.jaws.sample.raft.provider.RaftProvider"
 RAFT_CONSUMER_MAIN="org.hongxi.jaws.sample.raft.consumer.RaftConsumer"
+RAFTX_PROVIDER_MAIN="org.hongxi.jaws.sample.raftx.provider.RaftxProvider"
+RAFTX_CONSUMER_MAIN="org.hongxi.jaws.sample.raftx.consumer.RaftxConsumer"
 
 usage() {
     cat <<'EOF'
@@ -105,6 +110,7 @@ usage() {
     harbor-provider [port]  Start HarborProvider in foreground (requires HarborServer, default port 20000)
     harbor [port]      One-shot Harbor sample: Provider -> Consumer (requires HarborServer running)
     raft               One-shot Raft persistent-instance sample: RaftProvider -> RaftConsumer (requires HarborServer running)
+    raftx              Same, but the registry leg is a real nacos-client (persistent registration + subscription)
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
     bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
@@ -148,6 +154,7 @@ usage() {
     ./run-sample.sh harbor             # One-shot Provider + Consumer (requires HarborServer)
     ./run-sample.sh harborx            # Same, but the registry leg is jaws-registry-nacos
     ./run-sample.sh raft               # One-shot persistent-instance (Raft CP) demo
+    ./run-sample.sh raftx              # Same, but the registry leg is a real nacos-client
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -698,6 +705,22 @@ cmd_harbor() {
     echo "=== Done ==="
 }
 
+# Point the shared raft one-shot at the nacos-leg sample modules, so the two
+# legs are exercised by the same script rather than by a copy of it.
+_use_raftx_leg() {
+    RAFT_PROVIDER_MODULE="$RAFTX_PROVIDER_MODULE"
+    RAFT_CONSUMER_MODULE="$RAFTX_CONSUMER_MODULE"
+    RAFT_PROVIDER_MAIN="$RAFTX_PROVIDER_MAIN"
+    RAFT_CONSUMER_MAIN="$RAFTX_CONSUMER_MAIN"
+    RAFT_PROVIDER_PORT=20011
+    RAFT_SVC_TAG="raftx-svc"
+}
+
+cmd_raftx() {
+    _use_raftx_leg
+    cmd_raft "$@"
+}
+
 # One-shot persistent-instance demo: RaftProvider registers DemoService with
 # ephemeral=false (committed through harbor's Raft CP path), RaftConsumer
 # discovers and calls it. Unlike the ephemeral harbor demo, the registration
@@ -705,7 +728,8 @@ cmd_harbor() {
 cmd_raft() {
     ensure_built
     local harbor_port=19848
-    local provider_port=20010
+    local provider_port="${RAFT_PROVIDER_PORT:-20010}"
+    local svc_tag="${RAFT_SVC_TAG:-raft-svc}"
 
     # Check if HarborServer is already running (lsof avoids triggering HTTP/2 handler errors)
     local harbor_running=0
@@ -729,8 +753,8 @@ cmd_raft() {
     fi
     echo "HarborServer detected on port $harbor_port."
 
-    local provider_pid_file=".provider-raft-svc.pid"
-    local provider_log_file="provider-raft-svc.log"
+    local provider_pid_file=".provider-${svc_tag}.pid"
+    local provider_log_file="provider-${svc_tag}.log"
 
     # 1. Start RaftProvider in background
     echo "[1/4] Starting RaftProvider port=$provider_port (persistent instance) ..."
@@ -1034,6 +1058,7 @@ case "${1:-}" in
     harborx)         shift; cmd_harborx "$@" ;;
     harborx-provider) shift; cmd_harborx_provider "$@" ;;
     raft)            cmd_raft ;;
+    raftx)           shift; cmd_raftx "$@" ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;
