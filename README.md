@@ -72,6 +72,7 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 ./run-sample.sh harbor-cluster     # 启动内置轻量注册中心（集群模式）
 ./run-sample.sh harbor             # 运行示例（sample-harbor-provider/consumer，使用原生 client）
 ./run-sample.sh harborx            # 运行示例（sample-harborx-provider/consumer，使用 nacos-client）
+./run-sample.sh raft               # 运行持久实例示例（sample-raft-provider/consumer，注册走 Raft CP，kill 后不丢）
 ./run-sample.sh stop               # 停止注册中心
 
 # 性能测试（8 核实测约 14 万 QPS，详见 doc/benchmark.md）

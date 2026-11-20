@@ -40,6 +40,9 @@ HARBOR_CONSUMER_MODULE="jaws-samples/jaws-sample-harbor-consumer"
 # The same HarborServer, reached through the nacos leg (real nacos-client).
 HARBORX_PROVIDER_MODULE="jaws-samples/jaws-sample-harborx-provider"
 HARBORX_CONSUMER_MODULE="jaws-samples/jaws-sample-harborx-consumer"
+# Persistent-instance (Raft CP) demo against the same HarborServer.
+RAFT_PROVIDER_MODULE="jaws-samples/jaws-sample-raft-provider"
+RAFT_CONSUMER_MODULE="jaws-samples/jaws-sample-raft-consumer"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -70,6 +73,8 @@ HARBOR_PROVIDER_MAIN="org.hongxi.jaws.sample.harbor.provider.HarborProvider"
 HARBOR_CONSUMER_MAIN="org.hongxi.jaws.sample.harbor.consumer.HarborConsumer"
 HARBORX_PROVIDER_MAIN="org.hongxi.jaws.sample.harborx.provider.HarborxProvider"
 HARBORX_CONSUMER_MAIN="org.hongxi.jaws.sample.harborx.consumer.HarborxConsumer"
+RAFT_PROVIDER_MAIN="org.hongxi.jaws.sample.raft.provider.RaftProvider"
+RAFT_CONSUMER_MAIN="org.hongxi.jaws.sample.raft.consumer.RaftConsumer"
 
 usage() {
     cat <<'EOF'
@@ -99,6 +104,7 @@ usage() {
     harbor-cluster       Start 3-node HarborServer cluster (ports 19848/19849/19850)
     harbor-provider [port]  Start HarborProvider in foreground (requires HarborServer, default port 20000)
     harbor [port]      One-shot Harbor sample: Provider -> Consumer (requires HarborServer running)
+    raft               One-shot Raft persistent-instance sample: RaftProvider -> RaftConsumer (requires HarborServer running)
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
     bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
@@ -141,6 +147,7 @@ usage() {
     ./run-sample.sh harbor-provider 10001  # Start HarborProvider port 10001
     ./run-sample.sh harbor             # One-shot Provider + Consumer (requires HarborServer)
     ./run-sample.sh harborx            # Same, but the registry leg is jaws-registry-nacos
+    ./run-sample.sh raft               # One-shot persistent-instance (Raft CP) demo
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -691,6 +698,98 @@ cmd_harbor() {
     echo "=== Done ==="
 }
 
+# One-shot persistent-instance demo: RaftProvider registers DemoService with
+# ephemeral=false (committed through harbor's Raft CP path), RaftConsumer
+# discovers and calls it. Unlike the ephemeral harbor demo, the registration
+# SURVIVES the provider shutdown at the end — that durability is the point.
+cmd_raft() {
+    ensure_built
+    local harbor_port=19848
+    local provider_port=20010
+
+    # Check if HarborServer is already running (lsof avoids triggering HTTP/2 handler errors)
+    local harbor_running=0
+    if command -v lsof >/dev/null 2>&1; then
+        if lsof -Pi :$harbor_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+            harbor_running=1
+        fi
+    else
+        if (echo > /dev/tcp/127.0.0.1/$harbor_port) 2>/dev/null; then
+            harbor_running=1
+        fi
+    fi
+
+    if [ $harbor_running -eq 0 ]; then
+        echo "HarborServer is not running on port $harbor_port."
+        echo ""
+        echo "Please start it first:"
+        echo "  ./run-sample.sh harbor-standalone          # single node"
+        echo "  ./run-sample.sh harbor-cluster             # 3-node raft cluster"
+        exit 1
+    fi
+    echo "HarborServer detected on port $harbor_port."
+
+    local provider_pid_file=".provider-raft-svc.pid"
+    local provider_log_file="provider-raft-svc.log"
+
+    # 1. Start RaftProvider in background
+    echo "[1/4] Starting RaftProvider port=$provider_port (persistent instance) ..."
+    local provider_cp
+    provider_cp=$(build_classpath "$RAFT_PROVIDER_MODULE")
+    java -cp "$provider_cp:$RAFT_PROVIDER_MODULE/target/classes" \
+        -Dport="$provider_port" \
+        -Dharbor.port="$harbor_port" \
+        "$RAFT_PROVIDER_MAIN" > "$provider_log_file" 2>&1 &
+    local provider_pid=$!
+    echo "$provider_pid" > "$provider_pid_file"
+
+    # 2. Wait for the persistent registration to commit through raft
+    echo -n "[2/4] Waiting for persistent registration "
+    local max_wait=15
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if grep -q "Persistent instance registered" "$provider_log_file" 2>/dev/null; then
+            echo " ready (${waited}s)"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        echo -n "."
+    done
+    if [ $waited -ge $max_wait ]; then
+        echo " timeout (${max_wait}s), continuing..."
+    fi
+
+    # 3. Run consumer
+    echo "[3/4] Running RaftConsumer ..."
+    echo "--------------------------------------------"
+    local consumer_cp
+    consumer_cp=$(build_classpath "$RAFT_CONSUMER_MODULE")
+    java -cp "$consumer_cp:$RAFT_CONSUMER_MODULE/target/classes" \
+        -Dharbor.port="$harbor_port" \
+        "$RAFT_CONSUMER_MAIN"
+    local consumer_exit=$?
+    echo "--------------------------------------------"
+
+    # 4. Stop provider and clean up. The registration itself stays in harbor's
+    # raft log — kill -9 semantics: the leader's TCP probe flips it unhealthy.
+    echo "[4/4] Stopping RaftProvider ..."
+    if kill -0 "$provider_pid" 2>/dev/null; then
+        kill "$provider_pid" 2>/dev/null
+        wait "$provider_pid" 2>/dev/null || true
+    fi
+    rm -f "$provider_pid_file" "$provider_log_file"
+
+    if [ $consumer_exit -ne 0 ]; then
+        echo "Consumer exit code: $consumer_exit"
+        exit $consumer_exit
+    fi
+    echo "=== Done ==="
+    echo "Note: the persistent registration survives this shutdown (that is the demo)."
+    echo "Inspect it:  curl http://localhost:$((harbor_port + 10))/api/raft"
+    echo "Re-running this command replaces the instance idempotently."
+}
+
 cmd_wire_interop() {
     ensure_built
     local run_keepalive=0
@@ -934,6 +1033,7 @@ case "${1:-}" in
     harbor-provider) shift; cmd_harbor_provider "$@" ;;
     harborx)         shift; cmd_harborx "$@" ;;
     harborx-provider) shift; cmd_harborx_provider "$@" ;;
+    raft)            cmd_raft ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;
