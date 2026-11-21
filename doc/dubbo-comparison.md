@@ -58,6 +58,13 @@ Jaws 是接口级注册：每个接口向注册中心注册一条全量 URL（�
 - **后果与取舍**：残留正确性无害（consumer 只按在线实例携带的 revision 取数），但每次服务变更产生新 revision、旧配置永不清理，长期运行积累孤儿元数据需运维侧清理；ZooKeeper 腿同理，是"共享 revision 无引用计数"模型决定的，非 Nacos 特有
 - **口径限定**：以上是 `metadata-type=remote`（元数据中心）路径；Dubbo 默认 `local` 模式的元数据存 provider 进程内 `MetadataService`（内存），consumer 按 revision 通过 RPC 拉取，不落 Nacos
 
+local 模式的拉取链路（源码核实于 `dubbo-registry-api`）：
+
+- **触发时机在地址刷新路径而非调用路径**：注册中心实例变更通知 → `ServiceInstancesChangedListener.doOnEvent` 把应用全部实例按 revision 分组，每个 revision 组走一次三级短路：① 复用组内实例已挂的 MetadataInfo（零 RPC）→ ② 查 `MetaCacheManager` 缓存 → ③ 真 RPC；拉取成功后回填组内所有实例，后续通知直接在①短路
+- **RPC 形态**：从 revision 组随机挑一个实例（避免热点），用实例 metadata 的 endpoints 构建一次性 MetadataService 代理（复用 provider 业务端口，优先 V2 protobuf stub），调 `getMetadataInfo(revision)` 后立即 destroy；provider 侧 `MetadataServiceDelegation` 纯内存 revision→MetadataInfo 查找；外层最多重试 3 次、间隔 1s
+- **缓存与去重**：`MetaCacheManager` 为 LRU 默认 100 条 + 本地文件 `.metadata.<registry>`（启动加载、每 60 分钟落盘），put 时重算内容 revision 与 key 比对（内容寻址自校验）；去重粒度即 revision，同 revision 的 N 个实例只拉一次，同应用多接口订阅共享同一 listener
+- **失败兜底**：全部 revision 拉空则本次通知作废（不刷地址），每 10s 重试；部分失败先通知成功部分再挂重试任务
+
 对 Jaws 的启示：差距的本质不是"多一个元数据中心"，而是"naming 轻量指针 + config 内容寻址"的存储模型分层；Jaws 若引入应用级发现，Harbor 的 config 面（Raft 持久化）可天然承担元数据中心角色，但同样要面对 revision 清理问题。
 
 ## 三、流量治理
