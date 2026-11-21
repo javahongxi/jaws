@@ -98,6 +98,9 @@ public class JawsAutoConfiguration {
         if (registryProps.getCacheFile() != null) {
             registryConfig.setCacheFile(registryProps.getCacheFile());
         }
+        if (registryProps.getRegisterMode() != null) {
+            registryConfig.setRegisterMode(registryProps.getRegisterMode());
+        }
         return registryConfig;
     }
 

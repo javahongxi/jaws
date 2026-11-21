@@ -275,6 +275,11 @@ public class JawsProperties {
          */
         private String cacheFile;
 
+        /**
+         * Register mode: interface (default) or instance (application-level discovery).
+         */
+        private String registerMode;
+
         public String getAddress() {
             return address;
         }
@@ -337,6 +342,14 @@ public class JawsProperties {
 
         public void setCacheFile(String cacheFile) {
             this.cacheFile = cacheFile;
+        }
+
+        public String getRegisterMode() {
+            return registerMode;
+        }
+
+        public void setRegisterMode(String registerMode) {
+            this.registerMode = registerMode;
         }
     }
 
