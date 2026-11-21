@@ -12,6 +12,7 @@ package org.hongxi.jaws.metadata;
  *
  * @see ApplicationMetadataManager
  */
+@FunctionalInterface
 public interface MetadataService {
 
     /**

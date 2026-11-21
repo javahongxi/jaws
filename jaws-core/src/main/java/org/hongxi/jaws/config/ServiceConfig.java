@@ -392,20 +392,20 @@ public class ServiceConfig<T> extends InterfaceConfig {
         if (!METADATA_SERVICE_EXPORTED.add(application)) {
             return;
         }
-        ServiceConfig<MetadataService> metadataConfig = new ServiceConfig<>();
-        metadataConfig.setInterface(MetadataService.class);
-        metadataConfig.setRef(revision -> ApplicationMetadataManager.getMetadataInfo(application, revision));
-        metadataConfig.setApplication(application);
+        ServiceConfig<MetadataService> metadataServiceConfig = new ServiceConfig<>();
+        metadataServiceConfig.setInterface(MetadataService.class);
+        metadataServiceConfig.setRef(revision -> ApplicationMetadataManager.getMetadataInfo(application, revision));
+        metadataServiceConfig.setApplication(application);
         // Inherit service coordinates so the provider-side serviceKey matches the
         // group/version attachments consumers copy from the discovered instance URL.
-        metadataConfig.setGroup(group);
-        metadataConfig.setVersion(version);
-        metadataConfig.setToken(token);
-        metadataConfig.setProtocol(protocolConfig);
+        metadataServiceConfig.setGroup(group);
+        metadataServiceConfig.setVersion(version);
+        metadataServiceConfig.setToken(token);
+        metadataServiceConfig.setProtocol(protocolConfig);
         // No registries: reachable only point-to-point via the instance address.
-        metadataConfig.setRegistries(List.of());
-        metadataConfig.shutdownHookPriority = 15;
-        metadataConfig.export();
+        metadataServiceConfig.setRegistries(List.of());
+        metadataServiceConfig.shutdownHookPriority = 15;
+        metadataServiceConfig.export();
     }
 
     private boolean isInstanceMode(URL registryUrl) {
