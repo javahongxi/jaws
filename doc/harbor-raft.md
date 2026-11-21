@@ -203,7 +203,27 @@ ZAB 把运行分为两种模式。**崩溃恢复**：FastLeaderElection 按 `(ep
 
 对 harbor 的映照：ZAB 用一个独立同步阶段完成的事，Raft 拆成两处日常机制——冲突截断分摊进每次 AppendEntries，「已提交不丢、未提交不生效」由选举限制 + NOOP + 恢复时序（§3.5）联合担保。harbor 的 `RaftLog.appendFollower` 截断与 ZAB 的 TRUNC 同构，差别只在触发时机：ZAB 集中在恢复期，Raft 分散在复制期。
 
-## 11. 边界（本期不做）
+## 11. Paxos 对照：同一家族的祖先形状
+
+Paxos 是 Lamport 1998 年《The Part-Time Parliament》提出的共识协议（2001 年《Paxos Made Simple》重述），解决的是比日志复制更原始的问题：**一群可能宕机、网络可能丢包乱序的节点，如何对单个值达成不可推翻的共识**——值一旦被选定（chosen）就永不更改。它没有单一权威开源实现，正确性证明与工程变体散在各家系统里（Google Chubby/Spanner 的 Multi-Paxos 变体、微信 PhxPaxos、OceanBase 早期版本）。Raft 论文自认是 Paxos 家族的后代：Ongaro 的直接动机正是「Paxos 正确但太难理解、太难实现对，所以设计一个可理解的等价物」。与 ZAB 是「同代兄弟」不同，Paxos 是这一谱系的**祖先**——Raft 可以看作 Multi-Paxos 强 leader 路线的工程化重写。
+
+Basic Paxos 分两阶段，角色为 Proposer/Acceptor/Learner，提案带全局递增编号 n。**Prepare（抢占提案权）**：Proposer 向多数派发 `Prepare(n)`；Acceptor 若 n 大于见过的所有编号，就承诺不再接受编号更小的提案，并回报自己已接受过的最大编号提案。**Accept（提交值）**：拿到多数派承诺后发 `Accept(n, v)`——v 不能随便选，回报里若有人接受过值，必须继承其中编号最大者，都没接受过才能用自己的值；多数派接受即选定。安全性靠两条交织：任何两个多数派必有交集，「先承诺后接受」+「必须继承已见过的最大值」保证两个不同的值不可能都凑齐多数派。但 Basic Paxos 只保证安全不保证终止——两个 Proposer 互相用更大的 n 抢来抢去会活锁；要连续定多个值，得靠 **Multi-Paxos**：选一个稳定 leader 当唯一 Proposer，跳过阶段一直接连续跑阶段二。走到这一步，形状已经非常接近 Raft。
+
+| 维度 | Paxos / Multi-Paxos | Raft（harbor 实现） |
+|---|---|---|
+| 共识对象 | 单个任意值；Multi-Paxos 逐个定值拼成序列 | 日志条目：值被约束为「某 index 某 term 的命令」，复制状态机 |
+| leader 地位 | 可选优化——无 leader 也能定值，只是易活锁 | 协议前提：无 leader 不能推进任何写（§3.2 选举是唯一入口） |
+| 日志形状 | Multi-Paxos 允许乱序定值、留空洞后补 | 禁止空洞：prevLog 检查保证连续（§3.3），空洞在结构上不可能出现 |
+| 安全性机制 | 提案编号 + 承诺 + 继承最大值，逐值论证 | 选举限制（§3.2）+ 当前 term 提交规则（§3.3 Figure 8），一次论证覆盖整条日志 |
+| 未提交数据处理 | 已接受未选定的值可被更大编号提案覆盖，无「截断」概念 | 分布式截断：term 冲突处截断取 leader 版本；重启后缀只进结构不进状态机（§3.5） |
+| 终止性 | Basic Paxos 有活锁；Multi-Paxos 靠稳定 leader 规避 | 随机选举超时 + 单 leader 天然规避活锁（§3.2） |
+| 成员变更 | 原始论文未覆盖，各变体自行扩展 | 论文原生 joint consensus；harbor 静态成员（§7） |
+
+正确性上两者等价（都是多数派交集担保的共识）；差别在**约束的多少**：Raft 用「强 leader + 日志连续 + 选举限制」三条额外约束，把 Paxos 里逐值论证的安全性收敛成一次性论证，代价是失去无 leader 定值与乱序定值的自由——对复制状态机场景这些自由本来就用不上。这正是 Raft 论文标题「In Search of an Understandable Consensus Algorithm」的含义：不是更强的协议，而是更好懂的协议。工程后果也由此而来：Paxos 的正确性极难证、实现极易错，从未像 Raft 那样抽成通用库（etcd/TiKV/JRaft/Kafka KRaft 一律选 Raft，Nacos CP 用 JRaft 即此路）；直接用 Paxos 系的系统（Chubby/Spanner、PhxPaxos）都是大厂以专门团队维护的私有变体。
+
+对 harbor 的映照：Paxos「继承已见过的最大值」与 harbor 的选举限制（§3.2 先比 lastLogTerm 再比 lastLogIndex）是同一个思想——新权威必须持有全部已担保的过去；差别在 Paxos 逐提案编号论证，Raft 把它特化成「日志最新者才能当选」一条规则。harbor 的 NOOP（§3.3）在 Paxos 里没有对应物——它是 Raft 为「旧 term 条目搭车提交」专门补的机制，也是 Figure 8 反例的解药；裸 Multi-Paxos 不需要它，因为它压根没有「按 term 数副本」的提交规则。可以说 harbor 里每一处「刻意多出来的机制」，都是 Raft 用约束换可理解性时付出的找零。
+
+## 12. 边界（本期不做）
 
 - Raft 成员变更（joint consensus）、ReadIndex/线性一致读、PreVote、日志分块 InstallSnapshot。
 - 持久实例不支持 batch；config 不做 console、版本回滚、灰度发布、审计（fuzzy watch 仍是边界）；不做服务元数据独立 CP 存储。
