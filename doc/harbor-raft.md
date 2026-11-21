@@ -223,7 +223,24 @@ Basic Paxos 分两阶段，角色为 Proposer/Acceptor/Learner，提案带全局
 
 对 harbor 的映照：Paxos「继承已见过的最大值」与 harbor 的选举限制（§3.2 先比 lastLogTerm 再比 lastLogIndex）是同一个思想——新权威必须持有全部已担保的过去；差别在 Paxos 逐提案编号论证，Raft 把它特化成「日志最新者才能当选」一条规则。harbor 的 NOOP（§3.3）在 Paxos 里没有对应物——它是 Raft 为「旧 term 条目搭车提交」专门补的机制，也是 Figure 8 反例的解药；裸 Multi-Paxos 不需要它，因为它压根没有「按 term 数副本」的提交规则。可以说 harbor 里每一处「刻意多出来的机制」，都是 Raft 用约束换可理解性时付出的找零。
 
-## 12. 边界（本期不做）
+## 12. ReadIndex 与线性一致读：刻意不担保的读
+
+**线性一致（linearizable）**要求每个操作看起来在调用与返回之间的某个瞬间原子生效，且尊重真实时间顺序。落到读写上最直白的一条：**写一旦收到成功应答，之后任何节点发起的读都必须能看到它**（或更新的值）。harbor 的读不满足这条——§7 的 stale read：查询直查本节点内存索引，可能落后 leader 一个复制窗口。典型场景：t1 向 leader 注册实例 X 拿到成功应答，t2 立刻向 follower B 查询，B 还没 apply 到那条日志，查不到 X——写已担保、读却「看不见刚写成功的值」。config 面更刺眼：发布成功后另一节点 getConfig 可能拿到旧值。这不是遗漏，是刻意选择；本节把「若要担保，代价是什么」讲清。
+
+为什么不能「读 leader 内存」就完事？两个坑都与既有机制相关：其一，**leader 可能已被废黜而不自知**——网络分区后旧 leader 还在收读请求，新 leader 已在另一侧提交新写，旧 leader 的内存是过期的（与 §3.2 stepDown 规则同源：term 更高的回包才触发退位，分区期间收不到）；其二，**新 leader 的内存也不全**——当选只保证日志最全，不保证状态机最全，commitIndex 要等当前 term 的 NOOP 提交才推进（§3.3），当选瞬间 lastApplied 可能还停在旧位置（§3.5 恢复时序同理）。
+
+| 路线 | 原理 | 每次读代价 | 担保与前提 |
+|---|---|---|---|
+| 读走日志（Read as Log） | 把读本身当命令 propose，等 commit + apply 后读状态机 | 一轮完整复制（写日志 + fsync + 多数派） | 绝对正确，但读付写的代价，无人采用 |
+| **ReadIndex**（论文 §6.4） | leader 记当前 commitIndex 为 readIndex → 一轮心跳确认仍被多数派承认 → 等 `lastApplied >= readIndex` 后直读本地状态机 | 一轮心跳 RTT + 等 apply，不占日志 | 线性一致；心跳确认堵废黜坑，等 apply 堵新 leader 坑 |
+| Lease read | 连心跳都省：leader 靠时钟租约断言「选举超时内我必然还是 leader」，直接读 | 近乎零 | 线性一致，但前提是各节点时钟漂移有界——用硬件假设换性能 |
+| **harbor stale read（§7）** | 任何节点直查本地内存索引 | 零 | 不担保：可能落后一个复制窗口；与 Nacos naming 实际读语义一致 |
+
+采用面上，线性一致读是 KV 存储的标配而非注册中心的：etcd 默认 ReadIndex，TiKV 提供 lease read 与 follower read（follower 向 leader 要 readIndex 后本地等 apply，读流量不打 leader）；JRaft 同样提供 ReadIndex/lease 路线，但 Nacos naming 的读实际直查内存索引（§7 已钉）——与 harbor 同侧。ZK 的常态读也是 follower 本地旧读，要线性一致得显式 `sync()`（§10）：三家注册中心在「读默认不担保」上站同一侧，只有把读当产品的系统才把 ReadIndex 当标配。
+
+对 harbor 的映照：若将来要做，ReadIndex 是最自然的路线——算法状态全活在单线程事件循环上（§3.1），记 readIndex、等 apply 都是同一线程上的普通事件，零额外锁；心跳确认需按需发起一轮（不能复用 300ms 周期心跳，否则读延迟被心跳节拍绑架）；follower 读则需转发 leader 要 readIndex，形状与写转发（§5）同构。不做的理由仍是 §7 那条：服务发现晚一个复制窗口（百毫秒级）浮现实例完全可接受，而 ReadIndex 要给**每次读**加一轮心跳确认，收益对注册中心不成比例。边界清单里的「ReadIndex/线性一致读」与 stale read 是同一枚硬币的两面：读不担保是决策，不是欠账。
+
+## 13. 边界（本期不做）
 
 - Raft 成员变更（joint consensus）、ReadIndex/线性一致读、PreVote、日志分块 InstallSnapshot。
 - 持久实例不支持 batch；config 不做 console、版本回滚、灰度发布、审计（fuzzy watch 仍是边界）；不做服务元数据独立 CP 存储。
