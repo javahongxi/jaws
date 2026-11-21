@@ -24,15 +24,15 @@ jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
 
 | 模块 | 手码规模 | 职责 | 层 |
 |---|---|---|---|
-| `jaws-stream-api` | ~95 行 | 流式收发的中立契约（push-only） | 契约 |
-| `jaws-core` | ~20.8k | RPC 骨架六层 + 扩展机制 | 骨架 |
-| `jaws-wire` | ~10.3k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
+| `jaws-stream-api` | ~110 行 | 流式收发的中立契约（push-only） | 契约 |
+| `jaws-core` | ~21.1k | RPC 骨架六层 + 扩展机制 | 骨架 |
+| `jaws-wire` | ~10.6k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
 | `jaws-wire-proto` | 生成码 | protoc 生成物（health/reflection/rpc.Status）隔离 | 对外协议 |
-| `jaws-registry-zookeeper` | ~670 | Registry SPI 的 ZooKeeper 实现（Curator） | 注册发现 |
-| `jaws-registry-nacos` | ~490 | Registry SPI 的 Nacos 薄封装 | 注册发现 |
-| `jaws-registry-harbor` | ~270 | Registry SPI 的 Harbor 客户端（对接 `jaws-harbor` 注册中心） | 注册发现 |
-| `jaws-harbor` | ~4.6k 手码 | 兼容 nacos-client 的轻量注册中心（服务端） | 注册发现 |
-| `jaws-spring-boot` | 聚合 + ~1.6k | 两个 starter：声明式接入 + 可观测装配 | 集成 |
+| `jaws-registry-zookeeper` | ~830 | Registry SPI 的 ZooKeeper 实现（Curator）+ `ZookeeperDynamicConfiguration` 配置 SPI | 注册发现/配置 |
+| `jaws-registry-nacos` | ~560 | Registry SPI 的 Nacos 薄封装 + `NacosDynamicConfiguration` 配置 SPI | 注册发现/配置 |
+| `jaws-registry-harbor` | ~510 | Registry SPI 的 Harbor 客户端（对接 `jaws-harbor`）+ `HarborDynamicConfiguration` 配置 SPI，与 nacos/zk 腿同形（config 与 naming 各用各的连接） | 注册发现/配置 |
+| `jaws-harbor` | ~11.4k 手码 | 兼容 nacos-client 的轻量注册中心与配置中心（服务端）：临时实例走 Distro AP，持久实例与配置走自研 Raft CP | 注册发现/配置 |
+| `jaws-spring-boot` | 聚合 + ~1.7k | 两个 starter：声明式接入 + 可观测装配 | 集成 |
 | `jaws-extensions` | ~280 | 指标 / 链路追踪 Filter | 集成 |
 | `jaws-samples` | 示例 | 一键实跑矩阵，含双向互操作与压测 | 验证 |
 

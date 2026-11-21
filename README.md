@@ -26,6 +26,29 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 - **动态配置** — 支持全局/服务级/方法级三层热更新（超时、重试、路由规则、Filter 开关等）
 - **泛化调用** — 无需依赖接口 JAR 包即可发起 RPC 调用，适用于网关、测试平台等场景
 
+## 模块
+
+三个核心模块按 **jaws-core → jaws-wire → jaws-harbor** 层层依赖（后者依赖前者），构成 Jaws 的核心资产：
+
+| 核心模块 | 职责 |
+|---|---|
+| `jaws-core` | RPC 骨架六层（传输 → 协议/序列化 → 代理 → 集群 → 注册发现 → 配置）与 SPI 扩展机制；jaws 协议支持 Netty TCP 与 HTTP/2 传输，亦支持 HTTP/1.1 REST 与单端口自适应 |
+| `jaws-wire` | 基于 core 的基础设施，零 grpc-java 依赖手写 gRPC 线格式，与原生 gRPC 双向互通，支持一元及三种流式调用 |
+| `jaws-harbor` | 基于 wire 的 WireServer 实现兼容 nacos-client 的轻量注册中心与配置中心：临时实例走 Distro AP，持久实例与配置走自研 Raft CP |
+
+外围模块围绕核心链提供契约、适配与验证：
+
+| 外围模块 | 归类 | 职责 |
+|---|---|---|
+| `jaws-stream-api` | 契约 | 流式收发的中立接口（push-only） |
+| `jaws-wire-proto` | 生成码 | protoc 生成物（health / reflection）隔离，无手写代码 |
+| `jaws-registry-*` | 注册/配置客户端 | Registry SPI 与 DynamicConfiguration 配置 SPI 的三种实现（ZooKeeper / Nacos / Harbor），按所用注册中心引入其一 |
+| `jaws-spring-boot` | 集成 | 两个 starter：注解驱动服务发布/引用 + 可观测性装配 |
+| `jaws-extensions` | 集成 | 指标 / 链路追踪 Filter |
+| `jaws-samples` | 示例 | 一键实跑矩阵（`run-sample.sh`），含 gRPC 互操作验证与压测 |
+
+完整模块地图与 `jaws-core` 内部分层详见[架构总览](doc/architecture.md)。
+
 ## 快速开始
 
 ### 环境要求
