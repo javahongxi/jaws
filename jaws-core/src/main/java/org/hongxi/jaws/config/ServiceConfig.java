@@ -8,6 +8,9 @@ import org.hongxi.jaws.exception.JawsErrorCode;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.common.lifecycle.ShutdownHook;
 import org.hongxi.jaws.filter.ProtocolFilterWrapper;
+import org.hongxi.jaws.metadata.ApplicationMetadataManager;
+import org.hongxi.jaws.metadata.MetadataService;
+import org.hongxi.jaws.metadata.ServiceNameMapping;
 import org.hongxi.jaws.registry.Registry;
 import org.hongxi.jaws.registry.RegistryFactory;
 import org.hongxi.jaws.registry.RegistryService;
@@ -61,6 +64,12 @@ public class ServiceConfig<T> extends InterfaceConfig {
     private static final Set<String> EXPORTED_SERVICES = ConcurrentHashMap.newKeySet();
 
     /**
+     * Applications whose internal {@link MetadataService} has been exported,
+     * so multiple ServiceConfigs of the same application share one export.
+     */
+    private static final Set<String> METADATA_SERVICE_EXPORTED = ConcurrentHashMap.newKeySet();
+
+    /**
      * Dynamic port counter for shared-channel mode with no explicit port configured
      */
     private static int dynamicPort = -1;
@@ -89,6 +98,19 @@ public class ServiceConfig<T> extends InterfaceConfig {
      * Protocols corresponding to each exporter, used for unexport by URL
      */
     private final List<Protocol> exportProtocols = new CopyOnWriteArrayList<>();
+
+    /**
+     * Application-level instance URLs registered by this config (registerMode=instance),
+     * kept so unexport can deregister the exact previously registered URL.
+     */
+    private final List<URL> registeredAppUrls = new CopyOnWriteArrayList<>();
+
+    /**
+     * Shutdown hook priority of this config. Business services use 10; the internal
+     * MetadataService uses 15 so it stays reachable while business services drain,
+     * and still closes before registries (20).
+     */
+    private int shutdownHookPriority = 10;
 
     /**
      * Service auth token, empty means no auth
@@ -129,6 +151,19 @@ public class ServiceConfig<T> extends InterfaceConfig {
             log.info("No registry configured for service [{}], will export without registering.", interfaceClass.getName());
         }
 
+        // Application-level registration keeps one instance per application, so the
+        // internal MetadataService must share a single protocol/port (v1 boundary).
+        if (protocols.size() > 1) {
+            for (URL registryUrl : registryUrls) {
+                if (isInstanceMode(registryUrl)) {
+                    throw new JawsFrameworkException(String.format(
+                            "registerMode=instance supports a single protocol per application, " +
+                            "but service [%s] has %d protocols configured.",
+                            interfaceClass.getName(), protocols.size()));
+                }
+            }
+        }
+
         for (ProtocolConfig protocolConfig : protocols) {
             doExport(protocolConfig);
         }
@@ -152,8 +187,10 @@ public class ServiceConfig<T> extends InterfaceConfig {
             // address lists as early as possible. This cannot eliminate the
             // propagation delay to each consumer, which is what Phase 2 covers.
             log.info("[GracefulShutdown] Phase 1: Unregister from registry");
+            unregisterApplicationInstance();
+            List<URL> interfaceRegistries = registryUrlsByMode(registryUrls, false);
             for (Exporter<T> exporter : exporters) {
-                unRegister(registryUrls, exporter.getUrl());
+                unRegister(interfaceRegistries, exporter.getUrl());
             }
 
             // Phase 2: Stop accepting new requests. Closes the listening socket
@@ -253,9 +290,16 @@ public class ServiceConfig<T> extends InterfaceConfig {
         Provider<T> provider = new DefaultProvider<>(interfaceClass, serviceUrl, ref);
         Exporter<T> exporter = protocol.export(provider);
 
-        // Register service to registries (skip if no registry configured)
-        if (!registryUrls.isEmpty()) {
-            register(registryUrls, serviceUrl);
+        // Register service to registries (skip if no registry configured).
+        // Instance-mode registries get one application-level URL carrying a metadata
+        // revision instead of per-interface URLs; the rest keep the classic path.
+        List<URL> instanceRegistries = registryUrlsByMode(registryUrls, true);
+        List<URL> interfaceRegistries = registryUrlsByMode(registryUrls, false);
+        if (!instanceRegistries.isEmpty()) {
+            registerApplicationInstance(instanceRegistries, serviceUrl, protocolConfig);
+        }
+        if (!interfaceRegistries.isEmpty()) {
+            register(interfaceRegistries, serviceUrl);
         }
 
         exporters.add(exporter);
@@ -266,17 +310,128 @@ public class ServiceConfig<T> extends InterfaceConfig {
         // Record startup timestamp for consumer-side warm-up calculation
         serviceUrl.addParameter(UrlParam.Cluster.TIMESTAMP.getName(), String.valueOf(System.currentTimeMillis()));
         for (URL url : registryUrls) {
-            RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
-            if (registryFactory == null) {
-                throw new JawsFrameworkException(String.format(
-                        "No RegistryFactory found for registry protocol [%s], " +
-                        "please make sure the corresponding registry module is in the classpath.",
-                        url.getProtocol()),
-                        JawsErrorCode.FRAMEWORK_REGISTER);
-            }
-            Registry registry = registryFactory.getRegistry(url);
+            Registry registry = getRegistry(url);
             registry.register(serviceUrl);
         }
+    }
+
+    /**
+     * Application-level registration (registerMode=instance): store the service URL
+     * in the in-memory metadata manager, expose the internal MetadataService once
+     * per application, register one instance URL whose path is the application name
+     * and whose revision parameter points at the stored metadata, and publish the
+     * interface-to-application mapping to the config center.
+     */
+    private void registerApplicationInstance(List<URL> registryUrls, URL serviceUrl, ProtocolConfig protocolConfig) {
+        // Same warm-up timestamp as the interface-level path; it travels inside the
+        // stored metadata so rebuilt consumer URLs keep the original startup time.
+        serviceUrl.addParameter(UrlParam.Cluster.TIMESTAMP.getName(), String.valueOf(System.currentTimeMillis()));
+
+        String application = serviceUrl.getApplication();
+        String revision = ApplicationMetadataManager.addServiceUrl(application, serviceUrl);
+        exportMetadataServiceOnce(application, protocolConfig);
+
+        URL appUrl = buildAppUrl(serviceUrl, revision);
+        for (URL url : registryUrls) {
+            Registry registry = getRegistry(url);
+            registry.register(appUrl);
+        }
+        registeredAppUrls.add(appUrl);
+
+        ServiceNameMapping.setMapping(interfaceClass.getName(), application);
+        log.info("Registered application instance: application={}, revision={}, interface={}",
+                application, revision, interfaceClass.getName());
+    }
+
+    /**
+     * Unexport counterpart of {@link #registerApplicationInstance}: remove this
+     * service from the metadata manager, then either re-register the application
+     * instance with the recomputed revision (other services still exported) or
+     * deregister it entirely (last service gone). The mapping is left behind on
+     * purpose, same boundary as Dubbo.
+     */
+    private void unregisterApplicationInstance() {
+        if (registeredAppUrls.isEmpty()) {
+            return;
+        }
+        URL serviceUrl = exporters.get(0).getUrl();
+        String application = serviceUrl.getApplication();
+        String revision = ApplicationMetadataManager.removeServiceUrl(application, serviceUrl);
+        for (URL registryUrl : registryUrlsByMode(registryUrls, true)) {
+            try {
+                Registry registry = getRegistry(registryUrl);
+                // Remove the old instance URL before landing the new one: registries
+                // key instances by ip:port (or full URL equality for the local
+                // registry), so the stale revision must go first.
+                for (URL appUrl : registeredAppUrls) {
+                    registry.unregister(appUrl);
+                }
+                if (revision != null) {
+                    registry.register(buildAppUrl(serviceUrl, revision));
+                }
+            } catch (Exception e) {
+                log.warn("Failed to update application instance on registry: {}", registryUrl, e);
+            }
+        }
+        registeredAppUrls.clear();
+    }
+
+    private URL buildAppUrl(URL serviceUrl, String revision) {
+        URL appUrl = serviceUrl.createCopy();
+        appUrl.setPath(serviceUrl.getApplication());
+        appUrl.addParameter(UrlParam.Identity.REVISION.getName(), revision);
+        return appUrl;
+    }
+
+    /**
+     * Export the internal MetadataService on the same protocol/port as the business
+     * services, without registering it anywhere. Guarded per application; its
+     * shutdown hook runs at priority 15, after business unexport (10).
+     */
+    private void exportMetadataServiceOnce(String application, ProtocolConfig protocolConfig) {
+        if (!METADATA_SERVICE_EXPORTED.add(application)) {
+            return;
+        }
+        ServiceConfig<MetadataService> metadataConfig = new ServiceConfig<>();
+        metadataConfig.setInterface(MetadataService.class);
+        metadataConfig.setRef(revision -> ApplicationMetadataManager.getMetadataInfo(application, revision));
+        metadataConfig.setApplication(application);
+        // Inherit service coordinates so the provider-side serviceKey matches the
+        // group/version attachments consumers copy from the discovered instance URL.
+        metadataConfig.setGroup(group);
+        metadataConfig.setVersion(version);
+        metadataConfig.setToken(token);
+        metadataConfig.setProtocol(protocolConfig);
+        // No registries: reachable only point-to-point via the instance address.
+        metadataConfig.setRegistries(List.of());
+        metadataConfig.shutdownHookPriority = 15;
+        metadataConfig.export();
+    }
+
+    private boolean isInstanceMode(URL registryUrl) {
+        return JawsConstants.REGISTER_MODE_INSTANCE.equals(registryUrl.getParameter("registerMode"));
+    }
+
+    private List<URL> registryUrlsByMode(List<URL> urls, boolean instanceMode) {
+        List<URL> result = new ArrayList<>();
+        for (URL url : urls) {
+            if (isInstanceMode(url) == instanceMode) {
+                result.add(url);
+            }
+        }
+        return result;
+    }
+
+    private Registry getRegistry(URL url) {
+        RegistryFactory registryFactory = ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension(url.getProtocol());
+        if (registryFactory == null) {
+            throw new JawsFrameworkException(String.format(
+                    "No RegistryFactory found for registry protocol [%s], " +
+                    "please make sure the corresponding registry module is in the classpath.",
+                    url.getProtocol()),
+                    JawsErrorCode.FRAMEWORK_REGISTER);
+        }
+        return registryFactory.getRegistry(url);
     }
 
     private void unRegister(Collection<URL> registryUrls, URL serviceUrl) {
@@ -322,7 +477,7 @@ public class ServiceConfig<T> extends InterfaceConfig {
         // Register JVM shutdown hook to trigger graceful shutdown.
         // Priority 10: service unexport must run BEFORE registry close (default 20),
         // so that deregister requests are sent while the naming client is still alive.
-        ShutdownHook.registerShutdownHook(this::unexport, 10);
+        ShutdownHook.registerShutdownHook(this::unexport, shutdownHookPriority);
     }
 
     private void afterUnexport() {

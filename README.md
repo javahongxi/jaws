@@ -99,6 +99,11 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 ./run-sample.sh raftx              # 运行持久实例示例（sample-raftx-provider/consumer，使用 nacos-client 注册与订阅）
 ./run-sample.sh stop               # 停止注册中心
 
+# 应用级服务发现（local 元数据模式）
+./run-sample.sh app                # 运行示例（sample-app-provider/consumer，registerMode=instance，需要 Nacos 在 127.0.0.1:8848）
+./run-sample.sh app2               # 运行示例（sample-app2-provider/consumer，registry 用 harbor，需要先启动 harbor-standalone）
+./run-sample.sh app3               # 运行示例（sample-app3-provider/consumer，registry 用 zookeeper，需要 ZK 在 127.0.0.1:2181）
+
 # 性能测试（8 核实测约 14 万 QPS，详见 doc/benchmark.md）
 ROLE=provider THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws  # 启动服务端
 ROLE=consumer THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws  # 启动消费端
@@ -211,6 +216,7 @@ public class MyRunner implements CommandLineRunner {
 | [HTTP/2 与裸 TCP 对比](doc/http2-vs-tcp.md)                | 帧结构 / 关联机制 / HPACK / HTTP/1.1 明文      |
 | [gRPC 线格式兼容](doc/wire-grpc-compat.md)                 | 零 grpc-java 实现，与 Go 对端双向实测          |
 | [与 Dubbo 对比](doc/dubbo-comparison.md)                   | 八个维度的系统性能力对比                       |
+| [应用级服务发现](doc/app-level-discovery.md)               | local 元数据模式最小切片：存储模型与 Dubbo 对照 |
 | [Netty 性能解读](doc/netty-performance.md)                 | 传输层性能实践与踩坑                           |
 | [Tomcat 与 grpc-java 线程模型](doc/tomcat-vs-grpc-java.md) | 线程归属 / 并发上限 / 过载形态对比与 jaws 取舍 |
 | [注册中心对比](doc/registry-comparison.md)                 | Nacos 与 ZooKeeper 实现对比                    |

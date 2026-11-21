@@ -27,8 +27,8 @@
 | **多注册中心**               | 支持同时注册/发现到多个中心 | 支持                                     | **持平**   |
 | **per-service 指定注册中心** | 不支持（全局统一）          | 支持（`@DubboService(registryIds=...)`） | **有差距** |
 | **服务分组/版本**            | group + version             | group + version                          | **持平**   |
-| **元数据服务**               | 不支持（仅 URL 参数透传）   | 独立的 MetadataReport 抽象               | 中等差距   |
-| **应用级服务发现**           | 不支持（接口级）            | 支持应用级 + 接口级双模型                | **差距大** |
+| **元数据服务**               | instance 模式内置 MetadataService（local 元数据拉取）；无 MetadataReport 抽象 | 独立的 MetadataReport 抽象               | 中等差距   |
+| **应用级服务发现**           | 最小切片已支持（registerMode=instance，local 元数据模式；remote/双注册等边界见专文） | 支持应用级 + 接口级双模型                | 中等差距   |
 
 ### 多注册中心实现细节
 
@@ -65,7 +65,7 @@ local 模式的拉取链路（源码核实于 `dubbo-registry-api`）：
 - **缓存与去重**：`MetaCacheManager` 为 LRU 默认 100 条 + 本地文件 `.metadata.<registry>`（启动加载、每 60 分钟落盘），put 时重算内容 revision 与 key 比对（内容寻址自校验）；去重粒度即 revision，同 revision 的 N 个实例只拉一次，同应用多接口订阅共享同一 listener
 - **失败兜底**：全部 revision 拉空则本次通知作废（不刷地址），每 10s 重试；部分失败先通知成功部分再挂重试任务
 
-对 Jaws 的启示：差距的本质不是"多一个元数据中心"，而是"naming 轻量指针 + config 内容寻址"的存储模型分层；Jaws 若引入应用级发现，Harbor 的 config 面（Raft 持久化）可天然承担元数据中心角色，但同样要面对 revision 清理问题。
+对 Jaws 的启示：差距的本质不是"多一个元数据中心"，而是"naming 轻量指针 + config 内容寻址"的存储模型分层；Jaws 若引入应用级发现，Harbor 的 config 面（Raft 持久化）可天然承担元数据中心角色，但同样要面对 revision 清理问题。Jaws 已按 local 模式落地最小切片（`registerMode=instance` + provider 内存元数据 + config 映射，consumer 无开关自动路由），存储模型、拉取链路、逐项对照与边界清单详见[应用级服务发现](app-level-discovery.md)。
 
 ## 三、流量治理
 
@@ -159,7 +159,7 @@ Dubbo 3.3 将 REST 重新定位为 Triple 协议之上的访问层（Triple REST
 
 1. **序列化协议丰富度** — Jaws 4 种（fastjson2/hessian2/protostuff/fury），Dubbo 10+ 种（含 protobuf、kryo 等更多高性能选项）
 2. **流量治理深度** — 缺少限流、熔断、降级能力（Dubbo 集成 Sentinel/Resilience4j）
-3. **应用级服务发现** — 仅支持接口级发现，Dubbo 已支持应用级 + 接口级双模型，大规模场景下内存和推送效率差距明显
+3. **应用级服务发现** — 已落地 local 元数据模式最小切片，但缺 remote 元数据中心、双注册迁移、mapping CAS/热更新与文件缓存，大规模场景下与 Dubbo 完整双模型仍有差距（详见[应用级服务发现](app-level-discovery.md)）
 4. **生态与运维工具** — 缺少 Admin 控制台、缺少 IDL 代码生成、SPI 扩展点数量有限
 5. **单向调用** — 协议 header 中无 ONEWAY 标志位，不支持纯单向调用（Dubbo 支持）
 

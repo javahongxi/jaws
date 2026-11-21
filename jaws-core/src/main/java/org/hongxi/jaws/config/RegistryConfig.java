@@ -76,6 +76,16 @@ public class RegistryConfig extends BaseConfig {
      */
     private String cacheFile;
 
+    /**
+     * Registration mode on the provider side: {@code interface} (default) registers
+     * one URL per service interface; {@code instance} registers a single
+     * application-level instance carrying a metadata revision, while the full
+     * service metadata stays in the provider's memory (application-level service
+     * discovery, local metadata mode). Consumers need no matching switch: they
+     * route by the interface-to-application mapping in the config center.
+     */
+    private String registerMode;
+
     @Override
     protected void collectParams(Map<String, String> params) {
         putIfPresent(params, "protocol", protocol);
@@ -88,6 +98,7 @@ public class RegistryConfig extends BaseConfig {
         putIfPresent(params, "registryRetryPeriod", registryRetryPeriod);
         putIfPresent(params, "cacheEnabled", cacheEnabled);
         putIfPresent(params, "cacheFile", cacheFile);
+        putIfPresent(params, "registerMode", registerMode);
     }
 
     public String getProtocol() {
@@ -168,5 +179,13 @@ public class RegistryConfig extends BaseConfig {
 
     public void setCacheFile(String cacheFile) {
         this.cacheFile = cacheFile;
+    }
+
+    public String getRegisterMode() {
+        return registerMode;
+    }
+
+    public void setRegisterMode(String registerMode) {
+        this.registerMode = registerMode;
     }
 }

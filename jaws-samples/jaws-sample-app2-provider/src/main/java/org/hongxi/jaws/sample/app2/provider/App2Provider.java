@@ -1,0 +1,87 @@
+package org.hongxi.jaws.sample.app2.provider;
+
+import org.hongxi.jaws.common.JawsConstants;
+import org.hongxi.jaws.config.ProtocolConfig;
+import org.hongxi.jaws.config.RegistryConfig;
+import org.hongxi.jaws.config.ServiceConfig;
+import org.hongxi.jaws.sample.api.DemoService;
+import org.hongxi.jaws.sample.api.OrderService;
+import org.hongxi.jaws.sample.app2.provider.service.DemoServiceImpl;
+import org.hongxi.jaws.sample.app2.provider.service.OrderServiceImpl;
+
+/**
+ * Application-level service discovery provider sample on the harbor registry
+ * leg — the same local-metadata demo as {@code AppProvider} (nacos leg), with
+ * the instance pointer in harbor naming and the mapping in harbor's Raft-backed
+ * config side.
+ *
+ * <pre>
+ * Demo scenarios:
+ * 1. registerMode=instance — ONE lightweight instance per application
+ *    (path = application name, parameters carry a revision pointer)
+ * 2. Metadata lives in provider memory; the internal MetadataService is
+ *    exported on the same port — watch the "Registered application instance
+ *    ... revision=..." logs
+ * 3. Interface-to-application mappings go to harbor's DynamicConfiguration
+ *    (key "mapping:{interface}"), routing plain consumer references to
+ *    application-level discovery
+ * </pre>
+ *
+ * <p>Start {@code ./run-sample.sh harbor-standalone} first, then run this
+ * provider and {@code App2Consumer}. See doc/app-level-discovery.md.</p>
+ */
+public class App2Provider {
+
+    private static final int PORT = Integer.parseInt(System.getProperty("port", "20021"));
+    private static final int HARBOR_PORT = Integer.parseInt(System.getProperty("harbor.port", "19848"));
+
+    public static void main(String[] args) {
+        ProtocolConfig protocolConfig = createProtocolConfig(JawsConstants.PROTOCOL_JAWS);
+        RegistryConfig registryConfig = createRegistryConfig(JawsConstants.REGISTRY_PROTOCOL_HARBOR);
+        // The only switch: register application instances instead of interface URLs.
+        registryConfig.setRegisterMode(JawsConstants.REGISTER_MODE_INSTANCE);
+
+        /* Export DemoService */
+        ServiceConfig<DemoService> demoServiceConfig = new ServiceConfig<>();
+        demoServiceConfig.setRef(new DemoServiceImpl());
+        demoServiceConfig.setApplication("sample-app2-provider");
+        demoServiceConfig.setModule("sample-app2");
+        demoServiceConfig.setCheck(true);
+        demoServiceConfig.setInterface(DemoService.class);
+        demoServiceConfig.setProtocol(protocolConfig);
+        demoServiceConfig.setRegistry(registryConfig);
+        demoServiceConfig.export();
+        System.out.println("DemoService exported.");
+
+        /* Export OrderService — same application, the instance's revision is
+           recomputed and re-registered, no second instance appears. */
+        ServiceConfig<OrderService> orderServiceConfig = new ServiceConfig<>();
+        orderServiceConfig.setRef(new OrderServiceImpl());
+        orderServiceConfig.setApplication("sample-app2-provider");
+        orderServiceConfig.setModule("sample-app2");
+        orderServiceConfig.setInterface(OrderService.class);
+        orderServiceConfig.setProtocol(protocolConfig);
+        orderServiceConfig.setRegistry(registryConfig);
+        orderServiceConfig.export();
+        System.out.println("OrderService exported.");
+    }
+
+    private static ProtocolConfig createProtocolConfig(String protocolName) {
+        ProtocolConfig protocolConfig = new ProtocolConfig();
+        protocolConfig.setName(protocolName);
+        protocolConfig.setId(protocolConfig.getName());
+        protocolConfig.setTransportFactory("netty");
+        protocolConfig.setSerialization("fastjson2");
+        protocolConfig.setPort(PORT);
+        return protocolConfig;
+    }
+
+    private static RegistryConfig createRegistryConfig(String protocolName) {
+        RegistryConfig registryConfig = new RegistryConfig();
+        registryConfig.setProtocol(protocolName);
+        registryConfig.setId("defaultRegistry");
+        registryConfig.setAddress("127.0.0.1:19848,127.0.0.1:19849,127.0.0.1:19850");
+        registryConfig.setPort(HARBOR_PORT);
+        return registryConfig;
+    }
+}

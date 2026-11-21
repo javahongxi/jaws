@@ -42,6 +42,11 @@ public class JawsConstants {
     public static final String ZOOKEEPER_REGISTRY_NAMESPACE = "/jaws";
     public static final String REGISTRY_SERVICE_NAMESPACE = "jaws";
 
+    /** Registration mode: classic per-interface URL registration (default). */
+    public static final String REGISTER_MODE_INTERFACE = "interface";
+    /** Registration mode: one application-level instance carrying a metadata revision. */
+    public static final String REGISTER_MODE_INSTANCE = "instance";
+
     public static final String PROTOCOL_INJVM = "injvm";
     public static final String PROTOCOL_JAWS = "jaws";
 

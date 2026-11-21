@@ -37,6 +37,15 @@ ADAPTIVE_CONSUMER_MODULE="jaws-samples/jaws-sample-adaptive-consumer"
 HARBOR_BOOTSTRAP_MODULE="jaws-harbor"
 HARBOR_PROVIDER_MODULE="jaws-samples/jaws-sample-harbor-provider"
 HARBOR_CONSUMER_MODULE="jaws-samples/jaws-sample-harbor-consumer"
+# Application-level service discovery (local metadata mode) against Nacos.
+APP_PROVIDER_MODULE="jaws-samples/jaws-sample-app-provider"
+APP_CONSUMER_MODULE="jaws-samples/jaws-sample-app-consumer"
+# The same app-level discovery demo against the harbor registry leg.
+APP2_PROVIDER_MODULE="jaws-samples/jaws-sample-app2-provider"
+APP2_CONSUMER_MODULE="jaws-samples/jaws-sample-app2-consumer"
+# The same app-level discovery demo against the zookeeper registry leg.
+APP3_PROVIDER_MODULE="jaws-samples/jaws-sample-app3-provider"
+APP3_CONSUMER_MODULE="jaws-samples/jaws-sample-app3-consumer"
 # The same HarborServer, reached through the nacos leg (real nacos-client).
 HARBORX_PROVIDER_MODULE="jaws-samples/jaws-sample-harborx-provider"
 HARBORX_CONSUMER_MODULE="jaws-samples/jaws-sample-harborx-consumer"
@@ -74,6 +83,12 @@ ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsume
 HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.harbor.HarborBootstrap"
 HARBOR_PROVIDER_MAIN="org.hongxi.jaws.sample.harbor.provider.HarborProvider"
 HARBOR_CONSUMER_MAIN="org.hongxi.jaws.sample.harbor.consumer.HarborConsumer"
+APP_PROVIDER_MAIN="org.hongxi.jaws.sample.app.provider.AppProvider"
+APP_CONSUMER_MAIN="org.hongxi.jaws.sample.app.consumer.AppConsumer"
+APP2_PROVIDER_MAIN="org.hongxi.jaws.sample.app2.provider.App2Provider"
+APP2_CONSUMER_MAIN="org.hongxi.jaws.sample.app2.consumer.App2Consumer"
+APP3_PROVIDER_MAIN="org.hongxi.jaws.sample.app3.provider.App3Provider"
+APP3_CONSUMER_MAIN="org.hongxi.jaws.sample.app3.consumer.App3Consumer"
 HARBORX_PROVIDER_MAIN="org.hongxi.jaws.sample.harborx.provider.HarborxProvider"
 HARBORX_CONSUMER_MAIN="org.hongxi.jaws.sample.harborx.consumer.HarborxConsumer"
 RAFT_PROVIDER_MAIN="org.hongxi.jaws.sample.raft.provider.RaftProvider"
@@ -109,6 +124,10 @@ usage() {
     harbor-cluster       Start 3-node HarborServer cluster (ports 19848/19849/19850)
     harbor-provider [port]  Start HarborProvider in foreground (requires HarborServer, default port 20000)
     harbor [port]      One-shot Harbor sample: Provider -> Consumer (requires HarborServer running)
+    app [port]         One-shot application-level discovery sample: AppProvider -> AppConsumer
+                       (registerMode=instance, local metadata; requires Nacos at 127.0.0.1:8848, provider default port 20020)
+    app2 [harbor_port] [port]  Same, but the registry leg is harbor (requires HarborServer, provider default port 20021)
+    app3 [port]        Same, but the registry leg is zookeeper (requires ZK at 127.0.0.1:2181, provider default port 20022)
     raft               One-shot Raft persistent-instance sample: RaftProvider -> RaftConsumer (requires HarborServer running)
     raftx              Same, but the registry leg is a real nacos-client (persistent registration + subscription)
     bench-injvm        Benchmark - injvm protocol
@@ -152,6 +171,9 @@ usage() {
     ./run-sample.sh harbor-provider    # Start HarborProvider port 20000 (foreground, Ctrl+C to stop)
     ./run-sample.sh harbor-provider 10001  # Start HarborProvider port 10001
     ./run-sample.sh harbor             # One-shot Provider + Consumer (requires HarborServer)
+    ./run-sample.sh app                # One-shot application-level discovery demo (requires Nacos)
+    ./run-sample.sh app2               # Same, but the registry leg is harbor (requires HarborServer)
+    ./run-sample.sh app3               # Same, but the registry leg is zookeeper (requires ZK)
     ./run-sample.sh harborx            # Same, but the registry leg is jaws-registry-nacos
     ./run-sample.sh raft               # One-shot persistent-instance (Raft CP) demo
     ./run-sample.sh raftx              # Same, but the registry leg is a real nacos-client
@@ -705,6 +727,226 @@ cmd_harbor() {
     echo "=== Done ==="
 }
 
+# One-shot application-level discovery demo: AppProvider exports DemoService +
+# OrderService with registerMode=instance (one application instance + in-memory
+# metadata + config mappings), AppConsumer references them plainly and is routed
+# to app-level discovery automatically. See doc/app-level-discovery.md.
+cmd_app() {
+    ensure_built
+    local provider_port="${1:-20020}"
+
+    echo "Make sure Nacos is running at 127.0.0.1:8848."
+
+    local provider_pid_file=".provider-app-svc.pid"
+    local provider_log_file="provider-app-svc.log"
+
+    # 1. Start AppProvider in background
+    echo "[1/4] Starting AppProvider port=$provider_port (registerMode=instance) ..."
+    local provider_cp
+    provider_cp=$(build_classpath "$APP_PROVIDER_MODULE")
+    java -cp "$provider_cp:$APP_PROVIDER_MODULE/target/classes" \
+        -Dport="$provider_port" \
+        "$APP_PROVIDER_MAIN" > "$provider_log_file" 2>&1 &
+    local provider_pid=$!
+    echo "$provider_pid" > "$provider_pid_file"
+
+    # 2. Wait until BOTH services are exported: the second export also writes
+    #    the OrderService mapping the consumer needs for app-level routing.
+    echo -n "[2/4] Waiting for application instance registered "
+    local max_wait=15
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if grep -q "OrderService exported" "$provider_log_file" 2>/dev/null; then
+            echo " ready (${waited}s)"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        echo -n "."
+    done
+    if [ $waited -ge $max_wait ]; then
+        echo " timeout (${max_wait}s), continuing..."
+    fi
+
+    # 3. Run consumer
+    echo "[3/4] Running AppConsumer ..."
+    echo "--------------------------------------------"
+    local consumer_cp
+    consumer_cp=$(build_classpath "$APP_CONSUMER_MODULE")
+    java -cp "$consumer_cp:$APP_CONSUMER_MODULE/target/classes" \
+        "$APP_CONSUMER_MAIN"
+    local consumer_exit=$?
+    echo "--------------------------------------------"
+
+    # 4. Stop provider and clean up
+    echo "[4/4] Stopping AppProvider ..."
+    if kill -0 "$provider_pid" 2>/dev/null; then
+        kill "$provider_pid" 2>/dev/null
+        wait "$provider_pid" 2>/dev/null || true
+    fi
+    rm -f "$provider_pid_file" "$provider_log_file"
+
+    if [ $consumer_exit -ne 0 ]; then
+        echo "Consumer exit code: $consumer_exit"
+        exit $consumer_exit
+    fi
+    echo "=== Done ==="
+}
+
+# One-shot app-level discovery demo on the harbor leg: same local-metadata flow
+# as cmd_app, but the instance pointer and mappings live in HarborServer.
+# See doc/app-level-discovery.md.
+cmd_app2() {
+    ensure_built
+    local harbor_port="${1:-19848}"
+    local provider_port="${2:-20021}"
+
+    # Check if HarborServer is already running (use lsof to avoid triggering HTTP/2 handler errors)
+    local harbor_running=0
+    if command -v lsof >/dev/null 2>&1; then
+        if lsof -Pi :$harbor_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+            harbor_running=1
+        fi
+    else
+        # Fallback: try /dev/tcp but suppress errors
+        if (echo > /dev/tcp/127.0.0.1/$harbor_port) 2>/dev/null; then
+            harbor_running=1
+        fi
+    fi
+
+    if [ $harbor_running -eq 0 ]; then
+        echo "HarborServer is not running on port $harbor_port."
+        echo ""
+        echo "Please start it first:"
+        echo "  ./run-sample.sh harbor-standalone          # port 19848"
+        echo "  ./run-sample.sh harbor-standalone $harbor_port  # custom port"
+        exit 1
+    fi
+    echo "HarborServer detected on port $harbor_port."
+
+    local provider_pid_file=".provider-app2-svc.pid"
+    local provider_log_file="provider-app2-svc.log"
+
+    # 1. Start App2Provider in background
+    echo "[1/4] Starting App2Provider port=$provider_port (registerMode=instance) ..."
+    local provider_cp
+    provider_cp=$(build_classpath "$APP2_PROVIDER_MODULE")
+    java -cp "$provider_cp:$APP2_PROVIDER_MODULE/target/classes" \
+        -Dport="$provider_port" \
+        -Dharbor.port="$harbor_port" \
+        "$APP2_PROVIDER_MAIN" > "$provider_log_file" 2>&1 &
+    local provider_pid=$!
+    echo "$provider_pid" > "$provider_pid_file"
+
+    # 2. Wait until BOTH services are exported: the second export also writes
+    #    the OrderService mapping the consumer needs for app-level routing.
+    echo -n "[2/4] Waiting for application instance registered "
+    local max_wait=15
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if grep -q "OrderService exported" "$provider_log_file" 2>/dev/null; then
+            echo " ready (${waited}s)"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        echo -n "."
+    done
+    if [ $waited -ge $max_wait ]; then
+        echo " timeout (${max_wait}s), continuing..."
+    fi
+
+    # 3. Run consumer
+    echo "[3/4] Running App2Consumer ..."
+    echo "--------------------------------------------"
+    local consumer_cp
+    consumer_cp=$(build_classpath "$APP2_CONSUMER_MODULE")
+    java -cp "$consumer_cp:$APP2_CONSUMER_MODULE/target/classes" \
+        -Dharbor.port="$harbor_port" \
+        "$APP2_CONSUMER_MAIN"
+    local consumer_exit=$?
+    echo "--------------------------------------------"
+
+    # 4. Stop provider and clean up
+    echo "[4/4] Stopping App2Provider ..."
+    if kill -0 "$provider_pid" 2>/dev/null; then
+        kill "$provider_pid" 2>/dev/null
+        wait "$provider_pid" 2>/dev/null || true
+    fi
+    rm -f "$provider_pid_file" "$provider_log_file"
+
+    if [ $consumer_exit -ne 0 ]; then
+        echo "Consumer exit code: $consumer_exit"
+        exit $consumer_exit
+    fi
+    echo "=== Done ==="
+}
+
+# One-shot app-level discovery demo on the zookeeper leg: same local-metadata
+# flow as cmd_app, but the instance is an ephemeral znode and the mappings are
+# persistent znodes under /jaws/dynamic-config/. See doc/app-level-discovery.md.
+cmd_app3() {
+    ensure_built
+    local provider_port="${1:-20022}"
+
+    echo "Make sure ZooKeeper is running at 127.0.0.1:2181."
+
+    local provider_pid_file=".provider-app3-svc.pid"
+    local provider_log_file="provider-app3-svc.log"
+
+    # 1. Start App3Provider in background
+    echo "[1/4] Starting App3Provider port=$provider_port (registerMode=instance) ..."
+    local provider_cp
+    provider_cp=$(build_classpath "$APP3_PROVIDER_MODULE")
+    java -cp "$provider_cp:$APP3_PROVIDER_MODULE/target/classes" \
+        -Dport="$provider_port" \
+        "$APP3_PROVIDER_MAIN" > "$provider_log_file" 2>&1 &
+    local provider_pid=$!
+    echo "$provider_pid" > "$provider_pid_file"
+
+    # 2. Wait until BOTH services are exported: the second export also writes
+    #    the OrderService mapping the consumer needs for app-level routing.
+    echo -n "[2/4] Waiting for application instance registered "
+    local max_wait=15
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if grep -q "OrderService exported" "$provider_log_file" 2>/dev/null; then
+            echo " ready (${waited}s)"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        echo -n "."
+    done
+    if [ $waited -ge $max_wait ]; then
+        echo " timeout (${max_wait}s), continuing..."
+    fi
+
+    # 3. Run consumer
+    echo "[3/4] Running App3Consumer ..."
+    echo "--------------------------------------------"
+    local consumer_cp
+    consumer_cp=$(build_classpath "$APP3_CONSUMER_MODULE")
+    java -cp "$consumer_cp:$APP3_CONSUMER_MODULE/target/classes" \
+        "$APP3_CONSUMER_MAIN"
+    local consumer_exit=$?
+    echo "--------------------------------------------"
+
+    # 4. Stop provider and clean up
+    echo "[4/4] Stopping App3Provider ..."
+    if kill -0 "$provider_pid" 2>/dev/null; then
+        kill "$provider_pid" 2>/dev/null
+        wait "$provider_pid" 2>/dev/null || true
+    fi
+    rm -f "$provider_pid_file" "$provider_log_file"
+
+    if [ $consumer_exit -ne 0 ]; then
+        echo "Consumer exit code: $consumer_exit"
+        exit $consumer_exit
+    fi
+    echo "=== Done ==="
+}
+
 # Point the shared raft one-shot at the nacos-leg sample modules, so the two
 # legs are exercised by the same script rather than by a copy of it.
 _use_raftx_leg() {
@@ -1052,6 +1294,9 @@ case "${1:-}" in
     interop)       shift; cmd_wire_interop "$@" ;;
     adaptive)      cmd_run_adaptive "${2:-}" ;;
     harbor)        cmd_harbor "${2:-}" "${3:-}" ;;
+    app)           cmd_app "${2:-}" ;;
+    app2)          cmd_app2 "${2:-}" "${3:-}" ;;
+    app3)          cmd_app3 "${2:-}" ;;
     harbor-standalone) shift; cmd_harbor_standalone "$@" ;;
     harbor-cluster)  cmd_harbor_cluster ;;
     harbor-provider) shift; cmd_harbor_provider "$@" ;;

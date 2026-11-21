@@ -1,5 +1,6 @@
 package org.hongxi.jaws.cluster;
 
+import org.hongxi.jaws.cluster.directory.AppLevelRegistryDirectory;
 import org.hongxi.jaws.cluster.directory.RegistryDirectory;
 import org.hongxi.jaws.cluster.directory.StaticDirectory;
 import org.hongxi.jaws.cluster.loadbalance.AbstractLoadBalance;
@@ -10,6 +11,8 @@ import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.common.extension.ExtensionLoader;
 import org.hongxi.jaws.exception.JawsFrameworkException;
 import org.hongxi.jaws.filter.ProtocolFilterWrapper;
+import org.hongxi.jaws.metadata.ServiceNameMapping;
+import org.hongxi.jaws.registry.RegistryFactory;
 import org.hongxi.jaws.rpc.Protocol;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.rpc.URL;
@@ -61,7 +64,21 @@ public class ConsumerCoordinator<T> {
                 ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(refUrl.getProtocol()));
         URL consumerUrl = refUrl.createCopy();
         consumerUrl.addParameter(UrlParam.Identity.ENDPOINT_TYPE.getName(), JawsConstants.ENDPOINT_TYPE_SERVICE);
-        RegistryDirectory<T> directory = new RegistryDirectory<>(interfaceClass, refUrl, consumerUrl, registryUrls, protocol);
+
+        // Create registries up front so the DynamicConfiguration SPI is installed
+        // (AbstractRegistryFactory does it on first registry creation) before the
+        // mapping lookup below; the instances are cached and reused by the directory.
+        for (URL registryUrl : registryUrls) {
+            ExtensionLoader.getExtensionLoader(RegistryFactory.class)
+                    .getExtension(registryUrl.getProtocol()).getRegistry(registryUrl);
+        }
+
+        // The interface-to-application mapping is the switch: present routes to
+        // application-level discovery, absent keeps the classic interface-level path.
+        String application = ServiceNameMapping.getMapping(refUrl.getPath());
+        RegistryDirectory<T> directory = application != null
+                ? new AppLevelRegistryDirectory<>(interfaceClass, refUrl, consumerUrl, registryUrls, protocol, application)
+                : new RegistryDirectory<>(interfaceClass, refUrl, consumerUrl, registryUrls, protocol);
         return new ConsumerCoordinator<>(interfaceClass, refUrl, directory);
     }
 

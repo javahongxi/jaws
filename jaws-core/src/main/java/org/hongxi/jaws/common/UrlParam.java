@@ -75,6 +75,12 @@ public final class UrlParam {
         public static final Def<String> MODULE = new Def<>("module", JawsConstants.FRAMEWORK_NAME);
         public static final Def<String> TOKEN = new Def<>("token", "");
         public static final Def<String> TAG = new Def<>("tag", "");
+        /**
+         * Metadata revision carried by an application-level instance URL: a content
+         * hash pointing at the provider's in-memory {@code MetadataInfo}, so the
+         * registry only stores a lightweight pointer instead of full service URLs.
+         */
+        public static final Def<String> REVISION = new Def<>("revision", "");
 
         private Identity() {
         }
