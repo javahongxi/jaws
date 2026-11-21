@@ -45,6 +45,21 @@ registry 三腿（zookeeper/nacos/harbor）**零改动**：它们本来就是 UR
 
 一句话闭环：**注册中心里始终只有指针和映射，没有元数据本体**——provider 写 naming（实例 + revision）与 config（mapping），consumer 先查 config 拿应用名、订阅 naming 拿实例、按 revision 向 provider 内存拉元数据并展开成接口级地址。
 
+## 网络与存储收益
+
+应用级发现的收益不止于对齐 k8s「一个应用一个 Service」的模型，核心在数据模型本身：
+
+| 维度 | 接口级 | 应用级 |
+|---|---|---|
+| 注册中心条目数 | O(接口数 × 实例数)：100 接口 × 1000 实例 = 10 万条 | O(实例数)：同规模仅 1000 条 |
+| 单条体积 | 全量 URL（methods/参数/group/version 等），KB 级 | ip:port + revision 指针 |
+| consumer 订阅数 | 每引用一个接口一条订阅/监听 | 每应用一条订阅 |
+| 元数据同步 | 随每条 URL 注册/推送 | revision 去重，同 revision 的 N 个实例只拉一次 |
+
+条目数与单条体积的双降，直接缩小注册中心内存、快照体积与集群同步流量（Raft/Distro），注册、重连 redo、变更推送的 payload 也随之缩小。revision 内容寻址是瘦身的核心：同服务列表的 N 个实例共享同一 revision，consumer 侧 `MetadataCache` 进程级共享，第二个接口引用同应用直接命中、零 RPC；且拉取发生在地址刷新路径而非调用路径——稳态下（服务列表不变）除实例心跳外没有任何额外流量。
+
+一个 trade-off：变更粒度从接口粗化到应用——任何一个服务变更都会 bump revision、通知该应用的**所有** consumer（接口级只通知订阅了该接口的 consumer）。但推送的是轻量指针、元数据拉取又被 revision 去重，总流量仍远低于接口级；代价主要是 consumer 多做一次「展开后发现与本接口无关」的计算。
+
 ## 使用方式
 
 **Provider 端唯一的开关**是 `RegistryConfig.registerMode`：
@@ -114,7 +129,31 @@ registryConfig.setRegisterMode("instance");   // 默认 "interface"，走原接�
 | 接口→应用映射 | config 面 group=mapping，CAS 写入，监听热更新 | config 面 key=`mapping:{接口}`，**后写覆盖无 CAS，refer 时读一次不监听** |
 | 映射清理 | 不自动删（残留无害） | 同 |
 | 双注册迁移 | register-mode=all 双注册过渡 | **不支持**（按 registry 混配两种模式替代） |
-| remote 元数据中心 | MetadataReport 抽象（Nacos config/ZK 等） | **不支持** |
+| remote 元数据中心 | MetadataReport 抽象（Nacos config/ZK 等） | **不支持**（上报时机对照见下节） |
+
+## remote 模式元数据上报时机（Dubbo 对照，Jaws 未实现）
+
+Jaws v1 只有 local 模式：元数据在 provider 内存，不存在「上报」动作。本节描述 Dubbo remote 模式（`MetadataReport`）的行为，作为后续扩展的参照——nacos 腿的 `NacosMetadataReport` 全程只持有 `ConfigService`，以 dataId=应用名、group=revision 写配置项，落 `config_info` 表 DB 持久化。
+
+上报触发点（事件驱动为主）：
+
+| 触发 | 说明 |
+|---|---|
+| 服务 export / unexport | 与实例注册在**同一条导出链路**上：重算 revision → 注册实例 → `publishAppMetadata` 写 config；revision 未变则跳过，进程内 `allMetadataReports` 缓存去重，同 revision 不重复写 |
+| consumer refer | `storeConsumerMetadata` 上报订阅侧配置（运维用途） |
+| 失败重试 | 写失败进 `failedReports`，按 `retry-period`（默认 3000ms）重试，最多 `retry-times`（默认 100）次 |
+| 每日全量刷新 | `cycle-report` 默认 **true**：首次执行在凌晨 2~6 点间随机，之后每 24h `publishAll()` 重刷内存缓存的全部元数据；这是唯一的周期性上报，可配 `cycle-report=false` 关闭 |
+
+默认异步写（`sync-report=false`），不阻塞导出主链路；另有一份接口粒度的 `ServiceDefinition`（methods/types，供网关/服务测试用，`report-definition` 控制）走同一通道。
+
+与 instance 信息的频率对比：
+
+- **触发事件基本相同**：两者都挂在 export/revision 变更链路上，都是事件驱动、不是周期全量推送
+- **元数据写得更少**：revision 内容寻址去重——同应用同服务列表的 N 个实例写的是同一个配置项（幂等覆盖），进程内同 revision 只报一次；实例注册则是每实例各一条
+- **但元数据多一个每日全量刷新**（cycle-report），实例侧没有对应物
+- **实例的「高频」部分是心跳，不携带数据**：Nacos 2.x/3.x 客户端每 5s 发一次 `HealthCheckRequest`（gRPC 应用层心跳），只保活、不重传实例内容；实例全量数据只在注册/重连 redo 时传。不能拿「5s 一次心跳」对比元数据上报频率——稳态下两者都不传业务数据
+
+附带结论：remote 模式下元数据**下线不删**——`unReportMetadata` 的唯一调用点被 fixme 注释（同 revision 可能被其他实例共享、无引用计数），Nacos `config_info` 无 TTL 也不与 naming 联动，旧 revision 配置长期累积成孤儿数据，正确性无害但需运维侧清理。后续若扩展 remote 模式（如以 Harbor config 面承担元数据中心），同样要面对这个无引用计数的清理问题。
 
 ## 边界清单（v1 明确不做）
 
