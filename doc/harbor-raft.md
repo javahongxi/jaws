@@ -1,6 +1,6 @@
 # Harbor Raft：持久实例与配置中心的 CP 设计精读
 
-> harbor 的第二套一致性档位。ephemeral 实例继续走「连接即活性 + Distro AP」；`ephemeral=false` 的持久实例与**配置中心的全部写入**走**自研最小 Raft**——数据只存**内存 + 本地日志/快照文件**，不依赖任何外部数据库，与 Nacos 的 JRaft 部署形态完全同构。本文既是 Raft 算法在 harbor 里的落地精读，也是与 Nacos CP 链路（Nacos 3.2.2 源码为准绳）的逐段对照。引用只到类/概念/默认值粒度，不钉行号（同 `harbor-vs-nacos.md` 的维护纪律）。
+> harbor 的第二套一致性档位。ephemeral 实例继续走「连接即活性 + Distro AP」；`ephemeral=false` 的持久实例与**配置中心的全部写入**走**自研最小 Raft**——数据只存**内存 + 本地日志/快照文件**，不依赖任何外部数据库。这与 Nacos **naming 持久实例**的 JRaft 形态同构；Nacos config 内嵌集群则是「Raft 复制 SQL → 各节点回放进本地 Derby → dump 内存缓存」（`DistributedDatabaseOperateImpl` + `DerbySnapshotOperation`），harbor 去掉了 Derby 这一层，状态机直接就是内存（见 §2 映射表）。本文既是 Raft 算法在 harbor 里的落地精读，也是与 Nacos CP 链路（Nacos 3.2.2 源码为准绳）的逐段对照。引用只到类/概念/默认值粒度，不钉行号（同 `harbor-vs-nacos.md` 的维护纪律）。
 
 ## 0. 为什么是自研，以及范围
 
