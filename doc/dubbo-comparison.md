@@ -40,6 +40,26 @@ Jaws 已具备多注册中心能力：
 
 核心差距在于：注册中心列表是全局的，所有服务共享同一组注册中心，不支持 per-service 指定注册中心。
 
+### 应用级服务发现与元数据存储
+
+Jaws 是接口级注册：每个接口向注册中心注册一条全量 URL（含全部方法参数），实例信息与元数据混在一起。Dubbo 3 的应用级发现把两者分开存储，以 Nacos 为例走的是两条完全不同的通道（源码核实于 Dubbo 3.3 `dubbo-metadata-report-nacos` / `dubbo-registry-api`）：
+
+| 数据 | Nacos 通道 | 存储形态 | 生命周期 |
+|---|---|---|---|
+| 实例信息（ip/port + revision 等少量 metadata） | naming 临时实例（Distro AP） | 内存 | 随连接/心跳，掉线即删 |
+| 应用元数据 MetadataInfo（接口列表、方法参数等重数据） | config 配置项（dataId=应用名，group=revision） | DB 持久化（config_info） | 显式删除才消失 |
+| 接口→应用名映射 | config 配置项（group=mapping，CAS 写入） | DB 持久化 | 同上 |
+
+源码要点：
+
+- **元数据走配置中心而非注册中心**：`NacosMetadataReport` 全程只持有 `ConfigService`（`NacosFactory.createConfigService`），`publishAppMetadata` → `publishConfig(应用名, revision, MetadataInfo JSON)`。revision 是内容哈希，同服务列表的实例算出同一 revision、共享同一条配置——这是应用级发现瘦身的核心：重数据按 revision 内容寻址去重，naming 里每个实例只剩轻量指针
+- **实例侧是临时实例**：`NacosServiceDiscovery.register` → `NamingService.registerInstance`，整个 `dubbo-registry-nacos` 模块无任何 `setEphemeral`，即 nacos-client 默认 `ephemeral=true`
+- **实例全部下线不会自动删元数据**：`AbstractServiceDiscovery.unregister()` 中 `unReportMetadata` 调用被注释掉（fixme：同一 revision 可能被其他实例共享，无引用计数无法判断是否最后一个实例）；全仓 grep 确认 `unReportMetadata` / `unPublishAppMetadata` 在 main 代码中无存活调用方，Nacos 配置中心也无 TTL、与 naming 生命周期不联动。连优雅停机都不删，掉线更不删
+- **后果与取舍**：残留正确性无害（consumer 只按在线实例携带的 revision 取数），但每次服务变更产生新 revision、旧配置永不清理，长期运行积累孤儿元数据需运维侧清理；ZooKeeper 腿同理，是"共享 revision 无引用计数"模型决定的，非 Nacos 特有
+- **口径限定**：以上是 `metadata-type=remote`（元数据中心）路径；Dubbo 默认 `local` 模式的元数据存 provider 进程内 `MetadataService`（内存），consumer 按 revision 通过 RPC 拉取，不落 Nacos
+
+对 Jaws 的启示：差距的本质不是"多一个元数据中心"，而是"naming 轻量指针 + config 内容寻址"的存储模型分层；Jaws 若引入应用级发现，Harbor 的 config 面（Raft 持久化）可天然承担元数据中心角色，但同样要面对 revision 清理问题。
+
 ## 三、流量治理
 
 | 能力维度              | Jaws                                                                              | Dubbo                                                        | 差距评估   |
