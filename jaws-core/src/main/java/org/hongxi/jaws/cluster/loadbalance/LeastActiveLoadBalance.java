@@ -23,6 +23,11 @@ import java.util.concurrent.ThreadLocalRandom;
  *      MAX_REFERENCE_COUNT available references are compared.
  * </pre>
  * <p>
+ * Typical scenario: services whose per-call cost varies widely (mixed fast
+ * and slow methods, occasional heavy queries). A provider stuck on slow
+ * calls accumulates active count and automatically receives less traffic,
+ * so slow nodes drain instead of piling up requests.
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @Extension("leastActive")

@@ -18,6 +18,11 @@ import java.util.concurrent.ThreadLocalRandom;
  * away from slow or busy providers, which matters when the provider list
  * is large and heterogeneous.
  * <p>
+ * Typical scenario: a general-purpose default for latency-sensitive services
+ * whose providers differ in capacity or health (mixed machine specs, GC
+ * pauses, partial degradation). Load-aware routing reacts to slow nodes
+ * automatically without any manual weight tuning.
+ * <p>
  * Created by shenhongxi on 2026/8/23.
  *
  * @see LeastLoadLoadBalance

@@ -20,6 +20,11 @@ import java.util.concurrent.ThreadLocalRandom;
  * a,a,b,a,c,a,a instead of a,a,a,a,a,b,c), avoiding request bursts on the
  * highest-weight provider.
  * <p>
+ * Typical scenario: providers of known, unequal capacity (weights reflect
+ * machine specs) serving requests of similar cost, where a strictly
+ * proportional and predictable distribution is preferred over statistical
+ * fairness — e.g. low-QPS callers on which random picks would skew.
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @Extension("roundRobin")

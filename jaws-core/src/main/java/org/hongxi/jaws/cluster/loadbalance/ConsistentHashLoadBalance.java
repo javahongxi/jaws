@@ -20,6 +20,11 @@ import java.util.TreeMap;
  * references move on refresh, most requests keep hitting the same provider,
  * which a shuffle-based arrangement cannot guarantee.
  * <p>
+ * Typical scenario: providers serve from a local cache. Routing the same
+ * arguments to the same provider keeps each node caching only its own share
+ * of the keys, instead of every node holding the full data set, which improves
+ * cache hit ratio and cuts memory usage.
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @Extension("consistentHash")

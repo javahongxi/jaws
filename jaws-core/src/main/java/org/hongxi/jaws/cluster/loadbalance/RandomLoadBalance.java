@@ -10,6 +10,11 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * random load balance.
  * <p>
+ * Typical scenario: homogeneous providers with roughly equal per-call cost,
+ * where traffic volume is high enough for random picks to even out. Selection
+ * is stateless and nearly free, making it a simple baseline when no
+ * load-aware or affinity routing is needed.
+ * <p>
  * Created by shenhongxi on 2021/4/23.
  */
 @Extension("random")

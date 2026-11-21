@@ -21,6 +21,12 @@ import java.util.concurrent.ThreadLocalRandom;
  * Uses a sliding window mechanism to periodically reset statistics offsets,
  * preventing historical data from diluting recent trends.
  * </pre>
+ * <p>
+ * Typical scenario: small-to-medium provider lists where an exact global
+ * minimum is worth the O(n) scan, and both latency and concurrency should
+ * count — a node that is fast but saturated and one that is idle but slow
+ * are both avoided. For large clusters prefer {@link AdaptiveLoadBalance},
+ * which approximates the same goal with O(1) P2C sampling.
  *
  * @see LeastActiveLoadBalance
  */
