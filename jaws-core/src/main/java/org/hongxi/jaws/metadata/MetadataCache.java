@@ -40,7 +40,7 @@ public final class MetadataCache {
      */
     public static MetadataInfo get(String revision) {
         MetadataInfo info = CACHE.get(revision);
-        if (info != null && !valid(revision, info)) {
+        if (info != null && !isValid(revision, info)) {
             CACHE.remove(revision);
             return null;
         }
@@ -53,11 +53,11 @@ public final class MetadataCache {
      * @return true if stored; false when the content does not hash to the key
      */
     public static boolean put(String revision, MetadataInfo info) {
-        if (!valid(revision, info)) {
-            return false;
+        if (isValid(revision, info)) {
+            CACHE.put(revision, info);
+            return true;
         }
-        CACHE.put(revision, info);
-        return true;
+        return false;
     }
 
     /** Drop all entries; for tests only. */
@@ -65,7 +65,7 @@ public final class MetadataCache {
         CACHE.clear();
     }
 
-    private static boolean valid(String revision, MetadataInfo info) {
+    private static boolean isValid(String revision, MetadataInfo info) {
         return revision != null && info != null
                 && revision.equals(info.getRevision())
                 && revision.equals(info.calRevision());
