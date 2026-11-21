@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -441,7 +442,7 @@ final class HarborConnection implements Closeable {
      * trigger another recovery.
      */
     private void recoverIfCurrent(StreamSubject<Object> stream) {
-        keepAliveScheduler.execute(() -> {
+        runOnKeepAlive(() -> {
             if (!closed && outbound == stream) {
                 try {
                     recover();
@@ -450,6 +451,23 @@ final class HarborConnection implements Closeable {
                 }
             }
         });
+    }
+
+    /**
+     * Submit to the keep-alive thread only while the connection lives. close()
+     * shuts the scheduler down BEFORE it ends the stream, so the stream's own
+     * end event arrives at a terminated executor — the closed check must guard
+     * the submit itself, and the catch covers the race between check and submit.
+     */
+    private void runOnKeepAlive(Runnable task) {
+        if (closed) {
+            return;
+        }
+        try {
+            keepAliveScheduler.execute(task);
+        } catch (RejectedExecutionException e) {
+            // close() won the race; a dying connection has nothing to recover.
+        }
     }
 
     private void handleFrame(Payload payload) {
@@ -481,7 +499,7 @@ final class HarborConnection implements Closeable {
         if (HarborProtocol.typeToken(ConnectResetRequest.class).equals(type)) {
             // Reconnecting means tearing this stream down, so it cannot happen on the
             // stream's own thread; the keep-alive thread has nothing else to do.
-            keepAliveScheduler.execute(() -> handleReset(payload));
+            runOnKeepAlive(() -> handleReset(payload));
         }
         // A NotifySubscriberResponse ack is deliberately not sent: harbor's push
         // is latest-state idempotent convergence with no delivery signal, so an
