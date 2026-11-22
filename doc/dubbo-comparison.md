@@ -107,7 +107,7 @@ Jaws 已实现标签路由能力：
 | **REST/HTTP**      | 注解驱动 REST 路由（Spring Web + JAX-RS 双注解兼容）                   | 原生 rest 协议（JAX-RS）/ Triple REST（Spring MVC + JAX-RS） | **基本持平**    |
 | **Injvm**          | 支持                                                                   | 支持                                                         | **持平**        |
 | **多协议同时暴露** | 支持同一端口自适应 jaws / HTTP/2 / HTTP/1.1 / TLS（ALPN）四种协议（AdaptiveServer） | 支持同一端口多协议自动路由（Port Unification Server）        | **持平**        |
-| **MCP 桥接**       | 不支持                                                                 | 支持（Dubbo MCP Server）                                     | **Dubbo 领先**  |
+| **MCP 桥接**       | 支持（内置 core，接口方法自动注册为工具，Stateless Streamable HTTP，详见 [MCP 支持](mcp.md)） | 支持（Dubbo MCP Server）                                     | **基本持平**  |
 
 ### REST 协议架构差异
 

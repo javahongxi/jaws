@@ -221,6 +221,7 @@ public class MyRunner implements CommandLineRunner {
 | [Nacos Config 原理解读](doc/nacos-config.md)               | 配置域从写 DB 到客户端收变更的设计剖析          |
 | [动态配置](doc/dynamic-config.md)                          | 全局/服务级/方法级三层热更新                    |
 | [泛化调用](doc/generic-invocation.md)                      | 无需接口 JAR 包即可发起 RPC 调用                |
+| [MCP 支持](doc/mcp.md)                                     | 服务方法自动注册为 AI 工具，Stateless Streamable HTTP |
 | [优雅停机](doc/graceful-shutdown.md)                       | 四阶段零损伤发布                                |
 | [服务鉴权](doc/token-auth.md)                              | 基于 Token 的服务认证                           |
 | [连接预热](doc/warm-up.md)                                 | Provider 冷启动权重渐增                         |
