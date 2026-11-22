@@ -22,9 +22,19 @@ public class ConfigCommand {
     private String group;
     private String dataId;
     private String content;
+    /** Expected current md5 for a CAS publish; null/blank writes unconditionally.
+     * Absent in log entries written before CAS existed, which read as null. */
+    private String casMd5;
 
     public static ConfigCommand publish(String tenant, String group, String dataId, String content) {
-        return of(OP_CONFIG_PUBLISH, tenant, group, dataId, content);
+        return publish(tenant, group, dataId, content, null);
+    }
+
+    public static ConfigCommand publish(String tenant, String group, String dataId,
+                                        String content, String casMd5) {
+        ConfigCommand command = of(OP_CONFIG_PUBLISH, tenant, group, dataId, content);
+        command.casMd5 = casMd5;
+        return command;
     }
 
     public static ConfigCommand remove(String tenant, String group, String dataId) {
@@ -88,5 +98,13 @@ public class ConfigCommand {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getCasMd5() {
+        return casMd5;
+    }
+
+    public void setCasMd5(String casMd5) {
+        this.casMd5 = casMd5;
     }
 }

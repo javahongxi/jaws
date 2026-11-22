@@ -16,8 +16,13 @@ public interface StateMachine {
      * Apply one committed log entry. The command bytes are a serialized
      * {@link NamingCommand} or {@link ConfigCommand}; a NOOP entry carries no
      * state change.
+     *
+     * @return a deterministic refusal message when the command was rejected
+     *         at apply time (a lost CAS), or {@code null} when it applied.
+     *         The value travels back to the proposer, so a refusal is an
+     *         answer — not an exception that would break the apply loop.
      */
-    void onApply(LogEntry entry);
+    String onApply(LogEntry entry);
 
     /**
      * Serialize the whole current state for compaction or InstallSnapshot.

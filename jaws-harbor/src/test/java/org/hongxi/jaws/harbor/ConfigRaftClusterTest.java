@@ -4,6 +4,8 @@ import com.alibaba.nacos.api.NacosFactory;
 import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.config.ConfigService;
 import com.alibaba.nacos.api.config.listener.Listener;
+import org.hongxi.jaws.harbor.client.HarborClient;
+import org.hongxi.jaws.harbor.model.ConfigCasConflictException;
 import org.hongxi.jaws.rpc.URL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -27,6 +29,7 @@ import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -149,6 +152,38 @@ class ConfigRaftClusterTest {
                     "a write to one key must not touch another");
         } finally {
             config.shutDown();
+        }
+    }
+
+    @Test
+    @Order(3)
+    void casThroughAFollowerRelayKeepsItsConflictAndItsWin() throws Exception {
+        int followerIndex = followerIndex();
+        postConfig(httpPorts.get(followerIndex), "cas.cluster", "base");
+        for (HarborServer node : nodes) {
+            await(() -> {
+                ConfigItem item = node.getConfigStorage().get(
+                        "cas.cluster", HarborProtocol.JAWS_CONFIG_GROUP, "public");
+                return item != null && item.getContent().equals("base");
+            }, "every node must hold the seeded value before the CAS race", 5_000);
+        }
+
+        try (HarborClient client = new HarborClient("127.0.0.1", ports.get(followerIndex))) {
+            // A lost CAS must cross the relay as a deterministic refusal: the
+            // origin node surfaces it instead of retrying it into a success.
+            assertThrows(ConfigCasConflictException.class, () -> client.publishConfig(
+                    "cas.cluster", HarborProtocol.JAWS_CONFIG_GROUP, "public",
+                    "loser", ConfigItem.md5("stale")));
+            // The winning CAS rides the same follower-to-leader relay.
+            client.publishConfig("cas.cluster", HarborProtocol.JAWS_CONFIG_GROUP, "public",
+                    "winner", ConfigItem.md5("base"));
+        }
+        for (HarborServer node : nodes) {
+            await(() -> {
+                ConfigItem item = node.getConfigStorage().get(
+                        "cas.cluster", HarborProtocol.JAWS_CONFIG_GROUP, "public");
+                return item != null && item.getContent().equals("winner");
+            }, "every node must apply the winning CAS, and only it", 5_000);
         }
     }
 

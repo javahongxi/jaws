@@ -396,7 +396,19 @@ public class HarborServer {
      * the same namespace the readers query.
      */
     public void publishConfig(String dataId, String group, String tenant, String content) {
-        raftProtocol.write(ConfigCommand.publish(configTenant(tenant), group, dataId, content));
+        publishConfig(dataId, group, tenant, content, null);
+    }
+
+    /**
+     * The same write with a compare-and-swap condition: {@code casMd5} is the
+     * md5 the writer believes is current, checked at raft apply time so
+     * concurrent CAS writers serialise and exactly one wins. A lost CAS throws
+     * {@link org.hongxi.jaws.harbor.model.ConfigCasConflictException}; a null or
+     * blank casMd5 writes unconditionally.
+     */
+    public void publishConfig(String dataId, String group, String tenant,
+                              String content, String casMd5) {
+        raftProtocol.write(ConfigCommand.publish(configTenant(tenant), group, dataId, content, casMd5));
     }
 
     /** Commit one config removal through the same raft path. Idempotent. */
@@ -946,7 +958,9 @@ public class HarborServer {
      * Publish one config — the nacos {@code ConfigPublishRequestHandler} shape
      * minus the database: the content becomes a {@link ConfigCommand} committed
      * through Raft before the reply goes out, and every node's apply notifies
-     * its own listeners. {@code casMd5} is ignored (last-write-wins).
+     * its own listeners. {@code casMd5} rides the command and is judged at apply
+     * time; a lost CAS surfaces here as the exact nacos refusal text (the
+     * exception's message), which is what clients match the conflict on.
      */
     private Payload handleConfigPublish(Payload payload, String clientIp) {
         ConfigPublishRequest request = HarborProtocol.parseBody(payload, ConfigPublishRequest.class);
@@ -957,7 +971,8 @@ public class HarborServer {
         try {
             publishConfig(request.getDataId(), configGroup(request.getGroup()),
                     request.getTenant(),
-                    request.getContent() == null ? "" : request.getContent());
+                    request.getContent() == null ? "" : request.getContent(),
+                    request.getCasMd5());
         } catch (Exception e) {
             return HarborProtocol.encodeResponse(ConfigPublishResponse.fail(e.getMessage()), clientIp);
         }

@@ -1,5 +1,6 @@
 package org.hongxi.jaws.harbor.raft;
 
+import org.hongxi.jaws.harbor.model.ConfigCasConflictException;
 import org.hongxi.jaws.harbor.model.request.RaftWriteForwardRequest;
 import org.hongxi.jaws.harbor.model.response.RaftWriteForwardResponse;
 import org.slf4j.Logger;
@@ -46,7 +47,9 @@ public class HarborRaftProtocol {
      * Commit a naming command through Raft, relaying to the leader when this
      * node is not it. Returns only after the entry is committed AND applied
      * locally; throws a (retryable) {@link IllegalStateException} when no
-     * leader can be reached within the attempt budget.
+     * leader can be reached within the attempt budget, or a (deterministic)
+     * {@link ConfigCasConflictException} when the state machine refused the
+     * command at apply time.
      */
     public void write(NamingCommand command) {
         writeBytes(command.toBytes());
@@ -62,7 +65,13 @@ public class HarborRaftProtocol {
         for (int attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
             if (raftNode.isLeader()) {
                 try {
-                    raftNode.propose(bytes).get(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    String refusal = raftNode.propose(bytes).get(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    if (refusal != null) {
+                        // Committed but refused at apply (a lost CAS): deterministic,
+                        // so it leaves the retry loop at once — proposing again
+                        // would lose again and only mask the conflict.
+                        throw new ConfigCasConflictException(refusal);
+                    }
                     return;
                 } catch (ExecutionException e) {
                     if (e.getCause() instanceof RaftNode.NotLeaderException notLeader) {
@@ -84,6 +93,11 @@ public class HarborRaftProtocol {
                 throw new IllegalStateException("no raft leader available; retry later");
             }
             RaftWriteForwardResponse response = relay(target, bytes);
+            if (response.getRefusal() != null) {
+                // The leader applied and refused: same deterministic outcome as
+                // a local proposal, carried back across the relay untouched.
+                throw new ConfigCasConflictException(response.getRefusal());
+            }
             if (response.isSuccess()) {
                 return;
             }
@@ -110,8 +124,14 @@ public class HarborRaftProtocol {
         }
         byte[] bytes = Base64.getDecoder().decode(request.getCommand());
         try {
-            raftNode.propose(bytes).get(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            response.setSuccess(true);
+            String refusal = raftNode.propose(bytes).get(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            if (refusal != null) {
+                response.setSuccess(false);
+                response.setMessage(refusal);
+                response.setRefusal(refusal);
+            } else {
+                response.setSuccess(true);
+            }
         } catch (ExecutionException e) {
             response.setSuccess(false);
             response.setMessage(String.valueOf(e.getCause()));

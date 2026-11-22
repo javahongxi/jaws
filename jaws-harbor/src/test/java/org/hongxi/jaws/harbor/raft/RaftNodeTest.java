@@ -97,6 +97,26 @@ class RaftNodeTest {
     }
 
     @Test
+    void applyRefusalCompletesTheProposalAsAValueNotAnError() throws Exception {
+        RecordingStateMachine refusing = new RecordingStateMachine() {
+            @Override
+            public String onApply(LogEntry entry) {
+                super.onApply(entry);
+                return "refused at apply";
+            }
+        };
+        RaftNode node = node(1001, new int[0], refusing, fast());
+        node.start();
+        await(node::isLeader, "single node must elect itself");
+
+        // A refusal is an answer: the entry committed and the machine decided
+        // against it, so the future completes normally carrying the message —
+        // only infrastructure failures (no leader, timeout) complete it exceptionally.
+        assertEquals("refused at apply",
+                node.propose(registerCommand("c1")).get(2, TimeUnit.SECONDS));
+    }
+
+    @Test
     void threeNodesElectOneLeaderAndReplicateToAll() throws Exception {
         RecordingStateMachine[] machines = {new RecordingStateMachine(),
                 new RecordingStateMachine(), new RecordingStateMachine()};
@@ -171,7 +191,7 @@ class RaftNodeTest {
         long commitBefore = isolated.status().commitIndex();
 
         transport.blocked.add(isolated.nodeId());
-        CompletableFuture<Void> stuck = isolated.propose(registerCommand("stuck"));
+        CompletableFuture<String> stuck = isolated.propose(registerCommand("stuck"));
         Thread.sleep(400);
         assertFalse(stuck.isDone(), "a minority leader must not commit alone");
         assertEquals(commitBefore, isolated.status().commitIndex());
@@ -237,11 +257,12 @@ class RaftNodeTest {
         final List<String> applied = new CopyOnWriteArrayList<>();
 
         @Override
-        public void onApply(LogEntry entry) {
+        public String onApply(LogEntry entry) {
             NamingCommand command = NamingCommand.fromBytes(entry.data());
             if (!NamingCommand.OP_NOOP.equals(command.getOperation())) {
                 applied.add(command.getOperation());
             }
+            return null;
         }
 
         @Override

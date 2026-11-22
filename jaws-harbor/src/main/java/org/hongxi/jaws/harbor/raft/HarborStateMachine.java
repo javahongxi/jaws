@@ -9,6 +9,7 @@ import org.hongxi.jaws.harbor.ConfigItem;
 import org.hongxi.jaws.harbor.ConfigStorage;
 import org.hongxi.jaws.harbor.ServiceStorage;
 import org.hongxi.jaws.harbor.model.ClientSyncData;
+import org.hongxi.jaws.harbor.model.ConfigCasConflictException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,17 +48,17 @@ public class HarborStateMachine implements StateMachine {
     }
 
     @Override
-    public void onApply(LogEntry entry) {
+    public String onApply(LogEntry entry) {
         if (entry.data() == null || entry.data().length == 0) {
-            return;
+            return null;
         }
         JSONObject json = JSON.parseObject(new String(entry.data(), StandardCharsets.UTF_8));
         String operation = json.getString("operation");
         if (operation != null && operation.startsWith("CONFIG_")) {
-            applyConfig(json.toJavaObject(ConfigCommand.class));
-        } else {
-            applyNaming(json.toJavaObject(NamingCommand.class));
+            return applyConfig(json.toJavaObject(ConfigCommand.class));
         }
+        applyNaming(json.toJavaObject(NamingCommand.class));
+        return null;
     }
 
     private void applyNaming(NamingCommand command) {
@@ -78,22 +79,39 @@ public class HarborStateMachine implements StateMachine {
         }
     }
 
-    private void applyConfig(ConfigCommand command) {
+    private String applyConfig(ConfigCommand command) {
         switch (command.getOperation()) {
-            case ConfigCommand.OP_CONFIG_PUBLISH -> configStorage.publish(ConfigItem.of(
-                    command.getDataId(), command.getGroup(), command.getTenant(),
-                    command.getContent()));
+            case ConfigCommand.OP_CONFIG_PUBLISH -> {
+                String casMd5 = command.getCasMd5();
+                if (casMd5 != null && !casMd5.isEmpty()) {
+                    // CAS is judged HERE, in total apply order — a handler-side
+                    // check would let two concurrent publishes both pass against
+                    // the same md5 and lose an update. An absent key is created
+                    // with the casMd5 ignored (the nacos insertOrUpdateCas rule):
+                    // a first publish can never conflict.
+                    ConfigItem current = configStorage.get(
+                            command.getDataId(), command.getGroup(), command.getTenant());
+                    if (current != null && !current.getMd5().equals(casMd5)) {
+                        // Refused: no publish, no notify — the value never moved.
+                        return ConfigCasConflictException.MESSAGE;
+                    }
+                }
+                configStorage.publish(ConfigItem.of(
+                        command.getDataId(), command.getGroup(), command.getTenant(),
+                        command.getContent()));
+            }
             case ConfigCommand.OP_CONFIG_REMOVE -> configStorage.remove(
                     command.getDataId(), command.getGroup(), command.getTenant());
             default -> {
                 log.warn("[raft] unknown config command operation: {}", command.getOperation());
-                return;
+                return null;
             }
         }
         // Every node applies the same entry and notifies its own listeners;
         // the push needs no inter-node relay.
         configChangeNotifier.requestNotify(
                 command.getDataId(), command.getGroup(), command.getTenant());
+        return null;
     }
 
     @Override

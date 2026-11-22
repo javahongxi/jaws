@@ -3,6 +3,7 @@ package org.hongxi.jaws.harbor.client;
 import org.hongxi.jaws.common.VisibleForTesting;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.harbor.HarborProtocol;
+import org.hongxi.jaws.harbor.model.ConfigCasConflictException;
 import org.hongxi.jaws.harbor.model.Instance;
 import org.hongxi.jaws.harbor.model.ServiceInfo;
 import org.hongxi.jaws.harbor.model.ServiceKey;
@@ -492,9 +493,10 @@ public class HarborClient implements Closeable {
     }
 
     /**
-     * Publish one config. The write rides the server's raft log, so a successful
-     * reply means the change is committed and every node applies it —
-     * last-write-wins, no CAS.
+     * Publish one config unconditionally (last-write-wins). The write rides the
+     * server's raft log and is applied before the reply goes out, so — unlike
+     * nacos with its dump-cache window — a query right after a successful
+     * publish already reads the new value.
      */
     public void publishConfig(String dataId, String content) {
         publishConfig(dataId, config.defaultGroup(), content);
@@ -505,10 +507,34 @@ public class HarborClient implements Closeable {
     }
 
     public void publishConfig(String dataId, String group, String tenant, String content) {
+        publishConfig(dataId, group, tenant, content, null);
+    }
+
+    /**
+     * Compare-and-swap publish: {@code casMd5} is the md5 a query handed back,
+     * and the server applies the write only while that is still its current
+     * value — judged in raft apply order, so concurrent CAS writers serialise
+     * and exactly one wins. A lost CAS throws {@link ConfigCasConflictException};
+     * an absent key is created regardless of casMd5 (a first publish cannot
+     * conflict), and a null/blank casMd5 writes unconditionally.
+     */
+    public void publishConfig(String dataId, String group, String tenant,
+                              String content, String casMd5) {
         ConfigKey key = configKeyOf(dataId, group, tenant);
         ConfigPublishRequest request = new ConfigPublishRequest(
                 key.dataId(), key.group(), key.tenant(), content == null ? "" : content);
-        connection.call(request, ConfigPublishResponse.class);
+        request.setCasMd5(casMd5);
+        // tryCall, not call: a lost CAS is a typed outcome to classify, and the
+        // message is the signal — nacos gives the conflict no dedicated errorCode.
+        ConfigPublishResponse response = connection.tryCall(request, ConfigPublishResponse.class);
+        if (!response.isSuccess()) {
+            if (ConfigCasConflictException.MESSAGE.equals(response.getMessage())) {
+                throw new ConfigCasConflictException(response.getMessage());
+            }
+            throw new JawsServiceException("harbor rejected ConfigPublishRequest: resultCode="
+                    + response.getResultCode()
+                    + (response.getMessage() != null ? ", " + response.getMessage() : ""));
+        }
     }
 
     /** Remove one config through the same raft path; a missing key still succeeds. */

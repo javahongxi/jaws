@@ -113,8 +113,9 @@ public class RaftNode {
     private int appliedSinceSnapshot;
     private final Map<String, Long> nextIndex = new HashMap<>();
     private final Map<String, Long> matchIndex = new HashMap<>();
-    /** index → client write awaiting commit; completed on apply, failed on step-down. */
-    private final Map<Long, CompletableFuture<Void>> pendingWrites = new HashMap<>();
+    /** index → client write awaiting commit; completed on apply with the
+     * state machine's refusal message (null when applied), failed on step-down. */
+    private final Map<Long, CompletableFuture<String>> pendingWrites = new HashMap<>();
 
     private volatile boolean running;
     private volatile RaftStatus status = new RaftStatus("FOLLOWER", 0, null, 0, 0, 0);
@@ -219,12 +220,13 @@ public class RaftNode {
 
     /**
      * Propose a state-machine command. The returned future completes when the
-     * entry is committed AND applied locally; it fails with
+     * entry is committed AND applied locally, carrying the state machine's
+     * apply-time refusal message (null when the command applied); it fails with
      * {@link NotLeaderException} when this node is not (or no longer) the
      * leader, so the caller can relay to the right node.
      */
-    public CompletableFuture<Void> propose(byte[] command) {
-        CompletableFuture<Void> future = new CompletableFuture<>();
+    public CompletableFuture<String> propose(byte[] command) {
+        CompletableFuture<String> future = new CompletableFuture<>();
         post(() -> {
             if (role != Role.LEADER) {
                 future.completeExceptionally(new NotLeaderException(leaderId));
@@ -465,7 +467,7 @@ public class RaftNode {
     }
 
     private void failPendingWrites() {
-        for (CompletableFuture<Void> future : pendingWrites.values()) {
+        for (CompletableFuture<String> future : pendingWrites.values()) {
             future.completeExceptionally(new NotLeaderException(leaderId));
         }
         pendingWrites.clear();
@@ -601,13 +603,14 @@ public class RaftNode {
         while (lastApplied < commitIndex) {
             lastApplied++;
             LogEntry entry = raftLog.entryAt(lastApplied);
+            String refusal = null;
             if (entry != null) {
-                stateMachine.onApply(entry);
+                refusal = stateMachine.onApply(entry);
             }
             appliedSinceSnapshot++;
-            CompletableFuture<Void> future = pendingWrites.remove(lastApplied);
+            CompletableFuture<String> future = pendingWrites.remove(lastApplied);
             if (future != null) {
-                future.complete(null);
+                future.complete(refusal);
             }
         }
         if (appliedSinceSnapshot >= options.snapshotThreshold()) {

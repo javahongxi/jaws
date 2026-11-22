@@ -2,8 +2,8 @@ package org.hongxi.jaws.harbor.model.request;
 
 /**
  * Publish (create or overwrite) one config — the nacos {@code ConfigPublishRequest}
- * shape. {@code casMd5} is accepted for wire compatibility but ignored: harbor
- * publishes are last-write-wins through Raft, with no compare-and-swap face.
+ * shape. {@code casMd5} turns the write into a compare-and-swap, judged at raft
+ * apply time; null/blank publishes unconditionally (last-write-wins).
  *
  * @author shenhongxi
  */
