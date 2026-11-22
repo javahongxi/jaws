@@ -3,7 +3,9 @@ package org.hongxi.jaws.wire;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
+import org.hongxi.jaws.metadata.MetadataService;
 import org.hongxi.jaws.rpc.DefaultRequest;
+import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.Provider;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.transport.ProviderMessageHandler;
@@ -143,6 +145,13 @@ class WireMessageHandler implements MessageHandler {
             // Parse raw protobuf bytes into typed Message
             Message requestMessage = methodInfo.requestParser().parseFrom(bytes);
 
+            // The internal MetadataService takes a plain String revision, so
+            // unwrap the StringValue envelope before the filter chain sees it.
+            boolean metadataService = owner.serviceInterface() == MetadataService.class;
+            Object[] arguments = metadataService
+                    ? new Object[]{WireMetadataCodec.decodeRevision(requestMessage)}
+                    : new Object[]{requestMessage};
+
             // Build a new request with the typed Message as argument.
             // Convert gRPC PascalCase method name (SayHello) back to Java
             // camelCase (sayHello) so that the Provider can find the method.
@@ -153,7 +162,7 @@ class WireMessageHandler implements MessageHandler {
             typedRequest.setInterfaceName(owner.serviceInterface().getName());
             typedRequest.setMethodName(toJavaMethodName(request.getMethodName()));
             typedRequest.setParamDesc(request.getParamDesc());
-            typedRequest.setArguments(new Object[]{requestMessage});
+            typedRequest.setArguments(arguments);
             typedRequest.setRequestId(request.getRequestId());
             typedRequest.setRetries(request.getRetries());
             for (var entry : request.getAttachments().entrySet()) {
@@ -164,7 +173,18 @@ class WireMessageHandler implements MessageHandler {
             // For unary: the response Message passes through directly.
             // For streaming: the response is a StreamSource, passed through as-is.
             // WireCallDispatcher.ProviderCallDispatcher handles gRPC frame encoding for both cases.
-            return providers.handleAsync(typedRequest);
+            CompletableFuture<Object> result = providers.handleAsync(typedRequest);
+            if (metadataService) {
+                // Wrap the MetadataInfo return value back into the StringValue
+                // envelope so the dispatcher encodes a protobuf Message.
+                return result.thenApply(r -> {
+                    if (r instanceof DefaultResponse response && response.getThrowable() == null) {
+                        response.setValue(WireMetadataCodec.encodeMetadataInfo(response.getRawValue()));
+                    }
+                    return r;
+                });
+            }
+            return result;
         } catch (InvalidProtocolBufferException e) {
             log.error("Wire message decode failed: interface={} method={}",
                     request.getInterfaceName(), request.getMethodName(), e);

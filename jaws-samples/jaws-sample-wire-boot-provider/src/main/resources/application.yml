@@ -21,5 +21,6 @@ jaws:
   # Nacos must be listening on 127.0.0.1:8848.
   registry:
     address: nacos://127.0.0.1:8848
+    register-mode: instance
   service:
     check: true

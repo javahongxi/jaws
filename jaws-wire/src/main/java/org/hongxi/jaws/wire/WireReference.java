@@ -3,8 +3,11 @@ package org.hongxi.jaws.wire;
 import com.google.protobuf.Message;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.exception.JawsServiceException;
+import org.hongxi.jaws.metadata.MetadataService;
 import org.hongxi.jaws.rpc.AbstractReference;
 import org.hongxi.jaws.rpc.DefaultRequest;
+import org.hongxi.jaws.rpc.DefaultResponse;
+import org.hongxi.jaws.rpc.DefaultResponseFuture;
 import org.hongxi.jaws.rpc.Request;
 import org.hongxi.jaws.rpc.Response;
 import org.hongxi.jaws.rpc.URL;
@@ -59,7 +62,30 @@ public class WireReference<T> extends AbstractReference<T> {
         request.setAttachment(UrlParam.Identity.GROUP.getName(), url.getGroup());
         WireProtoTypes.MethodInfo methodInfo = protoTypes.getMethodInfo(request.getMethodName());
         WireClient wireClient = (WireClient) client;
+        if (getInterface() == MetadataService.class) {
+            return callMetadataService(request, wireClient, methodInfo);
+        }
         return wireClient.request(request, methodInfo.responseParser());
+    }
+
+    /**
+     * The internal MetadataService speaks plain Java types (String revision
+     * to MetadataInfo); translate both legs through the StringValue envelope
+     * so the gRPC wire format stays unchanged.
+     */
+    private Response callMetadataService(Request request, WireClient wireClient,
+                                         WireProtoTypes.MethodInfo methodInfo) {
+        DefaultRequest wireRequest = buildWireRequest(request,
+                WireMetadataCodec.encodeArguments(request.getArguments()));
+        Response response = wireClient.request(wireRequest, methodInfo.responseParser());
+        // request() hands back a pending future; materialize it exactly like
+        // AbstractReference.call() does so the envelope can be unwrapped here.
+        if (response instanceof DefaultResponseFuture) {
+            response = new DefaultResponse(response);
+        }
+        ((DefaultResponse) response).setValue(
+                WireMetadataCodec.decodeMetadataInfo((Message) response.getRawValue()));
+        return response;
     }
 
     @Override

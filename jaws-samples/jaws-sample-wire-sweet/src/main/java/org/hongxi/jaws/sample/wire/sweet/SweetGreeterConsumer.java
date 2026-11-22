@@ -39,6 +39,14 @@ import java.util.concurrent.TimeUnit;
  * → WireReference → WireClient), so this is the registry-driven counterpart of
  * {@code jaws-sample-wire-interop}'s direct-address demos.
  * <p>
+ * With {@code -applevel} the same reference consumes sweet's <em>application-level</em>
+ * provider ({@code example/applevel/cmd/provider} in the sweet repository): the mapping
+ * in the config center routes the refer to {@code AppLevelRegistryDirectory}, which
+ * subscribes the one application instance and pulls its metadata over the wire protocol's
+ * internal MetadataService. That provider registers under jaws' own defaults
+ * ({@code jaws/} prefix, group {@code default_rpc}), so the two adaptations above are
+ * skipped instead of applied — the consumer needs no registerMode switch of its own.
+ * <p>
  * Start sweet's server first; the command line is in README.md.
  */
 public class SweetGreeterConsumer {
@@ -50,15 +58,18 @@ public class SweetGreeterConsumer {
         int times = Integer.parseInt(arg(args, "-times", "3"));
         String[] names = arg(args, "-names", "alice,bob,charlie").split(",");
         int holdSeconds = Integer.parseInt(arg(args, "-hold", "0"));
+        boolean appLevel = hasFlag(args, "-applevel");
 
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName("wire");
         protocolConfig.setId("wire");
         protocolConfig.setTransportFactory("wire");
-        // The other half of the namespace story: this key reaches the reference URL
-        // verbatim because ProtocolConfig#setParameter does not filter blank values
-        // the way BaseConfig#putIfPresent does. Empty means "no prefix".
-        protocolConfig.setParameter(UrlParam.Identity.REGISTRY_NAMESPACE.getName(), "");
+        if (!appLevel) {
+            // The other half of the namespace story: this key reaches the reference URL
+            // verbatim because ProtocolConfig#setParameter does not filter blank values
+            // the way BaseConfig#putIfPresent does. Empty means "no prefix".
+            protocolConfig.setParameter(UrlParam.Identity.REGISTRY_NAMESPACE.getName(), "");
+        }
 
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setProtocol(JawsConstants.REGISTRY_PROTOCOL_NACOS);
@@ -70,15 +81,19 @@ public class SweetGreeterConsumer {
         ref.setInterface(Greeter.class);
         ref.setApplication("sample-wire-sweet");
         ref.setModule("sample-wire");
-        // This is the group the Go provider registered under, not a jaws choice.
-        ref.setGroup("DEFAULT_GROUP");
+        // This is the group the Go provider registered under, not a jaws choice:
+        // DEFAULT_GROUP for the interface-level example, jaws' own default_rpc for
+        // the application-level one.
+        String group = appLevel ? "default_rpc" : "DEFAULT_GROUP";
+        ref.setGroup(group);
         ref.setCheck(false);
         ref.setRequestTimeout(5000);
         ref.setProtocol(protocolConfig);
         ref.setRegistry(registryConfig);
 
         Greeter greeter = ref.getRef();
-        System.out.println("resolving " + SERVICE_NAME + " through nacos, group=DEFAULT_GROUP, namespace=(none)");
+        System.out.println("resolving " + SERVICE_NAME + " through nacos, group=" + group
+                + (appLevel ? ", mode=application-level" : ", namespace=(none)"));
 
         // 与 sweet 侧 example/greeter/cmd/client 同一顺序、同一行格式，便于两边逐行对拍
         unary(greeter, name);
@@ -246,5 +261,14 @@ public class SweetGreeterConsumer {
             }
         }
         return defaultValue;
+    }
+
+    private static boolean hasFlag(String[] args, String key) {
+        for (String arg : args) {
+            if (key.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

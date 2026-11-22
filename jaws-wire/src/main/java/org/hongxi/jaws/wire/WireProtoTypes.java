@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import org.hongxi.jaws.metadata.MetadataService;
 import org.hongxi.jaws.stream.StreamSource;
 
 /**
@@ -29,7 +30,9 @@ import org.hongxi.jaws.stream.StreamSource;
  * Convention: every service interface method has either a protobuf {@code Message}
  * parameter (unary / server streaming) or a {@code StreamSource<Message>}
  * parameter (bidirectional streaming), and returns either a protobuf {@code Message}
- * (unary) or a {@code StreamSource<Message>} (streaming).
+ * (unary) or a {@code StreamSource<Message>} (streaming). The one exception is
+ * the internal {@link MetadataService}, a plain Java interface bridged through
+ * the {@link WireMetadataCodec} StringValue envelope.
  *
  * @author shenhongxi
  */
@@ -37,7 +40,7 @@ public final class WireProtoTypes {
 
     private final Map<String, MethodInfo> methodInfoMap;
 
-    private WireProtoTypes(Map<String, MethodInfo> methodInfoMap) {
+    WireProtoTypes(Map<String, MethodInfo> methodInfoMap) {
         this.methodInfoMap = methodInfoMap;
     }
 
@@ -114,6 +117,11 @@ public final class WireProtoTypes {
      *         the protobuf Message convention
      */
     public static WireProtoTypes fromServiceInterface(Class<?> serviceInterface) {
+        // The internal metadata pull channel of application-level discovery has
+        // no protobuf types; its StringValue envelope is defined by the codec.
+        if (serviceInterface == MetadataService.class) {
+            return WireMetadataCodec.protoTypes();
+        }
         Method[] methods = serviceInterface.getMethods();
         if (methods.length == 0) {
             throw new IllegalArgumentException(

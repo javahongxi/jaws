@@ -149,10 +149,37 @@ done.
 `StatusException`，且它一帧没收到就断了（`after 0 frames`）。示例里 `failureMessage` 把两者统一到
 同一行输出上，所以读起来是同一句话。后面两发用的是 `-names`，不受 `-name ""` 影响，照常成功。
 
+## 应用级服务发现（-applevel）
+
+对端换成 sweet 的 `example/applevel/cmd/provider`：它不再按接口注册，而是走 jaws
+`registerMode=instance` 那套应用级协议——注册中心里只有一条应用实例（`jaws/sweet-greeter-app`，
+metadata 带 `revision` 指针），接口→应用映射写在配置中心 group `JAWS_CONFIG`，完整服务 URL
+留在 Go 进程内存里，消费端经 wire 的内部 `MetadataService`（`StringValue` 信封）按 revision 拉取。
+
+消费端**不需要任何模式开关**：`ConsumerCoordinator` 只看配置中心里有没有 mapping，有就走
+`AppLevelRegistryDirectory`。`-applevel` 做的只是把上面两处适配**还原成 jaws 默认值**——那个
+provider 按 jaws 的习惯注册（`jaws/` 前缀、group `default_rpc`、version `1.0`），所以不再置空
+`registryNamespace`，group 也改回 `default_rpc`：
+
+```
+# 终端 1：sweet 应用级服务端（在 sweet 仓库里，默认参数即 jaws 约定）
+go run ./example/applevel/cmd/provider
+
+# 终端 2：本模块消费端，只多一个 -applevel
+java -cp "...同上..." org.hongxi.jaws.sample.wire.sweet.SweetGreeterConsumer -applevel
+```
+
+链路与接口级的差别全在寻址段：订阅名从 `sweet.example.v1.Greeter` 变成应用名
+`sweet-greeter-app`（`NacosPathUtils` 加回 `jaws/` 前缀），实例列表先按 revision 分组，缓存未命中
+才点对点拉元数据，校验内容哈希后还原出 `wire://host:port/sweet.example.v1.Greeter?...` 的服务
+URL——再往后的 cluster → 负载均衡 → filter 链 → `WireReference` 与接口级一字未变。四种方法形态
+的输出与上一节同形，可直接对拍。
+
+反向（sweet 消费 jaws 的应用级 provider，即 `jaws-sample-wire-boot-provider` 的
+`register-mode: instance`）在 sweet 仓库的 `example/applevel/cmd/consumer`，默认 `-target=jaws`。
+
 ## 不在这里的东西
 
 - 不改 `run-sample.sh`：跑法就是上面那串 `java -cp`，脚本接入等看过实现再定。
-- 没有反向（grpc-go 调 jaws 注册的服务）：那要 sweet 侧实现 Java 那套 `protocol`/`path` 哨兵
-  元数据的解释，属于另一件事。
 - 服务提供方仍是 sweet 自己的样例，不是本模块的一部分；`src/main/proto/greeter.proto` 是它的
   vendored 副本，只加了 `java_*` 选项。两边不一致时以 sweet 为准，这里手工同步。
