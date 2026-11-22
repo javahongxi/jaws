@@ -8,7 +8,7 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 
 **门面数字口径**（钝表述、防过时，与"约 Dubbo 核心骨架 1/7 / 约 14 万 QPS"同一套算法）：
 
-- "核心 3 万余行" = `jaws-core` + `jaws-wire` + `jaws-stream-api` + `jaws-registry-nacos`/`jaws-registry-zookeeper` 两个客户端（main Java 物理行，实测 ≈3.3 万）。
+- "核心 3 万余行" = `jaws-core` + `jaws-wire` + `jaws-stream-api` + `jaws-registry-nacos`/`jaws-registry-zookeeper` 两个客户端（main Java 物理行，实测 ≈3.4 万）。
 - **不计入**：`jaws-wire-proto`（protoc 生成码）、整个 `jaws-harbor`（服务端件，手码与内嵌生成码一并剔除）、`jaws-samples`、`jaws-spring-boot`、`jaws-extensions`。
 - "约 Dubbo 核心骨架 1/7" 的分母 = Dubbo 3.3 同范围核心骨架 7 模块 `dubbo-common`/`-rpc`/`-remoting`/`-cluster`/`-config`/`-registry`/`-serialization`（main Java 物理行 ≈22 万，两边都含 registry 方对齐）；**不计** Dubbo 的 `dubbo-plugin`/`-metadata`/`-metrics`/`-compatible` 等非核心扩展（≈8 万，jaws 未实现也无对应）。故 ≈1/7，而非拿全仓凑的 1/10。
 
@@ -25,13 +25,13 @@ jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
 | 模块 | 手码规模 | 职责 | 层 |
 |---|---|---|---|
 | `jaws-stream-api` | ~110 行 | 流式收发的中立契约（push-only） | 契约 |
-| `jaws-core` | ~21.1k | RPC 骨架六层 + 扩展机制 | 骨架 |
-| `jaws-wire` | ~10.6k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
+| `jaws-core` | ~22.1k | RPC 骨架六层 + 扩展机制 | 骨架 |
+| `jaws-wire` | ~10.8k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
 | `jaws-wire-proto` | 生成码 | protoc 生成物（health/reflection/rpc.Status）隔离 | 对外协议 |
 | `jaws-registry-zookeeper` | ~830 | Registry SPI 的 ZooKeeper 实现（Curator）+ `ZookeeperDynamicConfiguration` 配置 SPI | 注册发现/配置 |
 | `jaws-registry-nacos` | ~560 | Registry SPI 的 Nacos 薄封装 + `NacosDynamicConfiguration` 配置 SPI | 注册发现/配置 |
 | `jaws-registry-harbor` | ~510 | Registry SPI 的 Harbor 客户端（对接 `jaws-harbor`）+ `HarborDynamicConfiguration` 配置 SPI，与 nacos/zk 腿同形（config 与 naming 各用各的连接） | 注册发现/配置 |
-| `jaws-harbor` | ~11.4k 手码 | 兼容 nacos-client 的轻量注册中心与配置中心（服务端）：临时实例走 Distro AP，持久实例与配置走自研 Raft CP | 注册发现/配置 |
+| `jaws-harbor` | ~11.5k 手码 | 兼容 nacos-client 的轻量级注册中心与配置中心（服务端）：临时实例走 Distro AP，持久实例与配置走自研 Raft CP | 注册发现/配置 |
 | `jaws-spring-boot` | 聚合 + ~1.7k | 两个 starter：声明式接入 + 可观测装配 | 集成 |
 | `jaws-extensions` | ~280 | 指标 / 链路追踪 Filter | 集成 |
 | `jaws-samples` | 示例 | 一键实跑矩阵，含双向互操作与压测 | 验证 |

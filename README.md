@@ -6,7 +6,7 @@
 
 > 取名自《大白鲨》(*Jaws*)——**J**ava **A**sync **W**ire **S**ervice：Java 生态、异步调用、线级协议、服务治理，四个词正是一个 RPC 框架的四层解剖。
 
-Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框架。它用约 Dubbo 核心骨架 1/7 的代码量，完整实现了一个工业级 RPC 的核心机制，支持 Netty TCP 与 HTTP/2 多传输、gRPC 线格式对等互通、三种流式调用、自适应负载均衡与高可用容错，实测约 14 万 QPS。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快很多。
+Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框架。它用约 Dubbo 核心骨架 1/7 的代码量，完整实现了一个工业级 RPC 的核心机制，支持 Netty TCP 与 HTTP/2 多传输、gRPC 线格式对等互通、三种流式调用、应用级服务发现、自适应负载均衡与高可用容错，实测约 14 万 QPS；另自带兼容 nacos-client 的轻量级注册与配置中心 Harbor，无需外部依赖即可跑通全链路。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快很多。
 
 ## 特性
 
@@ -35,18 +35,9 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 |---|---|
 | `jaws-core` | RPC 骨架六层（传输 → 协议/序列化 → 代理 → 集群 → 注册发现 → 配置）与 SPI 扩展机制；jaws 协议支持 Netty TCP 与 HTTP/2 传输，亦支持 HTTP/1.1 REST 与单端口自适应 |
 | `jaws-wire` | 基于 core 的基础设施，零 grpc-java 依赖手写 gRPC 线格式，与原生 gRPC 双向互通，支持一元及三种流式调用 |
-| `jaws-harbor` | 基于 wire 的 WireServer 实现兼容 nacos-client 的轻量注册中心与配置中心：临时实例走 Distro AP，持久实例与配置走自研 Raft CP |
+| `jaws-harbor` | 基于 wire 的 WireServer 实现兼容 nacos-client 的轻量级注册中心与配置中心：临时实例走 Distro AP，持久实例与配置走自研 Raft CP |
 
-外围模块围绕核心链提供契约、适配与验证：
-
-| 外围模块 | 归类 | 职责 |
-|---|---|---|
-| `jaws-stream-api` | 契约 | 流式收发的中立接口（push-only） |
-| `jaws-wire-proto` | 生成码 | protoc 生成物（health / reflection）隔离，无手写代码 |
-| `jaws-registry-*` | 注册/配置客户端 | Registry SPI 与 DynamicConfiguration 配置 SPI 的三种实现（ZooKeeper / Nacos / Harbor），按所用注册中心引入其一 |
-| `jaws-spring-boot` | 集成 | 两个 starter：注解驱动服务发布/引用 + 可观测性装配 |
-| `jaws-extensions` | 集成 | 指标 / 链路追踪 Filter |
-| `jaws-samples` | 示例 | 一键实跑矩阵（`run-sample.sh`），含 gRPC 互操作验证与压测 |
+外围模块围绕核心链提供契约、适配与验证：`jaws-stream-api` 定义流式收发的中立契约，`jaws-wire-proto` 隔离 protoc 生成物；`jaws-registry-*` 提供 Registry 与 DynamicConfiguration 双 SPI 的三种实现（ZooKeeper / Nacos / Harbor），按所用注册中心引入其一；`jaws-spring-boot` 与 `jaws-extensions` 提供 Spring Boot 集成及指标/链路追踪扩展；`jaws-samples` 为一键实跑示例矩阵（`run-sample.sh`），含 gRPC 互操作验证与压测。
 
 完整模块地图与 `jaws-core` 内部分层详见[架构总览](doc/architecture.md)。
 
@@ -59,7 +50,7 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 - ZooKeeper 3.9+（ZooKeeper 注册中心模式需要）
 - Nacos 3.x（Nacos 注册中心模式需要）
 
-> 运行示例可使用内置轻量注册中心 Harbor（无需外部依赖，兼容 nacos-client），示例见下文
+> 运行示例可使用内置轻量级注册中心 Harbor（无需外部依赖，兼容 nacos-client），示例见下文
 
 ### 编译
 
@@ -91,9 +82,9 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 ./run-sample.sh consumer           # 运行 consumer（需要先启动 provider）
 ./run-sample.sh stop               # 停止所有后台 provider 并清理
 
-# 使用内置轻量注册中心（jaws-harbor）
-./run-sample.sh harbor-standalone  # 启动内置轻量注册中心（单机模式）
-./run-sample.sh harbor-cluster     # 启动内置轻量注册中心（集群模式）
+# 使用内置轻量级注册中心（jaws-harbor）
+./run-sample.sh harbor-standalone  # 启动内置轻量级注册中心（单机模式）
+./run-sample.sh harbor-cluster     # 启动内置轻量级注册中心（集群模式）
 ./run-sample.sh harbor             # 运行示例（sample-harbor-provider/consumer，使用原生 client）
 ./run-sample.sh harborx            # 运行示例（sample-harborx-provider/consumer，使用 nacos-client）
 ./run-sample.sh raft               # 运行持久实例示例（sample-raft-provider/consumer，注册走 Raft CP，kill 后不丢）
