@@ -80,6 +80,9 @@ class McpTransportTest {
         assertEquals(1, tools.size());
         assertEquals("hello", tools.getJSONObject(0).getString("name"));
         assertEquals("Say hello to someone", tools.getJSONObject(0).getString("description"));
+        // Cache hints required by the modern (2026-07-28) ListToolsResult
+        assertEquals(60_000L, result.getLongValue("ttlMs"));
+        assertEquals("public", result.getString("cacheScope"));
     }
 
     @Test

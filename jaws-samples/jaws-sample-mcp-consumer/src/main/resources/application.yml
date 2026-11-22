@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: sample-mcp-consumer
+  main:
+    web-application-type: none
+  ai:
+    mcp:
+      client:
+        enabled: true
+        name: jaws-mcp-consumer
+        # SYNC or ASYNC — the ASYNC type for MODERN connections is new in Spring AI 2.1.0
+        type: SYNC
+        request-timeout: 30s
+        toolcallback:
+          enabled: true
+        streamable-http:
+          connections:
+            jaws:
+              url: http://localhost:10000
+              # Modern = MCP 2026-07-28 stateless protocol, matching the jaws
+              # McpHandler (no initialize handshake, no session). Without this
+              # property the connection would use the legacy protocol and fail.
+              protocol: MODERN
+              # listen stays false: jaws does not serve subscriptions/listen
+
+logging:
+  level:
+    org.springframework.ai.mcp: INFO

@@ -19,7 +19,7 @@ import java.util.concurrent.RejectedExecutionException;
  * This is a helper class used by {@link org.hongxi.jaws.transport.http.HttpRequestHandler}
  * to handle {@code POST /mcp} requests. It is not a standalone Netty handler —
  * it delegates response writing back to the caller via
- * {@link #handlePost(ChannelHandlerContext, FullHttpRequest)}.
+ * {@link #handlePost(ChannelHandlerContext, FullHttpRequest, boolean)}.
  * <p>
  * Stateless mode: no sessions, no initialize handshake,
  * no GET stream, no DELETE. Each request is independent.
@@ -121,6 +121,11 @@ public class McpHandler {
                 }
                 Map<String, Object> result = new LinkedHashMap<>();
                 result.put("tools", toolList);
+                // Cache hints required by the modern (2026-07-28) ListToolsResult.
+                // Tools are statically registered per process, so a public listing
+                // is safe to cache; clients may keep it for 60 seconds.
+                result.put("ttlMs", 60_000L);
+                result.put("cacheScope", "public");
                 yield McpMessageCodec.Response.result(id, result);
             }
 
