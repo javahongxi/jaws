@@ -39,8 +39,10 @@ import java.io.IOException;
  * live (jaws payload encoding for {@link Http2Server}, gRPC wire format for
  * the wire module's server). The pipeline assembled here is:
  * <pre>
- *   [ssl] → flush_consolidation → http2_codec → http2_multiplex → (per-stream handler)
+ *   [ssl] → flush_consolidation → http2_codec → http2_multiplex → stream_teardown → exception_handler
  * </pre>
+ * where {@code stream_teardown} closes whatever stream channels are still open
+ * when the connection dies (the per-stream handlers hang off the multiplex).
  * <p>
  * Speaks plain h2c (HTTP/2 prior-knowledge) by default; TLS is enabled when
  * {@code sslCertChain} and {@code sslPrivateKey} are configured on the URL.
@@ -142,13 +144,35 @@ public abstract class AbstractHttp2Server extends AbstractNettyServer {
         // (e.g. gRPC keepalive PING permitting on the wire server)
         addOptionalChannelHandlers(pipeline);
 
+        // Every stream channel of this connection. The multiplex handler only
+        // closes children when the codec reports their streams CLOSED, and the
+        // teardown paths below (and subclass handlers such as harbor's GOAWAY
+        // observer) remove http2_codec before the connection closes — after
+        // that removal no stream event ever reaches the children, so they would
+        // sit open until GC collects them unreleased. Tracking them here lets
+        // the connection's channelInactive close whatever is left.
+        ChannelGroup streamChannels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
         pipeline.addLast("http2_multiplex", new Http2MultiplexHandler(
                 new ChannelInitializer<>() {
                     @Override
                     protected void initChannel(io.netty.channel.Channel streamChannel) {
                         initStreamChannel(streamChannel);
+                        streamChannels.add(streamChannel);
                     }
                 }));
+
+        // The last resort for stream teardown: when the connection goes away,
+        // every stream still open must receive channelInactive so its handler
+        // can release buffers and give back its in-flight slot. Closing an
+        // already-closed child is a no-op, so this coexists with the codec's
+        // own stream closure on the paths where the codec is still present.
+        pipeline.addLast("stream_teardown", new ChannelInboundHandlerAdapter() {
+            @Override
+            public void channelInactive(ChannelHandlerContext ctx) {
+                streamChannels.close();
+                ctx.fireChannelInactive();
+            }
+        });
 
         // Add exception handler to gracefully handle expected client disconnects
         // (Connection reset, Broken pipe, etc.) without propagating to the

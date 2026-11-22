@@ -174,5 +174,10 @@ public class WireConnectionLifecycleHandler extends ChannelInboundHandlerAdapter
         if (ageCloseFuture != null) {
             ageCloseFuture.cancel(false);
         }
+        // This handler sits between the codec and the multiplex: swallowing
+        // the event here would hide the connection's death from every handler
+        // downstream, including the stream teardown that releases what the
+        // open streams still hold.
+        ctx.fireChannelInactive();
     }
 }

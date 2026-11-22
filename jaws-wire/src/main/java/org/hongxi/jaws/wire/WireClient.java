@@ -1185,6 +1185,15 @@ public class WireClient extends AbstractHttp2Client {
         return connectivityTracker;
     }
 
+    /**
+     * Package-private view of one live connection channel, for tests that must
+     * kill the TCP connection itself (e.g. a SO_LINGER=0 reset) instead of
+     * closing the client politely.
+     */
+    io.netty.channel.Channel connectionChannel() {
+        return activeChannel();
+    }
+
     @Override
     protected void doClose() {
         connectivityTracker.shutdown();

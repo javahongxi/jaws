@@ -226,6 +226,19 @@ class WireStreamStreamingHandler extends ChannelInboundHandlerAdapter {
     }
 
     @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) {
+        // The accumulator outlives every DATA frame (it holds the partial-frame
+        // tail between reads), so its release belongs to the stream's teardown,
+        // not to any single read. Pipeline removal is guaranteed once the stream
+        // channel closes — completion, reset, oversized rejection or connection
+        // loss all land here.
+        if (accumulator != null) {
+            accumulator.release();
+            accumulator = null;
+        }
+    }
+
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Wire client streaming error", cause);
         reportStreamClosed(WireStatus.fromThrowable(cause));

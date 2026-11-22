@@ -510,6 +510,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         dispatched = true;
 
         final ByteBuf frameData = this.accumulator;
+        // Ownership passes to the async task, which releases it in its finally:
+        // the handler must no longer count this buffer as its own, or the
+        // channelInactive fallback would release it a second time.
+        this.accumulator = null;
 
         try {
             serverExecutor.execute(() -> {
@@ -528,6 +532,10 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
                 }
             });
         } catch (RejectedExecutionException e) {
+            // The task will never run, so the handed-over buffer comes back here.
+            if (frameData != null) {
+                frameData.release();
+            }
             rejectCall(ctx, e);
         }
     }
@@ -938,8 +946,11 @@ public class WireStreamServerHandler extends ChannelInboundHandlerAdapter {
         // stream went away without this server ever writing a terminal status.
         reportStreamClosed(WireConstants.STATUS_UNKNOWN);
         tracer.callEnded();
-        // Release accumulated buffer if the stream closed before dispatch
-        if (accumulator != null && !dispatched) {
+        // Release whatever the handler still owns. A dispatched unary buffer is
+        // already null (ownership moved to the async task); a streaming call's
+        // accumulator — dispatched or not — is only ever released here, which is
+        // exactly the leak the old !dispatched guard left on every bidi stream.
+        if (accumulator != null) {
             accumulator.release();
             accumulator = null;
         }
