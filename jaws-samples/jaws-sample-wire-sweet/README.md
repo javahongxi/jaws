@@ -8,15 +8,17 @@ grpc-go 服务端，用**手写**的 Nacos 命名协议把自己注册进去。j
 所以这一发证明的是：jaws 能消费一个**不是它注册的**服务——注册中心里躺着的是别的进程按自己的
 命名习惯写下的记录，jaws 不去改对方。
 
-## 三处必须对齐，缺一处就调不通
+## 两处必须对齐，缺一处就调不通
 
 | 对齐点 | jaws 这边 | 对端（grpc-go）那边 |
 | --- | --- | --- |
 | 服务名 | `registryNamespace=`（空）⇒ 去掉 `jaws/` 前缀，按 `path` 原样查 | 注册名 `sweet.example.v1.Greeter` |
-| group | `ref.setGroup("DEFAULT_GROUP")` | 默认 group `DEFAULT_GROUP`（jaws 自己默认 `default_rpc`）|
 | `:path` | 由 Java 接口全限定名 + 方法名逐字拼成 `/sweet.example.v1.Greeter/Greet` | 只认 proto 的 `package.Service/Method` |
 
-第三条是本模块最别扭也最硬的一条：出站 `:path` 的服务段取自 `interfaceClass.getName()`、方法段
+group 不用对齐：两边默认同为 `default_rpc`，框架靠前缀区分（jaws 注册 `jaws/{name}`，sweet 裸名），
+不靠 group。
+
+第二条是本模块最别扭也最硬的一条：出站 `:path` 的服务段取自 `interfaceClass.getName()`、方法段
 取自 `method.getName()`，全程没有任何转换，也没有任何注解或配置能覆盖它。因此
 `src/main/java/sweet/example/v1/Greeter.java` **必须**叫这个名字，方法**必须**是 `Greet` /
 `GreetStream` / `GreetAll` / `GreetChat` 这种大写入头——包名 `sweet.example.v1` 在 Java 侧合法
@@ -50,12 +52,12 @@ jaws-registry-nacos/target/classes:jaws-samples/jaws-sample-wire-sweet/target/cl
 入参：`-name`（一元与服务端流用）、`-times`（服务端流回几条）、`-names`（两种流式每个名字一帧）、
 `-hold`（秒，让进程活着等注册中心推送）。
 
-## 实测（2026-10-28）
+## 实测（2026-11-22，group 对齐 default_rpc 后重跑）
 
 四种形态，全部由注册中心喂地址：
 
 ```
-resolving sweet.example.v1.Greeter through nacos, group=DEFAULT_GROUP, namespace=(none)
+resolving sweet.example.v1.Greeter through nacos, group=default_rpc, namespace=(none)
 Greet       <= "Hello, jaws!"   server=127.0.0.1:20001
 GreetStream <= 1 "Hello #1, jaws!"
 GreetStream <= 2 "Hello #2, jaws!"
@@ -78,9 +80,9 @@ sweet 侧 `example/greeter/cmd/client` 的输出逐字同形（两边的调用�
 是装饰，是因为消费端命令行里没有任何 host:port——地址只能来自这一次订阅：
 
 ```
-INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- subscribe service: serviceName=sweet.example.v1.Greeter, group=DEFAULT_GROUP, info=wire://10.62.19.145:0/sweet.example.v1.Greeter?registryNamespace=&protocol=wire&endpointType=service&application=sample-wire-sweet&module=sample-wire&check=false&transportFactory=wire&version=1.0&requestTimeout=5000&group=DEFAULT_GROUP&
-INFO org.hongxi.jaws.cluster.directory.RegistryDirectory -- init discover: consumerUrl=wire://10.62.19.145:0/sweet.example.v1.Greeter?group=DEFAULT_GROUP, discoveredCount=1
-INFO org.hongxi.jaws.cluster.directory.RegistryDirectory -- discovered urls: [wire://127.0.0.1:20001/DEFAULT_GROUP/sweet.example.v1.Greeter/1.0/service]
+INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- subscribe service: serviceName=sweet.example.v1.Greeter, group=default_rpc, info=wire://192.168.101.139:0/sweet.example.v1.Greeter?registryNamespace=&protocol=wire&endpointType=service&application=sample-wire-sweet&module=sample-wire&check=false&transportFactory=wire&version=1.0&requestTimeout=5000&group=default_rpc&
+INFO org.hongxi.jaws.cluster.directory.RegistryDirectory -- init discover: consumerUrl=wire://192.168.101.139:0/sweet.example.v1.Greeter?group=default_rpc, discoveredCount=1
+INFO org.hongxi.jaws.cluster.directory.RegistryDirectory -- discovered urls: [wire://127.0.0.1:20001/default_rpc/sweet.example.v1.Greeter/1.0/service]
 ```
 
 第一行的 `serviceName=sweet.example.v1.Greeter` 就是那个开关生效的样子（默认形态是
@@ -99,7 +101,7 @@ stopped: deregistered then drained
 消费端这边（同一次运行，按真实时序；前两行是四发成功之后才有 holding）：
 
 ```
-resolving sweet.example.v1.Greeter through nacos, group=DEFAULT_GROUP, namespace=(none)
+resolving sweet.example.v1.Greeter through nacos, group=default_rpc, namespace=(none)
 Greet       <= "Hello, jaws!"   server=127.0.0.1:20001
 GreetStream <= 1 "Hello #1, jaws!"
 GreetStream <= 2 "Hello #2, jaws!"
@@ -112,8 +114,8 @@ GreetChat   == 3 frames from 3 requests, closed by server
 GreetAll    <= "Hello, alice, bob, charlie!"
 GreetAll    == 1 frame from 3 requests
 --- holding 12s: kill the Go server now to watch the instance list empty out ---
-02:26:45.306 [nacos.publisher-com.alibaba.nacos.client.naming.event.InstancesChangeEvent] INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- service list change: serviceName=sweet.example.v1.Greeter, group=DEFAULT_GROUP, instanceCount=1
-02:26:51.653 [nacos.publisher-com.alibaba.nacos.client.naming.event.InstancesChangeEvent] INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- service list change: serviceName=sweet.example.v1.Greeter, group=DEFAULT_GROUP, instanceCount=0
+09:26:13.590 [nacos.publisher-com.alibaba.nacos.client.naming.event.InstancesChangeEvent] INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- service list change: serviceName=sweet.example.v1.Greeter, group=default_rpc, instanceCount=1
+09:26:20.003 [nacos.publisher-com.alibaba.nacos.client.naming.event.InstancesChangeEvent] INFO org.hongxi.jaws.registry.nacos.NacosRegistry -- service list change: serviceName=sweet.example.v1.Greeter, group=default_rpc, instanceCount=0
 --- calling again after the hold ---
 Greet       => failed: error_message: AdaptiveLoadBalance No available references for call : references_size=1 requestId=8 interface=sweet.example.v1.Greeter method=Greet(org.hongxi.jaws.sample.wire.sweet.proto.GreetRequest), error_code: 40001
 done.
@@ -157,9 +159,9 @@ metadata 带 `revision` 指针），接口→应用映射写在配置中心 grou
 留在 Go 进程内存里，消费端经 wire 的内部 `MetadataService`（`StringValue` 信封）按 revision 拉取。
 
 消费端**不需要任何模式开关**：`ConsumerCoordinator` 只看配置中心里有没有 mapping，有就走
-`AppLevelRegistryDirectory`。`-applevel` 做的只是把上面两处适配**还原成 jaws 默认值**——那个
-provider 按 jaws 的习惯注册（`jaws/` 前缀、group `default_rpc`、version `1.0`），所以不再置空
-`registryNamespace`，group 也改回 `default_rpc`：
+`AppLevelRegistryDirectory`。`-applevel` 做的只是把上面那处命名空间适配**还原成 jaws 默认值**——
+那个 provider 带 `jaws/` 前缀注册，所以不再置空 `registryNamespace`（group `default_rpc` 是
+两边共用的默认值，两种模式都不切换）：
 
 ```
 # 终端 1：sweet 应用级服务端（在 sweet 仓库里，默认参数即 jaws 约定）

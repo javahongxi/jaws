@@ -22,14 +22,15 @@ import java.util.concurrent.TimeUnit;
  * Calls a grpc-go service that jaws did not register, discovered through Nacos.
  * <p>
  * The provider is {@code sweet}'s own example — a Go process that registers itself
- * with the Nacos naming protocol by hand, under {@code DEFAULT_GROUP} and with the
- * bare service name {@code sweet.example.v1.Greeter}. Nothing on that side is
- * configured for jaws: no jaws metadata, no namespace prefix. Everything here adapts:
+ * with the Nacos naming protocol by hand, under the shared group {@code default_rpc}
+ * and with the bare service name {@code sweet.example.v1.Greeter}. Nothing on that
+ * side is configured for jaws: no jaws metadata, no namespace prefix. Everything
+ * here adapts:
  * <ol>
  *   <li>{@code registryNamespace=} (empty) drops the {@code jaws/} prefix from the
- *       service name the Nacos leg subscribes to — see {@code NacosPathUtils}.</li>
- *   <li>{@code group=DEFAULT_GROUP} matches the group that provider registered under;
- *       jaws' own default is {@code default_rpc}.</li>
+ *       service name the Nacos leg subscribes to — see {@code NacosPathUtils}.
+ *       The group needs no adaptation: both frameworks default to {@code default_rpc}
+ *       and stay apart by name prefix, not by group.</li>
  *   <li>The typed proxy is {@link Greeter}, whose package and method names are the
  *       proto's {@code package.Service} and {@code Method} verbatim, because that is
  *       what the outbound {@code :path} is built from.</li>
@@ -43,9 +44,9 @@ import java.util.concurrent.TimeUnit;
  * provider ({@code example/applevel/cmd/provider} in the sweet repository): the mapping
  * in the config center routes the refer to {@code AppLevelRegistryDirectory}, which
  * subscribes the one application instance and pulls its metadata over the wire protocol's
- * internal MetadataService. That provider registers under jaws' own defaults
- * ({@code jaws/} prefix, group {@code default_rpc}), so the two adaptations above are
- * skipped instead of applied — the consumer needs no registerMode switch of its own.
+ * internal MetadataService. That provider registers under the {@code jaws/} prefix,
+ * so the namespace adaptation above is skipped instead of applied — the consumer
+ * needs no registerMode switch of its own.
  * <p>
  * Start sweet's server first; the command line is in README.md.
  */
@@ -81,18 +82,16 @@ public class SweetGreeterConsumer {
         ref.setInterface(Greeter.class);
         ref.setApplication("sample-wire-sweet");
         ref.setModule("sample-wire");
-        // This is the group the Go provider registered under, not a jaws choice:
-        // DEFAULT_GROUP for the interface-level example, jaws' own default_rpc for
-        // the application-level one.
-        String group = appLevel ? "default_rpc" : "DEFAULT_GROUP";
-        ref.setGroup(group);
+        // The naming group both frameworks share; they stay apart by name prefix
+        // (jaws/{name} vs bare), not by group. Same value in both modes.
+        ref.setGroup("default_rpc");
         ref.setCheck(false);
         ref.setRequestTimeout(5000);
         ref.setProtocol(protocolConfig);
         ref.setRegistry(registryConfig);
 
         Greeter greeter = ref.getRef();
-        System.out.println("resolving " + SERVICE_NAME + " through nacos, group=" + group
+        System.out.println("resolving " + SERVICE_NAME + " through nacos, group=default_rpc"
                 + (appLevel ? ", mode=application-level" : ", namespace=(none)"));
 
         // 与 sweet 侧 example/greeter/cmd/client 同一顺序、同一行格式，便于两边逐行对拍
