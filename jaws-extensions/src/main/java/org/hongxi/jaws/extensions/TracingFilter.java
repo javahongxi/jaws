@@ -64,7 +64,7 @@ public class TracingFilter implements Filter {
      * Consumer (client) side:
      * 1. Create a new span (automatically child of current span if any)
      * 2. Use Propagator to inject trace context into request attachments
-     * 3. Execute the async RPC call
+     * 3. Execute the async RPC call within the span scope
      * 4. On completion, record errors if any and end the span
      */
     private CompletableFuture<Response> handleConsumer(Tracer t, Propagator p, Caller<?> caller, Request request, String spanName) {
@@ -73,39 +73,45 @@ public class TracingFilter implements Filter {
             p.inject(span.context(), request, Request::setAttachment);
             log.debug("[Jaws-Tracing] Consumer span created: spanName={}, traceId={}, spanId={}",
                     spanName, span.context().traceId(), span.context().spanId());
+            return caller.callAsync(request).whenComplete((response, throwable) -> {
+                if (throwable != null) {
+                    span.error(throwable);
+                } else if (response != null && response.getThrowable() != null) {
+                    span.error(response.getThrowable());
+                }
+                span.end();
+            });
         }
-        return caller.callAsync(request).whenComplete((response, throwable) -> {
-            if (throwable != null) {
-                span.error(throwable);
-            } else if (response != null && response.getThrowable() != null) {
-                span.error(response.getThrowable());
-            }
-            span.end();
-        });
     }
 
     /**
      * Provider (server) side:
      * 1. Use Propagator to extract trace context from request attachments
      * 2. Create child span from the extracted context
-     * 3. Execute the async call
+     * 3. Execute the async call within the span scope
      * 4. On completion, record errors if any and end the span
      */
     private CompletableFuture<Response> handleProvider(Tracer t, Propagator p, Caller<?> caller, Request request, String spanName) {
         Span span = p.extract(request, (req, key) -> req.getAttachments().get(key))
                 .name(spanName)
                 .start();
+        // The invocation must run inside the scope: for synchronous methods
+        // callAsync() reflectively invokes the service on this very thread,
+        // and Slf4JEventListener only keeps traceId/spanId in MDC while the
+        // scope is open. Closing it before the call leaves business logs
+        // without correlation ids. (Async methods completing on other threads
+        // still need explicit context propagation.)
         try (Tracer.SpanInScope scope = t.withSpan(span)) {
             log.debug("[Jaws-Tracing] Provider child span created: spanName={}, traceId={}, spanId={}",
                     spanName, span.context().traceId(), span.context().spanId());
+            return caller.callAsync(request).whenComplete((response, throwable) -> {
+                if (throwable != null) {
+                    span.error(throwable);
+                } else if (response != null && response.getThrowable() != null) {
+                    span.error(response.getThrowable());
+                }
+                span.end();
+            });
         }
-        return caller.callAsync(request).whenComplete((response, throwable) -> {
-            if (throwable != null) {
-                span.error(throwable);
-            } else if (response != null && response.getThrowable() != null) {
-                span.error(response.getThrowable());
-            }
-            span.end();
-        });
     }
 }
