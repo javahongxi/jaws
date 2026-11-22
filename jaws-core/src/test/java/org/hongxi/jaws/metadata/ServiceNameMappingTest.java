@@ -6,7 +6,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Mapping read/write contract of {@link ServiceNameMapping}: an absent or blank
@@ -48,5 +50,17 @@ class ServiceNameMappingTest {
         ServiceNameMapping.setMapping(IFACE, "app-a");
         ServiceNameMapping.setMapping(IFACE, "app-b");
         assertEquals("app-b", ServiceNameMapping.getMapping(IFACE));
+    }
+
+    @Test
+    void removeRestoresInterfaceLevelFallback() {
+        ServiceNameMapping.setMapping(IFACE, "sample-app-provider");
+        assertTrue(ServiceNameMapping.removeMapping(IFACE));
+        assertNull(ServiceNameMapping.getMapping(IFACE));
+    }
+
+    @Test
+    void removingAbsentMappingReportsNothingRemoved() {
+        assertFalse(ServiceNameMapping.removeMapping(IFACE));
     }
 }

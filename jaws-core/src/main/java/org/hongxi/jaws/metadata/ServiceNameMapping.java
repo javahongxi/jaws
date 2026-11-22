@@ -18,8 +18,10 @@ import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
  * Storage rides the existing {@link org.hongxi.jaws.configcenter.DynamicConfiguration}
  * SPI, so all three registry legs (Nacos / ZooKeeper / Harbor) carry the mapping
  * with no extra code. Boundaries of this minimal slice: the value is a single
- * application name (last writer wins, no CAS), and entries are never removed —
- * like Dubbo, unexport leaves the mapping behind.
+ * application name (last writer wins, no CAS), and unexport never removes the
+ * entry automatically — like Dubbo, the mapping outlives the provider. Callers
+ * that want the interface-level fallback back (samples switching discovery
+ * modes, teardown scripts) remove it explicitly via {@link #removeMapping}.
  */
 public final class ServiceNameMapping {
 
@@ -47,5 +49,17 @@ public final class ServiceNameMapping {
      */
     public static void setMapping(String interfaceName, String application) {
         DynamicConfigurationUtils.setConfig(mappingKey(interfaceName), application);
+    }
+
+    /**
+     * Remove the mapping for one interface, restoring the consumer's
+     * interface-level fallback. Never called by unexport — the mapping is
+     * persistent by design; this is the explicit opt-out for callers that
+     * own the lifecycle (e.g. sample providers cleaning up on shutdown).
+     *
+     * @return true when an entry was actually removed
+     */
+    public static boolean removeMapping(String interfaceName) {
+        return DynamicConfigurationUtils.removeConfig(mappingKey(interfaceName));
     }
 }

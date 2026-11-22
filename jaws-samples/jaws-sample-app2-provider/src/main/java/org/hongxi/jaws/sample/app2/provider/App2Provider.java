@@ -1,9 +1,11 @@
 package org.hongxi.jaws.sample.app2.provider;
 
 import org.hongxi.jaws.common.JawsConstants;
+import org.hongxi.jaws.common.lifecycle.ShutdownHook;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
+import org.hongxi.jaws.metadata.ServiceNameMapping;
 import org.hongxi.jaws.sample.api.DemoService;
 import org.hongxi.jaws.sample.api.OrderService;
 import org.hongxi.jaws.sample.app2.provider.service.DemoServiceImpl;
@@ -64,6 +66,17 @@ public class App2Provider {
         orderServiceConfig.setRegistry(registryConfig);
         orderServiceConfig.export();
         System.out.println("OrderService exported.");
+
+        /* The mapping is a persistent config entry that unexport deliberately
+           leaves behind (Dubbo parity). This sample owns its lifecycle, so on
+           shutdown remove both entries — otherwise a later interface-level run
+           against the same registry would be silently routed to this dead app.
+           Priority 12: after business unexport (10), while the config client is
+           still alive (registry close runs at the default 20). */
+        ShutdownHook.registerShutdownHook(() -> {
+            ServiceNameMapping.removeMapping(DemoService.class.getName());
+            ServiceNameMapping.removeMapping(OrderService.class.getName());
+        }, 12);
     }
 
     private static ProtocolConfig createProtocolConfig(String protocolName) {
