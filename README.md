@@ -15,6 +15,7 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 - **兼容 gRPC** — wire 协议支持与 gRPC 双向互通、零 grpc-java 依赖，支持一元及三种流式调用
 - **自适应传输** — TCP、HTTP/2、HTTP/1.1 可单端口共存，按首字节自动识别并装配对应协议栈，探测后零常驻开销
 - **REST 支持** — 服务以 HTTP/1.1 对外暴露 REST 接口，注解驱动路由兼容 Spring Web 与 JAX-RS，泛化调用兜底
+- **MCP 支持** — 服务方法自动注册为 MCP 工具，经 Stateless Streamable HTTP（POST /mcp）供 AI Agent 调用
 - **多种序列化** — 内置 fastjson2、hessian2、protostuff，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持长连接会话保活与掉线重连后自动重建登记
@@ -31,11 +32,11 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 
 三个核心模块按 **jaws-core → jaws-wire → jaws-harbor** 层层依赖（后者依赖前者），构成 Jaws 的核心资产：
 
-| 核心模块 | 职责 |
-|---|---|
-| `jaws-core` | RPC 骨架六层（传输 → 协议/序列化 → 代理 → 集群 → 注册发现 → 配置）与 SPI 扩展机制；jaws 协议支持 Netty TCP 与 HTTP/2 传输，亦支持 HTTP/1.1 REST 与单端口自适应 |
-| `jaws-wire` | 基于 core 的基础设施，零 grpc-java 依赖手写 gRPC 线格式，与原生 gRPC 双向互通，支持一元及三种流式调用 |
-| `jaws-harbor` | 基于 wire 的 WireServer 实现兼容 nacos-client 的轻量级注册中心与配置中心：临时实例走 Distro AP，持久实例与配置走自研 Raft CP |
+| 核心模块      | 职责                                                                                                                                                           |
+|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `jaws-core`   | RPC 骨架六层（传输 → 协议/序列化 → 代理 → 集群 → 注册发现 → 配置）与 SPI 扩展机制；jaws 协议支持 Netty TCP 与 HTTP/2 传输，亦支持 HTTP/1.1 REST 与单端口自适应 |
+| `jaws-wire`   | 基于 core 的基础设施，零 grpc-java 依赖手写 gRPC 线格式，与原生 gRPC 双向互通，支持一元及三种流式调用                                                          |
+| `jaws-harbor` | 基于 wire 的 WireServer 实现兼容 nacos-client 的轻量级注册中心与配置中心：临时实例走 Distro AP，持久实例与配置走自研 Raft CP                                   |
 
 外围模块围绕核心链提供契约、适配与验证：`jaws-stream-api` 定义流式收发的中立契约，`jaws-wire-proto` 隔离 protoc 生成物；`jaws-registry-*` 提供 Registry 与 DynamicConfiguration 双 SPI 的三种实现（ZooKeeper / Nacos / Harbor），按所用注册中心引入其一；`jaws-spring-boot` 与 `jaws-extensions` 提供 Spring Boot 集成及指标/链路追踪扩展；`jaws-samples` 为一键实跑示例矩阵（`run-sample.sh`），含 gRPC 互操作验证与压测。
 
@@ -198,29 +199,29 @@ public class MyRunner implements CommandLineRunner {
 
 ## 深入了解更多
 
-| 主题                                                       | 说明                                           |
-|------------------------------------------------------------|------------------------------------------------|
-| [性能测试](doc/benchmark.md)                               | Benchmark 环境变量与参数选择建议               |
-| [尾延迟归因](doc/tail-latency.md)                          | P99.9 毛刺的分层归因方法与 jaws 实测案例       |
-| [架构总览](doc/architecture.md)                            | Maven 模块地图 + core 六层骨架 + 门面口径      |
-| [编解码设计](doc/codec-comparison.md)                      | Jaws 与 Dubbo 编解码架构对比分析               |
-| [全链路异步](doc/async-full-chain.md)                      | 一根 CompletableFuture 贯穿七层                |
-| [HTTP/2 与裸 TCP 对比](doc/http2-vs-tcp.md)                | 帧结构 / 关联机制 / HPACK / HTTP/1.1 明文      |
-| [gRPC 线格式兼容](doc/wire-grpc-compat.md)                 | 零 grpc-java 实现，与 Go 对端双向实测          |
-| [与 Dubbo 对比](doc/dubbo-comparison.md)                   | 八个维度的系统性能力对比                       |
+| 主题                                                       | 说明                                            |
+|------------------------------------------------------------|-------------------------------------------------|
+| [性能测试](doc/benchmark.md)                               | Benchmark 环境变量与参数选择建议                |
+| [尾延迟归因](doc/tail-latency.md)                          | P99.9 毛刺的分层归因方法与 jaws 实测案例        |
+| [架构总览](doc/architecture.md)                            | Maven 模块地图 + core 六层骨架 + 门面口径       |
+| [编解码设计](doc/codec-comparison.md)                      | Jaws 与 Dubbo 编解码架构对比分析                |
+| [全链路异步](doc/async-full-chain.md)                      | 一根 CompletableFuture 贯穿七层                 |
+| [HTTP/2 与裸 TCP 对比](doc/http2-vs-tcp.md)                | 帧结构 / 关联机制 / HPACK / HTTP/1.1 明文       |
+| [gRPC 线格式兼容](doc/wire-grpc-compat.md)                 | 零 grpc-java 实现，与 Go 对端双向实测           |
+| [与 Dubbo 对比](doc/dubbo-comparison.md)                   | 八个维度的系统性能力对比                        |
 | [应用级服务发现](doc/app-level-discovery.md)               | local 元数据模式最小切片：存储模型与 Dubbo 对照 |
-| [Netty 性能解读](doc/netty-performance.md)                 | 传输层性能实践与踩坑                           |
-| [Tomcat 与 grpc-java 线程模型](doc/tomcat-vs-grpc-java.md) | 线程归属 / 并发上限 / 过载形态对比与 jaws 取舍 |
-| [注册中心对比](doc/registry-comparison.md)                 | Nacos 与 ZooKeeper 实现对比                    |
-| [自研注册中心解读](doc/harbor-vs-nacos.md)                 | 内置注册中心与 Nacos 的详细设计对比            |
-| [Harbor Raft 精读](doc/harbor-raft.md)                     | 持久实例与配置中心的自研 Raft CP 设计精读      |
-| [Nacos Config 原理解读](doc/nacos-config.md)               | 配置域从写 DB 到客户端收变更的设计剖析         |
-| [动态配置](doc/dynamic-config.md)                          | 全局/服务级/方法级三层热更新                   |
-| [泛化调用](doc/generic-invocation.md)                      | 无需接口 JAR 包即可发起 RPC 调用               |
-| [优雅停机](doc/graceful-shutdown.md)                       | 四阶段零损伤发布                               |
-| [服务鉴权](doc/token-auth.md)                              | 基于 Token 的服务认证                          |
-| [连接预热](doc/warm-up.md)                                 | Provider 冷启动权重渐增                        |
-| [可观测性](doc/observability.md)                           | Micrometer 指标 + OpenTelemetry 链路追踪       |
+| [Netty 性能解读](doc/netty-performance.md)                 | 传输层性能实践与踩坑                            |
+| [Tomcat 与 grpc-java 线程模型](doc/tomcat-vs-grpc-java.md) | 线程归属 / 并发上限 / 过载形态对比与 jaws 取舍  |
+| [注册中心对比](doc/registry-comparison.md)                 | Nacos 与 ZooKeeper 实现对比                     |
+| [自研注册中心解读](doc/harbor-vs-nacos.md)                 | 内置注册中心与 Nacos 的详细设计对比             |
+| [Harbor Raft 精读](doc/harbor-raft.md)                     | 持久实例与配置中心的自研 Raft CP 设计精读       |
+| [Nacos Config 原理解读](doc/nacos-config.md)               | 配置域从写 DB 到客户端收变更的设计剖析          |
+| [动态配置](doc/dynamic-config.md)                          | 全局/服务级/方法级三层热更新                    |
+| [泛化调用](doc/generic-invocation.md)                      | 无需接口 JAR 包即可发起 RPC 调用                |
+| [优雅停机](doc/graceful-shutdown.md)                       | 四阶段零损伤发布                                |
+| [服务鉴权](doc/token-auth.md)                              | 基于 Token 的服务认证                           |
+| [连接预热](doc/warm-up.md)                                 | Provider 冷启动权重渐增                         |
+| [可观测性](doc/observability.md)                           | Micrometer 指标 + OpenTelemetry 链路追踪        |
 
 
 &copy; [hongxi.org](http://hongxi.org)
