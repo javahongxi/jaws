@@ -28,6 +28,7 @@
         <module>jaws-sample-http2-consumer</module>
         <module>jaws-sample-http-provider</module>
         <module>jaws-sample-http-rest</module>
+        <module>jaws-sample-mcp-consumer</module>
         <module>jaws-sample-wire-api</module>
         <module>jaws-sample-wire-provider</module>
         <module>jaws-sample-wire-consumer</module>
@@ -55,7 +56,7 @@
     </modules>
 
     <properties>
-        <spring-boot.version>3.5.16</spring-boot.version>
+        <spring-boot.version>4.2.0</spring-boot.version>
         <grpc.version>1.84.0</grpc.version>
     </properties>
 
@@ -68,6 +69,15 @@
     </dependencies>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

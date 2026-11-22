@@ -11,6 +11,23 @@
 
     <artifactId>jaws-sample-http-rest</artifactId>
 
+    <properties>
+        <!-- Spring Framework version paired with Spring Boot 4.2 -->
+        <spring-framework.version>7.1.0</spring-framework.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-framework-bom</artifactId>
+                <version>${spring-framework.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>org.hongxi</groupId>
@@ -28,7 +45,6 @@
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
-            <version>6.2.18</version>
         </dependency>
     </dependencies>
 
