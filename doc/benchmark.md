@@ -50,7 +50,7 @@ ROLE=consumer THREADS=20 ./run-sample.sh bench-jaws
 | `DURATION` | 测量秒数 | 10 | 全部 |
 | `PORT` | 协议端口（bench-jaws 10010；bench-wire / bench-grpc 50051） | 见左 | bench-jaws / bench-wire / bench-grpc |
 | `TRANSPORT` | 传输层：`netty`（默认 TCP）或 `http2` | netty | 仅 bench-jaws |
-| `SERIALIZATION` | 序列化方式（`fastjson2` / `hessian2` / `protostuff` / `fury`） | fastjson2 | 仅 bench-jaws |
+| `SERIALIZATION` | 序列化方式（`fastjson2` / `hessian2` / `protostuff`） | fastjson2 | 仅 bench-jaws |
 | `COMPRESSION` | 压缩方式（`gzip` 或空） | 空（不压缩） | 仅 bench-wire |
 | `DISPATCH` | 消费端形态：`pipeline`（经 ReferenceConfig 代理）或 `direct`（`ManagedChannel` 直调） | pipeline | 仅 bench-wire |
 | `SLEEP` | Provider 端模拟业务耗时（毫秒） | 0 | bench-injvm / bench-jaws |
@@ -109,7 +109,7 @@ bench-wire 用法（provider 长驻后可多轮复用，服务端保持 JIT 全�
 
 ## 序列化方式对比
 
-**结论**：`hello(String)` 短字符串往返是序列化开销最不敏感的负载，四种序列化在同一 CPU-bound 基准下差异有限。fury 已于 09-07 合入为第四种序列化（`SERIALIZATION=fury`），实测与 fastjson2 处于同一水平、并未超越，因此未单列进下表（下表为三选手基线，fastjson2 已代表同水平的 fury）。
+**结论**：`hello(String)` 短字符串往返是序列化开销最不敏感的负载，三种序列化在同一 CPU-bound 基准下差异有限。fury 曾于 09-07 合入为第四种序列化（`SERIALIZATION=fury`），实测与 fastjson2 处于同一水平、并未超越，后已移除，下表三选手基线即当前全部内置选项。
 
 同一环境、同一负载（`hello(String)` 单字符串往返），20 线程、WARMUP=10s、DURATION=40s 测量，仅切换 `SERIALIZATION`（三选手基线，08-24）：
 

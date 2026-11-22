@@ -7,7 +7,7 @@
 | 能力维度       | Jaws                                               | Dubbo                                                      | 差距评估   |
 |----------------|----------------------------------------------------|------------------------------------------------------------|------------|
 | **自定义协议** | 16 字节头，零拷贝编解码，flag 嵌入 serializationId | 16 字节头，零拷贝编解码，flag 嵌入 serializationId         | **持平**   |
-| **序列化**     | fastjson2 / hessian2 / protostuff / fury（4 种）   | hessian2 / protobuf / fastjson2 / kryo / fst 等（10+ 种）  | 中等差距   |
+| **序列化**     | fastjson2 / hessian2 / protostuff（3 种）          | hessian2 / protobuf / fastjson2 / kryo / fst 等（10+ 种）  | 中等差距   |
 | **同步调用**   | 支持                                               | 支持                                                       | **持平**   |
 | **异步调用**   | `CompletableFuture` 返回值，Provider 端原生异步    | `CompletableFuture` + `Async` 后缀接口 + `RpcContext` 异步 | **持平**   |
 | **泛化调用**   | `GenericService.$invoke()`                         | `GenericService.$invoke()`                                 | **持平**   |
@@ -157,7 +157,7 @@ Dubbo 3.3 将 REST 重新定位为 Triple 协议之上的访问层（Triple REST
 
 ## 九、差距最大的 Top 5 领域
 
-1. **序列化协议丰富度** — Jaws 4 种（fastjson2/hessian2/protostuff/fury），Dubbo 10+ 种（含 protobuf、kryo 等更多高性能选项）
+1. **序列化协议丰富度** — Jaws 3 种（fastjson2/hessian2/protostuff），Dubbo 10+ 种（含 protobuf、kryo 等更多高性能选项）
 2. **流量治理深度** — 缺少限流、熔断、降级能力（Dubbo 集成 Sentinel/Resilience4j）
 3. **应用级服务发现** — 已落地 local 元数据模式最小切片，但缺 remote 元数据中心、双注册迁移、mapping CAS/热更新与文件缓存，大规模场景下与 Dubbo 完整双模型仍有差距（详见[应用级服务发现](app-level-discovery.md)）
 4. **生态与运维工具** — 缺少 Admin 控制台、缺少 IDL 代码生成、SPI 扩展点数量有限

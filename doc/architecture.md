@@ -63,7 +63,7 @@ Jaws 名字里的 "Jaws（咬合）" 有纵横两义：纵向是 core 仿 Dubbo 
 
 ## 5. 四条贯穿全框架的设计主张
 
-1. **抽象层包住多实现（ports/adapters）**：transport / serialization / registry / loadbalance 全做成可换实现的 SPI，稳定的是抽象与调用协议，可换的是底层框架。换 Netty↔HTTP/2、换 fastjson↔fury，上层不动。
+1. **抽象层包住多实现（ports/adapters）**：transport / serialization / registry / loadbalance 全做成可换实现的 SPI，稳定的是抽象与调用协议，可换的是底层框架。换 Netty↔HTTP/2、换 fastjson2↔hessian2，上层不动。
 2. **用标准，而非重造**：扩展机制 `ExtensionLoader` 复用 JDK 的 `META-INF/services/` 目录约定（但加载器自己写），**没有 Dubbo 那套 `@Adaptive` + IoC/AOP**；异步直接用 JDK `CompletableFuture`；注册中心用 Curator；可观测用 Micrometer。自研的力气留给 gRPC 线格式这种真正需要自己啃的地方。
 3. **异步是一等公民，不是 API**：`MessageHandler.handleAsync`、`Filter.filter` 返回 `CompletableFuture`、Provider `invoke` 统一 Future、IO 线程 `whenComplete` 零阻塞——任何一层退回同步，全链路就在那儿断。→ [async-full-chain](async-full-chain.md)
 4. **可读性优先、边界诚实**：每层薄到能读完；连"push-only 流式是取舍、protoc 生成码 checked-in 是特色、harbor 成员纯静态是边界、jaws 二进制协议无原生 TLS 是缺口"这些容易被当成缺陷的点，都写明理由或如实标注差距。
