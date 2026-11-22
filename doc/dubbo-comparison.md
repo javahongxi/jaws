@@ -129,7 +129,7 @@ Dubbo 3.3 将 REST 重新定位为 Triple 协议之上的访问层（Triple REST
 | 能力维度                | Jaws                                                             | Dubbo                                          | 差距评估     |
 |-------------------------|------------------------------------------------------------------|------------------------------------------------|--------------|
 | **Spring Boot Starter** | `@EnableJaws` + `@JawsService` / `@JawsReference`                | `@DubboService` / `@DubboReference` + 自动配置 | **持平**     |
-| **SPI 扩展**            | 11 个 SPI 扩展点                                                 | 100+ 个 SPI 扩展点                             | **差距大**   |
+| **SPI 扩展**            | 9 个 SPI 扩展点                                                  | 100+ 个 SPI 扩展点                             | **差距大**   |
 | **Filter 链**           | 2 个内置（AccessLog + TokenAuth）+ 2 个扩展（Metrics + Tracing） | 20+ 个内置 Filter                              | **差距较大** |
 | **代码生成**            | 支持 protobuf IDL（wire 模块，.proto 定义服务接口）              | 支持 IDL 代码生成（protobuf/thrift）           | 小幅差距     |
 | **Admin 控制台**        | 不支持                                                           | Dubbo Admin（服务治理、测试、监控）            | **差距大**   |

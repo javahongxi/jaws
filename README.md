@@ -17,6 +17,7 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 - **REST 支持** — 服务以 HTTP/1.1 对外暴露 REST 接口，注解驱动路由兼容 Spring Web 与 JAX-RS，泛化调用兜底
 - **MCP 支持** — 服务方法自动注册为 MCP 工具，经 Stateless Streamable HTTP（POST /mcp）供 AI Agent 调用
 - **异步调用** — 返回 CompletableFuture 即异步，Provider 端原生异步，全链路零阻塞
+- **SPI 扩展机制** — 微内核架构，协议/传输/序列化/集群/负载均衡/过滤器/注册中心等 9 大扩展点皆可插拔
 - **多种序列化** — 内置 fastjson2、hessian2、protostuff，消费端指定序列化方式，协议头携带序列化标识
 - **连接心跳** — 定期互发心跳保持连接存活，防止长时间空闲的连接被中间设备断开
 - **服务注册与发现** — ZooKeeper / Nacos 注册中心，支持长连接会话保活与掉线重连后自动重建登记
