@@ -34,7 +34,7 @@ Jaws 以最小切片实现了应用级服务发现，对齐 Dubbo 3 默认的 `m
 |---|---|---|---|
 | 应用实例（ip/port + revision 指针） | registry naming 面 | 一条 path=应用名 的 URL | 随注册中心自身机制（临时实例掉线即删） |
 | 应用元数据 MetadataInfo（serviceKey → 全量服务 URL） | provider 进程内存 | `ApplicationMetadataManager`，current + LRU 100 历史 | 进程死亡即消失，无持久化 |
-| 接口→应用映射 | registry config 面（DynamicConfiguration） | key=`mapping:{接口名}`，value=应用名 | 显式删除才消失（v1 不自动清理） |
+| 接口→应用映射 | registry config 面（DynamicConfiguration） | key=`mapping:{接口名}`，value=应用名 | 显式删除才消失（`removeMapping`，unexport 不自动清理） |
 | 元数据缓存（revision → MetadataInfo） | consumer 进程内存 | `MetadataCache`，静态 LRU 100 + 内容自校验 | 进程重启即冷启动，首次通知重新拉取 |
 
 config 面不是另一个组件，而是**同一个注册中心的配置通道**，三腿落点各异：**nacos 腿**经独立 `ConfigService` 写入，key→dataId（`mapping:{接口名}`）、group=`JAWS_CONFIG`，落 Nacos `config_info` 表（DB 持久化）；**harbor 腿**走 Raft CP 路径，数据存内存 `ConfigStorage` + 本地日志/快照，无外部 DB；**zk 腿**是 `/jaws/dynamic-config/{key}` 下的持久 znode。三者都是写入即长期存在，不与 naming 临时实例的生命周期联动——这正是映射残留的来源（见边界清单）。
@@ -86,6 +86,21 @@ registryConfig.setRegisterMode("instance");   // 默认 "interface"，走原接�
 - provider：`Registered application instance: application=..., revision=..., interface=...`——每次导出重算 revision 并覆盖注册同一条实例
 - consumer：`Fetched metadata from {ip}:{port}, ..., revision=...`——真 RPC 拉取；`Metadata cache hit: ..., revision=...`——共享缓存短路（第二个接口引用同应用时命中）
 
+### mapping 清理：`ServiceNameMapping.removeMapping`
+
+mapping 是持久配置项，unexport 不自动删（与 Dubbo 一致）。但「配置存在即路由」是隐式开关：残留 mapping 会把后续的接口级消费静默改道到已下线的应用（订阅为空、refer size=0）。因此拥有生命周期的调用方应在优雅停机时显式清理：
+
+```java
+// 示例 provider 的 main 末尾注册：优先级 12——业务 unexport（10）之后、
+// registry close（默认 20）之前，此时 config 客户端仍存活
+ShutdownHook.registerShutdownHook(() -> {
+    ServiceNameMapping.removeMapping(DemoService.class.getName());
+    ServiceNameMapping.removeMapping(OrderService.class.getName());
+}, 12);
+```
+
+`removeMapping` 委托 `DynamicConfiguration.removeConfig`，三腿同形，返回是否真的删掉了条目。app/app2/app3 三个示例均已内置该钩子：一键冒烟用普通 `kill`（SIGTERM）停 provider 后 mapping 即归零，紧跑接口级示例不再被改道（nacos/zk/harbor 三腿均经冒烟实证）。`kill -9` 不触发钩子，仍需手动清理（nacos admin API 删 config、zkCli 删对应 znode、harbor `POST /api/config?key=mapping:{接口名}&remove=true`）。
+
 ## Provider 导出/卸载链路
 
 `ServiceConfig.doExport` 对 instance 模式的 registry（按 registry 逐个判定，支持与 interface 模式的 registry 混配）：
@@ -97,7 +112,7 @@ registryConfig.setRegisterMode("instance");   // 默认 "interface"，走原接�
 
 多协议 + instance 模式：**fail-fast 抛异常**（v1 边界，一条实例指针无法表达多协议端点）。
 
-`unexport` Phase 1：`removeServiceUrl` → 应用还有其他服务则按新 revision 重注册实例（先 unregister 旧 URL 再 register 新 URL，兼容按全参数去重的实现），服务清空则 deregister 实例；**mapping 不删**（与 Dubbo 一致，见边界）。内部 MetadataService 随自身 ShutdownHook 关闭，hook 优先级 15——排在业务 unexport（10）之后、registry close（20）之前，避免提前 stopAccept 共享端口破坏业务 drain。
+`unexport` Phase 1：`removeServiceUrl` → 应用还有其他服务则按新 revision 重注册实例（先 unregister 旧 URL 再 register 新 URL，兼容按全参数去重的实现），服务清空则 deregister 实例；**mapping 不删**（与 Dubbo 一致，显式删除入口 `removeMapping` 见使用方式）。内部 MetadataService 随自身 ShutdownHook 关闭，hook 优先级 15——排在业务 unexport（10）之后、registry close（20）之前，避免提前 stopAccept 共享端口破坏业务 drain。
 
 ## Consumer 发现链路
 
@@ -127,7 +142,7 @@ registryConfig.setRegisterMode("instance");   // 默认 "interface"，走原接�
 | 缓存 | LRU 100 + 本地文件（启动加载、60 分钟落盘）+ 内容自校验 | LRU 100 + 内容自校验（**无文件缓存**） |
 | 失败兜底 | 全失败通知作废 + 10s 重试；部分失败先通知成功部分 | 全失败通知作废 + 10s 重试；**任一 revision 失败整体作废**（更保守） |
 | 接口→应用映射 | config 面 group=mapping，CAS 写入，监听热更新 | config 面 key=`mapping:{接口}`，**后写覆盖无 CAS，refer 时读一次不监听** |
-| 映射清理 | 不自动删（残留无害） | 同 |
+| 映射清理 | 不自动删（残留无害） | 同；另提供 `removeMapping` 显式删除，示例停机钩子清理 |
 | 双注册迁移 | register-mode=all 双注册过渡 | **不支持**（按 registry 混配两种模式替代） |
 | remote 元数据中心 | MetadataReport 抽象（Nacos config/ZK 等） | **不支持**（上报时机对照见下节） |
 
@@ -162,7 +177,7 @@ Jaws v1 只有 local 模式：元数据在 provider 内存，不存在「上报�
 - **mapping CAS 与热更新**：同接口多应用提供时后写覆盖（value 为单应用名）；mapping 仅在 refer 初始化时读一次，运行中改写不生效
 - **多协议应用**：instance 模式 + 多协议 fail-fast 抛异常
 - **文件缓存**：consumer 重启后缓存冷启动，首次通知重新 RPC 拉取
-- **mapping 自动清理**：unexport 不删 mapping（与 Dubbo 一致，残留正确性无害——consumer 只按在线实例携带的 revision 取数；mapping 指向无实例的应用时订阅为空，走父类空保护）
+- **mapping 自动清理**：unexport 不删 mapping（与 Dubbo 一致）。残留对应用级消费自身正确性无害——consumer 只按在线实例携带的 revision 取数；但会把后续接口级引用静默改道到已下线应用（订阅为空，走父类空保护）。框架提供 `ServiceNameMapping.removeMapping` 显式删除入口，三个 app 示例以优先级 12 的停机钩子清理（见使用方式）；`kill -9` 不触发钩子
 - **同 JVM 多应用共享端口**：内部 MetadataService 按应用导出，两个应用共用同一端口时服务 identity 冲突（导出校验抛异常）；一应用一进程或一应用一端口不受影响
 
 ## 代码地图
@@ -173,7 +188,7 @@ Jaws v1 只有 local 模式：元数据在 provider 内存，不存在「上报�
 | `MetadataService` | 同上 | 内部拉取接口 `getMetadataInfo(revision)` |
 | `ApplicationMetadataManager` | 同上 | provider 内存存储，current + LRU 历史 |
 | `MetadataCache` | 同上 | consumer 静态 LRU 缓存 + 自校验 |
-| `ServiceNameMapping` | 同上 | 接口→应用映射读写（DynamicConfiguration） |
+| `ServiceNameMapping` | 同上 | 接口→应用映射读/写/删（DynamicConfiguration） |
 | `RegistryConfig.registerMode` | `config` | provider 侧唯一开关 |
 | `ServiceConfig` | `config` | instance 模式导出/卸载接线 + 内部 MetadataService 导出 |
 | `AppLevelRegistryDirectory` | `cluster/directory` | 订阅应用实例、分组展开、拉取与重试 |
