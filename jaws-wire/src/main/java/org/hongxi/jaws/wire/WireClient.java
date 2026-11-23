@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -168,6 +169,33 @@ public class WireClient extends AbstractHttp2Client {
     }
 
     /**
+     * Asynchronous counterpart of {@link #open()}: drives the same
+     * connectivity state machine while no thread waits on the dial. Lazy
+     * peer-client creation on latency-sensitive threads (e.g. the single
+     * raft thread) uses this instead of the bounded synchronous open.
+     */
+    @Override
+    public synchronized CompletableFuture<Void> openAsync() {
+        if (isAvailable()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        connectivityTracker.transitionTo(ConnectivityState.CONNECTING);
+        CompletableFuture<Void> opened;
+        try {
+            opened = super.openAsync();
+        } catch (Exception e) {
+            connectivityTracker.transitionTo(ConnectivityState.TRANSIENT_FAILURE);
+            throw e;
+        }
+        return opened.whenComplete((v, e) -> {
+            if (!connectivityTracker.isShutdown()) {
+                connectivityTracker.transitionTo(
+                        e == null ? ConnectivityState.READY : ConnectivityState.TRANSIENT_FAILURE);
+            }
+        });
+    }
+
+    /**
      * Drive the gRPC connectivity state from the base class's async dial
      * hooks, so a lazy reconnect or GOAWAY recovery returns the tracker to
      * READY without any thread waiting on the dial. SHUTDOWN is terminal:
@@ -203,7 +231,7 @@ public class WireClient extends AbstractHttp2Client {
      * @param responseParser the parser for the expected response message type
      * @return a pending response future completed asynchronously by the stream handler
      */
-    public Response request(Request request, Parser<? extends Message> responseParser) {
+    public DefaultResponseFuture request(Request request, Parser<? extends Message> responseParser) {
         return request(request, responseParser, WireCallOptions.DEFAULT);
     }
 
@@ -215,7 +243,7 @@ public class WireClient extends AbstractHttp2Client {
      * @param options        per-call options; {@link WireCallOptions#DEFAULT} inherits configured settings
      * @return a pending response future completed asynchronously by the stream handler
      */
-    public Response request(Request request, Parser<? extends Message> responseParser,
+    public DefaultResponseFuture request(Request request, Parser<? extends Message> responseParser,
                             WireCallOptions options) {
         Object[] args = request.getArguments();
         if (args == null || args.length == 0 || !(args[0] instanceof Message requestMessage)) {

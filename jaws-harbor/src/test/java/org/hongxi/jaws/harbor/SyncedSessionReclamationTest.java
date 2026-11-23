@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -56,10 +57,10 @@ class SyncedSessionReclamationTest {
     private final List<String> events = new ArrayList<>();
 
     private static class NoopTransport implements HarborNodeTransport {
-        @Override public boolean syncData(String a, String c, String op, byte[] b) { return false; }
-        @Override public List<String> syncVerify(String a, List<ClientVerifyInfo> v) { return List.of(); }
+        @Override public CompletableFuture<Boolean> syncData(String a, String c, String op, byte[] b) { return CompletableFuture.completedFuture(false); }
+        @Override public CompletableFuture<List<String>> syncVerify(String a, List<ClientVerifyInfo> v) { return CompletableFuture.completedFuture(List.of()); }
 
-        @Override public byte[] getSnapshot(String a) { return null; }
+        @Override public CompletableFuture<byte[]> getSnapshot(String a) { return CompletableFuture.completedFuture(null); }
         @Override public void shutdown() { }
     }
 

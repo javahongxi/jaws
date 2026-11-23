@@ -97,12 +97,87 @@ public abstract class AbstractHttp2Client extends AbstractClient {
             return true;
         }
 
+        int timeout = connectTimeoutOrThrow();
+        initBootstrap(timeout);
+
+        // Open multiple connections if configured
+        int connectionCount = Math.max(1, url.getIntParameter(UrlParam.Transport.CONNECTIONS));
+        channels = new io.netty.channel.Channel[connectionCount];
+        dials = new ChannelFuture[connectionCount];
+        for (int i = 0; i < connectionCount; i++) {
+            awaitInitialConnect(i, dial(i), timeout);
+        }
+        state = ChannelState.ALIVE;
+        logOpened(connectionCount);
+        return true;
+    }
+
+    /**
+     * Asynchronous counterpart of {@link #open()}: starts every connection
+     * dial and returns immediately — no caller thread ever waits on the
+     * network. The returned future completes when all slots are connected
+     * (state becomes ALIVE), or completes exceptionally on the first dial
+     * failure, tearing down any partial connections so a stale dial cannot
+     * resurrect them; the client stays reopenable, matching {@link #open()}'s
+     * failure surface.
+     * <p>
+     * Requests may be issued before the future completes: they ride the
+     * in-flight dials via {@link #activeChannelAsync()}.
+     */
+    public synchronized CompletableFuture<Void> openAsync() {
+        if (isAvailable()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        int timeout = connectTimeoutOrThrow();
+        initBootstrap(timeout);
+
+        int connectionCount = Math.max(1, url.getIntParameter(UrlParam.Transport.CONNECTIONS));
+        channels = new io.netty.channel.Channel[connectionCount];
+        dials = new ChannelFuture[connectionCount];
+        CompletableFuture<?>[] slots = new CompletableFuture<?>[connectionCount];
+        for (int i = 0; i < connectionCount; i++) {
+            CompletableFuture<Void> slot = new CompletableFuture<>();
+            dial(i).addListener((ChannelFutureListener) f -> {
+                if (f.isSuccess()) {
+                    slot.complete(null);
+                } else {
+                    slot.completeExceptionally(f.cause() != null ? f.cause()
+                            : new java.util.concurrent.CancellationException(
+                                    clientName + " dial cancelled: url=" + url.getUri()));
+                }
+            });
+            slots[i] = slot;
+        }
+        CompletableFuture<Void> all = CompletableFuture.allOf(slots);
+        all.whenComplete((v, e) -> {
+            synchronized (AbstractHttp2Client.this) {
+                if (state.isCloseState()) {
+                    return;
+                }
+                if (e == null) {
+                    state = ChannelState.ALIVE;
+                    logOpened(connectionCount);
+                } else {
+                    // Mirror open()'s failure surface: no half-open client
+                    // survives a failed initial connect
+                    doClose();
+                }
+            }
+        });
+        return all;
+    }
+
+    private int connectTimeoutOrThrow() {
         int timeout = url.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
         if (timeout <= 0) {
             throw new JawsFrameworkException(clientName
                     + " init failed: connect timeout must be positive but was " + timeout);
         }
+        return timeout;
+    }
 
+    private void initBootstrap(int timeout) {
         bootstrap = new Bootstrap()
                 .group(nioEventLoopGroup)
                 .channel(NioSocketChannel.class)
@@ -131,20 +206,12 @@ public abstract class AbstractHttp2Client extends AbstractClient {
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout)
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true);
+    }
 
-        // Open multiple connections if configured
-        int connectionCount = Math.max(1, url.getIntParameter(UrlParam.Transport.CONNECTIONS));
-        channels = new io.netty.channel.Channel[connectionCount];
-        dials = new ChannelFuture[connectionCount];
-        for (int i = 0; i < connectionCount; i++) {
-            awaitInitialConnect(i, dial(i), timeout);
-        }
-        state = ChannelState.ALIVE;
-
+    private void logOpened(int connectionCount) {
         String tlsInfo = sslContext != null ? "with TLS" : "";
         String connInfo = connectionCount > 1 ? "(" + connectionCount + " connections)" : "";
         log.info("{} opened successfully {} {}: url={}", clientName, tlsInfo, connInfo, url);
-        return true;
     }
 
     /**

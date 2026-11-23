@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -91,15 +92,15 @@ class StaleStreamClosureTest {
     }
 
     private static final class NoopTransport implements HarborNodeTransport {
-        @Override public boolean syncData(String addr, String cid, String op, byte[] content) {
-            return false;
+        @Override public CompletableFuture<Boolean> syncData(String addr, String cid, String op, byte[] content) {
+            return CompletableFuture.completedFuture(false);
         }
-        @Override public List<String> syncVerify(String addr, List<ClientVerifyInfo> infos) {
-            return List.of();
+        @Override public CompletableFuture<List<String>> syncVerify(String addr, List<ClientVerifyInfo> infos) {
+            return CompletableFuture.completedFuture(List.of());
         }
 
-        @Override public byte[] getSnapshot(String addr) {
-            return new byte[0];
+        @Override public CompletableFuture<byte[]> getSnapshot(String addr) {
+            return CompletableFuture.completedFuture(new byte[0]);
         }
         @Override public void shutdown() { }
     }

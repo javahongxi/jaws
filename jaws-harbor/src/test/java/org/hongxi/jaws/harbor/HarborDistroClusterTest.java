@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.net.ServerSocket;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -292,31 +293,31 @@ class HarborDistroClusterTest {
         }
 
         @Override
-        public boolean syncData(String targetAddress, String resourceKey,
+        public CompletableFuture<Boolean> syncData(String targetAddress, String resourceKey,
                                 String operation, byte[] content) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                return target.onSync(resourceKey, operation, content);
+                return CompletableFuture.completedFuture(target.onSync(resourceKey, operation, content));
             }
-            return false;
+            return CompletableFuture.completedFuture(false);
         }
 
         @Override
-        public List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
+        public CompletableFuture<List<String>> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                return target.onVerify(verifyInfos);
+                return CompletableFuture.completedFuture(target.onVerify(verifyInfos));
             }
-            return List.of();
+            return CompletableFuture.completedFuture(List.of());
         }
 
         @Override
-        public byte[] getSnapshot(String targetAddress) {
+        public CompletableFuture<byte[]> getSnapshot(String targetAddress) {
             DistroProtocol target = nodes.get(targetAddress);
             if (target != null) {
-                return target.onSnapshot();
+                return CompletableFuture.completedFuture(target.onSnapshot());
             }
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
 
         @Override

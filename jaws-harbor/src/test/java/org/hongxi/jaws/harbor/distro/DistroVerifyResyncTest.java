@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,26 +43,26 @@ class DistroVerifyResyncTest {
         final Map<String, DistroProtocol> nodes = new ConcurrentHashMap<>();
 
         @Override
-        public boolean syncData(String targetAddress, String resourceKey,
+        public CompletableFuture<Boolean> syncData(String targetAddress, String resourceKey,
                                 String operation, byte[] content) {
             DistroProtocol n = nodes.get(targetAddress);
             if (n == null) {
-                return false;
+                return CompletableFuture.completedFuture(false);
             }
             n.onSync(resourceKey, operation, content);
-            return true;
+            return CompletableFuture.completedFuture(true);
         }
 
         @Override
-        public List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
+        public CompletableFuture<List<String>> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
             DistroProtocol n = nodes.get(targetAddress);
-            return n == null ? List.of() : n.onVerify(verifyInfos);
+            return CompletableFuture.completedFuture(n == null ? List.of() : n.onVerify(verifyInfos));
         }
 
         @Override
-        public byte[] getSnapshot(String targetAddress) {
+        public CompletableFuture<byte[]> getSnapshot(String targetAddress) {
             DistroProtocol n = nodes.get(targetAddress);
-            return n == null ? null : n.onSnapshot();
+            return CompletableFuture.completedFuture(n == null ? null : n.onSnapshot());
         }
 
         @Override

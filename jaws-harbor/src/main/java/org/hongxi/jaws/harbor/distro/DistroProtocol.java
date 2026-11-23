@@ -17,11 +17,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Core Distro consensus protocol for the Harbor cluster.
@@ -66,9 +68,12 @@ public class DistroProtocol {
     /** connectionId → in-flight coalesced sync task; presence = merge lock. */
     private final Map<String, ScheduledFuture<?>> pendingSync = new ConcurrentHashMap<>();
 
-    // 2 = keep the two blocking streams from starving each other: periodic verify
-    // vs coalesced sync/load. Peer fan-out stays single-threaded serial
-    // (see harbor-vs-nacos §3.12).
+    /** connectionId → tail of the in-flight send chain; keeps CHANGE/DELETE ordered per client. */
+    private final Map<String, CompletableFuture<Void>> syncTails = new ConcurrentHashMap<>();
+
+    // 2 = keep the periodic verify and the coalesced sync/load timers from
+    // starving each other. Tasks no longer block on the network: peer fan-out
+    // stays serial per client as an async chain (see harbor-vs-nacos §3.12).
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(2, r -> {
                 Thread t = new Thread(r, "harbor-distro-scheduler");
@@ -188,20 +193,58 @@ public class DistroProtocol {
      * @param content      serialized {@link ClientSyncData} for CHANGE; empty for DELETE
      */
     public void syncChange(String connectionId, String operation, byte[] content) {
-        Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
-        if (peers.isEmpty()) {
+        if (clusterManager.allMembersExceptSelf().isEmpty()) {
             return;
         }
-        for (ClusterMember peer : peers) {
-            try {
-                boolean ok = transport.syncData(peer.address(), connectionId, operation, content);
-                if (!ok) {
-                    log.warn("[harbor] distro sync failed: {} -> {}", connectionId, peer.address());
-                }
-            } catch (Exception e) {
-                log.warn("[harbor] distro sync error: {} -> {}", connectionId, peer.address(), e);
-            }
+        enqueueSync(connectionId, null, operation, content);
+    }
+
+    /**
+     * Chain one send behind any in-flight send for the same client so a DELETE
+     * can never overtake the CHANGE it supersedes. Fan-out to peers stays serial
+     * (harbor-vs-nacos §3.12), now as an async chain instead of a blocking loop.
+     *
+     * @param target the single peer to send to, or null to fan out to all peers
+     */
+    private void enqueueSync(String connectionId, ClusterMember target, String operation, byte[] content) {
+        AtomicReference<CompletableFuture<Void>> created = new AtomicReference<>();
+        syncTails.compute(connectionId, (k, tail) -> {
+            CompletableFuture<Void> base = tail == null ? CompletableFuture.completedFuture(null) : tail;
+            CompletableFuture<Void> next = base.thenCompose(v -> target == null
+                    ? fanOutToPeers(connectionId, operation, content)
+                    : sendToPeer(target, connectionId, operation, content));
+            created.set(next);
+            return next;
+        });
+        // Drop the tail once settled, unless a successor already chained onto it
+        created.get().whenComplete((v, e) -> syncTails.remove(connectionId, created.get()));
+    }
+
+    private CompletableFuture<Void> fanOutToPeers(String connectionId, String operation, byte[] content) {
+        CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
+        for (ClusterMember peer : clusterManager.allMembersExceptSelf()) {
+            chain = chain.thenCompose(v -> sendToPeer(peer, connectionId, operation, content));
         }
+        return chain;
+    }
+
+    /** Never completes exceptionally: a failed peer must not break the chain. */
+    private CompletableFuture<Void> sendToPeer(ClusterMember peer, String connectionId,
+                                               String operation, byte[] content) {
+        CompletableFuture<Boolean> sent;
+        try {
+            sent = transport.syncData(peer.address(), connectionId, operation, content);
+        } catch (Exception e) {
+            sent = CompletableFuture.failedFuture(e);
+        }
+        return sent.<Void>handle((ok, e) -> {
+            if (e != null) {
+                log.warn("[harbor] distro sync error: {} -> {}", connectionId, peer.address(), e);
+            } else if (ok == null || !ok) {
+                log.warn("[harbor] distro sync failed: {} -> {}", connectionId, peer.address());
+            }
+            return null;
+        });
     }
 
     // ========================================================================
@@ -303,21 +346,29 @@ public class DistroProtocol {
                 log.info("[harbor] no peers to load from — running as single node");
                 return;
             }
-            for (ClusterMember peer : peers) {
-                try {
-                    if (pullSnapshotFromPeer(peer)) {
-                        break;
-                    }
-                } catch (Exception e) {
-                    log.warn("[harbor] load from {} failed: {}", peer.address(), e.getMessage());
-                }
-            }
+            loadFromPeers(new ArrayList<>(peers), 0);
         } catch (Exception e) {
             log.error("[harbor] load task error", e);
             if (running) {
                 scheduler.schedule(this::runLoadTask, LOAD_RETRY_DELAY_MS, TimeUnit.MILLISECONDS);
             }
         }
+    }
+
+    /** Try peers in order until one yields an applied snapshot (async fallback). */
+    private void loadFromPeers(List<ClusterMember> peers, int index) {
+        if (index >= peers.size()) {
+            return;
+        }
+        ClusterMember peer = peers.get(index);
+        pullSnapshotFromPeer(peer).whenComplete((loaded, e) -> {
+            if (e != null) {
+                log.warn("[harbor] load from {} failed: {}", peer.address(), e.getMessage());
+            }
+            if (loaded != Boolean.TRUE) {
+                loadFromPeers(peers, index + 1);
+            }
+        });
     }
 
     /**
@@ -333,18 +384,7 @@ public class DistroProtocol {
                     verifyInfos.add(new ClientVerifyInfo(session.getConnectionId(), session.getRevision()));
                 }
                 if (!verifyInfos.isEmpty()) {
-                    for (ClusterMember peer : peers) {
-                        try {
-                            List<String> mismatched = transport.syncVerify(peer.address(), verifyInfos);
-                            if (!mismatched.isEmpty()) {
-                                log.warn("[harbor] verify mismatch with {}, re-pushing latest state of {} client(s) to it",
-                                        peer.address(), mismatched.size());
-                                resyncToPeer(peer, mismatched);
-                            }
-                        } catch (Exception e) {
-                            log.debug("[harbor] verify to {} failed: {}", peer.address(), e.getMessage());
-                        }
-                    }
+                    verifyPeers(new ArrayList<>(peers), 0, verifyInfos);
                 }
             }
         } catch (Exception e) {
@@ -352,34 +392,65 @@ public class DistroProtocol {
         }
     }
 
+    /** Serial async peer walk: the next verify starts when the previous settles. */
+    private void verifyPeers(List<ClusterMember> peers, int index, List<ClientVerifyInfo> verifyInfos) {
+        if (index >= peers.size()) {
+            return;
+        }
+        ClusterMember peer = peers.get(index);
+        CompletableFuture<List<String>> verified;
+        try {
+            verified = transport.syncVerify(peer.address(), verifyInfos);
+        } catch (Exception e) {
+            verified = CompletableFuture.failedFuture(e);
+        }
+        verified.whenComplete((mismatched, e) -> {
+            if (e != null) {
+                log.debug("[harbor] verify to {} failed: {}", peer.address(), e.getMessage());
+            } else if (mismatched != null && !mismatched.isEmpty()) {
+                log.warn("[harbor] verify mismatch with {}, re-pushing latest state of {} client(s) to it",
+                        peer.address(), mismatched.size());
+                resyncToPeer(peer, mismatched);
+            }
+            verifyPeers(peers, index + 1, verifyInfos);
+        });
+    }
+
     /**
      * Startup load: pull a full snapshot from a peer and apply clients we don't
      * already hold. Any client we already have (native, or freshly synced from
      * its owner) is left intact — we never overwrite a native session here.
      */
-    private boolean pullSnapshotFromPeer(ClusterMember peer) {
+    private CompletableFuture<Boolean> pullSnapshotFromPeer(ClusterMember peer) {
         log.info("[harbor] loading naming snapshot from {}", peer.address());
-        byte[] snapshot = transport.getSnapshot(peer.address());
-        if (snapshot == null || snapshot.length == 0) {
-            return false;
+        CompletableFuture<byte[]> fetched;
+        try {
+            fetched = transport.getSnapshot(peer.address());
+        } catch (Exception e) {
+            fetched = CompletableFuture.failedFuture(e);
         }
-        String json = new String(snapshot, StandardCharsets.UTF_8);
-        List<ClientSyncData> clientDataList = JSON.parseObject(json, new TypeReference<>() {});
-        if (clientDataList == null) {
-            return false;
-        }
-        int applied = 0;
-        for (ClientSyncData data : clientDataList) {
-            String cid = data.getConnectionId();
-            if (connectionManager.getClientSession(cid) != null) {
-                continue;
+        return fetched.thenApply(snapshot -> {
+            if (snapshot == null || snapshot.length == 0) {
+                return false;
             }
-            serviceStorage.applyClientSyncData(data);
-            applied++;
-        }
-        log.info("[harbor] snapshot loaded from {}: {}/{} clients applied",
-                peer.address(), applied, clientDataList.size());
-        return applied > 0;
+            String json = new String(snapshot, StandardCharsets.UTF_8);
+            List<ClientSyncData> clientDataList = JSON.parseObject(json, new TypeReference<>() {});
+            if (clientDataList == null) {
+                return false;
+            }
+            int applied = 0;
+            for (ClientSyncData data : clientDataList) {
+                String cid = data.getConnectionId();
+                if (connectionManager.getClientSession(cid) != null) {
+                    continue;
+                }
+                serviceStorage.applyClientSyncData(data);
+                applied++;
+            }
+            log.info("[harbor] snapshot loaded from {}: {}/{} clients applied",
+                    peer.address(), applied, clientDataList.size());
+            return applied > 0;
+        });
     }
 
     /**
@@ -402,14 +473,9 @@ public class DistroProtocol {
             if (data == null || !hasContent(data)) {
                 continue;
             }
-            try {
-                boolean ok = transport.syncData(peer.address(), cid, OP_CHANGE, JSON.toJSONBytes(data));
-                if (!ok) {
-                    log.warn("[harbor] verify-triggered resync failed: {} -> {}", cid, peer.address());
-                }
-            } catch (Exception e) {
-                log.warn("[harbor] verify-triggered resync error: {} -> {}", cid, peer.address(), e);
-            }
+            // Rides the same per-client chain as ordinary syncs, so a resync
+            // CHANGE cannot overtake an in-flight DELETE for the same client
+            enqueueSync(cid, peer, OP_CHANGE, JSON.toJSONBytes(data));
         }
     }
 

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -53,14 +54,14 @@ class SubscriptionStaysLocalTest {
         final List<Send> sends = new CopyOnWriteArrayList<>();
 
         @Override
-        public boolean syncData(String targetAddress, String resourceKey,
+        public CompletableFuture<Boolean> syncData(String targetAddress, String resourceKey,
                                 String operation, byte[] content) {
             sends.add(new Send(targetAddress, resourceKey, operation, content));
-            return true;
+            return CompletableFuture.completedFuture(true);
         }
-        @Override public List<String> syncVerify(String a, List<ClientVerifyInfo> v) { return List.of(); }
+        @Override public CompletableFuture<List<String>> syncVerify(String a, List<ClientVerifyInfo> v) { return CompletableFuture.completedFuture(List.of()); }
 
-        @Override public byte[] getSnapshot(String a) { return null; }
+        @Override public CompletableFuture<byte[]> getSnapshot(String a) { return CompletableFuture.completedFuture(null); }
         @Override public void shutdown() { }
     }
 

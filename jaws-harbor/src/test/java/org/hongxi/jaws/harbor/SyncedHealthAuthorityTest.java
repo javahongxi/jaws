@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,28 +57,28 @@ class SyncedHealthAuthorityTest {
         final AtomicInteger changes = new AtomicInteger();
 
         @Override
-        public boolean syncData(String addr, String cid, String op, byte[] content) {
+        public CompletableFuture<Boolean> syncData(String addr, String cid, String op, byte[] content) {
             DistroProtocol n = nodes.get(addr);
             if (n == null) {
-                return false;
+                return CompletableFuture.completedFuture(false);
             }
             boolean delivered = n.onSync(cid, op, content);
             if (delivered && DistroProtocol.OP_CHANGE.equals(op)) {
                 changes.incrementAndGet();
             }
-            return delivered;
+            return CompletableFuture.completedFuture(delivered);
         }
 
         @Override
-        public List<String> syncVerify(String addr, List<ClientVerifyInfo> v) {
+        public CompletableFuture<List<String>> syncVerify(String addr, List<ClientVerifyInfo> v) {
             DistroProtocol n = nodes.get(addr);
-            return n == null ? List.of() : n.onVerify(v);
+            return CompletableFuture.completedFuture(n == null ? List.of() : n.onVerify(v));
         }
 
         @Override
-        public byte[] getSnapshot(String addr) {
+        public CompletableFuture<byte[]> getSnapshot(String addr) {
             DistroProtocol n = nodes.get(addr);
-            return n == null ? null : n.onSnapshot();
+            return CompletableFuture.completedFuture(n == null ? null : n.onSnapshot());
         }
 
         @Override

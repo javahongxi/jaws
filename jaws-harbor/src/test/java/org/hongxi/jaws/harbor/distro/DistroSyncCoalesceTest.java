@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
@@ -43,7 +44,7 @@ class DistroSyncCoalesceTest {
         final AtomicInteger deletes = new AtomicInteger();
 
         @Override
-        public boolean syncData(String addr, String cid, String op, byte[] content) {
+        public CompletableFuture<Boolean> syncData(String addr, String cid, String op, byte[] content) {
             if (ADDR2.equals(addr)) {
                 if (DistroProtocol.OP_DELETE.equals(op)) {
                     deletes.incrementAndGet();
@@ -54,21 +55,21 @@ class DistroSyncCoalesceTest {
             DistroProtocol n = nodes.get(addr);
             if (n != null) {
                 n.onSync(cid, op, content);
-                return true;
+                return CompletableFuture.completedFuture(true);
             }
-            return false;
+            return CompletableFuture.completedFuture(false);
         }
 
         @Override
-        public List<String> syncVerify(String addr, List<ClientVerifyInfo> v) {
+        public CompletableFuture<List<String>> syncVerify(String addr, List<ClientVerifyInfo> v) {
             DistroProtocol n = nodes.get(addr);
-            return n == null ? List.of() : n.onVerify(v);
+            return CompletableFuture.completedFuture(n == null ? List.of() : n.onVerify(v));
         }
 
         @Override
-        public byte[] getSnapshot(String addr) {
+        public CompletableFuture<byte[]> getSnapshot(String addr) {
             DistroProtocol n = nodes.get(addr);
-            return n == null ? null : n.onSnapshot();
+            return CompletableFuture.completedFuture(n == null ? null : n.onSnapshot());
         }
 
         @Override

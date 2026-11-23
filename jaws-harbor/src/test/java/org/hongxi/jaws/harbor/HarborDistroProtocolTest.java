@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -305,19 +306,19 @@ class HarborDistroProtocolTest {
 
         HarborNodeTransport mockTransport = new HarborNodeTransport() {
             @Override
-            public boolean syncData(String targetAddress, String resourceKey,
+            public CompletableFuture<Boolean> syncData(String targetAddress, String resourceKey,
                                     String operation, byte[] content) {
                 lastSyncTarget.set(targetAddress);
                 lastSyncKey.set(resourceKey);
-                return true;
+                return CompletableFuture.completedFuture(true);
             }
             @Override
-            public List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
-                return List.of();
+            public CompletableFuture<List<String>> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
+                return CompletableFuture.completedFuture(List.of());
             }
             @Override
-            public byte[] getSnapshot(String targetAddress) {
-                return null;
+            public CompletableFuture<byte[]> getSnapshot(String targetAddress) {
+                return CompletableFuture.completedFuture(null);
             }
             @Override
             public void shutdown() {}
@@ -342,17 +343,17 @@ class HarborDistroProtocolTest {
     private static HarborNodeTransport noopTransport() {
         return new HarborNodeTransport() {
             @Override
-            public boolean syncData(String targetAddress, String resourceKey,
+            public CompletableFuture<Boolean> syncData(String targetAddress, String resourceKey,
                                     String operation, byte[] content) {
-                return true;
+                return CompletableFuture.completedFuture(true);
             }
             @Override
-            public List<String> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
-                return List.of();
+            public CompletableFuture<List<String>> syncVerify(String targetAddress, List<ClientVerifyInfo> verifyInfos) {
+                return CompletableFuture.completedFuture(List.of());
             }
             @Override
-            public byte[] getSnapshot(String targetAddress) {
-                return null;
+            public CompletableFuture<byte[]> getSnapshot(String targetAddress) {
+                return CompletableFuture.completedFuture(null);
             }
             @Override
             public void shutdown() {}
