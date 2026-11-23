@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -75,6 +76,12 @@ public abstract class AbstractHttp2Client extends AbstractClient {
      * requests are distributed across connections via round-robin.
      */
     private volatile io.netty.channel.Channel[] channels;
+
+    /**
+     * In-flight dial per connection slot, guarded by this client's monitor.
+     * Keeps concurrent reconnect triggers from dialing the same slot twice.
+     */
+    private ChannelFuture[] dials;
 
     private final AtomicInteger requestCounter = new AtomicInteger(0);
 
@@ -128,8 +135,9 @@ public abstract class AbstractHttp2Client extends AbstractClient {
         // Open multiple connections if configured
         int connectionCount = Math.max(1, url.getIntParameter(UrlParam.Transport.CONNECTIONS));
         channels = new io.netty.channel.Channel[connectionCount];
+        dials = new ChannelFuture[connectionCount];
         for (int i = 0; i < connectionCount; i++) {
-            doConnect(i);
+            awaitInitialConnect(i, dial(i), timeout);
         }
         state = ChannelState.ALIVE;
 
@@ -139,33 +147,119 @@ public abstract class AbstractHttp2Client extends AbstractClient {
         return true;
     }
 
-    private void doConnect(int index) {
-        int timeout = url.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
+    /**
+     * Start an asynchronous dial for one connection slot, or return the dial
+     * already in flight. The listener fills the slot on success, so no caller
+     * thread ever waits on the network; {@link #onConnectionEstablished} and
+     * {@link #onConnectionFailed} let subclasses track connectivity.
+     * <p>
+     * Must be called while holding this client's monitor.
+     */
+    private ChannelFuture dial(int index) {
+        ChannelFuture pending = dials[index];
+        if (pending != null && !pending.isDone()) {
+            return pending;
+        }
+        ChannelFuture future = bootstrap.connect(url.getHost(), url.getPort());
+        dials[index] = future;
+        final io.netty.channel.Channel[] slots = channels;
+        future.addListener((ChannelFutureListener) f -> {
+            boolean accepted = false;
+            synchronized (AbstractHttp2Client.this) {
+                if (dials != null) {
+                    dials[index] = null;
+                }
+                // A stale dial (client closed or re-opened meanwhile) must not
+                // write into the current slot array
+                if (f.isSuccess() && slots == channels && !state.isCloseState()) {
+                    channels[index] = f.channel();
+                    accepted = true;
+                }
+            }
+            if (accepted) {
+                log.info("{} connected connection[{}]: url={}", clientName, index, url.getUri());
+                onConnectionEstablished(index);
+            } else {
+                if (f.channel().isOpen()) {
+                    f.channel().close();
+                }
+                log.warn("{} connect failed for connection[{}]: url={}",
+                        clientName, index, url.getUri(), f.cause());
+                onConnectionFailed(index, f.cause());
+            }
+        });
+        return future;
+    }
+
+    /**
+     * Startup-only bounded wait for one dial; request paths ride the dial
+     * future asynchronously instead ({@link #activeChannelAsync()}). The
+     * error surface matches the historical synchronous connect: a named
+     * {@link JawsServiceException} distinguishing failure from timeout.
+     */
+    private void awaitInitialConnect(int index, ChannelFuture channelFuture, int timeout) {
         long start = System.currentTimeMillis();
-        ChannelFuture channelFuture = bootstrap.connect(url.getHost(), url.getPort());
         boolean completed = channelFuture.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
         boolean success = channelFuture.isSuccess();
-
         if (completed && success) {
-            channels[index] = channelFuture.channel();
+            // The dial listener fills the slot too, but it may not have run
+            // yet on the event loop — settle it here so open() returns with
+            // every slot usable
+            settleDial(index, channelFuture);
             return;
         }
-
+        if (!completed) {
+            channelFuture.cancel(false);
+        }
         // Close the channel if it was opened but connect failed or timed out
         if (channelFuture.channel().isOpen()) {
             channelFuture.channel().close();
         }
-        if (channelFuture.cause() != null) {
+        if (completed && channelFuture.cause() != null) {
             throw new JawsServiceException(clientName
                     + " failed to connect to server, url: " + url.getUri()
                     + ", completed: " + completed + ", success: " + success,
                     channelFuture.cause());
-        } else {
-            throw new JawsServiceException(clientName
-                    + " connect to server timeout, url: " + url.getUri()
-                    + ", cost: " + (System.currentTimeMillis() - start)
-                    + "ms, completed: " + completed + ", success: " + success);
         }
+        throw new JawsServiceException(clientName
+                + " connect to server timeout, url: " + url.getUri()
+                + ", cost: " + (System.currentTimeMillis() - start)
+                + "ms, completed: " + completed + ", success: " + success);
+    }
+
+    /**
+     * Fill a slot whose dial succeeded but whose listener has not run yet.
+     * Only ever writes an empty slot of the current array, so it cannot race
+     * a concurrent close or re-open into resurrecting a dropped connection.
+     */
+    private synchronized void settleDial(int index, ChannelFuture f) {
+        if (f != null && f.isSuccess() && channels != null && index < channels.length
+                && channels[index] == null && !state.isCloseState() && f.channel().isActive()) {
+            channels[index] = f.channel();
+        }
+    }
+
+    /**
+     * Hook invoked when an asynchronous dial establishes connection slot
+     * {@code index}, on the connection's event loop. Default no-op;
+     * subclasses may drive connectivity state here. Must not block.
+     *
+     * @param index the connection slot that became active
+     */
+    protected void onConnectionEstablished(int index) {
+        // no-op by default
+    }
+
+    /**
+     * Hook invoked when an asynchronous dial for slot {@code index} fails or
+     * is cancelled by close, on the connection's event loop. Default no-op.
+     * Must not block.
+     *
+     * @param index the connection slot whose dial failed
+     * @param cause the dial failure, or {@code null} when cancelled
+     */
+    protected void onConnectionFailed(int index, Throwable cause) {
+        // no-op by default
     }
 
     /**
@@ -246,18 +340,85 @@ public abstract class AbstractHttp2Client extends AbstractClient {
 
     /**
      * Return an active channel, lazily reconnecting if the selected
-     * channel has gone away.
+     * channel has gone away. The reconnect dial itself is asynchronous, but
+     * this method waits for it (bounded by the connect timeout) so that
+     * synchronous callers — the jaws-protocol {@link Http2Client} — keep
+     * their self-healing semantics. Fully asynchronous callers use
+     * {@link #activeChannelAsync()} instead and never block a thread.
      */
     protected io.netty.channel.Channel activeChannel() {
         io.netty.channel.Channel channel = selectChannel();
         if (channel == null || !channel.isActive()) {
-            reconnect();
+            int timeout = url.getIntParameter(UrlParam.Transport.CONNECT_TIMEOUT);
+            ChannelFuture[] pending;
+            synchronized (this) {
+                reconnect();
+                pending = dials != null ? dials.clone() : null;
+            }
+            if (pending != null) {
+                for (int i = 0; i < pending.length; i++) {
+                    ChannelFuture f = pending[i];
+                    if (f != null && !f.isDone()) {
+                        f.awaitUninterruptibly(timeout, TimeUnit.MILLISECONDS);
+                    }
+                    settleDial(i, f);
+                }
+            }
             channel = selectChannel();
         }
         if (channel == null || !channel.isActive()) {
             throw new JawsServiceException(clientName + " channel is not active: url=" + url.getUri());
         }
         return channel;
+    }
+
+    /**
+     * Asynchronous variant of {@link #activeChannel()}: completes with the
+     * selected channel, starting an asynchronous dial when its slot is down
+     * and riding the dial future. No calling thread blocks on the network;
+     * the returned future fails with a named {@link JawsServiceException}
+     * when the dial fails or the client has no usable connections.
+     *
+     * @return a future completing with an active connection channel
+     */
+    protected CompletableFuture<io.netty.channel.Channel> activeChannelAsync() {
+        io.netty.channel.Channel[] slots = channels;
+        if (slots == null || slots.length == 0 || state.isCloseState()) {
+            return CompletableFuture.failedFuture(new JawsServiceException(
+                    "No HTTP/2 connections available: url=" + url.getUri()));
+        }
+        int index = slots.length == 1 ? 0
+                : Math.abs(requestCounter.getAndIncrement() % slots.length);
+        io.netty.channel.Channel channel = slots[index];
+        if (channel != null && channel.isActive()) {
+            return CompletableFuture.completedFuture(channel);
+        }
+        final ChannelFuture dialFuture;
+        synchronized (this) {
+            if (state.isCloseState() || channels != slots) {
+                return CompletableFuture.failedFuture(new JawsServiceException(
+                        "No HTTP/2 connections available: url=" + url.getUri()));
+            }
+            channel = channels[index];
+            if (channel != null && channel.isActive()) {
+                return CompletableFuture.completedFuture(channel);
+            }
+            if (channel != null) {
+                channel.close();
+                channels[index] = null;
+            }
+            dialFuture = dial(index);
+        }
+        CompletableFuture<io.netty.channel.Channel> result = new CompletableFuture<>();
+        dialFuture.addListener((ChannelFutureListener) f -> {
+            if (f.isSuccess() && f.channel().isActive()) {
+                result.complete(f.channel());
+            } else {
+                result.completeExceptionally(new JawsServiceException(
+                        clientName + " channel is not available: url=" + url.getUri(), f.cause()));
+            }
+        });
+        return result;
     }
 
     /**
@@ -279,55 +440,51 @@ public abstract class AbstractHttp2Client extends AbstractClient {
     }
 
     /**
-     * Re-establish all connections. Called lazily from request paths when a
-     * multiplexed connection has gone away, or proactively when a GOAWAY
-     * frame is received from the server.
+     * Re-establish dead connections by starting asynchronous dials. Returns
+     * immediately — no caller thread (least of all an event loop) waits on
+     * the network; slots are filled by the dial listeners. Called lazily
+     * from request paths when a multiplexed connection has gone away, or
+     * proactively when a GOAWAY frame is received from the server.
      */
     protected synchronized void reconnect() {
-        if (state.isCloseState()) {
+        if (state.isCloseState() || channels == null) {
             return;
         }
-        if (channels != null) {
-            boolean allActive = true;
-            for (io.netty.channel.Channel ch : channels) {
-                if (ch == null || !ch.isActive()) {
-                    allActive = false;
-                    break;
-                }
+        for (int i = 0; i < channels.length; i++) {
+            io.netty.channel.Channel ch = channels[i];
+            if (ch != null && ch.isActive()) {
+                continue;
             }
-            if (allActive) {
-                return;
+            if (ch != null) {
+                ch.close();
+                channels[i] = null;
             }
-        }
-        // Close inactive channels and reconnect
-        if (channels != null) {
-            for (int i = 0; i < channels.length; i++) {
-                if (channels[i] != null && !channels[i].isActive()) {
-                    channels[i].close();
-                    channels[i] = null;
-                }
-                if (channels[i] == null) {
-                    try {
-                        doConnect(i);
-                        log.info("{} reconnected connection[{}]: url={}", clientName, i, url.getUri());
-                    } catch (Exception e) {
-                        log.error("{} reconnect failed for connection[{}]: url={}",
-                                clientName, i, url.getUri(), e);
-                    }
-                }
-            }
+            dial(i);
         }
     }
 
     @Override
     protected void doClose() {
-        if (channels != null) {
-            for (io.netty.channel.Channel ch : channels) {
-                if (ch != null) {
-                    ch.close();
+        synchronized (this) {
+            // Cancel in-flight dials so a closed client cannot resurrect its
+            // connections behind its owner's back; the dial listeners see the
+            // cancellation and drop their channels
+            if (dials != null) {
+                for (ChannelFuture f : dials) {
+                    if (f != null && !f.isDone()) {
+                        f.cancel(false);
+                    }
                 }
+                dials = null;
             }
-            channels = null;
+            if (channels != null) {
+                for (io.netty.channel.Channel ch : channels) {
+                    if (ch != null) {
+                        ch.close();
+                    }
+                }
+                channels = null;
+            }
         }
     }
 

@@ -9,13 +9,14 @@ import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
 import io.netty.handler.codec.http2.DefaultHttp2ResetFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2Headers;
+import io.netty.handler.codec.http2.Http2StreamChannel;
 import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
 import io.netty.util.AsciiString;
+import io.netty.util.concurrent.Future;
 import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.configcenter.DynamicConfigurationKeys;
 import org.hongxi.jaws.configcenter.DynamicConfigurationUtils;
 import org.hongxi.jaws.common.util.ExceptionUtils;
-import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.exception.JawsServiceException;
 import org.hongxi.jaws.rpc.DefaultResponse;
 import org.hongxi.jaws.rpc.DefaultResponseFuture;
@@ -47,9 +48,11 @@ import java.util.function.Consumer;
  * semantics.
  * <p>
  * Connection-loss policy: call paths must not pre-check {@link #isAvailable()}.
- * Availability is judged per call by {@code activeChannel()}, which reconnects
- * lazily and then fails with a named {@link JawsServiceException} if the peer is
- * still unreachable. A pre-check would short-circuit exactly that recovery: a
+ * Availability is judged per call by {@code activeChannelAsync()}, which dials
+ * asynchronously when the selected connection is down: the call rides the dial
+ * future and completes once the peer answers, or fails with a named
+ * {@link JawsServiceException} when the dial fails — no calling thread blocks
+ * on the network. A pre-check would short-circuit exactly that recovery: a
  * peer that dies without saying goodbye sends no GOAWAY, so nothing else would
  * ever dial again and a revived peer would stay unusable until this process
  * restarted. A deliberately {@code close()}d client still fails fast, because
@@ -164,6 +167,26 @@ public class WireClient extends AbstractHttp2Client {
         return opened;
     }
 
+    /**
+     * Drive the gRPC connectivity state from the base class's async dial
+     * hooks, so a lazy reconnect or GOAWAY recovery returns the tracker to
+     * READY without any thread waiting on the dial. SHUTDOWN is terminal:
+     * a late dial result must not resurrect it.
+     */
+    @Override
+    protected void onConnectionEstablished(int index) {
+        if (!connectivityTracker.isShutdown()) {
+            connectivityTracker.transitionTo(ConnectivityState.READY);
+        }
+    }
+
+    @Override
+    protected void onConnectionFailed(int index, Throwable cause) {
+        if (!connectivityTracker.isShutdown()) {
+            connectivityTracker.transitionTo(ConnectivityState.TRANSIENT_FAILURE);
+        }
+    }
+
     @Override
     public Response request(Request request) {
         throw new UnsupportedOperationException(
@@ -241,11 +264,15 @@ public class WireClient extends AbstractHttp2Client {
                                 Message requestMessage, String grpcPath, int timeout, Compressor compressor,
                                 DefaultResponseFuture responseFuture, AtomicInteger attemptCounter) {
         int attempt = attemptCounter.get();
-        io.netty.channel.Channel streamChannel = null;
-        try {
-            io.netty.channel.Channel connChannel = activeChannel();
-            ClientStreamTracer tracer = newStreamTracer(grpcPath);
-
+        ClientStreamTracer tracer = newStreamTracer(grpcPath);
+        // Ride the async dial: a dead connection is re-established without
+        // blocking this thread, which may be the shared retry scheduler
+        activeChannelAsync().whenComplete((connChannel, connectError) -> {
+            if (connectError != null) {
+                retryOrFinalFail(request, responseParser, requestMessage, grpcPath, timeout,
+                        compressor, responseFuture, attemptCounter, attempt, connectError, null);
+                return;
+            }
             WireStreamResponseHandler handler = new WireStreamResponseHandler(
                     responseParser, responseFuture, maxMessageSize, maxInboundMetadataSize,
                     message -> {
@@ -258,73 +285,89 @@ public class WireClient extends AbstractHttp2Client {
                     decompressorRegistry(),
                     tracer);
 
-            final io.netty.channel.Channel streamChannel0 = new Http2StreamChannelBootstrap(connChannel)
-                    .handler(handler)
-                    .open().syncUninterruptibly().getNow();
-            streamChannel = streamChannel0;
-
-            // Retry-coordinated callback: only one callback per completion
-            // wins the CAS race to schedule the next attempt
-            responseFuture.whenComplete((r, t) -> {
-                if (t == null || ExceptionUtils.isBizException(t)) {
-                    resetErrorCount();
-                    removeCallback(responseFuture.getRequestId());
+            new Http2StreamChannelBootstrap(connChannel).handler(handler).open()
+                    .addListener((Future<Http2StreamChannel> openFuture) -> {
+                if (!openFuture.isSuccess()) {
+                    retryOrFinalFail(request, responseParser, requestMessage, grpcPath, timeout,
+                            compressor, responseFuture, attemptCounter, attempt, openFuture.cause(), null);
                     return;
                 }
-                incrErrorCount();
-                cancelStream(streamChannel0);
+                final io.netty.channel.Channel streamChannel = openFuture.getNow();
 
-                // CAS: only the first callback per completion event acts
-                if (attemptCounter.compareAndSet(attempt, attempt + 1)
-                        && retryPolicy.hasAnotherAttempt(attempt)
-                        && WireRetryPolicy.isRetryableFailure(t)) {
-                    long delay = retryPolicy.backoffDelayMs(attempt);
-                    log.info("gRPC retry: attempt {}/{}, backing off {}ms for path={}",
-                            attempt + 1, retryPolicy.maxAttempts(), delay, grpcPath);
-                    RETRY_SCHEDULER.schedule(() ->
-                            attemptRequest(request, responseParser, requestMessage,
-                                    grpcPath, timeout, compressor, responseFuture, attemptCounter),
-                            delay, TimeUnit.MILLISECONDS);
-                } else if (!retryPolicy.hasAnotherAttempt(attempt)
-                        || !WireRetryPolicy.isRetryableFailure(t)) {
-                    // Non-retryable or exhausted: clean up
-                    removeCallback(responseFuture.getRequestId());
+                // Retry-coordinated callback: only one callback per completion
+                // wins the CAS race to schedule the next attempt
+                responseFuture.whenComplete((r, t) -> {
+                    if (t == null || ExceptionUtils.isBizException(t)) {
+                        resetErrorCount();
+                        removeCallback(responseFuture.getRequestId());
+                        return;
+                    }
+                    incrErrorCount();
+                    cancelStream(streamChannel);
+
+                    // CAS: only the first callback per completion event acts
+                    if (attemptCounter.compareAndSet(attempt, attempt + 1)
+                            && retryPolicy.hasAnotherAttempt(attempt)
+                            && WireRetryPolicy.isRetryableFailure(t)) {
+                        long delay = retryPolicy.backoffDelayMs(attempt);
+                        log.info("gRPC retry: attempt {}/{}, backing off {}ms for path={}",
+                                attempt + 1, retryPolicy.maxAttempts(), delay, grpcPath);
+                        RETRY_SCHEDULER.schedule(() ->
+                                attemptRequest(request, responseParser, requestMessage,
+                                        grpcPath, timeout, compressor, responseFuture, attemptCounter),
+                                delay, TimeUnit.MILLISECONDS);
+                    } else if (!retryPolicy.hasAnotherAttempt(attempt)
+                            || !WireRetryPolicy.isRetryableFailure(t)) {
+                        // Non-retryable or exhausted: clean up
+                        removeCallback(responseFuture.getRequestId());
+                    }
+                    // else: another callback already claimed the retry
+                });
+
+                try {
+                    // Run client interceptor chain, then drive the single request
+                    WireClientCall call = buildClientChain(new ClientCallImpl(
+                            streamChannel, request, grpcPath, timeout, compressor,
+                            mutableCallContext(request), failFuture(responseFuture), tracer, true));
+                    call.sendMessage(requestMessage);
+                    call.halfClose();
+                } catch (Exception e) {
+                    retryOrFinalFail(request, responseParser, requestMessage, grpcPath, timeout,
+                            compressor, responseFuture, attemptCounter, attempt, e, streamChannel);
                 }
-                // else: another callback already claimed the retry
             });
+        });
+    }
 
-            // Run client interceptor chain, then drive the single request
-            WireClientCall call = buildClientChain(new ClientCallImpl(
-                    streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), failFuture(responseFuture), tracer, true));
-            call.sendMessage(requestMessage);
-            call.halfClose();
-        } catch (Exception e) {
-            if (streamChannel != null) {
-                streamChannel.close();
-            }
-            if (attemptCounter.compareAndSet(attempt, attempt + 1)
-                    && retryPolicy.hasAnotherAttempt(attempt)
-                    && WireRetryPolicy.isRetryableFailure(e)) {
-                long delay = retryPolicy.backoffDelayMs(attempt);
-                log.info("gRPC retry: attempt {}/{}, backing off {}ms for path={}",
-                        attempt + 1, retryPolicy.maxAttempts(), delay, grpcPath);
-                RETRY_SCHEDULER.schedule(() ->
-                        attemptRequest(request, responseParser, requestMessage,
-                                grpcPath, timeout, compressor, responseFuture, attemptCounter),
-                        delay, TimeUnit.MILLISECONDS);
-            } else {
-                removeCallback(request.getRequestId());
-                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
-                errorResponse.setThrowable(new JawsServiceException(
-                        "WireClient request failed: url=" + url.getUri() + " path=" + grpcPath, e));
-                responseFuture.onFailure(errorResponse);
-                if (e instanceof JawsAbstractException jae) {
-                    throw jae;
-                }
-                throw new JawsServiceException("WireClient request failed: url="
-                        + url.getUri() + " path=" + grpcPath, e);
-            }
+    /**
+     * Local attempt failure before the response future completed: the CAS
+     * winner schedules one backoff retry; otherwise the callback is removed
+     * and the future fails by name. Never throws — the failure surfaces
+     * through the future so async callers stay non-blocking.
+     */
+    private void retryOrFinalFail(Request request, Parser<? extends Message> responseParser,
+                                  Message requestMessage, String grpcPath, int timeout, Compressor compressor,
+                                  DefaultResponseFuture responseFuture, AtomicInteger attemptCounter,
+                                  int attempt, Throwable e, io.netty.channel.Channel streamChannel) {
+        if (streamChannel != null) {
+            streamChannel.close();
+        }
+        if (attemptCounter.compareAndSet(attempt, attempt + 1)
+                && retryPolicy.hasAnotherAttempt(attempt)
+                && WireRetryPolicy.isRetryableFailure(e)) {
+            long delay = retryPolicy.backoffDelayMs(attempt);
+            log.info("gRPC retry: attempt {}/{}, backing off {}ms for path={}",
+                    attempt + 1, retryPolicy.maxAttempts(), delay, grpcPath);
+            RETRY_SCHEDULER.schedule(() ->
+                    attemptRequest(request, responseParser, requestMessage,
+                            grpcPath, timeout, compressor, responseFuture, attemptCounter),
+                    delay, TimeUnit.MILLISECONDS);
+        } else {
+            removeCallback(request.getRequestId());
+            DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+            errorResponse.setThrowable(new JawsServiceException(
+                    "WireClient request failed: url=" + url.getUri() + " path=" + grpcPath, e));
+            responseFuture.onFailure(errorResponse);
         }
     }
 
@@ -334,56 +377,75 @@ public class WireClient extends AbstractHttp2Client {
     private void doSingleAttempt(Request request, Parser<? extends Message> responseParser,
                                   Message requestMessage, String grpcPath, int timeout, Compressor compressor,
                                   DefaultResponseFuture responseFuture) {
-        io.netty.channel.Channel streamChannel = null;
-        try {
-            io.netty.channel.Channel connChannel = activeChannel();
-            ClientStreamTracer tracer = newStreamTracer(grpcPath);
-
+        ClientStreamTracer tracer = newStreamTracer(grpcPath);
+        // Register before acquisition so a timeout during the dial can find
+        // and fail the future; timeout → cancel triggers whenComplete below
+        // → RST_STREAM(CANCEL) so the server stops working on it (gRPC
+        // cancellation semantics)
+        registerCallback(request.getRequestId(), responseFuture);
+        activeChannelAsync().whenComplete((connChannel, connectError) -> {
+            if (connectError != null) {
+                failLocalAttempt(request, responseFuture, grpcPath, connectError, null);
+                return;
+            }
             // Open a new HTTP/2 stream; the handler completes the future
             // when the gRPC response END_STREAM arrives
-            final io.netty.channel.Channel streamChannel0 = new Http2StreamChannelBootstrap(connChannel)
+            new Http2StreamChannelBootstrap(connChannel)
                     .handler(newResponseHandler(responseParser, responseFuture, tracer))
-                    .open().syncUninterruptibly().getNow();
-            streamChannel = streamChannel0;
-
-            // Register callback for timeout + OOM protection; timeout → cancel
-            // triggers whenComplete below → RST_STREAM(CANCEL) so the server
-            // stops working on it (gRPC cancellation semantics)
-            registerCallback(request.getRequestId(), responseFuture);
-            responseFuture.whenComplete((r, t) -> {
-                if (t == null || ExceptionUtils.isBizException(t)) {
-                    resetErrorCount();
-                } else {
-                    incrErrorCount();
-                    cancelStream(streamChannel0);
+                    .open().addListener((Future<Http2StreamChannel> openFuture) -> {
+                if (!openFuture.isSuccess()) {
+                    failLocalAttempt(request, responseFuture, grpcPath, openFuture.cause(), null);
+                    return;
+                }
+                final io.netty.channel.Channel streamChannel = openFuture.getNow();
+                responseFuture.whenComplete((r, t) -> {
+                    if (t == null || ExceptionUtils.isBizException(t)) {
+                        resetErrorCount();
+                    } else {
+                        incrErrorCount();
+                        cancelStream(streamChannel);
+                    }
+                });
+                // A timeout may have completed the future while the stream
+                // was opening — nothing left to send
+                if (responseFuture.isDone()) {
+                    streamChannel.close();
+                    return;
+                }
+                try {
+                    // Run client interceptor chain, then drive the single request
+                    WireClientCall call = buildClientChain(new ClientCallImpl(
+                            streamChannel, request, grpcPath, timeout, compressor,
+                            mutableCallContext(request), failFuture(responseFuture), tracer, true));
+                    call.sendMessage(requestMessage);
+                    call.halfClose();
+                } catch (Exception e) {
+                    failLocalAttempt(request, responseFuture, grpcPath, e, streamChannel);
                 }
             });
+        });
+    }
 
-            // Run client interceptor chain, then drive the single request
-            WireClientCall call = buildClientChain(new ClientCallImpl(
-                    streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), failFuture(responseFuture), tracer, true));
-            call.sendMessage(requestMessage);
-            call.halfClose();
-        } catch (Exception e) {
-            ResponseFuture future = removeCallback(request.getRequestId());
-            if (future != null) {
-                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
-                errorResponse.setThrowable(new JawsServiceException(
-                        "WireClient request failed: url=" + url.getUri() + " path=" + grpcPath, e));
-                future.onFailure(errorResponse);
-                // incrErrorCount is handled by whenComplete callback above
-            } else {
-                incrErrorCount();
-            }
-            if (streamChannel != null) {
-                streamChannel.close();
-            }
-            if (e instanceof JawsAbstractException jae) {
-                throw jae;
-            }
-            throw new JawsServiceException("WireClient request failed: url="
-                    + url.getUri() + " path=" + grpcPath, e);
+    /**
+     * Fail a non-retry attempt locally: remove the callback and complete the
+     * future exceptionally, or count the error when the callback was already
+     * removed (e.g. by a timeout). The failure surfaces through the future's
+     * {@code getValue()}/{@code get()} — no synchronous throw on the call path.
+     */
+    private void failLocalAttempt(Request request, DefaultResponseFuture responseFuture,
+                                  String grpcPath, Throwable e, io.netty.channel.Channel streamChannel) {
+        ResponseFuture future = removeCallback(request.getRequestId());
+        if (future != null) {
+            DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+            errorResponse.setThrowable(new JawsServiceException(
+                    "WireClient request failed: url=" + url.getUri() + " path=" + grpcPath, e));
+            future.onFailure(errorResponse);
+            // incrErrorCount is handled by the whenComplete callback when registered
+        } else {
+            incrErrorCount();
+        }
+        if (streamChannel != null) {
+            streamChannel.close();
         }
     }
 
@@ -445,50 +507,55 @@ public class WireClient extends AbstractHttp2Client {
         Compressor compressor = resolveCompressor(options);
 
         StreamSubject<Object> observer = new StreamSubject<>();
-        io.netty.channel.Channel streamChannel = null;
-        try {
-            io.netty.channel.Channel connChannel = activeChannel();
-            ClientStreamTracer tracer = newStreamTracer(grpcPath);
-
-            final io.netty.channel.Channel streamChannel0 =
-                    new Http2StreamChannelBootstrap(connChannel)
-                            .handler(new WireStreamStreamingHandler(
-                                    responseParser, observer, maxMessageSize, maxInboundMetadataSize,
-                                    decompressorRegistry(),
-                                    tracer))
-                            .open().syncUninterruptibly().getNow();
-            streamChannel = streamChannel0;
-
-            // Subscriber cancel() → RST_STREAM(CANCEL): the server observes the
-            // reset and stops producing (gRPC cancellation semantics)
-            observer.setOnCancel(() -> cancelStream(streamChannel0));
-
-            // Run client interceptor chain, then send the single request and half-close
-            Consumer<Throwable> writeFailure = t -> {
-                observer.onError(t);
+        ClientStreamTracer tracer = newStreamTracer(grpcPath);
+        activeChannelAsync().whenComplete((connChannel, connectError) -> {
+            if (connectError != null) {
+                log.error("Wire streaming request failed: url={} path={}", url.getUri(), grpcPath, connectError);
+                observer.onError(connectError);
                 incrErrorCount();
-                cancelStream(streamChannel0);
-            };
-            WireClientCall call = buildClientChain(new ClientCallImpl(
-                    streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure, tracer, true));
-            call.sendMessage(requestMessage);
-            call.halfClose();
+                return;
+            }
+            new Http2StreamChannelBootstrap(connChannel)
+                    .handler(new WireStreamStreamingHandler(
+                            responseParser, observer, maxMessageSize, maxInboundMetadataSize,
+                            decompressorRegistry(),
+                            tracer))
+                    .open().addListener((Future<Http2StreamChannel> openFuture) -> {
+                if (!openFuture.isSuccess()) {
+                    log.error("Wire streaming request failed: url={} path={}",
+                            url.getUri(), grpcPath, openFuture.cause());
+                    observer.onError(openFuture.cause());
+                    incrErrorCount();
+                    return;
+                }
+                final io.netty.channel.Channel streamChannel = openFuture.getNow();
 
-            return observer;
-        } catch (Exception e) {
-            log.error("Wire streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
-            observer.onError(e);
-            if (streamChannel != null) {
-                streamChannel.close();
-            }
-            incrErrorCount();
-            if (e instanceof JawsAbstractException jae) {
-                throw jae;
-            }
-            throw new JawsServiceException("WireClient requestStream failed: url="
-                    + url.getUri() + " path=" + grpcPath, e);
-        }
+                // Subscriber cancel() → RST_STREAM(CANCEL): the server observes the
+                // reset and stops producing (gRPC cancellation semantics)
+                observer.setOnCancel(() -> cancelStream(streamChannel));
+
+                // Run client interceptor chain, then send the single request and half-close
+                Consumer<Throwable> writeFailure = t -> {
+                    observer.onError(t);
+                    incrErrorCount();
+                    cancelStream(streamChannel);
+                };
+                try {
+                    WireClientCall call = buildClientChain(new ClientCallImpl(
+                            streamChannel, request, grpcPath, timeout, compressor,
+                            mutableCallContext(request), writeFailure, tracer, true));
+                    call.sendMessage(requestMessage);
+                    call.halfClose();
+                } catch (Exception e) {
+                    log.error("Wire streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
+                    observer.onError(e);
+                    streamChannel.close();
+                    incrErrorCount();
+                }
+            });
+        });
+
+        return observer;
     }
 
     /**
@@ -532,95 +599,92 @@ public class WireClient extends AbstractHttp2Client {
         // Use StreamSubject (synchronous delivery) to guarantee onNext fires
         // before onComplete on late subscribers.
         StreamSubject<Object> observer = new StreamSubject<>();
-        io.netty.channel.Channel streamChannel = null;
-        try {
-            io.netty.channel.Channel connChannel = activeChannel();
-            ClientStreamTracer tracer = newStreamTracer(grpcPath);
+        // Register before acquisition so a timeout during the dial can find
+        // and fail the future
+        registerCallback(request.getRequestId(), responseFuture);
 
-            final io.netty.channel.Channel streamChannel0 =
-                    new Http2StreamChannelBootstrap(connChannel)
-                            .handler(newResponseHandler(responseParser, responseFuture, tracer))
-                            .open().syncUninterruptibly().getNow();
-            streamChannel = streamChannel0;
+        // Bridge responseFuture → StreamSubject
+        responseFuture.whenComplete((response, throwable) -> {
+            if (throwable != null) {
+                observer.onError(throwable);
+            } else if (response.getThrowable() != null) {
+                observer.onError(response.getThrowable());
+            } else {
+                if (response.getValue() != null) {
+                    observer.onNext(response.getValue());
+                }
+                observer.onCompleted();
+            }
+            if (throwable == null || ExceptionUtils.isBizException(throwable)) {
+                resetErrorCount();
+            } else {
+                incrErrorCount();
+            }
+        });
 
-            // Register before writing so a fast failure can find and fail the future
-            registerCallback(request.getRequestId(), responseFuture);
+        ClientStreamTracer tracer = newStreamTracer(grpcPath);
+        activeChannelAsync().whenComplete((connChannel, connectError) -> {
+            if (connectError != null) {
+                log.error("Wire client-stream request failed: url={} path={}", url.getUri(), grpcPath, connectError);
+                failFuture(responseFuture).accept(connectError);
+                return;
+            }
+            new Http2StreamChannelBootstrap(connChannel)
+                    .handler(newResponseHandler(responseParser, responseFuture, tracer))
+                    .open().addListener((Future<Http2StreamChannel> openFuture) -> {
+                if (!openFuture.isSuccess()) {
+                    log.error("Wire client-stream request failed: url={} path={}",
+                            url.getUri(), grpcPath, openFuture.cause());
+                    failFuture(responseFuture).accept(openFuture.cause());
+                    return;
+                }
+                final io.netty.channel.Channel streamChannel = openFuture.getNow();
 
-            // Bridge responseFuture → StreamSubject
-            responseFuture.whenComplete((response, throwable) -> {
-                if (throwable != null) {
-                    observer.onError(throwable);
-                } else if (response.getThrowable() != null) {
-                    observer.onError(response.getThrowable());
-                } else {
-                    if (response.getValue() != null) {
-                        observer.onNext(response.getValue());
+                // Run the client interceptor chain once; the caller's subscription
+                // then drives the wrapped call, so interceptors observe every item
+                // and the trailing half-close. HEADERS go out lazily with the first
+                // item (or the half-close when the stream carries none).
+                Consumer<Throwable> writeFailure = t -> {
+                    DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
+                    errorResponse.setThrowable(t);
+                    responseFuture.onFailure(errorResponse);
+                    cancelStream(streamChannel);
+                };
+                final WireClientCall call = buildClientChain(new ClientCallImpl(
+                        streamChannel, request, grpcPath, timeout, compressor,
+                        mutableCallContext(request), writeFailure, tracer, false));
+
+                // Subscribe to the caller's request stream and forward each item
+                // to the network as it is produced.
+                requestStream.subscribe(new StreamObserver<>() {
+                    @Override
+                    public void onNext(Object item) {
+                        if (item instanceof Message msg) {
+                            call.sendMessage(msg);
+                        } else {
+                            log.error("Wire client-stream item must be a protobuf Message but got: {}",
+                                    item != null ? item.getClass().getName() : "null");
+                            call.cancel("invalid client-stream request item type");
+                            incrErrorCount();
+                        }
                     }
-                    observer.onCompleted();
-                }
-                if (throwable == null || ExceptionUtils.isBizException(throwable)) {
-                    resetErrorCount();
-                } else {
-                    incrErrorCount();
-                }
-            });
 
-            // Run the client interceptor chain once; the caller's subscription
-            // then drives the wrapped call, so interceptors observe every item
-            // and the trailing half-close. HEADERS go out lazily with the first
-            // item (or the half-close when the stream carries none).
-            Consumer<Throwable> writeFailure = t -> {
-                DefaultResponse errorResponse = new DefaultResponse(request.getRequestId());
-                errorResponse.setThrowable(t);
-                responseFuture.onFailure(errorResponse);
-                cancelStream(streamChannel0);
-            };
-            final WireClientCall call = buildClientChain(new ClientCallImpl(
-                    streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure, tracer, false));
-
-            // Subscribe to the caller's request stream and forward each item
-            // to the network as it is produced.
-            requestStream.subscribe(new StreamObserver<>() {
-                @Override
-                public void onNext(Object item) {
-                    if (item instanceof Message msg) {
-                        call.sendMessage(msg);
-                    } else {
-                        log.error("Wire client-stream item must be a protobuf Message but got: {}",
-                                item != null ? item.getClass().getName() : "null");
-                        call.cancel("invalid client-stream request item type");
+                    @Override
+                    public void onError(Throwable throwable) {
+                        log.error("Client stream request error", throwable);
+                        call.cancel("request stream error");
                         incrErrorCount();
                     }
-                }
 
-                @Override
-                public void onError(Throwable throwable) {
-                    log.error("Client stream request error", throwable);
-                    call.cancel("request stream error");
-                    incrErrorCount();
-                }
-
-                @Override
-                public void onCompleted() {
-                    call.halfClose();
-                }
+                    @Override
+                    public void onCompleted() {
+                        call.halfClose();
+                    }
+                });
             });
+        });
 
-            return observer;
-        } catch (Exception e) {
-            log.error("Wire client-stream request failed: url={} path={}", url.getUri(), grpcPath, e);
-            observer.onError(e);
-            if (streamChannel != null) {
-                streamChannel.close();
-            }
-            incrErrorCount();
-            if (e instanceof JawsAbstractException jae) {
-                throw jae;
-            }
-            throw new JawsServiceException("WireClient client-stream request failed: url="
-                    + url.getUri() + " path=" + grpcPath, e);
-        }
+        return observer;
     }
 
     /**
@@ -660,78 +724,76 @@ public class WireClient extends AbstractHttp2Client {
         Compressor compressor = resolveCompressor(options);
 
         StreamSubject<Object> observer = new StreamSubject<>();
-        io.netty.channel.Channel streamChannel = null;
-        try {
-            io.netty.channel.Channel connChannel = activeChannel();
-            ClientStreamTracer tracer = newStreamTracer(grpcPath);
-
-            final io.netty.channel.Channel streamChannel0 =
-                    new Http2StreamChannelBootstrap(connChannel)
-                            .handler(new WireStreamStreamingHandler(
-                                    responseParser, observer, maxMessageSize, maxInboundMetadataSize,
-                                    decompressorRegistry(),
-                                    tracer))
-                            .open().syncUninterruptibly().getNow();
-            streamChannel = streamChannel0;
-
-            // Subscriber cancel() → RST_STREAM(CANCEL)
-            observer.setOnCancel(() -> cancelStream(streamChannel0));
-
-            // Run the client interceptor chain once; the caller's subscription
-            // drives the wrapped call, so interceptors observe every outbound
-            // item and the trailing half-close. HEADERS go out lazily with the
-            // first item (or the half-close when the request stream is empty).
-            Consumer<Throwable> writeFailure = t -> {
-                observer.onError(t);
+        ClientStreamTracer tracer = newStreamTracer(grpcPath);
+        activeChannelAsync().whenComplete((connChannel, connectError) -> {
+            if (connectError != null) {
+                log.error("Wire bidi streaming request failed: url={} path={}", url.getUri(), grpcPath, connectError);
+                observer.onError(connectError);
                 incrErrorCount();
-                cancelStream(streamChannel0);
-            };
-            final WireClientCall call = buildClientChain(new ClientCallImpl(
-                    streamChannel0, request, grpcPath, timeout, compressor,
-                    mutableCallContext(request), writeFailure, tracer, false));
+                return;
+            }
+            new Http2StreamChannelBootstrap(connChannel)
+                    .handler(new WireStreamStreamingHandler(
+                            responseParser, observer, maxMessageSize, maxInboundMetadataSize,
+                            decompressorRegistry(),
+                            tracer))
+                    .open().addListener((Future<Http2StreamChannel> openFuture) -> {
+                if (!openFuture.isSuccess()) {
+                    log.error("Wire bidi streaming request failed: url={} path={}",
+                            url.getUri(), grpcPath, openFuture.cause());
+                    observer.onError(openFuture.cause());
+                    incrErrorCount();
+                    return;
+                }
+                final io.netty.channel.Channel streamChannel = openFuture.getNow();
 
-            // Subscribe to the caller's request stream and forward each item
-            // to the network as it is produced.
-            requestStream.subscribe(new StreamObserver<>() {
-                @Override
-                public void onNext(Object item) {
-                    if (item instanceof Message msg) {
-                        call.sendMessage(msg);
-                    } else {
-                        log.error("Wire bidi stream item must be a protobuf Message but got: {}",
-                                item != null ? item.getClass().getName() : "null");
-                        call.cancel("invalid bidi request item type");
+                // Subscriber cancel() → RST_STREAM(CANCEL)
+                observer.setOnCancel(() -> cancelStream(streamChannel));
+
+                // Run the client interceptor chain once; the caller's subscription
+                // drives the wrapped call, so interceptors observe every outbound
+                // item and the trailing half-close. HEADERS go out lazily with the
+                // first item (or the half-close when the request stream is empty).
+                Consumer<Throwable> writeFailure = t -> {
+                    observer.onError(t);
+                    incrErrorCount();
+                    cancelStream(streamChannel);
+                };
+                final WireClientCall call = buildClientChain(new ClientCallImpl(
+                        streamChannel, request, grpcPath, timeout, compressor,
+                        mutableCallContext(request), writeFailure, tracer, false));
+
+                // Subscribe to the caller's request stream and forward each item
+                // to the network as it is produced.
+                requestStream.subscribe(new StreamObserver<>() {
+                    @Override
+                    public void onNext(Object item) {
+                        if (item instanceof Message msg) {
+                            call.sendMessage(msg);
+                        } else {
+                            log.error("Wire bidi stream item must be a protobuf Message but got: {}",
+                                    item != null ? item.getClass().getName() : "null");
+                            call.cancel("invalid bidi request item type");
+                            incrErrorCount();
+                        }
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        log.error("Client bidi request stream error", throwable);
+                        call.cancel("request stream error");
                         incrErrorCount();
                     }
-                }
 
-                @Override
-                public void onError(Throwable throwable) {
-                    log.error("Client bidi request stream error", throwable);
-                    call.cancel("request stream error");
-                    incrErrorCount();
-                }
-
-                @Override
-                public void onCompleted() {
-                    call.halfClose();
-                }
+                    @Override
+                    public void onCompleted() {
+                        call.halfClose();
+                    }
+                });
             });
+        });
 
-            return observer;
-        } catch (Exception e) {
-            log.error("Wire bidi streaming request failed: url={} path={}", url.getUri(), grpcPath, e);
-            observer.onError(e);
-            if (streamChannel != null) {
-                streamChannel.close();
-            }
-            incrErrorCount();
-            if (e instanceof JawsAbstractException jae) {
-                throw jae;
-            }
-            throw new JawsServiceException("WireClient requestBiStream failed: url="
-                    + url.getUri() + " path=" + grpcPath, e);
-        }
+        return observer;
     }
 
     private static final AsciiString METHOD_POST = AsciiString.of("POST");
@@ -1202,8 +1264,10 @@ public class WireClient extends AbstractHttp2Client {
 
     /**
      * Delegate to the base class reconnect, called by {@link WireGoAwayHandler}
-     * when a GOAWAY frame is received. Package-private to restrict access
-     * to the wire module.
+     * when a GOAWAY frame is received. The dial is asynchronous: this returns
+     * immediately without blocking the event loop, and the connectivity
+     * tracker returns to READY via {@link #onConnectionEstablished} once the
+     * dial succeeds. Package-private to restrict access to the wire module.
      */
     void reconnectOnGoAway() {
         reconnect();

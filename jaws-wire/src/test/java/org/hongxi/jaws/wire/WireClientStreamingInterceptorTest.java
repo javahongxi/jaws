@@ -75,6 +75,9 @@ class WireClientStreamingInterceptorTest {
         outbound.onNext(item("c"));
         outbound.onCompleted();
 
+        // The send path rides the async stream open, so the traffic lands
+        // shortly after requestStream returns
+        awaitTraffic(sent, 3, halfClosed, true);
         assertEquals(3, sent.get(),
                 "client-streaming must call the wrapped call once per item, not just open metadata");
         assertTrue(halfClosed.get(), "half-close must reach the interceptor after the last item");
@@ -92,6 +95,7 @@ class WireClientStreamingInterceptorTest {
         outbound.onNext(item("a"));
         outbound.onNext(item("b"));
 
+        awaitTraffic(sent, 2, halfClosed, false);
         assertEquals(2, sent.get(), "bidi must route each outbound item through the chain");
     }
 
@@ -104,6 +108,7 @@ class WireClientStreamingInterceptorTest {
 
         client.requestStream(request("ServerStream"), HealthCheckResponse.parser());
 
+        awaitTraffic(sent, 1, halfClosed, true);
         assertEquals(1, sent.get(), "server-streaming sends its single request through the chain");
         assertTrue(halfClosed.get(),
                 "server-streaming must half-close through the chain so END_STREAM goes out");
@@ -118,6 +123,7 @@ class WireClientStreamingInterceptorTest {
 
         client.request(request("Unary"), HealthCheckResponse.parser());
 
+        awaitTraffic(sent, 1, halfClosed, true);
         assertEquals(1, sent.get(), "unary shares the same call path: one request message");
         assertTrue(halfClosed.get(), "unary now half-closes through the chain (unified send path)");
     }
@@ -252,6 +258,26 @@ class WireClientStreamingInterceptorTest {
         }
         throw new AssertionError("server never observed marker " + marker
                 + " for " + method + ", seen=" + serverObserved);
+    }
+
+    /**
+     * Poll until the wrapped call has observed the expected outbound traffic.
+     * The send path is asynchronous (it rides the stream-open callback), so
+     * the counters settle shortly after the request method returns.
+     */
+    private static void awaitTraffic(AtomicInteger sent, int expected,
+                                     AtomicBoolean halfClosed, boolean expectHalfClose) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (sent.get() >= expected && (!expectHalfClose || halfClosed.get())) {
+                return;
+            }
+            sleep(20);
+        }
+        assertEquals(expected, sent.get(), "outbound items must route through the chain");
+        if (expectHalfClose) {
+            assertTrue(halfClosed.get(), "half-close must reach the interceptor");
+        }
     }
 
     private static void sleep(long ms) {

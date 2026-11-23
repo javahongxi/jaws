@@ -16,8 +16,11 @@ import org.slf4j.LoggerFactory;
  *   <li>Logs the GOAWAY with the last stream ID and error code</li>
  *   <li>Transitions the connectivity state to IDLE</li>
  *   <li>Closes the current connection</li>
- *   <li>Triggers an immediate reconnect so the next RPC uses a fresh
- *       connection without waiting for a lazy reconnect on the request path</li>
+ *   <li>Triggers an asynchronous reconnect once the close completes, so the
+ *       next RPC uses a fresh connection without waiting for a lazy reconnect
+ *       on the request path. The dial never blocks this event loop; the
+ *       connectivity tracker returns to READY via the client's
+ *       connection-established hook</li>
  * </ol>
  * <p>
  * In-flight streams on the old connection will fail and are handled by
@@ -46,17 +49,11 @@ class WireGoAwayHandler extends ChannelDuplexHandler {
                 // Transition connectivity state: READY → IDLE (graceful, not a failure)
                 client.getConnectivityTracker().transitionTo(ConnectivityState.IDLE);
 
-                // Close the connection
-                ctx.close();
-
-                // Trigger immediate reconnect so the next RPC doesn't pay
-                // the lazy reconnect cost
-                client.reconnectOnGoAway();
-
-                // Restore connectivity state after successful reconnect
-                if (client.isAvailable()) {
-                    client.getConnectivityTracker().transitionTo(ConnectivityState.READY);
-                }
+                // Close the connection, then reconnect once the close lands:
+                // reconnect() skips slots whose channel is still active, and
+                // ctx.close() is asynchronous — reconnecting inline here would
+                // race the close and silently skip the dial.
+                ctx.close().addListener(f -> client.reconnectOnGoAway());
             } finally {
                 ReferenceCountUtil.release(goAwayFrame);
             }

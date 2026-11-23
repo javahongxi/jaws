@@ -78,6 +78,7 @@ WIRE_INTEROP_MANAGED="org.hongxi.jaws.sample.wire.interop.ManagedChannelDemo"
 WIRE_INTEROP_KEEPALIVE="org.hongxi.jaws.sample.wire.interop.WireKeepaliveDemo"
 WIRE_INTEROP_SERVER_INTERCEPTOR="org.hongxi.jaws.sample.wire.interop.WireInterceptorDemo"
 WIRE_INTEROP_CLIENT_INTERCEPTOR="org.hongxi.jaws.sample.wire.interop.WireClientInterceptorDemo"
+WIRE_INTEROP_GOAWAY="org.hongxi.jaws.sample.wire.interop.WireGoAwayDemo"
 ADAPTIVE_PROVIDER_MAIN="org.hongxi.jaws.sample.adaptive.provider.AdaptiveProvider"
 ADAPTIVE_CONSUMER_MAIN="org.hongxi.jaws.sample.adaptive.consumer.AdaptiveConsumer"
 HARBOR_BOOTSTRAP_MAIN="org.hongxi.jaws.harbor.HarborBootstrap"
@@ -117,7 +118,7 @@ usage() {
     netty [port]       One-shot Netty direct-connect sample (no registry required)
     http2 [port]       One-shot HTTP/2 direct-connect sample (incl. Server Streaming, no registry required)
     wire [port]        One-shot Wire (gRPC wire format) direct-connect sample (no registry required, default port 50051)
-    interop [--keepalive]  Run all wire-interop demos (GrpcCallWireDemo, WireHealthDemo, ManagedChannelDemo, WireCallGrpcDemo)
+    interop [--keepalive]  Run all wire-interop demos (GrpcCallWireDemo, WireHealthDemo, ManagedChannelDemo, WireGoAwayDemo, WireCallGrpcDemo)
                        Add --keepalive to also run WireKeepaliveDemo (~55s)
     adaptive [port]    One-shot Adaptive direct-connect sample (single port, multi-protocol, no registry required)
     harbor-standalone [port]  Start HarborServer in standalone mode (default port 19848)
@@ -1110,7 +1111,12 @@ cmd_wire_interop() {
     #    call shapes against a self-contained grpc-java server (self-contained)
     run_interop_demo "WireClientInterceptorDemo (client interceptors, 4 shapes)" "$WIRE_INTEROP_CLIENT_INTERCEPTOR"
 
-    # 6. WireCallGrpcDemo: WireClient -> grpc-java server (needs GrpcServerMain)
+    # 6. WireGoAwayDemo: grpc-java server with maxConnectionAge forces GOAWAY;
+    #    WireClient must go READY -> IDLE and async-reconnect back to READY
+    #    (self-contained)
+    run_interop_demo "WireGoAwayDemo (server GOAWAY, async reconnect)" "$WIRE_INTEROP_GOAWAY"
+
+    # 7. WireCallGrpcDemo: WireClient -> grpc-java server (needs GrpcServerMain)
     total=$((total + 1))
     echo ""
     echo "================================================================"
