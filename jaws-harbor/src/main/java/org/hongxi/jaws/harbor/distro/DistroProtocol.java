@@ -383,15 +383,26 @@ public class DistroProtocol {
     }
 
     /**
-     * Periodic verify: send per-client revisions to all peers.
+     * Periodic verify: send per-client revisions to all peers. Package-private
+     * so tests can drive one round directly instead of waiting on the scheduler.
      */
-    private void runVerifyTask() {
+    void runVerifyTask() {
         try {
             Set<ClusterMember> peers = clusterManager.allMembersExceptSelf();
             if (!peers.isEmpty()) {
-                // Build per-client verify data from native clients only
+                // Build per-client verify data from native clients that hold
+                // replicable content. Verify compares exactly what Distro syncs:
+                // a session with no instances (config-only, subscribe-only, or
+                // fully expired) is never replicated — doSyncChange emits a
+                // DELETE for it and onSnapshot skips it — so the peer cannot
+                // hold a copy. Presenting it would report a permanent mismatch
+                // that resyncToPeer's hasContent guard can never repair: a WARN
+                // every verify tick, forever.
                 List<ClientVerifyInfo> verifyInfos = new ArrayList<>();
                 for (ClientSession session : connectionManager.allNativeClientSessions()) {
+                    if (session.getTotalInstanceCount() == 0) {
+                        continue;
+                    }
                     verifyInfos.add(new ClientVerifyInfo(session.getConnectionId(), session.getRevision()));
                 }
                 if (!verifyInfos.isEmpty()) {
