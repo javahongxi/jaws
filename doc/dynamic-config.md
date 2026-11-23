@@ -89,8 +89,10 @@ HarborDynamicConfiguration (jaws-registry-harbor)  # localCache + 框架 Configu
   `client/` 依赖 `configcenter`）；「收到内容 → 更新缓存并分发框架监听」的胶水
   放在 `jaws-registry-harbor` 的 `HarborDynamicConfiguration`，与 nacos 腿的
   `NacosDynamicConfiguration` 逐段同形。
-- **不做**：console、版本回滚、灰度发布、审计；`casMd5` 接收但忽略（last-write-wins）；
-  fuzzy watch 仍明确拒绝。读语义为节点内存直读（最终一致），不做 linearizable read。
+- **不做**：console、版本回滚、灰度发布、审计；fuzzy watch 仍明确拒绝。`casMd5` 在
+  raft apply 全序点判定 CAS：键已存在且 md5 不匹配即拒绝（不 publish、不 notify），
+  键缺失直接创建（首次发布不可能冲突），空 casMd5 无条件写入（last-write-wins）。
+  读语义为节点内存直读（最终一致），不做 linearizable read。
 
 示例（改全局默认超时为 500ms、热生效；再撤销回落默认，curl 契约与旧版一致）：
 

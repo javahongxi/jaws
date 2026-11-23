@@ -55,7 +55,7 @@ ConfigService.publishConfig / removeConfig（nacos-client、HarborClient 或 HTT
 | `RaftTransport` / `WireRaftTransport` | JRaft RPC 层（`RpcService`） | 异步接口；实现照 `WireHarborNodeTransport` 的模式走 wire 一元 |
 | `StateMachine` / `HarborStateMachine` | JRaft `StateMachine` / Nacos `NacosStateMachine` | `onApply` 按 operation 分流 naming/config 两种命令方言；快照 = 持久 client 全量 + config 全量 |
 | `NamingCommand` | Nacos `WriteRequest`（ADD/DELETE/CHANGE） | REGISTER / DEREGISTER / HEALTH / NOOP 四种操作 |
-| `ConfigCommand` | Nacos config 的 `ConfigPublishRequest`/`ConfigRemoveRequest` 落库动作 | CONFIG_PUBLISH / CONFIG_REMOVE；casMd5 忽略，last-write-wins |
+| `ConfigCommand` | Nacos config 的 `ConfigPublishRequest`/`ConfigRemoveRequest` 落库动作 | CONFIG_PUBLISH / CONFIG_REMOVE；casMd5 在 apply 全序点判定 CAS，冲突拒绝；空 casMd5 才是 last-write-wins |
 | `ConfigStorage` / `ConfigItem` | `ConfigCacheService` + `CacheItem`（去掉数据库层） | 内存 groupKey 索引，content/md5/lastModified |
 | `ConfigListenContext` / `ConfigChangeNotifier` | `ConfigChangeListenContext` + apply 后的本地通知 | 监听按连接登记，md5 比对后只推变化键 |
 | `HarborRaftProtocol` | Nacos `CPProtocol`（JRaft 门面） | 写入口 + leader 转发；Nacos 由 JRaft 的 redirect 机制代劳 |
