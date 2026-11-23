@@ -160,7 +160,7 @@ public class HarborxConsumer {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setProtocol(protocolName);
         registryConfig.setId("defaultRegistry");
-        registryConfig.setAddress("127.0.0.1:19848,127.0.0.1:19849,127.0.0.1:19850");
+        registryConfig.setAddress("127.0.0.1:" + HARBOR_PORT);
         registryConfig.setPort(HARBOR_PORT);
         return registryConfig;
     }
