@@ -35,9 +35,11 @@ import org.slf4j.LoggerFactory;
  *   <li>deregister the connection's published instances (notifying subscribers);</li>
  *   <li>evict the connection record and its {@link ClientSession}, completing
  *       the push subject;</li>
- *   <li>propagate a Distro DELETE to peers if (and only if) the client owned
- *       anything — peers converge immediately instead of waiting for the next
- *       verify cycle.</li>
+ *   <li>propagate a Distro DELETE to peers if the client owned anything OR a
+ *       coalesced push is still queued for it — a graceful deregister empties
+ *       the ownership snapshot while the peer may still hold the last CHANGE,
+ *       and the queued push dies with the evicted session; peers converge
+ *       immediately instead of stranding the replica.</li>
  * </ol>
  * The transaction is idempotent: whichever signal evicts the session first wins,
  * and every later call observes {@code syncData == null} and no-ops, so the
@@ -118,8 +120,17 @@ public class ConnectionCleanup {
         // whatever is left; completes the push subject exactly once).
         connectionManager.remove(connectionId);
 
-        // (5) Tell peers the client is gone — only if it owned service data.
-        if (syncData != null && !syncData.getServiceKeys().isEmpty()) {
+        // (5) Tell peers the client is gone. Current ownership alone cannot
+        // witness this: a graceful deregister empties the snapshot while a
+        // coalesced push is still queued, and that push dies with the session
+        // (buildClientSyncData returns null once evicted) — stranding the
+        // peer's last CHANGE with no later repair (verify no longer sees the
+        // client here). A queued ticket therefore counts as ownership too;
+        // requestSyncDelete cancels it and converges the peers. A settled
+        // deregister (ticket already fired its DELETE) and a client that never
+        // published both leave nothing queued and emit nothing.
+        if (syncData != null
+                && (!syncData.getServiceKeys().isEmpty() || distroProtocol.hasPendingSync(connectionId))) {
             distroProtocol.requestSyncDelete(connectionId);
         }
     }

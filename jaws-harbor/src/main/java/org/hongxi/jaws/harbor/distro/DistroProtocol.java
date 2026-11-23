@@ -171,6 +171,17 @@ public class DistroProtocol {
     }
 
     /**
+     * Whether a coalesced push for this client is still queued. A queued ticket
+     * means a change was registered but has not reached the peers yet — the
+     * closure transaction uses this to detect "the peer may still hold data"
+     * even when the ownership snapshot has already been emptied by a graceful
+     * deregister (see {@code ConnectionCleanup}).
+     */
+    public boolean hasPendingSync(String connectionId) {
+        return pendingSync.containsKey(connectionId);
+    }
+
+    /**
      * Immediately propagate a client's removal and cancel any coalesced CHANGE
      * pending for it — a DELETE must not be swallowed by a queued window.
      */
