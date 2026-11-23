@@ -188,6 +188,15 @@ class RaftNodeTest {
         group.forEach(RaftNode::start);
         await(() -> leaderCount(group) == 1, "exactly one leader must emerge");
         RaftNode isolated = leaderOf(group);
+        // isLeader flips BEFORE the new leader's NOOP commits (becomeLeader appends
+        // it and replicates asynchronously). Reading the baseline here would race
+        // the in-flight NOOP: its AppendEntries responses can land after the
+        // partition switch and advance commitIndex past the captured value. Settle
+        // the NOOP first — it is the only entry in the log at this point — so the
+        // baseline is stable and the partition isolates a leader with nothing
+        // in flight.
+        await(() -> isolated.status().commitIndex() >= 1,
+                "the new leader's NOOP must commit before the baseline is captured");
         long commitBefore = isolated.status().commitIndex();
 
         transport.blocked.add(isolated.nodeId());
