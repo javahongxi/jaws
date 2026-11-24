@@ -8,6 +8,18 @@
 
 Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框架。它用约 Dubbo 核心骨架 1/7 的代码量，完整实现了一个工业级 RPC 的核心机制，支持 Netty TCP 与 HTTP/2 多传输、gRPC 线格式对等互通、三种流式调用、应用级服务发现、自适应负载均衡与高可用容错，实测约 14 万 QPS；另自带兼容 nacos-client 的轻量级注册与配置中心 Harbor，无需外部依赖即可跑通全链路。目标是成为 **RPC 骨架的标杆**——读完 Jaws 源码，再去读 Dubbo 会快很多。
 
+## 模块
+
+三个核心模块按 **jaws-core → jaws-wire → jaws-harbor** 层层依赖（后者依赖前者），构成 Jaws 的核心资产：
+
+| 核心模块      | 职责                                                                                                                                                           |
+|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `jaws-core`   | RPC 骨架六层（传输 → 协议/序列化 → 代理 → 集群 → 注册发现 → 配置）与 SPI 扩展机制；jaws 协议支持 Netty TCP 与 HTTP/2 传输，亦支持 HTTP/1.1 REST 与单端口自适应 |
+| `jaws-wire`   | 基于 core 的基础设施，零 grpc-java 依赖手写 gRPC 线格式，与原生 gRPC 双向互通，支持一元及三种流式调用                                                          |
+| `jaws-harbor` | 基于 wire 的 WireServer 实现兼容 nacos-client 的轻量级注册中心与配置中心：临时实例走 Distro AP，持久实例与配置走自研 Raft CP                                   |
+
+外围模块围绕核心链提供契约、适配与验证。
+
 ## 特性
 
 - **双协议支持** — 提供两种协议：以 Java 接口即契约的 jaws 协议，和以 IDL 为契约、对等 gRPC 的 wire 协议
@@ -31,20 +43,6 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 - **泛化调用** — 无需依赖接口 JAR 包即可发起 RPC 调用，适用于网关、测试平台等场景
 - **服务鉴权** — Provider 配置 token 后 Consumer 自动从注册中心获取并携带，防止未授权调用
 - **可观测性** — Micrometer 指标 + OpenTelemetry 链路追踪，traceId 自动注入日志
-
-## 模块
-
-三个核心模块按 **jaws-core → jaws-wire → jaws-harbor** 层层依赖（后者依赖前者），构成 Jaws 的核心资产：
-
-| 核心模块      | 职责                                                                                                                                                           |
-|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `jaws-core`   | RPC 骨架六层（传输 → 协议/序列化 → 代理 → 集群 → 注册发现 → 配置）与 SPI 扩展机制；jaws 协议支持 Netty TCP 与 HTTP/2 传输，亦支持 HTTP/1.1 REST 与单端口自适应 |
-| `jaws-wire`   | 基于 core 的基础设施，零 grpc-java 依赖手写 gRPC 线格式，与原生 gRPC 双向互通，支持一元及三种流式调用                                                          |
-| `jaws-harbor` | 基于 wire 的 WireServer 实现兼容 nacos-client 的轻量级注册中心与配置中心：临时实例走 Distro AP，持久实例与配置走自研 Raft CP                                   |
-
-外围模块围绕核心链提供契约、适配与验证：`jaws-stream-api` 定义流式收发的中立契约，`jaws-wire-proto` 隔离 protoc 生成物；`jaws-registry-*` 提供 Registry 与 DynamicConfiguration 双 SPI 的三种实现（ZooKeeper / Nacos / Harbor），按所用注册中心引入其一；`jaws-spring-boot` 与 `jaws-extensions` 提供 Spring Boot 集成及指标/链路追踪扩展；`jaws-samples` 为一键实跑示例矩阵（`run-sample.sh`），含 gRPC 互操作验证与压测。
-
-完整模块地图与 `jaws-core` 内部分层详见[架构总览](doc/architecture.md)。
 
 ## 快速开始
 
