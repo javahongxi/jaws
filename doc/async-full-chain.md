@@ -453,6 +453,45 @@ NettyChannelHandler → removeCallback        │
 
 最后别忘了第三个竞争者：超时线程（上面的 `jaws-client-timeout` 调度线程）也会尝试完成同一个 future。`ConcurrentMap.remove()` 的原子性保证响应、超时、`close()` 三方只有一方能认领成功——认领失败方连碰都不该碰，这就是 `removeCallback` 注释里 "atomically claim" 的含义。
 
+### 6.2 请求方向的交接：编码在业务线程，写投递任务队列
+
+§6.1 拆的是回程（IO → 业务），去程（业务 → IO）的交接机制完全不同：**不是 future，而是 Netty 的任务队列**。
+
+先看线程前提：所有 `NettyClient` 共享一个静态 `NioEventLoopGroup`（daemon 线程），每条连接注册时绑定到组里**一个固定的 EventLoop 线程**，终其一生这条连接的 IO 事件与 pipeline 执行都只在这一个线程上。这是 Netty 的串行化设计，也是"跨线程写必须投递任务"的根源。
+
+`NettyClient.request()` 里，`writeAndFlush` 之前的所有工作都在业务线程上：
+
+```java
+// NettyClient.request() —— 以下全部在业务线程执行
+DefaultResponseFuture responseFuture = new DefaultResponseFuture(request, timeout);
+registerCallback(request.getRequestId(), responseFuture);  // 先注册后发送（§6.1）
+
+ByteBuf buf = ch.alloc().buffer();
+JawsCodec.encode(request, buf);                            // 编码也在业务线程
+
+ch.writeAndFlush(buf).addListener(...);                    // 投递写任务，立即返回
+return responseFuture;
+```
+
+两个值得注意的点：
+
+**编码不占 IO 线程**。jaws 没有把编码器放进 outbound pipeline，而是业务线程自己编好、把成品 `ByteBuf` 交出去——序列化开销可能不小，留在业务线程就不占 EventLoop。
+
+**writeAndFlush 是交接点**。Netty 内部（`AbstractChannelHandlerContext.write`）判断调用者是否就是这条连接的 EventLoop 线程：是则直接走 pipeline（请求场景几乎不会命中）；否则把写操作包装成 WriteTask 投递到该 EventLoop 的 MPSC 任务队列，必要时 wakeup 正阻塞在 select 上的 IO 线程，然后立即返回 `ChannelFuture`。EventLoop 线程随后取出任务，走 outbound pipeline → `ChannelOutboundBuffer` → flush 到 socket（一次写不完就注册 `OP_WRITE` 等可写事件继续）。`ByteBuf` 随任务过队，队列的 offer/poll 建立 happens-before，业务线程写好的字节对 IO 线程完整可见；引用计数的释放责任也一并移交——IO 线程写完负责 release。
+
+写结果的通知是反方向的交接，机制回到 future：`writeAndFlush` 返回的 `ChannelFuture` 上挂的 listener 在 IO 线程回调——**写成功**才给 `responseFuture` 挂 `whenComplete` 做熔断计数（与写失败分支的 `incrErrorCount` 互斥，避免重复计数）；**写失败**则 `removeCallback` 原子认领 + `onFailure` 完成 future，阻塞在 `join()` 的业务线程立刻拿到错误，不用干等超时。
+
+两个方向对照：
+
+| | 请求方向（业务 → IO） | 响应方向（IO → 业务） |
+|---|---|---|
+| 交接载体 | EventLoop 的 MPSC 任务队列 | `CompletableFuture.complete()` |
+| 交出去的东西 | WriteTask + ByteBuf | Response 结果值 |
+| 执行权 | 业务线程投完任务即走，IO 线程执行写 | 同步：unpark 业务线程；异步：IO 线程就地跑回调 |
+| 完成通知 | ChannelFuture listener（IO 线程回调） | whenComplete 回调链 / 唤醒 join |
+
+一句话：**去程是"投递任务"，回程是"完成 future"**。去程业务线程不等待——这正是 §0 里那次 +34% 异步化改造的点：原来对 `writeAndFlush` 的 future 调 `awaitUninterruptibly`，业务线程先等字节落 socket 再等响应，阻塞两次；改成投完即走后才挣来那笔跃迁。
+
 ## 7. 容错层：FailbackRegistry 异步重试
 
 异步不仅体现在单次调用上，也体现在容错上——但 jaws 把"异步重试"收敛到了**注册中心层**这一处。`FailbackRegistry` 是所有具体注册中心（ZooKeeper / Nacos）的基类，给 register/unregister/subscribe/unsubscribe 加了失败补偿语义：失败的操作入队，由一个后台守护线程按固定周期重试；发现（lookup）在注册中心不可达时降级到上一次成功的结果。
