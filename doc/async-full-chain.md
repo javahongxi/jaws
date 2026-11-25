@@ -357,9 +357,15 @@ pipeline.addLast("handler", new NettyChannelHandler((Object message) -> {
 超时调度在 [AbstractClient](https://github.com/javahongxi/jaws/blob/main/jaws-core/src/main/java/org/hongxi/jaws/transport/AbstractClient.java) 里统一管理：
 
 ```java
-private static final HashedWheelTimer timeoutTimer = new HashedWheelTimer(
-        new io.netty.util.concurrent.DefaultThreadFactory("jaws-client-timeout", true),
-        30, TimeUnit.MILLISECONDS);
+private static final ScheduledExecutorService timeoutTimer =
+        new ScheduledThreadPoolExecutor(1,
+                new DefaultThreadFactory("jaws-client-timeout", true));
+// removeOnCancelPolicy: cancellation is an O(log n) heap delete with no
+// cancelled-entry garbage — HashedWheelTimer's bucket-list Timeout.remove()
+// was measured at ~10% CPU under load
+static {
+    ((ScheduledThreadPoolExecutor) timeoutTimer).setRemoveOnCancelPolicy(true);
+}
 
 public void registerCallback(long requestId, ResponseFuture responseFuture) {
     if (callbackMap.size() >= MAX_INFLIGHT_REQUESTS) {
@@ -369,21 +375,30 @@ public void registerCallback(long requestId, ResponseFuture responseFuture) {
 
     int timeout = responseFuture.getTimeout();
     if (timeout > 0) {
-        Timeout timerTimeout = timeoutTimer.newTimeout(t -> {
+        ScheduledFuture<?> timerTimeout = timeoutTimer.schedule(() -> {
             ResponseFuture future = callbackMap.remove(requestId);
             if (future != null) {
                 timeoutMap.remove(requestId);
-                future.cancel();
+                future.cancel("request timed out after " + timeout + "ms",
+                        JawsErrorCode.SERVICE_TIMEOUT);
             }
         }, timeout, TimeUnit.MILLISECONDS);
         timeoutMap.put(requestId, timerTimeout);
     }
 }
+
+public ResponseFuture removeCallback(long requestId) {
+    ScheduledFuture<?> timeout = timeoutMap.remove(requestId);
+    if (timeout != null) {
+        timeout.cancel(false);  // removeOnCancelPolicy: O(log n) 堆删除，不留垃圾
+    }
+    return callbackMap.remove(requestId);
+}
 ```
 
 三个设计点：
 
-**HashedWheelTimer 而不是 ScheduledThreadPoolExecutor**。RPC 客户端在途请求成千上万时，`ScheduledThreadPoolExecutor` 的堆操作是 O(log n) 且有全局锁竞争；时间轮按 tick 环形槽管理，插入 O(1)。精度受 tick 间隔（30ms）限制，但对 RPC 超时这种百毫秒级的场景足够。
+**ScheduledThreadPoolExecutor + removeOnCancelPolicy，而不是 HashedWheelTimer**。这是一次被实测推翻的选型：早期用的是时间轮（插入 O(1)，看似更适合成千上万的在途请求），但负载下实测时间轮桶链表上的 `Timeout.remove()` 消耗约 10% CPU——RPC 超时任务的主流命运不是到期触发，而是响应正常到达后被 `removeCallback` 取消，**取消才是热路径**。换成单线程 `ScheduledThreadPoolExecutor` 并开 `setRemoveOnCancelPolicy(true)`，取消是 O(log n) 堆删除且当场移除条目，不留 cancelled 垃圾（默认策略下被取消的任务会留在队列里直到到期才清）。教训是：**选调度器要看真实操作混合比，而不是单看插入复杂度**。
 
 **回调移除的三种触发**。注释写得很清楚：`response received / timeout task cancels / close()`。三者共享同一个不变量——`removeCallback` 是幂等的，`ConcurrentMap.remove` 保证只有一个触发者能拿到 Future 并完成它。
 
@@ -436,7 +451,7 @@ NettyChannelHandler → removeCallback        │
 1. **异步省掉的不是数据交接，而是「一个线程阻塞等待 + 一次线程唤醒/切换」的开销**。两条路的数据交接机制完全相同，都是 `complete()` 写 result 字段；区别只在完成之后——是唤醒一个等着的线程（同步），还是就地执行挂着的回调（异步）。
 2. **异步路径反而更要小心 IO 线程阻塞**：完成前注册的用户回调直接跑在 event loop 上，里面一个 `join()` 或慢逻辑就卡住这条连接上所有多路复用的请求。这是 §5 服务端零阻塞原则在消费端的镜像。
 
-最后别忘了第三个竞争者：超时线程（上面的 HashedWheelTimer）也会尝试完成同一个 future。`ConcurrentMap.remove()` 的原子性保证响应、超时、`close()` 三方只有一方能认领成功——认领失败方连碰都不该碰，这就是 `removeCallback` 注释里 "atomically claim" 的含义。
+最后别忘了第三个竞争者：超时线程（上面的 `jaws-client-timeout` 调度线程）也会尝试完成同一个 future。`ConcurrentMap.remove()` 的原子性保证响应、超时、`close()` 三方只有一方能认领成功——认领失败方连碰都不该碰，这就是 `removeCallback` 注释里 "atomically claim" 的含义。
 
 ## 7. 容错层：FailbackRegistry 异步重试
 
@@ -546,7 +561,7 @@ jaws 的选择是：
 - **传输层**：`MessageHandler.handleAsync()` 是一等公民的异步契约
 - **Provider 端**：`invoke()` 返回 `CompletableFuture<Response>`，自动适配同步/异步业务方法
 - **IO 层**：`whenComplete` 写回响应，event loop 零阻塞
-- **响应回调**：`DefaultResponseFuture` + `HashedWheelTimer` 超时调度，传输无关
+- **响应回调**：`DefaultResponseFuture` + `ScheduledThreadPoolExecutor` 超时调度（removeOnCancel），传输无关
 - **容错层**：`FailbackRegistry` 注册补偿异步重试（集群层 `FailbackCluster` 已移除，异步重试收敛到 registry 层）
 
 七层，每层都是异步的，所以全链路才是异步的。
