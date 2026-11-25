@@ -126,7 +126,24 @@ CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持
 | 等待方式 | 无等待 | `request.future.orTimeout(5s)`，超时映射 FLUSH_TIMEOUT |
 | fsync 摊薄 | 天然批量（一个节拍刷全部脏页） | 一次 `commitLog.flush()` 满足 flushOffset 之前的**所有**请求 |
 
-组提交的正确性依据：**物理偏移全局单调**，"刷过我的末尾"对任何更早请求都是充分的持久性证明，无需 per-request fsync。swap-list（requestsWrite/requestsRead 双列表 + ReentrantLock/Condition）让提交与刷盘互不阻塞。
+### 5.1 组提交不是批量攒消息，而是并发请求分摊一次 fsync
+
+先澄清一个易混概念：**批量（batching）是主动攒**——发送方凑够 N 条或等够 T 毫秒才发一次（如 Kafka producer 的 linger.ms），代价是人为引入等待；**组提交（group commit）是被动分摊**——写入仍是一条一条独立进行的，被"组"起来的是刷盘动作：SYNC_FLUSH 下每条消息都要求"我的数据落盘了才返回 PUT_OK"，若每条各刷一次盘，N 条 = N 次 fsync（毫秒级重操作），吞吐直接崩。
+
+组提交的观察：fsync 按偏移刷，刷到偏移 X 就把 X 之前的所有数据都持久化了。正确性依据是**物理偏移全局单调**（CommitLog 只追加），"刷过我的末尾"对任何更早请求都是充分的持久性证明，无需 per-request fsync。[GroupCommitService](../jaws-store/src/main/java/org/hongxi/jaws/store/GroupCommitService.java) 的实际运转：
+
+```
+t0  消息 A 写完，submitFlush(nextOffset=100)，future 挂起
+t1  刷盘线程取走请求，开始 commitLog.flush()（fsync 执行中，毫秒级）
+t2  fsync 期间 B/C/D 陆续写完，各自 submitFlush(200/300/400)
+    ——进 requestsWrite 排队，没有各刷各的
+t3  fsync 完成，flushedOffset=400
+    → A/B/C/D 四个 future 全部 complete，一次 fsync 满足四个请求
+```
+
+swap-list（requestsWrite/requestsRead 双列表 + ReentrantLock/Condition）让提交与刷盘互不阻塞：刷盘线程持锁只做一次指针交换就取走整批，真正的 fsync 在锁外执行，期间新请求照常进 requestsWrite 自动成为下一批；完成判定即 `request.nextOffset <= flushedOffset`。
+
+吞吐与延迟的账：并发越高，一次 fsync 摊的请求越多，单条分摊成本趋近于零（§10 实测 SYNC_FLUSH 不慢于 ASYNC_FLUSH 的成因）；低并发时一批只有一个请求，退化为逐条 fsync，延迟也不比"每条各刷"更差——每个请求最多等一次 fsync。词源是 MySQL/InnoDB 的 redo/binlog group commit（多事务共享一次日志刷盘），RocketMQ 的 GroupCommitService 是同款思路在 MQ 存储上的应用。
 
 `MappedFileQueue.flush()` 先刷旧文件再返回最后文件的 flushed 前沿，保证返回值是真实的持久性边界。
 
