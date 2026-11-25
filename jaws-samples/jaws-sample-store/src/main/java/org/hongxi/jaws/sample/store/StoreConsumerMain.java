@@ -1,0 +1,49 @@
+package org.hongxi.jaws.sample.store;
+
+import org.hongxi.jaws.store.client.StoreConsumer;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Store consumer demo: subscribes statically to one queue, counts messages
+ * and exits once the expected count arrives (or the timeout fires).
+ *
+ * <pre>
+ * Properties:
+ *   -DdirectUrl=127.0.0.1:10911   broker address
+ *   -Dexpected=1000               messages to wait for
+ *   -Dgroup=store-demo-group      consumer group (offset file namespace)
+ *   -Dtopic=store-demo            source topic, queue 0
+ * </pre>
+ *
+ * <p>Offsets are client-managed and persisted, so a re-run resumes where
+ * the previous run stopped instead of re-reading the whole queue.
+ */
+public class StoreConsumerMain {
+
+    public static void main(String[] args) throws Exception {
+        String directUrl = System.getProperty("directUrl", "127.0.0.1:10911");
+        int expected = Integer.parseInt(System.getProperty("expected", "1000"));
+        String group = System.getProperty("group", "store-demo-group");
+        String topic = System.getProperty("topic", "store-demo");
+
+        AtomicInteger received = new AtomicInteger();
+        CountDownLatch latch = new CountDownLatch(expected);
+        StoreConsumer consumer = new StoreConsumer(directUrl, group);
+        consumer.subscribe(topic, 0, messages -> {
+            received.addAndGet(messages.size());
+            messages.forEach(m -> latch.countDown());
+        });
+        consumer.start();
+        System.out.println("Consumer started, waiting for " + expected + " messages ...");
+
+        boolean complete = latch.await(30, TimeUnit.SECONDS);
+        System.out.println("Received " + received.get() + " message(s), complete=" + complete);
+        consumer.shutdown();
+        if (!complete) {
+            System.exit(1);
+        }
+    }
+}

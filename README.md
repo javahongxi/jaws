@@ -18,6 +18,8 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 | `jaws-wire`   | 基于 core 的基础设施，零 grpc-java 依赖手写 gRPC 线格式，与原生 gRPC 双向互通，支持一元及三种流式调用                                                          |
 | `jaws-harbor` | 基于 wire 的 WireServer 实现兼容 nacos-client 的轻量级注册中心与配置中心：临时实例走 Distro AP，持久实例与配置走自研 Raft CP                                   |
 
+jaws-store 是 RocketMQ 风格存储引擎实践模块，以长轮询、高并发异步发送等 MQ 负载对 jaws 协议做高吞吐实战验证，类比 harbor 之于 wire 协议的兼容性验证。
+
 外围模块围绕核心链提供契约、适配与验证。
 
 ## 特性
@@ -217,6 +219,7 @@ public class MyRunner implements CommandLineRunner {
 | [注册中心对比](doc/registry-comparison.md)                 | Nacos 与 ZooKeeper 实现对比                           |
 | [自研注册中心解读](doc/harbor-vs-nacos.md)                 | 内置注册中心与 Nacos 的详细设计对比                   |
 | [Harbor Raft 精读](doc/harbor-raft.md)                     | 持久实例与配置中心的自研 Raft CP 设计精读             |
+| [jaws-store 存储引擎](doc/jaws-store.md)                   | RocketMQ 风格存储内核设计与 jaws 协议高吞吐验证       |
 | [Nacos Config 原理解读](doc/nacos-config.md)               | 配置域从写 DB 到客户端收变更的设计剖析                |
 | [动态配置](doc/dynamic-config.md)                          | 全局/服务级/方法级三层热更新                          |
 | [泛化调用](doc/generic-invocation.md)                      | 无需接口 JAR 包即可发起 RPC 调用                      |

@@ -55,6 +55,8 @@ RAFT_CONSUMER_MODULE="jaws-samples/jaws-sample-raft-consumer"
 # The same Raft CP path, reached through the nacos leg (real nacos-client).
 RAFTX_PROVIDER_MODULE="jaws-samples/jaws-sample-raftx-provider"
 RAFTX_CONSUMER_MODULE="jaws-samples/jaws-sample-raftx-consumer"
+# RocketMQ-style storage engine practice (jaws-store) over the jaws protocol.
+STORE_MODULE="jaws-samples/jaws-sample-store"
 
 INJVM_MAIN="org.hongxi.jaws.sample.injvm.InjvmRpcDemo"
 PROVIDER_MAIN="org.hongxi.jaws.sample.zk.provider.ZkProvider"
@@ -96,6 +98,9 @@ RAFT_PROVIDER_MAIN="org.hongxi.jaws.sample.raft.provider.RaftProvider"
 RAFT_CONSUMER_MAIN="org.hongxi.jaws.sample.raft.consumer.RaftConsumer"
 RAFTX_PROVIDER_MAIN="org.hongxi.jaws.sample.raftx.provider.RaftxProvider"
 RAFTX_CONSUMER_MAIN="org.hongxi.jaws.sample.raftx.consumer.RaftxConsumer"
+STORE_BROKER_MAIN="org.hongxi.jaws.sample.store.StoreBrokerMain"
+STORE_PRODUCER_MAIN="org.hongxi.jaws.sample.store.StoreProducerMain"
+STORE_CONSUMER_MAIN="org.hongxi.jaws.sample.store.StoreConsumerMain"
 
 usage() {
     cat <<'EOF'
@@ -178,6 +183,8 @@ usage() {
     ./run-sample.sh harborx            # Same, but the registry leg is jaws-registry-nacos
     ./run-sample.sh raft               # One-shot persistent-instance (Raft CP) demo
     ./run-sample.sh raftx              # Same, but the registry leg is a real nacos-client
+    ./run-sample.sh store              # One-shot jaws-store broker + producer + consumer
+    COUNT=5000 MODE=async ./run-sample.sh store   # Store demo with 5000 async sends
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -203,7 +210,7 @@ ensure_built() {
     if [ ! -f "$marker" ]; then
         need_build=1
     else
-        for src in jaws-stream-api/src/main/java jaws-core/src/main/java jaws-wire/src/main/java jaws-harbor/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
+        for src in jaws-stream-api/src/main/java jaws-core/src/main/java jaws-wire/src/main/java jaws-harbor/src/main/java jaws-store/src/main/java jaws-registry-zookeeper/src/main/java jaws-registry-nacos/src/main/java jaws-samples/*/src/main/java jaws-samples/jaws-sample-gray/*/src/main/java; do
             if [ -d "$src" ] && [ "$(find "$src" -name '*.java' -newer "$marker" -print -quit 2>/dev/null)" ]; then
                 need_build=1
                 break
@@ -234,6 +241,10 @@ build_classpath() {
     # Include jaws-harbor classes if the module depends on it
     if grep -q 'jaws-harbor' "$module/pom.xml" 2>/dev/null; then
         project_cp="$project_cp:jaws-harbor/target/classes"
+    fi
+    # Include jaws-store classes if the module depends on it
+    if grep -q '<artifactId>jaws-store</artifactId>' "$module/pom.xml" 2>/dev/null; then
+        project_cp="$project_cp:jaws-store/target/classes"
     fi
     # The native harbor registry leg needs its SPI classes and the harbor client
     # (jaws-harbor) on the path; it does not touch nacos-client at all.
@@ -318,7 +329,7 @@ cmd_stop() {
     done
 
     # 2. Kill any remaining Jaws sample Java processes
-    for main_class in "$PROVIDER_MAIN" "$BENCHMARK_MAIN" "$HARBOR_BOOTSTRAP_MAIN"; do
+    for main_class in "$PROVIDER_MAIN" "$BENCHMARK_MAIN" "$HARBOR_BOOTSTRAP_MAIN" "$STORE_BROKER_MAIN"; do
         local pids
         pids=$(jps -l 2>/dev/null | grep "$main_class" | awk '{print $1}')
         for pid in $pids; do
@@ -512,6 +523,132 @@ cmd_run_wire() {
 cmd_run_adaptive() {
     run_pair "adaptive" "$ADAPTIVE_PROVIDER_MODULE" "$ADAPTIVE_PROVIDER_MAIN" "$ADAPTIVE_CONSUMER_MODULE" "$ADAPTIVE_CONSUMER_MAIN" \
         10000 "" "${1:-}"
+}
+
+#
+# One-shot store demo: broker in background -> producer -> consumer. The
+# workload has two client legs against one storage broker, so the run_pair
+# flow is spelled out here instead of reused.
+# Env: COUNT (messages, default 1000), MODE (sync|async|oneway), SYNC_FLUSH.
+#
+cmd_store() {
+    local port="${1:-10911}"
+    local count="${COUNT:-1000}"
+    local mode="${MODE:-sync}"
+
+    ensure_built
+    local cp
+    cp=$(build_classpath "$STORE_MODULE")
+    local pid_file=".provider-store.pid"
+    local log_file="provider-store.log"
+
+    echo "=== One-shot run (store) ==="
+    echo "count=$count mode=$mode port=$port"
+    echo ""
+
+    # Fresh data dirs per run: the demo must be reproducible no matter what
+    # an earlier run left behind (stale client offsets against a wiped store
+    # would otherwise hang the consumer until its timeout).
+    local run_dir
+    run_dir=$(mktemp -d "${TMPDIR:-/tmp}/jaws-store-demo.XXXXXX")
+
+    # 0. Refuse to start on a port someone else already holds (see run_pair).
+    local holder holder_main
+    holder=$(port_holder_pid "$port")
+    if [ -n "$holder" ]; then
+        holder_main=$(jps -l 2>/dev/null | awk -v p="$holder" '$1 == p {print $2}')
+        echo "Port $port is already held by PID $holder${holder_main:+ ($holder_main)}." >&2
+        echo "Stop it first:  kill $holder     (or: ./run-sample.sh stop)" >&2
+        rm -rf "$run_dir"
+        exit 1
+    fi
+    rm -f "$pid_file"
+
+    # 1. Start the store broker in background
+    echo "[1/5] Starting StoreBroker port=$port ..."
+    java -cp "$cp:$STORE_MODULE/target/classes" \
+        -Dport="$port" \
+        -DstorePath="$run_dir/data" \
+        -DsyncFlush="${SYNC_FLUSH:-false}" \
+        "$STORE_BROKER_MAIN" > "$log_file" 2>&1 &
+    local pid=$!
+    echo "$pid" > "$pid_file"
+    trap "cleanup_provider $pid '$pid_file'; rm -rf '$run_dir'" EXIT
+    trap "cleanup_provider $pid '$pid_file'; rm -rf '$run_dir'; exit 130" INT TERM
+
+    # 2. Wait for the broker to accept connections
+    printf '[2/5] Waiting for StoreBroker ready '
+    local max_wait=15
+    local waited=0
+    local ready=0
+    while [ $waited -lt $max_wait ]; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo ""
+            echo "StoreBroker died before it was ready. Tail of $log_file:" >&2
+            tail -5 "$log_file" >&2 || true
+            exit 1
+        fi
+        if port_open "$port"; then
+            ready=1
+            echo " ready (${waited}s)"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        printf '.'
+    done
+    if [ $ready -eq 0 ]; then
+        echo ""
+        echo "StoreBroker not ready after ${max_wait}s; continuing anyway, the clients may fail." >&2
+    fi
+
+    # 3. Produce (guarded like run_pair: under set -e a failing leg must not
+    #    end the script before the broker below it can be stopped)
+    echo "[3/5] Sending $count messages ($mode) ..."
+    echo "--------------------------------------------"
+    local producer_exit=0
+    if java -cp "$cp:$STORE_MODULE/target/classes" \
+        -DdirectUrl="127.0.0.1:$port" -Dcount="$count" -Dmode="$mode" \
+        "$STORE_PRODUCER_MAIN"; then
+        producer_exit=0
+    else
+        producer_exit=$?
+    fi
+    echo "--------------------------------------------"
+
+    # 4. Consume
+    echo "[4/5] Consuming, expecting $count messages ..."
+    echo "--------------------------------------------"
+    local consumer_exit=0
+    if [ $producer_exit -ne 0 ]; then
+        consumer_exit=$producer_exit
+        echo "Skipped: producer failed with exit code $producer_exit" >&2
+    elif java -cp "$cp:$STORE_MODULE/target/classes" \
+        -DdirectUrl="127.0.0.1:$port" -Dexpected="$count" \
+        -Djaws.store.client.path="$run_dir/client" \
+        "$STORE_CONSUMER_MAIN"; then
+        consumer_exit=0
+    else
+        consumer_exit=$?
+    fi
+    echo "--------------------------------------------"
+
+    # 5. Stop broker and clean up
+    echo "[5/5] Stopping StoreBroker ..."
+    cleanup_provider "$pid" "$pid_file"
+    trap - EXIT INT TERM
+
+    local exit_code=$consumer_exit
+    [ $producer_exit -ne 0 ] && exit_code=$producer_exit
+    if [ $exit_code -ne 0 ]; then
+        echo "Exit code: $exit_code"
+        echo "Broker log kept for inspection: $log_file"
+        rm -rf "$run_dir"
+        exit $exit_code
+    fi
+    rm -rf "$run_dir"
+    rm -f "$log_file"
+    echo "=== Done ==="
 }
 
 cmd_harbor_standalone() {
@@ -1310,6 +1447,7 @@ case "${1:-}" in
     harborx-provider) shift; cmd_harborx_provider "$@" ;;
     raft)            cmd_raft ;;
     raftx)           shift; cmd_raftx "$@" ;;
+    store)           cmd_store "${2:-}" ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;

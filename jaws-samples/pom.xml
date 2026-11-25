@@ -53,6 +53,7 @@
         <module>jaws-sample-raft-consumer</module>
         <module>jaws-sample-raftx-provider</module>
         <module>jaws-sample-raftx-consumer</module>
+        <module>jaws-sample-store</module>
     </modules>
 
     <properties>
