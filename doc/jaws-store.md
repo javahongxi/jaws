@@ -119,6 +119,8 @@ CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持
 
 ## 5. 刷盘：两种策略一个基类
 
+先钉死数据路径的两个阶段。mmap 映射后，全局锁内那次 memcpy（`mappedByteBuffer.slice().put(...)`）**写的就是 page cache 本身**——堆外切片经页表直接映射到内核页，没有 write 系统调用，也不存在"堆 → page cache"的第二次拷贝（普通 write 路径才有这次内核拷贝）；但此时数据只是脏页，断电即丢。真正的落盘步骤是 [MappedFile.flush()](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFile.java) 里的 `fileChannel.force(false)`——mmap 场景下 fsync 的对应物（msync），把该文件脏页写回磁盘并等待设备确认，毫秒级重操作；`false` 表示不额外强刷元数据：文件长度在 map 时已定死，追加写不改文件尺寸。下表中"已进 page cache"指只完成第一阶段，两种策略里的"fsync"一律指第二阶段的 `force(false)`。
+
 | 维度 | ASYNC_FLUSH（默认） | SYNC_FLUSH |
 |---|---|---|
 | 实现 | [AsyncFlushService](../jaws-store/src/main/java/org/hongxi/jaws/store/AsyncFlushService.java)：500ms 节拍器 | [GroupCommitService](../jaws-store/src/main/java/org/hongxi/jaws/store/GroupCommitService.java)：swap-list 组提交 |
@@ -134,7 +136,8 @@ CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持
 
 ```
 t0  消息 A 写完，submitFlush(nextOffset=100)，future 挂起
-t1  刷盘线程取走请求，开始 commitLog.flush()（fsync 执行中，毫秒级）
+t1  刷盘线程取走请求，开始 commitLog.flush()
+    （force(false) 把 page cache 脏页写回磁盘，毫秒级）
 t2  fsync 期间 B/C/D 陆续写完，各自 submitFlush(200/300/400)
     ——进 requestsWrite 排队，没有各刷各的
 t3  fsync 完成，flushedOffset=400
