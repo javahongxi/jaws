@@ -209,6 +209,7 @@ public class MyRunner implements CommandLineRunner {
 | [尾延迟归因](doc/tail-latency.md)                          | P99.9 毛刺的分层归因方法与 jaws 实测案例              |
 | [架构总览](doc/architecture.md)                            | Maven 模块地图 + core 六层骨架 + 门面口径             |
 | [编解码设计](doc/codec-comparison.md)                      | Jaws 与 Dubbo 编解码架构对比分析                      |
+| [Netty 解码器精读](doc/jaws-decoder.md)                    | 半包/粘包定帧机制与手写解码器的取舍                   |
 | [全链路异步](doc/async-full-chain.md)                      | 一根 CompletableFuture 贯穿七层                       |
 | [HTTP/2 与裸 TCP 对比](doc/http2-vs-tcp.md)                | 帧结构 / 关联机制 / HPACK / HTTP/1.1 明文             |
 | [gRPC 线格式兼容](doc/wire-grpc-compat.md)                 | 零 grpc-java 实现，与 Go 对端双向实测                 |
