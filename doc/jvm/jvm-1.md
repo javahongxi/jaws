@@ -22,6 +22,7 @@
 | GC 日志 | `-XX:+PrintGCDetails` 全家桶 | 统一 `-Xlog:gc`（**升级踩坑第一处**） | 9（JEP 158） |
 | 线程栈 | 每平台线程预留 ~1MB 虚拟地址 | **虚拟线程**：栈以堆上段存续、可增长 | 21（JEP 444） |
 | 堆外内存入口 | `sun.misc.Unsafe` 事实标准 | 官方替代 FFM API；Unsafe 内存方法 23 起废弃 | 21 三次预览（JEP 442）→ 22 转正 |
+| 内存语义（JMM） | JSR-133 模型（5 定型） | **未变**，只有补充：VarHandle 分级内存序、虚拟线程完全复用 | 9（JEP 193）/ 21（JEP 444） |
 | 语言基线 | lambda / try-with-resources | + var、switch 表达式、文本块、record、instanceof/switch 模式匹配、sealed | 10~21 逐版本 |
 
 三条主线的阅读顺序有依赖：**布局是地基（对象在哪个区、长什么样）→ GC 是对布局的消费
@@ -87,6 +88,33 @@ FFM API（JDK 22 转正）。Netty/Jaws 依赖的直接内存与 `PlatformDepend
   **Humongous 对象**（>50% Region）直接占连续 Region——"大数组不进 TLAB、把 Region 切碎"
   是 G1 特有的碎片来源。
 - **ZGC**：Region 化 + 分代后按 young/old 分堆段（见 2.3）；元数据与视图在本地内存。
+
+### 1.4 JMM：布局变化之下的不变层
+
+前三小节讲"对象长什么样、放在哪"；JMM（Java Memory Model）讲"一个线程的写何时对另一个
+线程可见"——**它属于语言规范（JLS §17.4），不是 HotSpot 的实现细节，8→21 从未被替换**。
+现行模型由 JSR-133 在 JDK 5 定型（修复旧模型 final 不安全发布、volatile 语义过弱），核心是
+happens-before 规则，5 到 21/25 主体内容基本没变。
+
+新版 JDK 做的是**补充而非推翻**：
+
+| 变化 | 与 JMM 的关系 |
+|---|---|
+| VarHandle（9，JEP 193） | 把内存序显式分级：plain / opaque / acquire-release / volatile，是对 happens-before 的细粒度扩展，语义仍定义在模型框架内 |
+| Unsafe 内存方法废弃（23，JEP 471）→ FFM API（22 转正） | 堆外访问同样有明确的内存语义约定，不脱离模型（与 1.1 呼应） |
+| 虚拟线程（21，JEP 444） | **完全复用现有 JMM**：变的只是调度（挂载到载体线程），synchronized / volatile / happens-before 语义一模一样；pinning（3.3）是调度问题，不是内存语义问题 |
+
+为什么不可能消失：JMM 解决的是**编译器/CPU 重排序 + 多级缓存下的可见性**这一根本问题。
+只要硬件还是多核、还有 store buffer 与缓存一致性协议，语言就必须给程序员一个可推理的
+内存契约——C++/Rust/Go 也各有 memory model，这是并发语言的标配，不是历史包袱。
+
+经典规则在 17/21 上原样适用：volatile 写 happens-before 后续读；unlock happens-before
+后续 lock；`Thread.start()/join()` 的可见性保证；CompletableFuture 完成与回调之间的
+happens-before（Jaws 全链路异步依赖的正是这条）；构造器中正确发布的 final 字段无需同步
+即可安全读。
+
+**记结论：布局（1.1~1.3）一直在变，JMM 自 JDK 5 起没动过；17/21 上所有并发代码的推理
+仍建立在同一套 happens-before 上，升级 JDK 不需要重学内存语义。**
 
 ---
 
@@ -244,6 +272,9 @@ Leyden 启动加速路线：AOT 类加载链接（24，JEP 483）→ 26 的 AOT 
 - **偏向锁移除 ↔ 锁开销叙事**：网上"偏向锁降低无竞争 synchronized 开销"的文章全是
   8/11 口径，17/21 上无竞争加锁就是轻量锁 CAS 写 mark word——新版 AQS park 路径（17/21 已 go-dark）
   正是这套布局之上的机制。
+- **JMM 不变 ↔ 异步链可见性**：CompletableFuture 完成 → 回调线程读到结果的可见性由
+  JMM happens-before 保证（1.4），这份契约 8→21 没变——Jaws 异步改造的正确性推理
+  不受 JDK 升级影响；虚拟线程改的只是"等待的代价"，不是可见性语义。
 
 ## 五、验收问题
 
@@ -261,6 +292,9 @@ Leyden 启动加速路线：AOT 类加载链接（24，JEP 483）→ 26 的 AOT 
       17→21 的 synchronized pinning 是什么版本解决的，代价是什么写法？
 - [ ] 虚拟线程"栈在堆上"与 G1/ZGC 的堆回收如何互不干扰（提示：Continuation 的栈块由
       谁管理、活线程的栈为什么不能随便移动）？——这题答不出说明 1.1 和 2.2 还没打通。
+- [ ] JMM 属于哪一层（JLS 还是 HotSpot）？哪个版本定型后主体未变？VarHandle（9）把
+      内存序分成哪四级、相对 happens-before 是扩展还是替代？虚拟线程为什么不需要新的
+      内存模型（提示：区分调度变化与语义变化）？
 
 ---
 
@@ -285,3 +319,5 @@ Leyden 启动加速路线：AOT 类加载链接（24，JEP 483）→ 26 的 AOT 
 7. **未逐行取证项**：8/11 的默认 GC 与 flag 行为按对应版本文档口径（8 = Parallel，
    9 = G1 默认）；22/25/26/27 的个别 JEP（519/521/534/516）来自二手来源与 OpenJDK 公告，
    升级引用前建议再对一次 openjdk.org 对应项目页。
+8. **JMM 口径为规范依据（非 flag 实测）**：JLS §17.4 + JSR-133（JDK 5 定型）；
+   JEP 193（Variable Handles，Release 9）经 openjdk.org/jeps/193 官方页核对。
