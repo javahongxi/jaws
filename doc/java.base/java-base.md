@@ -43,11 +43,20 @@ CountDownLatch         23 文件    流式回调等待（本文主题 ③）
 
 1. **扰动函数** `hash = h ^ (h >>> 16)`：桶下标 `hash & (n-1)` 只有低位参与，扰动把高位信息送进低位。
 2. **表长（`table.length`）恒为 2 的幂**（`tableSizeFor`）：位运算取模 + 扩容高低位分裂的前提。
-3. **resize 触发看 `size`（HashMap 大小 = 元素个数），不是 `table.length`**：`putVal` 插入末尾 `if (++size > threshold) resize()`（L668），`threshold = 容量 × 负载因子`——常规扩容以"装了多少元素"为准（与第 4 条树化门槛比 `table.length` 是两回事）。**高低位分裂**：表长翻倍后元素新位置只有两种可能，看 `hash & oldCap`——0 留原位，1 移到 `原位 + oldCap`。一趟 O(n) 完成，无需 rehash。
-4. **树化是逐桶决策**：链长 ≥ 8 且 `table.length ≥ 64` 才 `treeifyBin`；表长不足时优先扩容（`treeifyBin` 首行就 `if (tab == null || (n = tab.length) < MIN_TREEIFY_CAPACITY) resize();`，L761-764）。树桶内部仍维持双向链表（`next` + `TreeNode.prev`，后者注释原话 "needed to unlink next upon deletion"），查找走 O(log n) 树，迭代走链表（`HashIterator` 只跟 `next`，L1581-1605）。
+3. **resize 触发看 `size`（HashMap 大小 = 元素个数），不是 `table.length`**：`putVal` 插入末尾 `if (++size > threshold) resize()`（L668），`threshold = 表长 × 负载因子`——常规扩容以"装了多少元素"为准（与第 4 条树化门槛比 `table.length` 是两回事）。`size` 统计的是**全部桶里的节点总数**（含挂在链/树上的），与被占用桶数无关：容量 16 时哪怕 13 个元素全碰撞进同一个桶（只占 1 个桶），`size = 13 > 12` 照样扩容——只看总数，不看分布。**高低位分裂**：表长翻倍后元素新位置只有两种可能，看 `hash & oldCap`——0 留原位，1 移到 `原位 + oldCap`。一趟 O(n) 完成，无需 rehash。
+4. **树化是逐桶决策，且只由 put 驱动**：触发点是**第 9 个节点插入该桶**时（链上已有 8 个，`binCount >= TREEIFY_THRESHOLD - 1`，L649，源码注释 "-1 for 1st"）——8 个节点静置不会树化。调用 `treeifyBin` 后还要 `table.length ≥ 64` 才真树化；表长不足时优先扩容（`treeifyBin` 首行就 `if (tab == null || (n = tab.length) < MIN_TREEIFY_CAPACITY) resize();`，L761-764）。树桶内部仍维持双向链表（`next` + `TreeNode.prev`，后者注释原话 "needed to unlink next upon deletion"），查找走 O(log n) 树，迭代走链表（`HashIterator` 只跟 `next`，L1581-1605）。
 5. **继承链**（易错点）：`TreeNode extends LinkedHashMap.Entry extends HashMap.Node`（L1966 / L205）。挂到 LinkedHashMap.Entry 下是为了 LinkedHashMap 桶树化后仍能维护 `before/after` 的 LRU 顺序，源码 javadoc 原话只说了一句更宽的："Extends LinkedHashMap.Entry (which in turn extends Node) so can be used as extension of either regular or linked node"（L1962-1965）。HashMap 与 TreeMap 之间**没有任何代码复用**。
 6. **混合异构**：同一张表里链桶、树桶、空桶共存；resize 时一棵树可能分裂成两棵树、两条链或一树一链（节点 ≤ 6 退化回链，滞回设计防抖动）。
-7. **四个数字都不是拍脑袋**（类注释 L176-200 自带推导）：`TreeNode` 约是普通节点两倍大，所以上树要"足够多节点"才划算；理想随机 hash 下桶长服从参数 λ≈0.5 的 Poisson 分布（λ 来自 0.75 默认负载因子），源码直接列了期望频次表：`0: 0.60653066 … 6: 0.00001316、7: 0.00000094、8: 0.00000006、more: less than 1 in ten million`——**默认下一个桶长到 8 的概率约六百万分之一**。所以树化是**止损机制而非优化**：真走到这条分支，意味着 hash 质量已崩（相似短串聚簇，或故意碰撞），此时 O(log n) 只是把 O(n) 链查找的坑兜住。UNTREEIFY=6 与 8 之间留 gap 是滞回，避免在阈值附近反复转换；`MIN_TREEIFY_CAPACITY=64`（= 4×8）防止"表太小导致的碰撞"被误判成"该树化"——`table.length` 不足时永远先扩容。
+7. **四个数字都不是拍脑袋**（类注释 L176-200 自带推导）：`TreeNode` 约是普通节点两倍大，所以上树要"足够多节点"才划算；理想随机 hash 下桶长服从参数 λ≈0.5 的 Poisson 分布（λ 来自 0.75 默认负载因子），源码直接列了期望频次表：`0: 0.60653066 … 6: 0.00001316、7: 0.00000094、8: 0.00000006、more: less than 1 in ten million`——**默认下一个桶长到 8 的概率约六百万分之一**。所以树化是**止损机制而非优化**：真走到这条分支，意味着 hash 质量已崩（相似短串聚簇，或故意碰撞），此时 O(log n) 只是把 O(n) 链查找的坑兜住。UNTREEIFY=6 与 8 之间留 gap 是滞回，避免在阈值附近反复转换（退链的两条路径：resize 拆分后单侧 ≤ 6 就地 `untreeify`，L2325/2334；删除时树形态过小）；`MIN_TREEIFY_CAPACITY=64`（= 4×8）防止"表太小导致的碰撞"被误判成"该树化"——`table.length` 不足时永远先扩容。
+8. **`initialCapacity` 是表长，不是元素个数**（高频误用）：`new HashMap<>(16)` 装到第 **13** 个元素就扩容（阈值 12），且传 10 与传 16 完全等价（`tableSizeFor` 向上取 2 的幂）。构造器**不分配数组**：`this.threshold = tableSizeFor(initialCapacity)`（L455）把"表长"暂存进 threshold 字段，首次 put 才 `n = (tab = resize()).length`（L635）真正建表——resize 里 `else if (oldThr > 0) // initial capacity was placed in threshold`（L697-698）识别的就是这个懒分配态，取之为 newCap 后再按负载因子重算真阈值。想"存 n 个元素不扩容"应传 `(int)(n / 0.75f) + 1`；JDK 19+ 的工厂方法 `HashMap.newHashMap(numMappings)`（L2580，`@since 19`）参数才是**预期元素个数**，内部换算 `Math.ceil(numMappings / 0.75)`（`calculateHashMapCapacity` L2563-2564），Guava `Maps.newHashMapWithExpectedSize` 同款——构造器参数与工厂参数语义正好相反，别混。
+
+### 经典事故：1.7 头插并发扩容成环 → 1.8 尾插（验收问题第 3 条的正文答案）
+
+> 版本口径：1.7 `transfer` 头插属二手口径（本机无 JDK 7）；1.8+ 尾插保序与显式断尾在本机 21 已实证。
+
+- **1.7 头插成环机理**：`transfer()` 把旧桶节点逐个**头插**进新桶（单线程下顺带反转链序，赌"刚插入的更可能被访问"）。并发时间线（旧链 `A → B → null`，两线程同时扩容，A、B 仍落同一新桶）：线程 1 执行完 `next = e.next` 后挂起（局部变量 e=A、next=B）→ 线程 2 跑完整场扩容，头插反转成 `B → A → null` → 线程 1 恢复，拿着过期的 next=B 继续头插：插 A（A.next=null）、插 B（B.next=A），下一轮顺着线程 2 留下的关系读到 `A.next = B`，再头插 A（A.next=B）——**A、B 互指，环成**。此后任何 `get` 落到该桶且 key 不存在，`for (e = ...; e != null; e = e.next)` 永不终止，CPU 100%。成环需两个条件叠加：① 读到另一线程改写过的"脏" next，走回头路；② 头插反转链方向，让回头能闭合。
+- **1.8 尾插为什么消灭环**：resize 拆分改尾插 `loTail.next = e` 保序（L721 注释 "preserve order"），且 `loTail.next = null` / `hiTail.next = null` 显式断尾（L743/747）。顺序不反转 → 条件②消失；显式断尾 → 脏指针也被截断。头插的局部性收益在引入红黑树后已无意义，尾插还让 lo/hi 两条链一趟拆分更自然。
+- **但 1.8 只是从"结构破坏型"降级为"数据丢失型"**（静默出错，比死循环更难排查）：两线程同时判空同一桶各自赋值，后写覆盖先写；同时读到同一 tail 尾插，丢一个节点；`++size` 非原子；`table` 数组非 volatile 无发布保证。结论：无论头插尾插都不是并发容器——跨线程写用 CHM（② 站；`tabAt/setTabAt` 补的正是数组元素无 volatile 语义这个坑），单写多读可走 volatile 整表替换（`ConsistentHashLoadBalance.ring`：notify 线程整环重建 + 引用交换，业务线程无锁读）。
 
 ### Jaws 对应
 
@@ -58,7 +67,8 @@ CountDownLatch         23 文件    流式回调等待（本文主题 ③）
 
 - [ ] 为什么 `HashMap` 的 `get` 先比 hash 再比 `==`/`equals`？自定义 key 只写 equals 不写 hashCode 会怎样？
 - [ ] 负载因子 0.75、树化阈值 8、退树阈值 6、树化最小表长 64（`MIN_TREEIFY_CAPACITY`，比的是 `table.length`），各自的设计依据？（第 7 条给了源码推导，能不看文档复述 Poisson 表最末两行才算过）
-- [ ] 1.7 头插并发扩容成环的机理，1.8 尾插为什么消灭了环但仍线程不安全？
+- [ ] 1.7 头插并发扩容成环的机理，1.8 尾插为什么消灭了环但仍线程不安全？（正文已给答案，能脱稿画出"线程 1 挂起 → 线程 2 反转 → 线程 1 闭合"三帧时间线才算过）
+- [ ] `new HashMap<>(16)` 的 16 是表长还是元素个数？装到第几个元素扩容？构造时 threshold 里暂存的是什么、数组何时才分配？`HashMap.newHashMap(n)` 的参数语义与构造器有何相反？
 
 ---
 
@@ -290,7 +300,7 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
 1. `TreeNode extends LinkedHashMap.Entry extends Node`，与 TreeMap 无代码复用（HashMap.java L1966 / LinkedHashMap.java L205）。
 2. CHM 锁机制在 JDK 8 从 Segment 切换到"锁头节点 + CAS 空桶插入"。
 3. HashMap resize 触发与分裂：常规扩容由 `putVal` 末尾 `if (++size > threshold) resize()` 判定（L668，比的是元素个数 `size`）；分裂时 `hash & oldCap` 决定留原位或移 `原位 + oldCap`。
-4. 树化双条件：链长 ≥ 8 且 `table.length ≥ 64`（比的是当前桶数组长度，不是 threshold、也不是剩余可用容量），表长不足时扩容优先。
+4. 树化双条件：单桶插入第 9 个节点时触发（`binCount >= TREEIFY_THRESHOLD - 1`，L649）且 `table.length ≥ 64`（比的是当前桶数组长度，不是 threshold、也不是剩余可用容量），表长不足时扩容优先。
 5. `LinkedBlockingQueue` 双锁（putLock/takeLock）结构——④ 的前置事实。
 6. CHM 遍历顺序依赖桶物理布局 → 无序集合上禁止用顺序依赖运算（滚动哈希）计算 revision，用 XOR/求和等交换律运算——Jaws 实测 bug 与修复。
 7. `java.util.ImmutableCollections`（JDK 9 起，List.of/Set.of/Map.of 的实现，List12/ListN/SetN/Map1/MapN + CollSer 序列化代理）：真不可变 vs `Collections.unmodifiableXxx` 包装视图的区别；拒绝 null 与 CHM/Optional 同一设计立场。跨线程发布的只读配置优先用 `X.of`。
@@ -315,6 +325,7 @@ Worker 继承 AQS            不可重入锁语义区分"中断空闲 worker"与
     - `delayedExecute` L338-348、`canRunInCurrentRunState` L316-325（两策略开关 L165-170）、`reExecutePeriodic` L356-366、`ScheduledFutureTask.run()` 首行判权 L301-302；`ensurePrestart` 定义在 TPE L1606-1612（STE 自身不定义）、`reject` 在 TPE L840-842——本机 17 与 21 的 STE 逐字节相同（见第 12 条 diff 结果），`reject`/`addWorker` 属第 12 条"骨架逐条仍在"；`ensurePrestart` 作为 TPE 命名方法的引入版本本机不可取证（JDK 8 口径下这段逻辑内联在 STE 的 delayedExecute 里，属二手未逐行验证），但 17/21 上的两条分支与 8 的行为等价。
 11. **①② 两站在 JDK 21 下全部成立**，本轮补取的行号证据：
     - HashMap：扰动 `h ^ (h >>> 16)` L338；`tableSizeFor` L377；resize 高低位分裂 `if ((e.hash & oldCap) == 0)` L727（链表分支带 `preserve order` 注释）与 `((TreeNode<K,V>)e).split(...)` L720；`TREEIFY_THRESHOLD=8 / UNTREEIFY_THRESHOLD=6 / MIN_TREEIFY_CAPACITY=64` L260/267/275；`treeifyBin` L761-764；`TreeNode extends LinkedHashMap.Entry` L1966（LinkedHashMap.Entry L205）。
+    - HashMap（本轮"经典问题"补充取证）：构造器懒分配 `this.threshold = tableSizeFor(initialCapacity)` L455（javadoc `@apiNote` 引导按元素数建表用 newHashMap，L437-438）、首次 put 建表 `n = (tab = resize()).length` L635、resize 识别暂存态注释 "initial capacity was placed in threshold" L697-698；树化触发 `binCount >= TREEIFY_THRESHOLD - 1 // -1 for 1st` L649（另 L1241/1339/1410 三处 compute 系同款）；尾插保序 L721 + 显式断尾 `loTail.next = null` / `hiTail.next = null` L743/747；退链 `lc <= UNTREEIFY_THRESHOLD` / `hc <= ...` L2325/2334；`newHashMap` `@since 19` L2580、换算 `Math.ceil(numMappings / 0.75)` L2563-2564。**JDK 1.7 `transfer` 头插成环为二手口径**（本机无 JDK 7，未逐行取证），1.8+ 尾插消灭环的机制已在本机 21 实证。
     - CHM：`sizeCtl` 字段 javadoc 直接列出三种角色（L793-800）——负数为初始化中（-1）或扩容中（-(1+活跃扩容线程数)），table 为 null 时存初始表长，初始化后存下次扩容阈值；位压缩发生在扩容态（`RESIZE_STAMP_BITS = 16`、`MAX_RESIZERS = (1<<16)-1`、`RESIZE_STAMP_SHIFT = 16`，L575/581/586）。**元素计数不在 sizeCtl 里**，而在 `baseCount`(long) + `CounterCell[]`（L790/815）。
     - CHM 元素访问：`tabAt` = `U.getReferenceAcquire`（L759-761）、`setTabAt` = `U.putReferenceRelease`（L767-770）——本机 17 与 21 一致（本机无 JDK 8，"早期写用 Volatile"属二手口径，未本地验证）。`DEFAULT_CONCURRENCY_LEVEL = 16` 仍定义但注释标为 unused（L523-526）。
     - `computeIfAbsent`（L1691-1778）四条路径：空桶 → CAS `ReservationNode` 并 `synchronized (r)` 跑 function；`fh == MOVED` → `helpTransfer`；**命中桶头（hash+key+val 全匹配）→ 不加锁直接返回**（源码注释 "check first node without acquiring lock"）；否则 `synchronized (f)` 锁桶头。递归更新由 `pred.next != null` 或撞上 `ReservationNode` 检出并抛 `IllegalStateException("Recursive update")`。`putVal` 的 null 拒写在 L1011。
