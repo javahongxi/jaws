@@ -27,7 +27,7 @@ public Object invoke(Object proxy, Method method, Object[] args) throws Throwabl
     request.setArguments(args);
 
     if (CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
-        return invokeAsync(request, method.getReturnType());
+        return invokeAsync(request);
     }
     if (StreamSource.class.isAssignableFrom(method.getReturnType())) {
         return invokeStream(request);
@@ -48,46 +48,46 @@ public interface DemoService {
 }
 ```
 
-`invokeAsync` 的实现值得细看——它不是简单地"发请求然后返回 Future"，而是把 jaws 内部的 `DefaultResponseFuture`（基于 `lock.wait/notifyAll` 的回调机制）桥接成 `CompletableFuture`：
+`invokeAsync` 的实现值得细看——它不是简单地"发请求然后返回 Future"，而是走异步入口 `cluster.callAsync(request)` 拿到 `CompletableFuture<Response>`（传输层的 `DefaultResponseFuture` 本身就继承 `CompletableFuture`），再用 `whenComplete` 把结果桥接成业务侧的 `CompletableFuture<Object>`。实现在 `ReferenceInvocationHandler` 的基类 `ReferenceInvoker` 里：
 
 ```java
-CompletableFuture<Object> invokeAsync(Request request, Class<?> returnType) {
-    RpcContext.getContext().putAttribute(JawsConstants.ASYNC_FLAG, true);
-    // ... 设置 attachments ...
+// proxy/ReferenceInvoker.java
+CompletableFuture<Object> invokeAsync(Request request) {
+    // ... 传播 RpcContext attachments ...
 
     CompletableFuture<Object> resultFuture = new CompletableFuture<>();
 
     for (Cluster<T> cluster : clusters) {
-        try {
-            Response response = cluster.call(request);
-            if (response instanceof DefaultResponseFuture responseFuture) {
-                responseFuture.setReturnType(returnType);
-                responseFuture.addListener(future -> {
-                    if (future.isSuccess()) {
-                        resultFuture.complete(future.getValue());
-                    } else {
-                        resultFuture.completeExceptionally(future.getException());
-                    }
-                });
-            } else {
-                // 同步响应（如 injvm 直调）
-                if (response.getException() != null) {
-                    resultFuture.completeExceptionally(response.getException());
-                } else {
+        // ... 设置 version/application/module 等身份 attachments ...
+
+        CompletableFuture<Response> responseFuture = cluster.callAsync(request);
+        responseFuture.whenComplete((response, t) -> {
+            if (t == null) {
+                Throwable throwable = response.getThrowable();
+                if (throwable == null) {
                     resultFuture.complete(response.getValue());
+                } else if (ExceptionUtils.isBizException(throwable)) {
+                    // 业务异常始终透传，不受 throwException 开关影响
+                    resultFuture.completeExceptionally(throwable);
+                } else if (!cluster.getUrl().getBoolParameter(UrlParam.Client.THROW_EXCEPTION)) {
+                    resultFuture.complete(response.getRawValue());
+                } else {
+                    resultFuture.completeExceptionally(throwable);
                 }
+            } else {
+                Throwable ex = (t instanceof CompletionException ce) ? ce.getCause() : t;
+                // ... 同样区分业务异常 / throwException 开关 ...
             }
-            return resultFuture;
-        } catch (RuntimeException e) {
-            resultFuture.completeExceptionally(e);
-            return resultFuture;
-        }
+        });
+        return resultFuture;
     }
-    // ...
+
+    resultFuture.completeExceptionally(new JawsServiceException("no cluster found ..."));
+    return resultFuture;
 }
 ```
 
-关键细节：`cluster.call(request)` 返回的是 `DefaultResponseFuture`——它此时还没有值，但已经注册了超时调度。`addListener` 在响应到达或超时时被回调，把结果传递给 `CompletableFuture`。消费端业务代码拿到 `CompletableFuture` 后可以自由地 `.thenApply`、`.whenComplete`，完全不阻塞。
+关键细节：`cluster.callAsync(request)` 返回的是尚未完成的 future（传输层创建它时已注册超时调度），调用线程注册完 `whenComplete` 立即返回，全程没有 `.join()`/`.get()`——这与同步路径 `invoke()` 里 `cluster.call(request).getValue()` 在 Cluster 层阻塞等待形成对照（见 §6.1）。响应到达或超时时 `whenComplete` 被回调，除了传递结果，还在这里区分**业务异常与框架异常**：业务异常始终透传；框架异常在 `throwException=false` 时吞掉并返回默认值。消费端业务代码拿到 `CompletableFuture` 后可以自由地 `.thenApply`、`.whenComplete`，完全不阻塞。
 
 ## 2. Filter 链：异步是接口的硬契约
 
@@ -327,26 +327,32 @@ public void channelRead(ChannelHandlerContext ctx, Object msg) {
 请求从消费端发出后，响应在 Netty event loop 上异步到达。[NettyClient](https://github.com/javahongxi/jaws/blob/main/jaws-core/src/main/java/org/hongxi/jaws/transport/netty/NettyClient.java) 在初始化 pipeline 时注册了一个 lambda 作为消息处理器：
 
 ```java
-pipeline.addLast("handler", new NettyChannelHandler(NettyClient.this,
-    (Channel channel, Object message) -> {
-        Response response = (Response) message;
-        ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
+pipeline.addLast("handler", new NettyChannelHandler((Object message) -> {
+    Response response = (Response) message;
+    ResponseFuture responseFuture = NettyClient.this.removeCallback(response.getRequestId());
 
-        if (responseFuture == null) {
-            log.warn("received response, but no responseFuture found, requestId={}",
-                    response.getRequestId());
-            return CompletableFuture.completedFuture(null);
-        }
-        if (response.getException() != null) {
-            responseFuture.onFailure(response);
-        } else {
-            responseFuture.onSuccess(response);
-        }
+    if (responseFuture == null) {
+        log.warn("received response, but no responseFuture found, requestId={}",
+                response.getRequestId());
         return CompletableFuture.completedFuture(null);
-    }));
+    }
+    if (response.getThrowable() != null) {
+        // Drop the connection before releasing the waiter, so a caller
+        // that observes the refusal also observes a transport that has
+        // already moved on rather than racing the close.
+        Throwable refusal = response.getThrowable();
+        dropConnectionIfPeerShuttingDown(refusal, ch);
+        responseFuture.onFailure(response);
+    } else {
+        responseFuture.onSuccess(response);
+    }
+    return CompletableFuture.completedFuture(null);
+}));
 ```
 
-`removeCallback` 按 `requestId` 从 `callbackMap` 中找到对应的 `DefaultResponseFuture`，调 `onSuccess` 或 `onFailure` 完成它。`DefaultResponseFuture` 内部通过 `lock.notifyAll()` 唤醒阻塞的 `getValue()` 调用，同时通知所有注册的 `FutureListener`。
+失败分支里多了一步 `dropConnectionIfPeerShuttingDown`：如果对端因为正在优雅停机而拒绝了请求（错误码 `SERVICE_SHUTDOWN`），就主动关掉这条连接。jaws 二进制协议没有 GOAWAY，拒绝响应是这条连接已经终结的唯一信号——不关的话，后续每次调用都要白付一次到注定拒绝的节点的往返。先断连再释放等待者，保证观察到拒绝的调用方看到的传输层已经向前走了；关掉连接后，下一次 `request()` 自然走上已有的传输层重连路径，也给了刷新后的地址列表被应用的机会。
+
+`removeCallback` 按 `requestId` 从 `callbackMap` 中找到对应的 `DefaultResponseFuture`，调 `onSuccess` 或 `onFailure` 完成它。`DefaultResponseFuture` 继承 `CompletableFuture<Response>`，`onSuccess`/`onFailure` 就是 `complete()`/`completeExceptionally()`——要么唤醒阻塞在 `getValue()`（内部是 `get()`）里的线程，要么就地执行挂在 future 上的 `whenComplete` 回调。
 
 超时调度在 [AbstractClient](https://github.com/javahongxi/jaws/blob/main/jaws-core/src/main/java/org/hongxi/jaws/transport/AbstractClient.java) 里统一管理：
 
@@ -383,6 +389,55 @@ public void registerCallback(long requestId, ResponseFuture responseFuture) {
 
 **过载保护**。`MAX_INFLIGHT_REQUESTS = 20000`，超过直接拒绝，防 OOM。这个保护必须在基类做——TCP 和 HTTP/2 两个客户端共享同一套记账逻辑，放在基类是最不容易漏的位置。
 
+### 6.1 结果如何往上传：数据交接与执行权交接
+
+`onSuccess` 只是把结果写进 future，真正值得拆的是：**结果如何从 IO 线程传到用户代码**。这里要区分两个经常被混在一起的概念：
+
+- **数据交接**：结果值跨线程可见。future 是堆上的共享对象，`complete(response)` 对内部 result 字段的 volatile 写与后续读构成 happens-before，任何线程之后读到的都是完整结果。
+- **执行权交接**：后续代码换一个线程继续执行——唤醒一个阻塞的线程，或把回调提交到另一个线程池。
+
+先澄清 `callbackMap` 的角色：**它本身不传结果，它解决的是认领问题（correlation）**。一条共享连接多路复用了大量并发请求，响应乱序到达，只能靠帧里的 `requestId` 反查「这个响应属于哪次调用」。所以必须**先注册后发送**——响应可能在写完成之前就回来。真正的结果传递靠 `DefaultResponseFuture` 的 `complete()`。请求线程「持有 future」只是持有一个引用，不代表独占所有权：请求线程、IO 线程、超时线程摸的是同一个对象。
+
+结果从传输层往上传的完整链路，以 Cluster 层的同步等待为分水岭：
+
+```
+Netty IO 线程                               │  业务线程
+────────────────────────────────────────────┼─────────────────────────
+NettyChannelHandler → removeCallback        │
+  → onSuccess → complete(response)          │
+  → AbstractReference 统计 whenComplete      │
+  → Filter 链 whenComplete                   │
+  → Cluster.callAsync exceptionally         │
+        │                                   │
+        └── join()/get() 唤醒 ──────────────→ Cluster.call 返回 Response
+                                            → ReferenceInvoker.getValue()
+                                            → 用户代码拿到返回值
+```
+
+**同步路径：执行权交接必然发生，交接点由框架写死。** Cluster 层是同步分水岭——`FilterReferenceWrapper.call()` 对 filter 返回的 future 调 `.join()`，请求线程 park 在这里；IO 线程 `complete()` 时 unpark 它，后续代码（Cluster 容错判断、代理返回、用户代码）换回请求线程执行。
+
+这里用 `join()` 而不是 `get()` 是有意为之：`get()` 是 `Future` 接口的老方法，抛受检的 `InterruptedException`/`ExecutionException`，会污染方法签名、在 lambda 里尤其碍事；`join()` 抛非受检的 `CompletionException`（`getCause()` 同样是原始业务异常），一行搞定。代价是 `join()` 不响应中断、也没有超时重载——需要可中断等待或超时控制时才用 `get()`。
+
+**异步路径：框架内只传数据，不交接执行权。** 请求线程注册完回调就走了（甚至可能已经结束），IO 线程 `complete()` 之后**自己把回调链顺序跑完**——Reference 统计、Filter 组合、Cluster 的 `exceptionally`，直到 `ReferenceInvoker.invokeAsync` 里 `resultFuture.complete(value)` 完成用户的 future。整条链是 IO 线程上顺序执行的方法调用，没有任何线程被唤醒，没有任何代码换线程执行。
+
+那执行权交接在哪？推迟到了用户侧，取决于用户怎么消费这个 future：
+
+| 消费方式 | 后续代码跑在哪 | 有无执行权交接 |
+|---|---|---|
+| 完成前注册 `whenComplete`/`thenAccept` | IO 线程（完成线程就地执行回调） | 无 |
+| 完成后才注册回调 | 注册线程 | 隐式交接 |
+| 在自己线程上 `join()`/`get()` | 阻塞的用户线程被唤醒 | 显式交接 |
+| `thenApplyAsync(fn, executor)` | 指定线程池 | 显式交接 |
+
+注意第二行：`CompletableFuture` 的回调由「完成线程」或「注册线程」执行，取决于完成和注册谁先谁后——这是一个容易被忽略的不确定性。
+
+两个推论：
+
+1. **异步省掉的不是数据交接，而是「一个线程阻塞等待 + 一次线程唤醒/切换」的开销**。两条路的数据交接机制完全相同，都是 `complete()` 写 result 字段；区别只在完成之后——是唤醒一个等着的线程（同步），还是就地执行挂着的回调（异步）。
+2. **异步路径反而更要小心 IO 线程阻塞**：完成前注册的用户回调直接跑在 event loop 上，里面一个 `join()` 或慢逻辑就卡住这条连接上所有多路复用的请求。这是 §5 服务端零阻塞原则在消费端的镜像。
+
+最后别忘了第三个竞争者：超时线程（上面的 HashedWheelTimer）也会尝试完成同一个 future。`ConcurrentMap.remove()` 的原子性保证响应、超时、`close()` 三方只有一方能认领成功——认领失败方连碰都不该碰，这就是 `removeCallback` 注释里 "atomically claim" 的含义。
+
 ## 7. 容错层：FailbackRegistry 异步重试
 
 异步不仅体现在单次调用上，也体现在容错上——但 jaws 把"异步重试"收敛到了**注册中心层**这一处。`FailbackRegistry` 是所有具体注册中心（ZooKeeper / Nacos）的基类，给 register/unregister/subscribe/unsubscribe 加了失败补偿语义：失败的操作入队，由一个后台守护线程按固定周期重试；发现（lookup）在注册中心不可达时降级到上一次成功的结果。
@@ -415,8 +470,8 @@ Consumer 业务线程
   ├─ 1. ReferenceInvocationHandler.invoke()
   │     检测返回类型为 CompletableFuture → invokeAsync()
   │     创建 CompletableFuture<Object> resultFuture
-  │     调 cluster.call(request) → 返回 DefaultResponseFuture（未完成）
-  │     注册 FutureListener → 桥接到 resultFuture
+  │     调 cluster.callAsync(request) → 返回 CompletableFuture（未完成）
+  │     注册 whenComplete → 桥接到 resultFuture
   │     立即返回 resultFuture 给业务代码
   │
   ├─ 2. NettyClient.channel.request()
@@ -452,11 +507,10 @@ Consumer Netty Event Loop
   │     解码响应 → messageHandler.handleAsync(channel, response)
   │       → lambda: removeCallback(requestId)
   │         → responseFuture.onSuccess(response)
-  │           → lock.notifyAll() 唤醒等待线程
-  │           → 通知 FutureListener
+  │           → complete(response) 唤醒阻塞线程 / 就地执行回调
   │
-  ├─ 6. FutureListener.operationComplete()
-  │     resultFuture.complete(future.getValue())
+  ├─ 6. whenComplete 回调链（Reference 统计 → Filter → Cluster）
+  │     resultFuture.complete(response.getValue())
   │
   ╰─ Consumer 业务线程
        CompletableFuture 完成
