@@ -1,6 +1,6 @@
 # Jaws 架构总览：模块地图与六层骨架
 
-> 这是读 Jaws 源码的**第一站**：先讲清 11 个 Maven 模块各自负责什么、`jaws-core` 内部怎么分层、以及贯穿全框架的几条设计主张。每个专题再深入哪一层，文末有文档地图。**模块边界就是设计取舍留下的物理证据**——看懂了切分，就看懂了它为什么"约 Dubbo 核心骨架 1/7 代码量"。
+> 这是读 Jaws 源码的**第一站**：先讲清 12 个 Maven 模块各自负责什么、`jaws-core` 内部怎么分层、以及贯穿全框架的几条设计主张。每个专题再深入哪一层，文末有文档地图。**模块边界就是设计取舍留下的物理证据**——看懂了切分，就看懂了它为什么"约 Dubbo 核心骨架 1/7 代码量"。
 
 ## 1. 定位与门面口径
 
@@ -9,17 +9,17 @@ Jaws 是一个**核心 3 万余行、可以从头读到尾**的轻量级 RPC 框
 **门面数字口径**（钝表述、防过时，与"约 Dubbo 核心骨架 1/7 / 约 14 万 QPS"同一套算法）：
 
 - "核心 3 万余行" = `jaws-core` + `jaws-wire` + `jaws-stream-api` + `jaws-registry-nacos`/`jaws-registry-zookeeper` 两个客户端（main Java 物理行，实测 ≈3.4 万）。
-- **不计入**：`jaws-wire-proto`（protoc 生成码）、整个 `jaws-harbor`（服务端件，手码与内嵌生成码一并剔除）、`jaws-samples`、`jaws-spring-boot`、`jaws-extensions`。
+- **不计入**：`jaws-wire-proto`（protoc 生成码）、整个 `jaws-harbor`（配套验证件，服务端控制平面，手码与内嵌生成码一并剔除）、`jaws-store`（配套验证件）、`jaws-samples`、`jaws-spring-boot`、`jaws-extensions`。
 - "约 Dubbo 核心骨架 1/7" 的分母 = Dubbo 3.3 同范围核心骨架 7 模块 `dubbo-common`/`-rpc`/`-remoting`/`-cluster`/`-config`/`-registry`/`-serialization`（main Java 物理行 ≈22 万，两边都含 registry 方对齐）；**不计** Dubbo 的 `dubbo-plugin`/`-metadata`/`-metrics`/`-compatible` 等非核心扩展（≈8 万，jaws 未实现也无对应）。故 ≈1/7，而非拿全仓凑的 1/10。
 
 ## 2. 模块地图
 
-按 `pom.xml` 的 `<modules>` 构建顺序，恰好是一条自底向上的依赖链：
+模块定位分两档：`jaws-core` + `jaws-wire` 构成 **RPC 核心**；`jaws-harbor` 与 `jaws-store` 是基于核心链的**配套验证件**（harbor 以真实 nacos-client 负载验证 wire 协议兼容性，store 以 MQ 负载验证 jaws 协议高吞吐）；其余为外围契约、适配与示例。按 `pom.xml` 的 `<modules>` 构建顺序，恰好是一条自底向上的依赖链：
 
 ```
 jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
      → jaws-registry-zookeeper / jaws-registry-nacos / jaws-registry-harbor
-     → jaws-spring-boot → jaws-extensions → jaws-harbor → jaws-samples
+     → jaws-spring-boot → jaws-extensions → jaws-harbor → jaws-store → jaws-samples
 ```
 
 | 模块 | 手码规模 | 职责 | 层 |
@@ -32,6 +32,7 @@ jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
 | `jaws-registry-nacos` | ~560 | Registry SPI 的 Nacos 薄封装 + `NacosDynamicConfiguration` 配置 SPI | 注册发现/配置 |
 | `jaws-registry-harbor` | ~510 | Registry SPI 的 Harbor 客户端（对接 `jaws-harbor`）+ `HarborDynamicConfiguration` 配置 SPI，与 nacos/zk 腿同形（config 与 naming 各用各的连接） | 注册发现/配置 |
 | `jaws-harbor` | ~11.5k 手码 | 兼容 nacos-client 的轻量级注册中心与配置中心（服务端）：临时实例走 Distro AP，持久实例与配置走自研 Raft CP | 注册发现/配置 |
+| `jaws-store` | ~2.8k | RocketMQ 风格存储引擎实践模块，以长轮询、高并发异步发送等 MQ 负载对 jaws 协议做高吞吐实战验证 | 配套验证 |
 | `jaws-spring-boot` | 聚合 + ~1.7k | 两个 starter：声明式接入 + 可观测装配 | 集成 |
 | `jaws-extensions` | ~280 | 指标 / 链路追踪 Filter | 集成 |
 | `jaws-samples` | 示例 | 一键实跑矩阵，含双向互操作与压测 | 验证 |
