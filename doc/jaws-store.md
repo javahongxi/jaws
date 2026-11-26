@@ -234,10 +234,10 @@ COUNT=5000 MODE=async ./run-sample.sh store-cluster      # 多 master 异步发�
 ```bash
 # 终端 1：broker（-Dport / -DstorePath / -DsyncFlush / -DbrokerName / -Dregistry 可覆盖）
 java ... org.hongxi.jaws.sample.store.StoreBrokerMain
-# 终端 2：producer（-DdirectUrl 或 -Dregistry / -Dcount / -Dmode / -Dtopic / -DloadBalance）
-java ... org.hongxi.jaws.sample.store.StoreProducerMain
-# 终端 3：consumer（-DdirectUrl 或 -Dregistry / -Dexpected / -Dgroup / -Dtopic）
+# 终端 2：consumer（-DdirectUrl 或 -Dregistry / -Dexpected / -Dgroup / -Dtopic）——先于 producer 启动才能走挂起路径
 java ... org.hongxi.jaws.sample.store.StoreConsumerMain
+# 终端 3：producer（-DdirectUrl 或 -Dregistry / -Dcount / -Dmode / -Dtopic / -DloadBalance）——发送后唤醒挂起的 pull
+java ... org.hongxi.jaws.sample.store.StoreProducerMain
 ```
 
 多实例手动部署：每个 broker 用不同 `-DbrokerName` + `-DstorePath` + `-Dport`，共同 `-Dregistry=harbor://127.0.0.1:19848`；producer/consumer 也用 `-Dregistry` 替代 `-DdirectUrl`。
