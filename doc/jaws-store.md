@@ -117,6 +117,20 @@ CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持
 
 延迟趋近 push，成本趋近 pull：broker 不维护任何 per-consumer 推送状态。
 
+### 4.4 挂起时长与三级超时预算
+
+数值与 RocketMQ 客户端常量对齐（`DefaultMQPushConsumerImpl` L114-115）：
+
+| 环节 | jaws-store | RocketMQ | 说明 |
+|---|---|---|---|
+| broker 挂起上限 | **15s** | `BROKER_SUSPEND_MAX_TIME_MILLIS` = 15s | 消费端在 `pullAsync` 里带上的期望挂起时长 |
+| 消费端 RPC 超时 | **30s** | `CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND` = 30s | 恰为挂起的 2 倍，覆盖挂起 + 扫描 + 网络 |
+| provider 异步看门狗 | **25s** | 无对应物（broker 不做请求级看门狗） | jaws 侧 `DefaultProvider.orTimeout`，不配则落默认 1000ms |
+
+**计时起点是挂起入表那一刻，不含请求处理耗时**：`HoldRequest` 构造里取 `System.currentTimeMillis() + suspendTimeoutMillis`，而它是在 `getMessageAsync` 查完消息确认 `NO_NEW_MSG` 之后才 new 的——与 RocketMQ 在 `PULL_NOT_FOUND` 分支才 `new PullRequest(..., messageStore.now(), ...)` 同形。broker 侧不 clamp 客户端传来的挂起时长，也和 RocketMQ 一致（15s 是客户端自选值，不是服务端硬限）。
+
+三级预算严格递增：`挂起 15s（最坏 +5s 扫描兜底 = 20s）< provider 看门狗 25s < 客户端超时 30s`。两处错开都有实账：看门狗低于挂起上限时，每次空转长轮询都被误判为 40003（这条踩过——默认 1000ms 短于当时的 5s 挂起）；看门狗与客户端超时同值时，两边在同一时刻抢答，报错归因不确定。该参数是服务级的，`putAsync` 同受 25s 约束，但写路径另有 `syncFlushTimeout=5s` 内部了断，不会真等到 25s。
+
 ## 5. 刷盘：两种策略一个基类
 
 先钉死数据路径的两个阶段。mmap 映射后，全局锁内那次 memcpy（`mappedByteBuffer.slice().put(...)`）**写的就是 page cache 本身**——堆外切片经页表直接映射到内核页，没有 write 系统调用，也不存在"堆 → page cache"的第二次拷贝（普通 write 路径才有这次内核拷贝）；但此时数据只是脏页，断电即丢。真正的落盘步骤是 [MappedFile.flush()](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFile.java) 里的 `fileChannel.force(false)`——mmap 场景下 fsync 的对应物（msync），把该文件脏页写回磁盘并等待设备确认，毫秒级重操作；`false` 表示不额外强刷元数据：文件长度在 map 时已定死，追加写不改文件尺寸。下表中"已进 page cache"指只完成第一阶段，两种策略里的"fsync"一律指第二阶段的 `force(false)`。
@@ -171,7 +185,7 @@ swap-list（requestsWrite/requestsRead 双列表 + ReentrantLock/Condition）让
 | broker 发现 | directUrl 逗号分隔多 broker，或注册中心 5s diff 刷新；上线建连展开订阅、下线停泵保留位点 | NameServer 路由 + rebalance 触发的最小替代（不做队列分配） |
 | [LocalOffsetStore](../jaws-store/src/main/java/org/hongxi/jaws/store/client/LocalOffsetStore.java) | **客户端自管位点**（Kafka 风格）：Properties 文件 + temp file 原子 move，键 `brokerName@topic@queueId` | 声明式偏离：不做 broker 端位点存储 |
 
-RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java) 只有三个方法，均返回 CompletableFuture：`putAsync(StoreMessage)`、`pullAsync(topic, queueId, offset, maxBatch, suspendTimeoutMillis)` 与 `brokerInfoAsync()`（上报 brokerName，消费端位点的身份锚点）。长轮询的挂起对 jaws 协议就是一次"响应来得晚的普通异步调用"——provider 端全链路异步（返回 future 即挂起，不占业务线程等待）在这里拿到了真实场景。
+RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java) 只有三个方法，均返回 CompletableFuture：`putAsync(StoreMessage)`、`pullAsync(topic, queueId, offset, maxBatch, suspendTimeoutMillis)` 与 `brokerInfoAsync()`（上报 brokerName，消费端位点的身份锚点）。长轮询的挂起对 jaws 协议就是一次"响应来得晚的普通异步调用"——provider 端全链路异步（返回 future 即挂起，不占业务线程等待）在这里拿到了真实场景，15s/30s/25s 的三级预算见 §4.4。
 
 ### 7.1 多 master 分片：多实例扩展，不是 HA
 
@@ -203,7 +217,7 @@ RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/Stor
 
 ## 9. 演示说明
 
-一键演示（broker 后台 → producer → consumer，每次运行独立临时数据目录，跑完即清理）：
+一键演示（broker 后台 → consumer 后台挂起等待 → producer 发送唤醒，与长轮询挂起路径对齐；每次运行独立临时数据目录，跑完即清理）：
 
 ```bash
 ./run-sample.sh store                                    # 1000 条 sync

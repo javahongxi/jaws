@@ -53,6 +53,19 @@ public class StoreConsumer {
     /** Interval between registry discovery refreshes. */
     private static final long DISCOVERY_REFRESH_INTERVAL_SECONDS = 5;
 
+    /**
+     * Hold requested from the broker on an empty pull, mirroring RocketMQ's
+     * BROKER_SUSPEND_MAX_TIME_MILLIS (15s). RocketMQ lets the client pick this;
+     * the broker honors the requested value as-is.
+     */
+    private static final long BROKER_SUSPEND_MAX_TIME_MILLIS = 15_000;
+
+    /**
+     * RPC budget for a held pull, mirroring RocketMQ's
+     * CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND (30s, exactly 2x the hold).
+     */
+    private static final long CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND = 30_000;
+
     private final String directUrls;
     private final List<RegistryConfig> registries;
     private final String serialization;
@@ -63,7 +76,7 @@ public class StoreConsumer {
 
     private int pullBatchSize = 32;
     private int pullThresholdForQueue = 1000;
-    private long suspendTimeoutMillis = 5000;
+    private long suspendTimeoutMillis = BROKER_SUSPEND_MAX_TIME_MILLIS;
 
     private ReferenceConfig<StoreService> discoveryReference;
     private ScheduledExecutorService pumpExecutor;
@@ -190,9 +203,12 @@ public class StoreConsumer {
         reference.setModule("store");
         reference.setGroup(StoreBroker.GROUP);
         reference.setVersion(StoreBroker.VERSION);
-        // the RPC timeout must outlive the broker-side hold, otherwise every
-        // idle long poll would surface as a client timeout
-        reference.setRequestTimeout((int) suspendTimeoutMillis + 5000);
+        // The RPC timeout must outlive the broker-side hold (plus its periodic
+        // scan fallback), otherwise every idle long poll surfaces as a client
+        // timeout. RocketMQ keeps these as a fixed 15s/30s pair; keep the same
+        // 2x margin for a raised hold so the pair can never invert.
+        reference.setRequestTimeout((int) Math.max(CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND,
+                suspendTimeoutMillis * 2));
         reference.setProtocol(protocolConfig);
         return reference;
     }

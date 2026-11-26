@@ -69,10 +69,12 @@ public class StoreBroker {
         protocolConfig.setWorkerQueueSize(1000);
         protocolConfig.setMinWorkerThreads(200);
         // The provider-side async guard (DefaultProvider's orTimeout) defaults
-        // to 1000ms, shorter than the consumer's long-poll hold (5000ms), so
-        // every suspended pull would surface as a 40003 provider timeout.
-        // Outlast the hold with the same 10s budget the consumer uses.
-        protocolConfig.setParameter(UrlParam.Transport.REQUEST_TIMEOUT.getName(), "10000");
+        // to 1000ms, far below the long-poll hold (15s) and its 5s scan
+        // fallback, so every suspended pull would surface as a 40003 provider
+        // timeout. Bound it above the worst-case hold yet below the consumer's
+        // 30s RPC budget: a genuinely stuck pull then reports a clean provider
+        // timeout instead of racing the client's own deadline.
+        protocolConfig.setParameter(UrlParam.Transport.REQUEST_TIMEOUT.getName(), "25000");
 
         serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(new StoreServiceImpl());
