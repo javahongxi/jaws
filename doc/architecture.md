@@ -22,35 +22,35 @@ jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
      → jaws-spring-boot → jaws-extensions → jaws-harbor → jaws-store → jaws-samples
 ```
 
-| 模块 | 手码规模 | 职责 | 层 |
-|---|---|---|---|
-| `jaws-stream-api` | ~110 行 | 流式收发的中立契约（push-only） | 契约 |
-| `jaws-core` | ~22.1k | RPC 骨架六层 + 扩展机制 | 骨架 |
-| `jaws-wire` | ~10.8k | 零 grpc-java 的 gRPC 线格式实现 | 对外协议 |
-| `jaws-wire-proto` | 生成码 | protoc 生成物（health/reflection/rpc.Status）隔离 | 对外协议 |
-| `jaws-registry-zookeeper` | ~830 | Registry SPI 的 ZooKeeper 实现（Curator）+ `ZookeeperDynamicConfiguration` 配置 SPI | 注册发现/配置 |
-| `jaws-registry-nacos` | ~560 | Registry SPI 的 Nacos 薄封装 + `NacosDynamicConfiguration` 配置 SPI | 注册发现/配置 |
-| `jaws-registry-harbor` | ~510 | Registry SPI 的 Harbor 客户端（对接 `jaws-harbor`）+ `HarborDynamicConfiguration` 配置 SPI，与 nacos/zk 腿同形（config 与 naming 各用各的连接） | 注册发现/配置 |
-| `jaws-harbor` | ~11.5k 手码 | 兼容 nacos-client 的轻量级注册中心与配置中心（服务端）：临时实例走 Distro AP，持久实例与配置走自研 Raft CP | 注册发现/配置 |
-| `jaws-store` | ~2.8k | RocketMQ 风格存储引擎实践模块，以长轮询、高并发异步发送等 MQ 负载对 jaws 协议做高吞吐实战验证 | 配套验证 |
-| `jaws-spring-boot` | 聚合 + ~1.7k | 两个 starter：声明式接入 + 可观测装配 | 集成 |
-| `jaws-extensions` | ~280 | 指标 / 链路追踪 Filter | 集成 |
-| `jaws-samples` | 示例 | 一键实跑矩阵，含双向互操作与压测 | 验证 |
+| 模块                      | 手码规模     | 职责                                                                                                                                            | 层            |
+|---------------------------|--------------|-------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
+| `jaws-stream-api`         | ~110 行      | 流式收发的中立契约（push-only）                                                                                                                 | 契约          |
+| `jaws-core`               | ~22.1k       | RPC 骨架六层 + 扩展机制                                                                                                                         | 骨架          |
+| `jaws-wire`               | ~10.8k       | 零 grpc-java 的 gRPC 线格式实现                                                                                                                 | 对外协议      |
+| `jaws-wire-proto`         | 生成码       | protoc 生成物（health/reflection/rpc.Status）隔离                                                                                               | 对外协议      |
+| `jaws-registry-zookeeper` | ~830         | Registry SPI 的 ZooKeeper 实现（Curator）+ `ZookeeperDynamicConfiguration` 配置 SPI                                                             | 注册发现/配置 |
+| `jaws-registry-nacos`     | ~560         | Registry SPI 的 Nacos 薄封装 + `NacosDynamicConfiguration` 配置 SPI                                                                             | 注册发现/配置 |
+| `jaws-registry-harbor`    | ~510         | Registry SPI 的 Harbor 客户端（对接 `jaws-harbor`）+ `HarborDynamicConfiguration` 配置 SPI，与 nacos/zk 腿同形（config 与 naming 各用各的连接） | 注册发现/配置 |
+| `jaws-harbor`             | ~11.5k 手码  | 兼容 nacos-client 的轻量级注册中心与配置中心（服务端）：临时实例走 Distro AP，持久实例与配置走自研 Raft CP                                      | 注册发现/配置 |
+| `jaws-store`              | ~2.8k        | RocketMQ 风格存储引擎实践模块，以长轮询、高并发异步发送等 MQ 负载对 jaws 协议做高吞吐实战验证                                                   | 配套验证      |
+| `jaws-spring-boot`        | 聚合 + ~1.7k | 两个 starter：声明式接入 + 可观测装配                                                                                                           | 集成          |
+| `jaws-extensions`         | ~280         | 指标 / 链路追踪 Filter                                                                                                                          | 集成          |
+| `jaws-samples`            | 示例         | 一键实跑矩阵，含双向互操作与压测                                                                                                                | 验证          |
 
 ## 3. jaws-core 的六层骨架
 
 `jaws-core` 的包目录本身就是分层图，从最底"收发字节"往上：
 
-| 层 | 包 | 干什么 | 关键类 / 深入文档 |
-|---|---|---|---|
-| 传输 | `transport/{netty,http,http2,adaptive}` | 连接与字节收发；四种协议单端口自适应分诊 | `TransportResolver`、`ProtocolDetectionHandler`；[wire-grpc-compat](wire-grpc-compat.md)、[netty-performance](netty-performance.md) |
-| 协议/序列化 | `protocol/jaws`、`serialization` | 16 字节二进制头、4 种序列化 SPI | `JawsCodec`；[codec-comparison](codec-comparison.md) |
-| 代理 | `proxy` | 接口调用 → `Invocation`；泛化 | `JdkProxyFactory`、`GenericInvocationHandler`；[generic-invocation](generic-invocation.md) |
-| 集群 | `cluster/{directory,router,loadbalance,support}` | 选址、路由链、6 种 LB、3 种容错、预热 | `AdaptiveLoadBalance`(P2C)、`RouterChain`；[warm-up](warm-up.md) |
-| 注册发现 | `registry` | Registry SPI + 失败补偿 | `FailbackRegistry`；[registry-comparison](registry-comparison.md)、[harbor-vs-nacos](harbor-vs-nacos.md) |
-| 配置/过滤器 | `config`、`filter` | 声明式编排、Filter 链、动态配置、优雅停机 | `ServiceConfig`、`FilterChainBuilder`；[dynamic-config](dynamic-config.md)、[graceful-shutdown](graceful-shutdown.md)、[observability](observability.md)、[token-auth](token-auth.md) |
+| 层          | 包                                               | 干什么                                    | 关键类 / 深入文档                                                                                                                                                                     |
+|-------------|--------------------------------------------------|-------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 传输        | `transport/{netty,http,http2,adaptive}`          | 连接与字节收发；四种协议单端口自适应分诊  | `TransportResolver`、`ProtocolDetectionHandler`；[wire-grpc-compat](wire-grpc-compat.md)、[netty-performance](netty-performance.md)                                                   |
+| 协议/序列化 | `protocol/jaws`、`serialization`                 | 16 字节二进制头、3 种序列化 SPI           | `JawsCodec`；[codec-comparison](codec-comparison.md)                                                                                                                                  |
+| 代理        | `proxy`                                          | 接口调用 → `Request`；泛化                | `JdkProxyFactory`、`GenericInvocationHandler`；[generic-invocation](generic-invocation.md)                                                                                            |
+| 集群        | `cluster/{directory,router,loadbalance,support}` | 选址、路由链、6 种 LB、3 种容错、预热     | `AdaptiveLoadBalance`(P2C)、`RouterChain`；[warm-up](warm-up.md)                                                                                                                      |
+| 注册发现    | `registry`                                       | Registry SPI + 失败补偿                   | `FailbackRegistry`；[registry-comparison](registry-comparison.md)、[harbor-vs-nacos](harbor-vs-nacos.md)                                                                              |
+| 配置/过滤器 | `config`、`filter`                               | 声明式编排、Filter 链、动态配置、优雅停机 | `ServiceConfig`、`FilterChainBuilder`；[dynamic-config](dynamic-config.md)、[graceful-shutdown](graceful-shutdown.md)、[observability](observability.md)、[token-auth](token-auth.md) |
 
-贯穿各层的抽象在 `rpc` 包：`Protocol` / `Invoker` / `Invocation` / `Result`。全框架的异步是一根贯穿七层的 `CompletableFuture` 线，见 [async-full-chain](async-full-chain.md)。
+贯穿各层的抽象在 `rpc` 包：`Protocol` / `Caller` / `Request` / `Response`——`Caller` 统一消费端与 provider 端的调用抽象（`Reference` / `Provider` 各为其一端实现，对标 Dubbo 的 `Invoker`）。全框架的异步是一根贯穿七层的 `CompletableFuture` 线（七层是按一次调用的时序切片，与上表的六层静态分层非一一对应：传输层按请求/响应方向算两段，provider 侧业务执行独立成层），见 [async-full-chain](async-full-chain.md)。
 
 ## 4. 两种协议、三处"对外咬合"
 
@@ -71,15 +71,15 @@ Jaws 名字里的 "Jaws（咬合）" 有纵横两义：纵向是 core 仿 Dubbo 
 
 ## 6. 文档地图
 
-| 想深入 | 去这篇 |
-|---|---|
-| 全链路异步（七层） | [async-full-chain.md](async-full-chain.md) |
-| gRPC 线格式与互通 | [wire-grpc-compat.md](wire-grpc-compat.md) |
-| 编解码 / 协议头 | [codec-comparison.md](codec-comparison.md) |
-| 内置注册中心 ↔ Nacos | [harbor-vs-nacos.md](harbor-vs-nacos.md) |
-| 与 Dubbo 全维度对比 | [dubbo-comparison.md](dubbo-comparison.md) |
-| 注册中心实现（ZK / Nacos） | [registry-comparison.md](registry-comparison.md) |
-| 动态配置 / 优雅停机 / 预热 / 鉴权 / 可观测 / 泛化 | 对应同名文档 |
-| 传输层性能 / 压测 | [netty-performance.md](netty-performance.md)、[benchmark.md](benchmark.md) |
+| 想深入                                            | 去这篇                                                                     |
+|---------------------------------------------------|----------------------------------------------------------------------------|
+| 全链路异步（七层）                                | [async-full-chain.md](async-full-chain.md)                                 |
+| gRPC 线格式与互通                                 | [wire-grpc-compat.md](wire-grpc-compat.md)                                 |
+| 编解码 / 协议头                                   | [codec-comparison.md](codec-comparison.md)                                 |
+| 内置注册中心 ↔ Nacos                              | [harbor-vs-nacos.md](harbor-vs-nacos.md)                                   |
+| 与 Dubbo 全维度对比                               | [dubbo-comparison.md](dubbo-comparison.md)                                 |
+| 注册中心实现（ZK / Nacos）                        | [registry-comparison.md](registry-comparison.md)                           |
+| 动态配置 / 优雅停机 / 预热 / 鉴权 / 可观测 / 泛化 | 对应同名文档                                                               |
+| 传输层性能 / 压测                                 | [netty-performance.md](netty-performance.md)、[benchmark.md](benchmark.md) |
 
 > 源码：[github.com/javahongxi/jaws](https://github.com/javahongxi/jaws)（Apache-2.0，Java 17+）。
