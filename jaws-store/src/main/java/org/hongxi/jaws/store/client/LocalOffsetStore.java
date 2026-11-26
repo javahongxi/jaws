@@ -21,6 +21,12 @@ import java.util.concurrent.ConcurrentMap;
  * It removes a broker KV table and a commit protocol from the engine scope
  * while keeping restart-resume semantics.
  *
+ * <p>Keys are brokerName@topic@queueId: in multi-master mode the same
+ * (topic, queueId) exists on every broker with an independent offset space,
+ * so the broker identity is part of the key. Pre-multi-instance files
+ * (topic@queueId) no longer match and are ignored — consumption resumes
+ * from 0 once after the upgrade.
+ *
  * <p>Writes go through a temp file + atomic move so a crash never leaves a
  * half-written offset file.
  */
@@ -55,12 +61,12 @@ public class LocalOffsetStore {
         logger.info("Loaded {} consumer offsets from {}", offsets.size(), file);
     }
 
-    public long get(String topic, int queueId) {
-        return offsets.getOrDefault(key(topic, queueId), 0L);
+    public long get(String brokerName, String topic, int queueId) {
+        return offsets.getOrDefault(key(brokerName, topic, queueId), 0L);
     }
 
-    public void update(String topic, int queueId, long offset) {
-        offsets.put(key(topic, queueId), offset);
+    public void update(String brokerName, String topic, int queueId, long offset) {
+        offsets.put(key(brokerName, topic, queueId), offset);
     }
 
     public void persist() {
@@ -81,7 +87,7 @@ public class LocalOffsetStore {
         }
     }
 
-    private static String key(String topic, int queueId) {
-        return topic + "@" + queueId;
+    private static String key(String brokerName, String topic, int queueId) {
+        return brokerName + "@" + topic + "@" + queueId;
     }
 }

@@ -10,6 +10,12 @@ public class StoreConfig {
     /** Root directory holding commitlog/ and consumequeue/. */
     private String storePath = System.getProperty("user.home") + "/jaws-store";
 
+    /** Stable broker identity, persisted under storePath on first start and
+     * verified on every restart. Consumer offsets are keyed by it, so a
+     * rename against existing data is refused. Multi-instance deployments
+     * must set distinct names. */
+    private String brokerName = "broker";
+
     /** CommitLog file size, 1G by default (RocketMQ mappedFileSizeCommitLog). */
     private int mappedFileSizeCommitLog = 1024 * 1024 * 1024;
 
@@ -41,6 +47,14 @@ public class StoreConfig {
 
     public void setStorePath(String storePath) {
         this.storePath = storePath;
+    }
+
+    public String getBrokerName() {
+        return brokerName;
+    }
+
+    public void setBrokerName(String brokerName) {
+        this.brokerName = brokerName;
     }
 
     public int getMappedFileSizeCommitLog() {

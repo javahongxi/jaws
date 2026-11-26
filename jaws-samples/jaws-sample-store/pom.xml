@@ -17,6 +17,12 @@
             <artifactId>jaws-store</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- registry leg for the multi-master demo (store-cluster) -->
+        <dependency>
+            <groupId>org.hongxi</groupId>
+            <artifactId>jaws-registry-harbor</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
 </project>

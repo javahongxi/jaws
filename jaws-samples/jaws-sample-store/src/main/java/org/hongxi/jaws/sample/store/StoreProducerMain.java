@@ -13,7 +13,9 @@ import java.util.concurrent.CompletableFuture;
  *
  * <pre>
  * Properties:
- *   -DdirectUrl=127.0.0.1:10911   broker address
+ *   -DdirectUrl=127.0.0.1:10911   broker address (direct mode)
+ *   -Dregistry=harbor://127.0.0.1:19848   registry mode, overrides directUrl
+ *   -DloadBalance=consistentHash  pin one queue to one broker (registry mode)
  *   -Dcount=1000                  messages to send
  *   -Dmode=sync|async|oneway      send semantics (default sync)
  *   -Dtopic=store-demo            target topic, queue 0
@@ -27,7 +29,11 @@ public class StoreProducerMain {
         String mode = System.getProperty("mode", "sync");
         String topic = System.getProperty("topic", "store-demo");
 
-        StoreProducer producer = new StoreProducer(directUrl);
+        String registry = System.getProperty("registry");
+        StoreProducer producer = registry == null
+                ? new StoreProducer(directUrl)
+                : new StoreProducer(List.of(StoreSampleRegistry.parse(registry)), "fastjson2", 3000,
+                        StoreProducer.DEFAULT_MAX_INFLIGHT, System.getProperty("loadBalance"));
         long begin = System.nanoTime();
         switch (mode) {
             case "async" -> {

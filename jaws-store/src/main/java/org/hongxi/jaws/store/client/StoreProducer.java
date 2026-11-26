@@ -3,6 +3,7 @@ package org.hongxi.jaws.store.client;
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ReferenceConfig;
+import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.store.PutResult;
 import org.hongxi.jaws.store.StoreBroker;
 import org.hongxi.jaws.store.StoreMessage;
@@ -10,6 +11,7 @@ import org.hongxi.jaws.store.StoreService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
@@ -31,6 +33,12 @@ import java.util.concurrent.TimeoutException;
  * <p>Deliberately absent vs RocketMQ producer: autoBatch, compression and
  * MQFaultStrategy — cost-amortization knobs discussed in doc/rocketmq stay
  * article-level knowledge, not code here.
+ *
+ * <p>Multi-master mode: construct with registries instead of a directUrl;
+ * the jaws cluster load-balances puts across all registered brokers. Plain
+ * sends promise no cross-broker order; for ordered sends pass
+ * loadBalance=consistentHash, which pins one (topic, queueId) to one broker
+ * via StoreMessage.toString().
  */
 public class StoreProducer {
 
@@ -55,22 +63,49 @@ public class StoreProducer {
     public StoreProducer(String directUrl, String serialization, int requestTimeout, int maxInflight) {
         this.requestTimeout = requestTimeout;
         this.inflight = new Semaphore(maxInflight);
+        referenceConfig = baseReference(serialization, requestTimeout);
+        referenceConfig.setDirectUrl(directUrl);
+        storeService = referenceConfig.getRef();
+    }
+
+    public StoreProducer(List<RegistryConfig> registries) {
+        this(registries, "fastjson2", 3000, DEFAULT_MAX_INFLIGHT, null);
+    }
+
+    /**
+     * Registry mode. check=false lets the producer start before any broker
+     * registers; loadBalance may be null (framework default) or e.g.
+     * "consistentHash" for ordered sends.
+     */
+    public StoreProducer(List<RegistryConfig> registries, String serialization,
+                         int requestTimeout, int maxInflight, String loadBalance) {
+        this.requestTimeout = requestTimeout;
+        this.inflight = new Semaphore(maxInflight);
+        referenceConfig = baseReference(serialization, requestTimeout);
+        referenceConfig.setRegistries(registries);
+        referenceConfig.setCheck(false);
+        if (loadBalance != null) {
+            referenceConfig.setLoadBalance(loadBalance);
+        }
+        storeService = referenceConfig.getRef();
+    }
+
+    private static ReferenceConfig<StoreService> baseReference(String serialization, int requestTimeout) {
         ProtocolConfig protocolConfig = new ProtocolConfig();
         protocolConfig.setName(JawsConstants.PROTOCOL_JAWS);
         protocolConfig.setId(protocolConfig.getName());
         protocolConfig.setTransportFactory("netty");
         protocolConfig.setSerialization(serialization);
 
-        referenceConfig = new ReferenceConfig<>();
-        referenceConfig.setInterface(StoreService.class);
-        referenceConfig.setApplication("jaws-store-producer");
-        referenceConfig.setModule("store");
-        referenceConfig.setGroup(StoreBroker.GROUP);
-        referenceConfig.setVersion(StoreBroker.VERSION);
-        referenceConfig.setRequestTimeout(requestTimeout);
-        referenceConfig.setProtocol(protocolConfig);
-        referenceConfig.setDirectUrl(directUrl);
-        storeService = referenceConfig.getRef();
+        ReferenceConfig<StoreService> reference = new ReferenceConfig<>();
+        reference.setInterface(StoreService.class);
+        reference.setApplication("jaws-store-producer");
+        reference.setModule("store");
+        reference.setGroup(StoreBroker.GROUP);
+        reference.setVersion(StoreBroker.VERSION);
+        reference.setRequestTimeout(requestTimeout);
+        reference.setProtocol(protocolConfig);
+        return reference;
     }
 
     /** Block until the durability barrier completes or the timeout fires. */

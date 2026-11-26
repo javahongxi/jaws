@@ -136,6 +136,8 @@ usage() {
     app3 [port]        Same, but the registry leg is zookeeper (requires ZK at 127.0.0.1:2181, provider default port 20022)
     raft               One-shot Raft persistent-instance sample: RaftProvider -> RaftConsumer (requires HarborServer running)
     raftx              Same, but the registry leg is a real nacos-client (persistent registration + subscription)
+    store [port]       One-shot jaws-store demo: broker + producer + consumer (direct-connect, default port 10911)
+    store-cluster [port]  One-shot multi-master jaws-store demo: harbor + 2 brokers (port/port+1) + registry-mode clients
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
     bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
@@ -185,6 +187,7 @@ usage() {
     ./run-sample.sh raftx              # Same, but the registry leg is a real nacos-client
     ./run-sample.sh store              # One-shot jaws-store broker + producer + consumer
     COUNT=5000 MODE=async ./run-sample.sh store   # Store demo with 5000 async sends
+    ./run-sample.sh store-cluster      # Multi-master: harbor + 2 brokers + registry-mode clients
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -648,6 +651,173 @@ cmd_store() {
     fi
     rm -rf "$run_dir"
     rm -f "$log_file"
+    echo "=== Done ==="
+}
+
+#
+# One-shot multi-master store demo: harbor registry + two brokers (distinct
+# brokerName and data dirs) -> registry-mode producer (load-balanced puts) ->
+# registry-mode consumer (one pump per broker, offsets keyed by brokerName).
+# No rebalance by design: the single consumer instance drains both brokers.
+# Env: COUNT (messages, default 1000), MODE (sync|async|oneway), SYNC_FLUSH,
+#      HARBOR_PORT (registry port, default 19848).
+#
+cmd_store_cluster() {
+    local port="${1:-10911}"
+    local port_b=$((port + 1))
+    local harbor_port="${HARBOR_PORT:-19848}"
+    local count="${COUNT:-1000}"
+    local mode="${MODE:-sync}"
+
+    ensure_built
+    local cp bootstrap_cp
+    cp=$(build_classpath "$STORE_MODULE")
+    bootstrap_cp=$(build_classpath "$HARBOR_BOOTSTRAP_MODULE")
+
+    echo "=== One-shot run (store-cluster) ==="
+    echo "count=$count mode=$mode brokers=$port/$port_b registry=127.0.0.1:$harbor_port"
+    echo ""
+
+    # Fresh data dirs per run (see cmd_store): stale offsets against a wiped
+    # store would hang the consumer until its timeout.
+    local run_dir
+    run_dir=$(mktemp -d "${TMPDIR:-/tmp}/jaws-store-cluster.XXXXXX")
+
+    # Refuse to start on ports someone else already holds (see run_pair).
+    local p holder holder_main
+    for p in "$harbor_port" "$port" "$port_b"; do
+        holder=$(port_holder_pid "$p")
+        if [ -n "$holder" ]; then
+            holder_main=$(jps -l 2>/dev/null | awk -v pid="$holder" '$1 == pid {print $2}')
+            echo "Port $p is already held by PID $holder${holder_main:+ ($holder_main)}." >&2
+            echo "Stop it first:  kill $holder     (or: ./run-sample.sh stop)" >&2
+            rm -rf "$run_dir"
+            exit 1
+        fi
+    done
+
+    # Cleanup chain grows as each process starts; pids are expanded into the
+    # trap string right away so it stays valid after this function unwinds.
+    local cleanup="rm -rf '$run_dir'"
+    trap "$cleanup" EXIT
+    trap "$cleanup; exit 130" INT TERM
+
+    # 1. Start the harbor registry in background
+    echo "[1/6] Starting HarborServer (standalone) port=$harbor_port ..."
+    java -cp "$bootstrap_cp:$HARBOR_BOOTSTRAP_MODULE/target/classes" \
+        "$HARBOR_BOOTSTRAP_MAIN" "$harbor_port" > "provider-store-cluster-harbor.log" 2>&1 &
+    local harbor_pid=$!
+    echo "$harbor_pid" > ".provider-store-cluster-harbor.pid"
+    cleanup="cleanup_provider $harbor_pid '.provider-store-cluster-harbor.pid'; $cleanup"
+    trap "$cleanup" EXIT
+    trap "$cleanup; exit 130" INT TERM
+
+    local max_wait=20
+    local waited=0
+    while [ $waited -lt $max_wait ] && ! port_open "$harbor_port"; do
+        if ! kill -0 "$harbor_pid" 2>/dev/null; then
+            echo "HarborServer died before it was ready. Tail of provider-store-cluster-harbor.log:" >&2
+            tail -5 "provider-store-cluster-harbor.log" >&2 || true
+            exit 1
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if ! port_open "$harbor_port"; then
+        echo "HarborServer not ready after ${max_wait}s; continuing anyway, the clients may fail." >&2
+    fi
+
+    # 2. Start two brokers with distinct identities and data dirs
+    local name broker_port broker_pid
+    for name in a b; do
+        broker_port=$port
+        [ "$name" = "b" ] && broker_port=$port_b
+        echo "[2/6] Starting StoreBroker broker-$name port=$broker_port ..."
+        java -cp "$cp:$STORE_MODULE/target/classes" \
+            -Dport="$broker_port" \
+            -DbrokerName="broker-$name" \
+            -DstorePath="$run_dir/data-$name" \
+            -DsyncFlush="${SYNC_FLUSH:-false}" \
+            -Dregistry="harbor://127.0.0.1:$harbor_port" \
+            "$STORE_BROKER_MAIN" > "provider-store-cluster-$name.log" 2>&1 &
+        broker_pid=$!
+        echo "$broker_pid" > ".provider-store-cluster-$name.pid"
+        cleanup="cleanup_provider $broker_pid '.provider-store-cluster-$name.pid'; $cleanup"
+        trap "$cleanup" EXIT
+        trap "$cleanup; exit 130" INT TERM
+    done
+
+    # 3. Wait for both brokers to accept connections
+    printf '[3/6] Waiting for StoreBrokers ready '
+    waited=0
+    local ready=0
+    while [ $waited -lt 15 ]; do
+        if port_open "$port" && port_open "$port_b"; then
+            ready=1
+            echo " ready (${waited}s)"
+            break
+        fi
+        for name in a b; do
+            broker_pid=$(cat ".provider-store-cluster-$name.pid")
+            if ! kill -0 "$broker_pid" 2>/dev/null; then
+                echo ""
+                echo "StoreBroker broker-$name died before it was ready. Tail of provider-store-cluster-$name.log:" >&2
+                tail -5 "provider-store-cluster-$name.log" >&2 || true
+                exit 1
+            fi
+        done
+        sleep 1
+        waited=$((waited + 1))
+        printf '.'
+    done
+    if [ $ready -eq 0 ]; then
+        echo ""
+        echo "StoreBrokers not ready after 15s; continuing anyway, the clients may fail." >&2
+    fi
+
+    # 4. Produce through the registry (puts spread across both brokers)
+    echo "[4/6] Sending $count messages ($mode, registry mode) ..."
+    echo "--------------------------------------------"
+    local producer_exit=0
+    if java -cp "$cp:$STORE_MODULE/target/classes" \
+        -Dregistry="harbor://127.0.0.1:$harbor_port" -Dcount="$count" -Dmode="$mode" \
+        "$STORE_PRODUCER_MAIN"; then
+        producer_exit=0
+    else
+        producer_exit=$?
+    fi
+    echo "--------------------------------------------"
+
+    # 5. Consume through the registry (per-broker pumps, one instance)
+    echo "[5/6] Consuming, expecting $count messages from both brokers ..."
+    echo "--------------------------------------------"
+    local consumer_exit=0
+    if [ $producer_exit -ne 0 ]; then
+        consumer_exit=$producer_exit
+        echo "Skipped: producer failed with exit code $producer_exit" >&2
+    elif java -cp "$cp:$STORE_MODULE/target/classes" \
+        -Dregistry="harbor://127.0.0.1:$harbor_port" -Dexpected="$count" \
+        -Djaws.store.client.path="$run_dir/client" \
+        "$STORE_CONSUMER_MAIN"; then
+        consumer_exit=0
+    else
+        consumer_exit=$?
+    fi
+    echo "--------------------------------------------"
+
+    # 6. Stop everything and clean up
+    echo "[6/6] Stopping StoreBrokers and HarborServer ..."
+    eval "$cleanup"
+    trap - EXIT INT TERM
+
+    local exit_code=$consumer_exit
+    [ $producer_exit -ne 0 ] && exit_code=$producer_exit
+    if [ $exit_code -ne 0 ]; then
+        echo "Exit code: $exit_code"
+        echo "Logs kept for inspection: provider-store-cluster-*.log"
+        exit $exit_code
+    fi
+    rm -f provider-store-cluster-*.log
     echo "=== Done ==="
 }
 
@@ -1448,6 +1618,7 @@ case "${1:-}" in
     raft)            cmd_raft ;;
     raftx)           shift; cmd_raftx "$@" ;;
     store)           cmd_store "${2:-}" ;;
+    store-cluster)   cmd_store_cluster "${2:-}" ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;

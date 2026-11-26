@@ -51,4 +51,15 @@ public class StoreMessage implements Serializable {
     public void setBody(byte[] body) {
         this.body = body;
     }
+
+    /**
+     * Routing identity: topic + queueId, body excluded. ConsistentHashLoadBalance
+     * hashes the string form of the arguments, so under loadBalance=consistentHash
+     * this pins one queue to one broker — the ordered-send hook in multi-master
+     * mode. Keeping the body out avoids hashing megabytes per send.
+     */
+    @Override
+    public String toString() {
+        return topic + "@" + queueId;
+    }
 }

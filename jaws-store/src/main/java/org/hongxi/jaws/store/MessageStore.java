@@ -45,6 +45,7 @@ public class MessageStore implements ReputMessageService.DispatchListener {
     }
 
     public void start() throws IOException {
+        checkBrokerIdentity();
         if (!commitLog.load()) {
             throw new IOException("Failed to load commitlog files under " + config.getStorePath());
         }
@@ -60,6 +61,25 @@ public class MessageStore implements ReputMessageService.DispatchListener {
         pullRequestHoldService.start();
         startCqFlushTicker();
         logger.info("MessageStore started, storePath={}, syncFlush={}", config.getStorePath(), config.isSyncFlush());
+    }
+
+    /**
+     * Bind the data directory to a stable broker identity. Consumer offsets
+     * are keyed by brokerName, so a renamed broker would orphan them; refuse
+     * the mismatch instead of silently serving old data under a new name.
+     */
+    private void checkBrokerIdentity() throws IOException {
+        Path identityFile = new File(config.getStorePath() + File.separator + "broker.identity").toPath();
+        if (Files.exists(identityFile)) {
+            String persisted = Files.readString(identityFile, StandardCharsets.UTF_8).trim();
+            if (!persisted.equals(config.getBrokerName())) {
+                throw new IOException("Broker identity mismatch under " + config.getStorePath()
+                        + ": persisted=" + persisted + ", configured=" + config.getBrokerName());
+            }
+            return;
+        }
+        Files.createDirectories(identityFile.getParent());
+        Files.writeString(identityFile, config.getBrokerName(), StandardCharsets.UTF_8);
     }
 
     /** Drop all derived indexes and replay the CommitLog synchronously. */

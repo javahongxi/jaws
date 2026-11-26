@@ -2,6 +2,7 @@ package org.hongxi.jaws.store;
 
 import org.hongxi.jaws.common.JawsConstants;
 import org.hongxi.jaws.config.ProtocolConfig;
+import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
 import org.hongxi.jaws.serialization.FastJson2Serialization;
 import org.hongxi.jaws.serialization.ObjectInput;
@@ -12,13 +13,15 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Assembles the storage engine and exposes it over the jaws protocol —
- * the store's broker side. Direct-connect mode, no registry: the point of
- * this module is the storage kernel and the protocol under load, not
- * service discovery.
+ * the store's broker side. Two deployment shapes:
+ * direct-connect (no registry, single instance) or registry-registered
+ * multi-master sharding — each instance owns an independent CommitLog and
+ * a stable brokerName; there is no replication between instances.
  *
  * <p>Typical scenario: embedded in a demo main or a test to run a real
  * broker on a local port, with StoreProducer/StoreConsumer on the other end.
@@ -33,6 +36,7 @@ public class StoreBroker {
     private final MessageStore messageStore;
     private final ServiceConfig<StoreService> serviceConfig;
     private final String serialization;
+    private final String brokerName;
     private final int port;
 
     public StoreBroker(StoreConfig storeConfig, int port) {
@@ -40,8 +44,14 @@ public class StoreBroker {
     }
 
     public StoreBroker(StoreConfig storeConfig, int port, String serialization) {
+        this(storeConfig, port, serialization, null);
+    }
+
+    /** Registry mode: export and register to every given registry. */
+    public StoreBroker(StoreConfig storeConfig, int port, String serialization, List<RegistryConfig> registries) {
         this.messageStore = new MessageStore(storeConfig);
         this.serialization = serialization;
+        this.brokerName = storeConfig.getBrokerName();
         this.port = port;
 
         ProtocolConfig protocolConfig = new ProtocolConfig();
@@ -66,6 +76,9 @@ public class StoreBroker {
         serviceConfig.setGroup(GROUP);
         serviceConfig.setVersion(VERSION);
         serviceConfig.setProtocol(protocolConfig);
+        if (registries != null && !registries.isEmpty()) {
+            serviceConfig.setRegistries(registries);
+        }
     }
 
     public void start() throws IOException {
@@ -91,7 +104,8 @@ public class StoreBroker {
                 StoreMessage.of("warmup", 0, "warmup"),
                 new PutResult(PutStatus.PUT_OK, 0, 0),
                 new PullResult(PullStatus.FOUND, 0, 0, 0),
-                new MessageView()
+                new MessageView(),
+                new BrokerInfo("warmup")
         };
         for (Object sample : samples) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -116,6 +130,10 @@ public class StoreBroker {
         return messageStore;
     }
 
+    public int getPort() {
+        return port;
+    }
+
     private class StoreServiceImpl implements StoreService {
 
         @Override
@@ -127,6 +145,11 @@ public class StoreBroker {
         public CompletableFuture<PullResult> pullAsync(String topic, int queueId, long offset,
                                                        int maxCount, long suspendTimeoutMillis) {
             return messageStore.getMessageAsync(topic, queueId, offset, maxCount, suspendTimeoutMillis);
+        }
+
+        @Override
+        public CompletableFuture<BrokerInfo> brokerInfoAsync() {
+            return CompletableFuture.completedFuture(new BrokerInfo(brokerName));
         }
     }
 }

@@ -2,6 +2,7 @@ package org.hongxi.jaws.sample.store;
 
 import org.hongxi.jaws.store.client.StoreConsumer;
 
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -12,7 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <pre>
  * Properties:
- *   -DdirectUrl=127.0.0.1:10911   broker address
+ *   -DdirectUrl=127.0.0.1:10911   broker address(es), comma-separated
+ *   -Dregistry=harbor://127.0.0.1:19848   registry mode, overrides directUrl
  *   -Dexpected=1000               messages to wait for
  *   -Dgroup=store-demo-group      consumer group (offset file namespace)
  *   -Dtopic=store-demo            source topic, queue 0
@@ -31,7 +33,10 @@ public class StoreConsumerMain {
 
         AtomicInteger received = new AtomicInteger();
         CountDownLatch latch = new CountDownLatch(expected);
-        StoreConsumer consumer = new StoreConsumer(directUrl, group);
+        String registry = System.getProperty("registry");
+        StoreConsumer consumer = registry == null
+                ? new StoreConsumer(directUrl, group)
+                : new StoreConsumer(List.of(StoreSampleRegistry.parse(registry)), group);
         consumer.subscribe(topic, 0, messages -> {
             received.addAndGet(messages.size());
             messages.forEach(m -> latch.countDown());

@@ -23,4 +23,7 @@ public interface StoreService {
      */
     CompletableFuture<PullResult> pullAsync(String topic, int queueId, long offset,
                                             int maxCount, long suspendTimeoutMillis);
+
+    /** Report the stable broker identity; consumers key offsets by it. */
+    CompletableFuture<BrokerInfo> brokerInfoAsync();
 }
