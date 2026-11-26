@@ -8,7 +8,7 @@ jaws-store 是 jaws 仓库内的存储引擎实践模块（约 2800 行 main + 5
 
 | 维度 | 做 | 不做（声明式简化） |
 |---|---|---|
-| 存储内核 | mmap CommitLog + ConsumeQueue + 异步 reput 建索引 | IndexFile、多路径存储、磁盘水位清理 |
+| 存储内核 | mmap CommitLog + ConsumeQueue + 异步 reput 建索引 | IndexFile（按 key/tag 旁路检索）、多路径存储、磁盘水位清理 |
 | 持久性 | 异步刷盘节拍器 + SYNC_FLUSH 组提交 | HA 主从复制、Dledger |
 | 消费模型 | 长轮询拉取、批量拉取、客户端自管位点（键含 brokerName） | Pop 消费、rebalance、broker 端位点存储 |
 | 消息类型 | 普通消息 | 事务消息、延迟消息、顺序消息锁 |
