@@ -1,6 +1,7 @@
 package org.hongxi.jaws.store;
 
 import org.hongxi.jaws.common.JawsConstants;
+import org.hongxi.jaws.common.UrlParam;
 import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.config.ServiceConfig;
@@ -67,6 +68,11 @@ public class StoreBroker {
         // pay on-demand thread creation either.
         protocolConfig.setWorkerQueueSize(1000);
         protocolConfig.setMinWorkerThreads(200);
+        // The provider-side async guard (DefaultProvider's orTimeout) defaults
+        // to 1000ms, shorter than the consumer's long-poll hold (5000ms), so
+        // every suspended pull would surface as a 40003 provider timeout.
+        // Outlast the hold with the same 10s budget the consumer uses.
+        protocolConfig.setParameter(UrlParam.Transport.REQUEST_TIMEOUT.getName(), "10000");
 
         serviceConfig = new ServiceConfig<>();
         serviceConfig.setRef(new StoreServiceImpl());
