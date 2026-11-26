@@ -34,6 +34,7 @@ NameServer 用"放弃强一致"换来了极低的运维与实现成本：它挂�
 先纠正一个常见误判："RocketMQ 的 topic 不跨 broker"——**不对**。RocketMQ 一个 topic 的队列同样分布在多个 broker 上，与 Kafka 的分区分布同形：
 
 - **建 topic 就是逐 broker 建队列**。`mqadmin updateTopic -c cluster` 会在集群每个 broker 上各建一份 TopicConfig（每 broker 默认读写各 16 队列，TopicConfig L34-35）；自动创建走 TBW102 模板，队列数 = `min(客户端 defaultTopicQueueNums=4, TBW102 的 8)` = **每 broker 4 队列**（TopicConfigManager L289、DefaultMQProducer L111、BrokerConfig L50）。[发送链路精读](rocketmq-发送链路精读.md) §5.2 的实测正是单 broker 4 队列（queueId 0~3 轮转）——两 broker 集群就是 8 队列。
+- **读写队列数可分开配，但稳态下两者相同**（`-n` 会一次设两值）。分开配主要服务于在线扩缩容的两阶段过渡：生产者按 QueueData 的 writeQueueNums 展开发送队列（MQClientInstance L305），消费者 rebalance 按 readQueueNums 展开分配集合（L328），两个数字是两条独立通路上的闸门。缩队列时先 `-w` 后 `-r`：若一步到位，被摘掉的队列里还有存量没消费完，readQueueNums 一缩这些队列就从消费者视图消失，消息变无人可读的"幽灵消息"；扩容方向对称，先扩读再扩写。
 - **路由是按 broker 聚合的**。NameServer 返回的 TopicRouteData 里每个 broker 一条 QueueData（brokerName + 读写队列数），producer 把所有 broker 的队列展开成一个 MessageQueue 列表轮询发送——消息天然散到多个 broker。
 - **不跨 broker 的是单个 MessageQueue**：一个队列只属于一个 broker，其消息物理上混写在该 broker 的 CommitLog 里（所有 topic 共享一条物理日志，ConsumeQueue 只是索引）。队列是顺序性与消费分配的最小单位，这一点与 Kafka"单个分区的 leader 只在一个 broker 上"同形。
 
