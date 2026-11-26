@@ -98,6 +98,12 @@ RPC 核心由 **jaws-core → jaws-wire** 两个模块构成；**jaws-harbor** �
 ./run-sample.sh app2               # 运行示例（sample-app2-provider/consumer，registry 用 harbor，需要先启动 harbor-standalone）
 ./run-sample.sh app3               # 运行示例（sample-app3-provider/consumer，registry 用 zookeeper，需要 ZK 在 127.0.0.1:2181）
 
+# 存储引擎示例（jaws-store，RocketMQ 风格，内置无需外部依赖）
+./run-sample.sh store              # 一键演示：broker → consumer（长轮询挂起）→ producer（发送唤醒），直连，默认端口 10911
+./run-sample.sh store-cluster      # 多 master 分片：harbor 注册中心 + 双 broker + 同样的 consumer 先于 producer 时序
+COUNT=5000 MODE=async ./run-sample.sh store          # 两种模式都支持 COUNT / MODE（sync|async|oneway，详见 doc/jaws-store.md）
+COUNT=5000 MODE=async ./run-sample.sh store-cluster  # 5000 条异步发送，经注册中心负载均衡到两个 broker
+
 # 性能测试（8 核实测约 14 万 QPS，详见 doc/benchmark.md）
 ROLE=provider THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws  # 启动服务端
 ROLE=consumer THREADS=20 WARMUP=10 DURATION=40 ./run-sample.sh bench-jaws  # 启动消费端

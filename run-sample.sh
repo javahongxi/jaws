@@ -136,7 +136,7 @@ usage() {
     app3 [port]        Same, but the registry leg is zookeeper (requires ZK at 127.0.0.1:2181, provider default port 20022)
     raft               One-shot Raft persistent-instance sample: RaftProvider -> RaftConsumer (requires HarborServer running)
     raftx              Same, but the registry leg is a real nacos-client (persistent registration + subscription)
-    store [port]       One-shot jaws-store demo: broker + producer + consumer (direct-connect, default port 10911)
+    store [port]       One-shot jaws-store demo: broker + consumer + producer (direct-connect, default port 10911)
     store-cluster [port]  One-shot multi-master jaws-store demo: harbor + 2 brokers (port/port+1) + registry-mode clients
     bench-injvm        Benchmark - injvm protocol
     bench-jaws         Benchmark - jaws protocol (default netty transport)
@@ -185,7 +185,7 @@ usage() {
     ./run-sample.sh harborx            # Same, but the registry leg is jaws-registry-nacos
     ./run-sample.sh raft               # One-shot persistent-instance (Raft CP) demo
     ./run-sample.sh raftx              # Same, but the registry leg is a real nacos-client
-    ./run-sample.sh store              # One-shot jaws-store broker + producer + consumer
+    ./run-sample.sh store              # One-shot jaws-store broker + consumer + producer
     COUNT=5000 MODE=async ./run-sample.sh store   # Store demo with 5000 async sends
     ./run-sample.sh store-cluster      # Multi-master: harbor + 2 brokers + registry-mode clients
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
@@ -529,9 +529,12 @@ cmd_run_adaptive() {
 }
 
 #
-# One-shot store demo: broker in background -> producer -> consumer. The
-# workload has two client legs against one storage broker, so the run_pair
-# flow is spelled out here instead of reused.
+# One-shot store demo: broker in background -> consumer (background) ->
+# producer. The consumer starts first so its pulls suspend and long-poll on
+# the empty queue; the producer then wakes them, exercising the hold/wakeup
+# path (and the provider-side requestTimeout that must outlive the hold).
+# Two client legs against one storage broker, so the run_pair flow is
+# spelled out here instead of reused.
 # Env: COUNT (messages, default 1000), MODE (sync|async|oneway), SYNC_FLUSH.
 #
 cmd_store() {
@@ -605,10 +608,30 @@ cmd_store() {
         echo "StoreBroker not ready after ${max_wait}s; continuing anyway, the clients may fail." >&2
     fi
 
-    # 3. Produce (guarded like run_pair: under set -e a failing leg must not
-    #    end the script before the broker below it can be stopped)
-    echo "[3/5] Sending $count messages ($mode) ..."
+    # 3. Consume first (in the background) so its pulls suspend and long-poll
+    #    on the empty queue; the producer below then wakes them. This ordering
+    #    is what actually exercises the hold/wakeup path. A brief settle keeps
+    #    the consumer's first pull suspended when the sends arrive.
+    echo "[3/5] Consuming in background, expecting $count messages (long-poll hold) ..."
     echo "--------------------------------------------"
+    local consumer_log="consumer-store.log"
+    local consumer_pid_file=".consumer-store.pid"
+    java -cp "$cp:$STORE_MODULE/target/classes" \
+        -DdirectUrl="127.0.0.1:$port" -Dexpected="$count" \
+        -Djaws.store.client.path="$run_dir/client" \
+        "$STORE_CONSUMER_MAIN" > "$consumer_log" 2>&1 &
+    local consumer_pid=$!
+    echo "$consumer_pid" > "$consumer_pid_file"
+    # Grow the cleanup chain so a Ctrl-C in the window below also reaps the
+    # background consumer, not just the broker.
+    trap "cleanup_provider $consumer_pid '$consumer_pid_file'; cleanup_provider $pid '$pid_file'; rm -rf '$run_dir'" EXIT
+    trap "cleanup_provider $consumer_pid '$consumer_pid_file'; cleanup_provider $pid '$pid_file'; rm -rf '$run_dir'; exit 130" INT TERM
+    sleep 2
+
+    # 4. Produce (guarded like run_pair: under set -e a failing leg must not
+    #    end the script before the broker and consumer can be stopped). The
+    #    sends wake the consumer's suspended pulls.
+    echo "[4/5] Sending $count messages ($mode) to wake suspended pulls ..."
     local producer_exit=0
     if java -cp "$cp:$STORE_MODULE/target/classes" \
         -DdirectUrl="127.0.0.1:$port" -Dcount="$count" -Dmode="$mode" \
@@ -617,23 +640,21 @@ cmd_store() {
     else
         producer_exit=$?
     fi
-    echo "--------------------------------------------"
 
-    # 4. Consume
-    echo "[4/5] Consuming, expecting $count messages ..."
-    echo "--------------------------------------------"
+    # Drain the consumer: if the producer failed, the consumer would otherwise
+    # block until its own timeout, so reap it early instead of waiting.
     local consumer_exit=0
     if [ $producer_exit -ne 0 ]; then
         consumer_exit=$producer_exit
+        kill "$consumer_pid" 2>/dev/null || true
+        wait "$consumer_pid" 2>/dev/null || true
         echo "Skipped: producer failed with exit code $producer_exit" >&2
-    elif java -cp "$cp:$STORE_MODULE/target/classes" \
-        -DdirectUrl="127.0.0.1:$port" -Dexpected="$count" \
-        -Djaws.store.client.path="$run_dir/client" \
-        "$STORE_CONSUMER_MAIN"; then
+    elif wait "$consumer_pid"; then
         consumer_exit=0
     else
         consumer_exit=$?
     fi
+    cat "$consumer_log"
     echo "--------------------------------------------"
 
     # 5. Stop broker and clean up
@@ -646,18 +667,20 @@ cmd_store() {
     if [ $exit_code -ne 0 ]; then
         echo "Exit code: $exit_code"
         echo "Broker log kept for inspection: $log_file"
+        echo "Consumer log kept for inspection: $consumer_log"
         rm -rf "$run_dir"
         exit $exit_code
     fi
     rm -rf "$run_dir"
-    rm -f "$log_file"
+    rm -f "$log_file" "$consumer_log" "$consumer_pid_file"
     echo "=== Done ==="
 }
 
 #
 # One-shot multi-master store demo: harbor registry + two brokers (distinct
-# brokerName and data dirs) -> registry-mode producer (load-balanced puts) ->
-# registry-mode consumer (one pump per broker, offsets keyed by brokerName).
+# brokerName and data dirs) -> registry-mode consumer (background, one pump
+# per broker, offsets keyed by brokerName) -> registry-mode producer
+# (load-balanced puts waking the suspended pulls, see cmd_store).
 # No rebalance by design: the single consumer instance drains both brokers.
 # Env: COUNT (messages, default 1000), MODE (sync|async|oneway), SYNC_FLUSH,
 #      HARBOR_PORT (registry port, default 19848).
@@ -775,9 +798,28 @@ cmd_store_cluster() {
         echo "StoreBrokers not ready after 15s; continuing anyway, the clients may fail." >&2
     fi
 
-    # 4. Produce through the registry (puts spread across both brokers)
-    echo "[4/6] Sending $count messages ($mode, registry mode) ..."
+    # 4. Consume first (in the background) so the per-broker pumps suspend and
+    #    long-poll on the empty queues; the producer below then wakes them
+    #    (same ordering rationale as cmd_store). A brief settle keeps the
+    #    first pulls suspended when the sends arrive.
+    echo "[4/6] Consuming in background, expecting $count messages from both brokers (long-poll hold) ..."
     echo "--------------------------------------------"
+    local consumer_log="consumer-store-cluster.log"
+    local consumer_pid_file=".consumer-store-cluster.pid"
+    java -cp "$cp:$STORE_MODULE/target/classes" \
+        -Dregistry="harbor://127.0.0.1:$harbor_port" -Dexpected="$count" \
+        -Djaws.store.client.path="$run_dir/client" \
+        "$STORE_CONSUMER_MAIN" > "$consumer_log" 2>&1 &
+    local consumer_pid=$!
+    echo "$consumer_pid" > "$consumer_pid_file"
+    cleanup="cleanup_provider $consumer_pid '$consumer_pid_file'; $cleanup"
+    trap "$cleanup" EXIT
+    trap "$cleanup; exit 130" INT TERM
+    sleep 2
+
+    # 5. Produce through the registry (puts spread across both brokers); the
+    #    sends wake the consumer's suspended pulls.
+    echo "[5/6] Sending $count messages ($mode, registry mode) to wake suspended pulls ..."
     local producer_exit=0
     if java -cp "$cp:$STORE_MODULE/target/classes" \
         -Dregistry="harbor://127.0.0.1:$harbor_port" -Dcount="$count" -Dmode="$mode" \
@@ -786,23 +828,21 @@ cmd_store_cluster() {
     else
         producer_exit=$?
     fi
-    echo "--------------------------------------------"
 
-    # 5. Consume through the registry (per-broker pumps, one instance)
-    echo "[5/6] Consuming, expecting $count messages from both brokers ..."
-    echo "--------------------------------------------"
+    # Drain the consumer: if the producer failed, the consumer would otherwise
+    # block until its own timeout, so reap it early instead of waiting.
     local consumer_exit=0
     if [ $producer_exit -ne 0 ]; then
         consumer_exit=$producer_exit
+        kill "$consumer_pid" 2>/dev/null || true
+        wait "$consumer_pid" 2>/dev/null || true
         echo "Skipped: producer failed with exit code $producer_exit" >&2
-    elif java -cp "$cp:$STORE_MODULE/target/classes" \
-        -Dregistry="harbor://127.0.0.1:$harbor_port" -Dexpected="$count" \
-        -Djaws.store.client.path="$run_dir/client" \
-        "$STORE_CONSUMER_MAIN"; then
+    elif wait "$consumer_pid"; then
         consumer_exit=0
     else
         consumer_exit=$?
     fi
+    cat "$consumer_log"
     echo "--------------------------------------------"
 
     # 6. Stop everything and clean up
@@ -814,10 +854,10 @@ cmd_store_cluster() {
     [ $producer_exit -ne 0 ] && exit_code=$producer_exit
     if [ $exit_code -ne 0 ]; then
         echo "Exit code: $exit_code"
-        echo "Logs kept for inspection: provider-store-cluster-*.log"
+        echo "Logs kept for inspection: provider-store-cluster-*.log, $consumer_log"
         exit $exit_code
     fi
-    rm -f provider-store-cluster-*.log
+    rm -f provider-store-cluster-*.log "$consumer_log"
     echo "=== Done ==="
 }
 
