@@ -103,9 +103,24 @@ NameServer 用"放弃强一致"换来了极低的运维与实现成本：它挂�
 1. **NameServer 全挂不影响存量收发**——客户端用本地路由缓存直连 broker，新客户端才起不来；
 2. **路由陈旧是常态**，容错做在发送侧：失败重试换队列（默认避开上次失败的 broker）+ `MQFaultStrategy` 延迟规避（[发送链路精读](rocketmq-发送链路精读.md) §1.3）。NameServer 剔除 broker 不通知任何人，客户端最坏要等 30s 轮询或一次发送失败才知道。
 
-消费侧 rebalance 按队列分配（每 20s），broker 增减触发队列重分配；位点存 broker 端。
+**Kafka**：客户端从任意 broker 拉元数据，leader 切换后 broker 返回 `NOT_LEADER_OR_FOLLOWER` 等错误码，客户端刷新元数据重试——路由纠错是**请求驱动**的，比 RocketMQ 的周期轮询收敛快。controller 全挂同样不影响存量收发（数据面不经过 controller），但选主、建 topic 等元数据变更停摆。
 
-**Kafka**：客户端从任意 broker 拉元数据，leader 切换后 broker 返回 `NOT_LEADER_OR_FOLLOWER` 等错误码，客户端刷新元数据重试——路由纠错是**请求驱动**的，比 RocketMQ 的周期轮询收敛快。controller 全挂同样不影响存量收发（数据面不经过 controller），但选主、建 topic 等元数据变更停摆。消费侧 rebalance 按分区分配，位点存 `__consumer_offsets`（也是一个 Kafka topic）。
+### 4.1 消费端分配：分片数是并行度天花板
+
+两者同一条定律：**消费并行度上限 = 分片数**，实例数超过分片数就是浪费。
+
+**RocketMQ**：分配单位是 MessageQueue，**broker 边界被抹平**——rebalance（RebalanceService，默认每 20s，实例上下线/broker 增减也触发）从路由把所有 broker 的队列展开成一个排序列表，与组内排序后的 consumerId 一起交给分配策略。以"2 broker × 各 16 队列 = 32 队列"为例，默认 `AllocateMessageQueueAveragely`（L37-45）做连续切片：`mod = 32 % N`，前 mod 个实例各分 ⌈32/N⌉ 个，其余各分 ⌊32/N⌋ 个：
+
+| 实例数 N | 每实例队列数 |
+|---|---|
+| 1 | 32（一个实例吃全部，完全合法） |
+| 16 | 2 |
+| 32 | 1（并行度拉满） |
+| >32 | 多余实例分不到队列，空转（集群模式） |
+
+实例数按吞吐需求定，不需要对齐"每 broker 16 个"；每个实例对自己分到的队列各起长轮询拉取，通常同时连着多台 broker。两个变体：顺序消费加 broker 端队列锁（同一队列同一时刻只被一个实例消费，上限不变）；广播模式每实例消费全部队列，不存在分配。位点存 broker 端。
+
+**Kafka**：rebalance 按分区分配（assignor 由消费组 leader 执行，§3.2），上限同样是分区数；位点存 `__consumer_offsets`（也是一个 Kafka topic）。差别在抬天花板的成本：RocketMQ 队列是轻量索引，建 topic 时调大每 broker 队列数即可近乎零成本抬上限；Kafka 加分区是加物理日志，且破坏按 key 路由（§2 表）。
 
 ## 5. 扩容：加节点 ≠ 数据迁移
 
@@ -135,3 +150,4 @@ NameServer 用"放弃强一致"换来了极低的运维与实现成本：它挂�
 5. 给 RocketMQ 集群加一台 broker，老消息会挪过去吗？Kafka 呢？（不会；要显式 reassignment）
 6. Kafka `acks=all` 时 leader 等的是什么？KRaft 参与吗？`min.insync.replicas=2` 挡的是什么？（ISR 全员追平该 offset；不参与，只管元数据；ISR 缩到 2 以下时拒写，是准入下限不是投票数）
 7. Kafka 有几种 leader？数据面有 leader server 吗？RocketMQ 的 master 是什么级？（分区 leader / active controller / 消费组 leader 三种；没有，broker 对等、leader 按分区散布；broker 组级，整条 CommitLog 为主）
+8. 2 broker × 各 16 队列，16 个消费实例每实例分几个队列？多少实例拉满并行度？（2 个；32 个，再多空转；分配按展开后的 32 队列切，与每 broker 16 个无关）
