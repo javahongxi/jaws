@@ -1,6 +1,6 @@
 # Jaws Netty 解码器：半包与粘包处理
 
-基于 [NettyDecoder](../jaws-core/src/main/java/org/hongxi/jaws/transport/netty/NettyDecoder.java) 与 [JawsCodec](../jaws-core/src/main/java/org/hongxi/jaws/transport/netty/JawsCodec.java) 源码，梳理 jaws 协议在 TCP 字节流上的定帧机制：半包（拆包）怎么等、粘包怎么切、帧长知识归谁所有，以及为什么不用 Netty 自带的 `LengthFieldBasedFrameDecoder`。
+基于 [NettyDecoder](../jaws-core/src/main/java/org/hongxi/jaws/transport/netty/NettyDecoder.java) 与 [JawsCodec](../jaws-core/src/main/java/org/hongxi/jaws/transport/netty/JawsCodec.java) 源码，梳理 jaws 协议在 TCP 字节流上的定帧机制：半包（拆包）怎么等、粘包怎么切、帧长知识归谁所有，以及为什么不用 Netty 自带的 `LengthFieldBasedFrameDecoder`；末节对比 HTTP/2 传输层——标准协议的帧层由 Netty 包办，消息边界仍要自己处理。
 
 ## 一、问题背景：TCP 没有消息边界
 
@@ -108,3 +108,36 @@ while (in.isReadable()) {
 下游契约：DecodedFrame 的 body 是 `readRetainedSlice` 产生的 retained slice（引用计数 +1），由 NettyChannelHandler 处理完后 release；异步提交到 serverExecutor 前需再 retain，避免 channelRead 返回后框架自动 release 导致 use-after-free。
 
 该 decoder 由三处 pipeline 共用：[NettyServer](../jaws-core/src/main/java/org/hongxi/jaws/transport/netty/NettyServer.java)、[NettyClient](../jaws-core/src/main/java/org/hongxi/jaws/transport/netty/NettyClient.java) 与 [AdaptiveServer](../jaws-core/src/main/java/org/hongxi/jaws/transport/adaptive/AdaptiveServer.java)，请求/响应两个方向走同一套定帧逻辑，靠 flag 的数据类型位区分。
+
+## 八、HTTP/2 传输层：帧层交给 Netty，消息层自己兜底
+
+jaws 的 HTTP/2 传输（http2/wire）不走 NettyDecoder，pipeline 是（[AbstractHttp2Server](../jaws-core/src/main/java/org/hongxi/jaws/transport/http2/AbstractHttp2Server.java) / [AbstractHttp2Client](../jaws-core/src/main/java/org/hongxi/jaws/transport/http2/AbstractHttp2Client.java)）：
+
+```
+[ssl] → flush_consolidation → http2_codec(Http2FrameCodec) → http2_multiplex(Http2MultiplexHandler)
+```
+
+半包/粘包要分两层看，答案不一样。
+
+### 8.1 帧层：Netty 全包
+
+`Http2FrameCodec` 内部就是 HTTP/2 版的"NettyDecoder"：按 9 字节帧头（3B length + type + flags + streamId）从 TCP 字节流里切帧——帧半包等累积缓冲补齐、帧粘包循环切分、HEADERS 的 HPACK 跨 CONTINUATION 帧拼装，全在 Netty 里完成。传到业务 handler 的已经是完整的 `Http2HeadersFrame`/`Http2DataFrame` 对象，jaws 代码里看不到裸字节流。jaws 二进制协议是私有协议，没有现成帧层才要手写 NettyDecoder；HTTP/2 是标准协议，这层 Netty 替你写好了。
+
+多请求在同一条连接上交错（HTTP/2 意义上的"粘包"），也由 `Http2MultiplexHandler` 按 streamId 分发到各自独立的 stream channel 解决——二进制协议里对应的是 requestId 分发。
+
+### 8.2 消息层：Netty 只保证帧完整，不保证消息完整
+
+**unary / server-streaming 的请求体**：一条 RPC 消息可能被发送端拆成多个 DATA 帧（流控窗口、maxFrameSize 限制），Netty 交付的是 N 个完整帧而非一条完整消息。[Http2StreamServerHandler.onData](../jaws-core/src/main/java/org/hongxi/jaws/transport/http2/Http2StreamServerHandler.java) 自己攒：逐帧写入 `ByteArrayOutputStream`，直到 `END_STREAM` 才 dispatch，`maxContentLength` 封顶。这就是消息级的"半包重组"，边界标志是 END_STREAM 而不是长度字段。
+
+**streaming 的每个 item**：jaws 的约定是**一个 DATA 帧 = 一个 item**——发送端 [Http2StreamCodec.encodeItem](../jaws-core/src/main/java/org/hongxi/jaws/transport/http2/Http2StreamCodec.java) 整体序列化后写一帧，接收端 [Http2StreamStreamingHandler.onData](../jaws-core/src/main/java/org/hongxi/jaws/transport/http2/Http2StreamStreamingHandler.java) 逐帧直接 `decodeItem`，没有长度前缀、也没有跨帧重组。它依赖"帧层保证这一帧字节不多不少"，把消息边界问题转嫁给了帧边界。这与 gRPC 线格式不同——gRPC 用 5 字节长度前缀在 DATA 载荷内自定界，item 与帧解耦。
+
+### 8.3 收束
+
+| 层 | 边界依据 | 谁处理 |
+|---|---|---|
+| TCP 字节流 → HTTP/2 帧 | 9B 帧头 length | Netty `Http2FrameCodec` |
+| 帧 → 流（多路复用分离） | streamId | Netty `Http2MultiplexHandler` |
+| 帧 → unary 消息 | END_STREAM + 累积 | jaws `Http2StreamServerHandler` |
+| 帧 → streaming item | 一帧一 item 约定 | jaws `Http2StreamCodec`（无重组） |
+
+一个隐含边界：逐帧 decodeItem 的约定要求 item 不超过 maxFrameSize（默认 16KB）——超大 item 会被 Netty 远端流控拆成多帧，逐帧解码就会失败；若要支持超大 item，需像 gRPC 那样加长度前缀做跨帧重组。
