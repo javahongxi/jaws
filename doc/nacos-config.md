@@ -43,7 +43,7 @@
 
 **服务端**——先看 gRPC 服务器在哪起（不熟 gRPC 的人最容易困惑的一点）：
 
-- `GrpcSdkServer` 与 `GrpcClusterServer` 是**两个 Spring bean、两个独立端口**（对应 §2 的 SDK 面与集群面）。二者经 `BaseRpcServer.start()`（**`@PostConstruct`，随 bean 初始化即启动**，日志「Nacos GrpcSdkServer Rpc server starting at port …」）调 `BaseGrpcServer.startServer():91-99`：`new MutableHandlerRegistry()` → `addServices(...)` → `NettyServerBuilder.forAddress(主端口 + rpcPortOffset())`——SDK 面 +1000、集群面 +1001。**这不是 Tomcat/Servlet 容器：gRPC 服务器是 grpc-netty 自己监听的另一条 TCP 端口**，`fallbackHandlerRegistry(:112)` 挂上 handler 表，`:182` 注册 `AddressTransportFilter`——`transportReady` 时按 TCP 铸 connectionId 塞进连接属性（每个 call 经 context 携带，§2 的注册表靠它），`transportTerminated` 时注销。
+- `GrpcSdkServer` 与 `GrpcClusterServer` 是**两个 Spring bean、两个独立端口**（对应 §2 的 SDK 面与集群面）。二者经 `BaseRpcServer.start()`（**`@PostConstruct`，随 bean 初始化即启动**，日志「Nacos GrpcSdkServer Rpc server starting at port …」）调 `BaseGrpcServer.startServer():91-99`：`new MutableHandlerRegistry()` → `addServices(...)` → `NettyServerBuilder.forAddress(主端口 + rpcPortOffset())`——SDK 面 +1000、集群面 +1001。**这不是 tomcat/Servlet 容器：gRPC 服务器是 grpc-netty 自己监听的另一条 TCP 端口**，`fallbackHandlerRegistry(:112)` 挂上 handler 表，`:182` 注册 `AddressTransportFilter`——`transportReady` 时按 TCP 铸 connectionId 塞进连接属性（每个 call 经 context 携带，§2 的注册表靠它），`transportTerminated` 时注销。
 - RPC handler 无需手工装配：`RequestHandlerRegistry` 在 `ContextRefreshedEvent` 按类简名自动注册（见 §4）。
 
 数据面的开机动作在 `DumpService` 抽象基类 + 两个 `@PostConstruct init()` 形态（`service/dump/`）：
