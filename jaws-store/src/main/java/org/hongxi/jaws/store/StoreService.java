@@ -11,7 +11,7 @@ import java.util.concurrent.CompletableFuture;
  *
  * <p>The three offset methods never suspend the way a pull does: two carry a
  * group's consumption progress, one reports a queue's tail. Each is a map lookup
- * or an atomic read, answered inline the way the admin queries are.
+ * or an atomic read, answered inline without parking a worker.
  *
  * <p>Client-side send semantics (sync/async/oneway) are layered on top by
  * StoreProducer; the wire contract stays uniformly async.

@@ -16,7 +16,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Stream;
 
 /**
@@ -38,16 +37,12 @@ public class MessageStore implements ReputMessageService.DispatchListener {
     private final ConcurrentMap<String, ConsumeQueue> consumeQueueTable = new ConcurrentHashMap<>();
     private final ReputMessageService reputMessageService;
     private final PullRequestHoldService pullRequestHoldService;
-    /** Total pull requests served; a lightweight broker-side observability counter. */
+    /**
+     * Pulls served so far. The one counter left on the broker, and not an
+     * observability surface: tests use it to see that a request actually arrived
+     * (short-polling backoff spacing, pump attachment after discovery).
+     */
     private final AtomicLong pullCount = new AtomicLong();
-    // Hot-path throughput counters use LongAdder: striped, so concurrent writers
-    // never CAS the same cache line. The put path is already serialized by
-    // CommitLog's global lock, but pull pumps run truly concurrent, and read-side
-    // sum() is cheap because stats are sampled rarely. Kept off the lock so no
-    // increment extends the memcpy critical section.
-    private final LongAdder putCount = new LongAdder();
-    private final LongAdder putRejectedCount = new LongAdder();
-    private final LongAdder pageCacheBusyCount = new LongAdder();
     private volatile boolean stopped;
     private Thread cqFlushThread;
     private Thread cleanupThread;
@@ -241,16 +236,9 @@ public class MessageStore implements ReputMessageService.DispatchListener {
      */
     public CompletableFuture<PutResult> putMessageAsync(StoreMessage message) {
         if (commitLog.isOSPageCacheBusy()) {
-            pageCacheBusyCount.increment();
-            putRejectedCount.increment();
             return CompletableFuture.completedFuture(new PutResult(PutStatus.OS_PAGE_CACHE_BUSY));
         }
         PutResult result = commitLog.putMessage(message);
-        if (result.isOk()) {
-            putCount.increment();
-        } else {
-            putRejectedCount.increment();
-        }
         if (result.isOk() && config.isSyncFlush()) {
             int size = MessageCodec.calTotalSize(message.getBody().length,
                     message.getTopic().getBytes(StandardCharsets.UTF_8).length);
@@ -279,8 +267,6 @@ public class MessageStore implements ReputMessageService.DispatchListener {
             return CompletableFuture.completedFuture(results);
         }
         if (commitLog.isOSPageCacheBusy()) {
-            pageCacheBusyCount.increment();
-            putRejectedCount.increment();
             for (int i = 0; i < messages.size(); i++) {
                 results.add(new PutResult(PutStatus.OS_PAGE_CACHE_BUSY));
             }
@@ -291,12 +277,9 @@ public class MessageStore implements ReputMessageService.DispatchListener {
             PutResult result = commitLog.putMessage(message);
             results.add(result);
             if (result.isOk()) {
-                putCount.increment();
                 int size = MessageCodec.calTotalSize(message.getBody().length,
                         message.getTopic().getBytes(StandardCharsets.UTF_8).length);
                 maxEndOffset = Math.max(maxEndOffset, result.getCommitLogOffset() + size);
-            } else {
-                putRejectedCount.increment();
             }
         }
         if (config.isSyncFlush() && maxEndOffset >= 0) {
@@ -375,40 +358,14 @@ public class MessageStore implements ReputMessageService.DispatchListener {
         return consumeQueue == null ? 0 : consumeQueue.getMaxOffsetInQueue();
     }
 
-    /** Number of pull requests served so far (observability / short-polling assertions). */
+    /** Number of pull requests served so far (test probe for "did the request land"). */
     public long getPullCount() {
         return pullCount.get();
     }
 
-    /**
-     * Assemble a point-in-time observability snapshot. Counters are summed
-     * without resetting; the offset/lag fields are gauges read from live
-     * positions. No log walk, so this never contends with the data path beyond
-     * a few atomic reads.
-     */
-    public StatsResult getStats() {
-        StatsResult stats = new StatsResult();
-        long maxOffset = commitLog.getMaxOffset();
-        stats.setBrokerName(config.getBrokerName());
-        stats.setPutTotal(putCount.sum());
-        stats.setPutRejectedTotal(putRejectedCount.sum());
-        stats.setPageCacheBusyTotal(pageCacheBusyCount.sum());
-        stats.setPullTotal(pullCount.get());
-        stats.setCommitLogMaxOffset(maxOffset);
-        stats.setCommitLogFlushedOffset(commitLog.getFlushedOffset());
-        stats.setDispatchBehindBytes(maxOffset - reputMessageService.getReputFromOffset());
-        stats.setConsumeQueueCount(consumeQueueTable.size());
-        return stats;
-    }
-
-    /**
-     * Admin single-record lookup by physical CommitLog offset. Bypasses both the
-     * ConsumeQueue index and any IndexFile — the offset is authoritative, so the
-     * record is read straight from the log (RocketMQ VIEW_MESSAGE_BY_ID shape).
-     * Null when no valid record starts at the offset.
-     */
-    public MessageView viewMessage(long commitLogOffset) {
-        return commitLog.viewMessage(commitLogOffset);
+    /** Live write frontier of the log, for lag and roll-size assertions. */
+    public long getCommitLogMaxOffset() {
+        return commitLog.getMaxOffset();
     }
 
     public void shutdown() {

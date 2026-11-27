@@ -3,8 +3,8 @@ package org.hongxi.jaws.store;
 import java.io.Serializable;
 
 /**
- * Answer to an offset query or commit — the counterpart of {@link AdminViewResult}
- * on the progress-tracking side.
+ * Answer to an offset query or commit — the status wrapper that lets "no record"
+ * travel as a normal response instead of a sentinel value.
  *
  * <p>Absence is a distinct answer: a stored offset of 0 is a real position
  * (nothing consumed yet), while {@code found=false} means this broker has never

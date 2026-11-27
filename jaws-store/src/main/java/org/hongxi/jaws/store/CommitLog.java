@@ -217,35 +217,6 @@ public class CommitLog {
         return MessageCodec.decode(slice);
     }
 
-    /**
-     * Read one record by physical offset alone, taking its length from the
-     * record's own totalSize header — the admin path behind VIEW_MESSAGE_BY_ID,
-     * which RocketMQ answers without an index by decoding the offset embedded in
-     * the msgId and reading it straight from the log.
-     *
-     * <p>Null when no valid record starts here: the offset is outside every
-     * loaded file, lands in a rolled-file tail hole, exceeds the write position,
-     * or fails the size/magic sanity check.
-     */
-    public MessageView viewMessage(long offset) {
-        MappedFile mappedFile = mappedFileQueue.findMappedFileByOffset(offset);
-        if (mappedFile == null) {
-            return null;
-        }
-        int pos = (int) (offset % mappedFile.getFileSize());
-        int wrote = mappedFile.getWrotePosition();
-        if (pos < 0 || pos + MessageCodec.HEADER_SIZE > wrote) {
-            return null;
-        }
-        int size = mappedFile.getInt(pos);
-        int magic = mappedFile.getInt(pos + 4);
-        if (size <= 0 || magic != MessageCodec.MESSAGE_MAGIC || pos + size > wrote) {
-            return null;
-        }
-        ByteBuffer slice = mappedFile.selectMappedBuffer(pos, size);
-        return MessageCodec.decode(slice);
-    }
-
     public long flush() {
         return mappedFileQueue.flush();
     }

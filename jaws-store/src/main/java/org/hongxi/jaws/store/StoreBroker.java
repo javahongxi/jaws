@@ -41,7 +41,6 @@ public class StoreBroker {
     private final MessageStore messageStore;
     private final ConsumerOffsetStore offsetStore;
     private final ServiceConfig<StoreService> serviceConfig;
-    private final ServiceConfig<StoreAdminService> adminServiceConfig;
     private final String serialization;
     private final String brokerName;
     private final int port;
@@ -94,29 +93,6 @@ public class StoreBroker {
         if (registries != null && !registries.isEmpty()) {
             serviceConfig.setRegistries(registries);
         }
-
-        // Admin query contract, exported on the same port. AbstractTransportFactory
-        // shares one server per host:port (the StoreService export above creates it),
-        // so this second export just registers an added provider on the same channel;
-        // the two are kept apart purely by interface name in the service key.
-        ProtocolConfig adminProtocolConfig = new ProtocolConfig();
-        adminProtocolConfig.setName(JawsConstants.PROTOCOL_JAWS);
-        adminProtocolConfig.setId(adminProtocolConfig.getName());
-        adminProtocolConfig.setTransportFactory("netty");
-        adminProtocolConfig.setSerialization(serialization);
-        adminProtocolConfig.setPort(port);
-
-        adminServiceConfig = new ServiceConfig<>();
-        adminServiceConfig.setRef(new StoreAdminServiceImpl());
-        adminServiceConfig.setApplication("jaws-store");
-        adminServiceConfig.setModule("store");
-        adminServiceConfig.setInterface(StoreAdminService.class);
-        adminServiceConfig.setGroup(GROUP);
-        adminServiceConfig.setVersion(VERSION);
-        adminServiceConfig.setProtocol(adminProtocolConfig);
-        if (registries != null && !registries.isEmpty()) {
-            adminServiceConfig.setRegistries(registries);
-        }
     }
 
     public void start() throws IOException {
@@ -124,7 +100,6 @@ public class StoreBroker {
         offsetStore.start();
         warmUpSerialization();
         serviceConfig.export();
-        adminServiceConfig.export();
         logger.info("StoreBroker listening on port {}", port);
     }
 
@@ -146,9 +121,7 @@ public class StoreBroker {
                 new PullResult(PullStatus.FOUND, 0, 0, 0),
                 new MessageView(),
                 new BrokerInfo("warmup"),
-                AdminViewResult.found(new MessageView()),
-                OffsetResult.found(0),
-                new StatsResult()
+                OffsetResult.found(0)
         };
         for (Object sample : samples) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -165,7 +138,6 @@ public class StoreBroker {
     }
 
     public void shutdown() {
-        adminServiceConfig.unexport();
         serviceConfig.unexport();
         offsetStore.shutdown();
         messageStore.shutdown();
@@ -208,7 +180,7 @@ public class StoreBroker {
 
         @Override
         public CompletableFuture<OffsetResult> queryOffsetAsync(String group, String topic, int queueId) {
-            // One map read, no log walk: answer inline like the admin queries.
+            // One map read, no log walk: answer inline rather than park a worker.
             Long offset = offsetStore.queryOffset(group, topic, queueId);
             return CompletableFuture.completedFuture(offset == null
                     ? OffsetResult.notFound() : OffsetResult.found(offset));
@@ -226,24 +198,6 @@ public class StoreBroker {
             // One concurrent-map read plus a volatile position; like the offset
             // queries it never touches the commit log, so it answers inline.
             return CompletableFuture.completedFuture(messageStore.getMaxOffsetInQueue(topic, queueId));
-        }
-    }
-
-    private class StoreAdminServiceImpl implements StoreAdminService {
-
-        @Override
-        public CompletableFuture<AdminViewResult> viewMessageAsync(long commitLogOffset) {
-            // A fast mmap slice read; run inline and hand back a completed future
-            // rather than park a worker, matching the async contract without cost.
-            MessageView view = messageStore.viewMessage(commitLogOffset);
-            return CompletableFuture.completedFuture(
-                    view == null ? AdminViewResult.notFound() : AdminViewResult.found(view));
-        }
-
-        @Override
-        public CompletableFuture<StatsResult> statsAsync() {
-            // A handful of atomic reads, no log walk — inline like the view path.
-            return CompletableFuture.completedFuture(messageStore.getStats());
         }
     }
 }

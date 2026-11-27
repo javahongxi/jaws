@@ -167,31 +167,6 @@ class MessageStoreTest {
     }
 
     @Test
-    void statsReflectTraffic() throws Exception {
-        MessageStore store = started(config());
-        for (int i = 0; i < 6; i++) {
-            store.putMessageAsync(StoreMessage.of("topic-a", 0, "s-" + i)).get(2, TimeUnit.SECONDS);
-        }
-        store.getMessageAsync("topic-a", 0, 0, 32, 0).get(2, TimeUnit.SECONDS);
-        awaitIndex(store, "topic-a", 0, 6);
-        StatsResult stats = store.getStats();
-        assertEquals("broker", stats.getBrokerName());
-        assertEquals(6, stats.getPutTotal());
-        assertEquals(0, stats.getPutRejectedTotal());
-        assertTrue(stats.getPullTotal() >= 1, "a pull was served, count must be non-zero");
-        assertEquals(1, stats.getConsumeQueueCount());
-        assertTrue(stats.getCommitLogMaxOffset() > 0);
-        // reput catches up shortly after awaitIndex; poll the lag gauge to zero so
-        // the assertion is not racing the last reputFromOffset increment
-        long deadline = System.currentTimeMillis() + 1000;
-        while (store.getStats().getDispatchBehindBytes() > 0 && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10);
-        }
-        assertEquals(0, store.getStats().getDispatchBehindBytes(), "dispatcher should drain to maxOffset");
-        store.shutdown();
-    }
-
-    @Test
     void cleanupReclaimsFilesAndAdvancesMinOffsets() throws Exception {
         StoreConfig config = config();
         config.setCleanupKeepFiles(1);      // retain only the active file
@@ -205,7 +180,7 @@ class MessageStoreTest {
         }
         // reput must reach maxOffset before head files are dispatchable-and-deletable
         awaitIndex(store, "topic-a", 0, total);
-        assertTrue(store.getStats().getCommitLogMaxOffset() > 2L * 1024,
+        assertTrue(store.getCommitLogMaxOffset() > 2L * 1024,
                 "expected multiple rolled commitlog files");
 
         int deleted = store.cleanupFiles();
