@@ -73,7 +73,7 @@ public class ReputMessageService {
         while (!stopped) {
             boolean dispatched = false;
             boolean indexFailed = false;
-            while (reputFromOffset < commitLog.getMaxOffset()) {
+            while (!stopped && reputFromOffset < commitLog.getMaxOffset()) {
                 DispatchEntry entry = commitLog.readEntry(reputFromOffset);
                 if (entry == null) {
                     // jump over the unused tail of a rolled file
@@ -132,6 +132,8 @@ public class ReputMessageService {
     public void shutdown() {
         stopped = true;
         if (thread != null) {
+            // The loop tests stopped at every unit, so the interrupt only needs to
+            // cut short an idle wait or a file creation already in flight.
             thread.interrupt();
             try {
                 thread.join(3000);
