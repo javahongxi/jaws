@@ -1,6 +1,6 @@
 # jaws-store：RocketMQ 风格存储引擎的设计与协议验证
 
-jaws-store 是 jaws 仓库内的存储引擎实践模块（约 3.7k 行 main + 1.3k 行测试），复刻 RocketMQ 存储内核的核心机制：mmap CommitLog 顺序写、ConsumeQueue 定长索引、异步/组提交刷盘、长轮询挂起唤醒。它的定位不是 MQ 产品线，而是 **jaws 协议的高吞吐实战验证件**——类比 harbor 之于 wire 协议的 Nacos 兼容性验证，store 用真实 MQ 负载去压 jaws benchmark 压不到的路径。
+jaws-store 是 jaws 仓库内的存储引擎实践模块（约 4.3k 行 main + 1.5k 行测试），复刻 RocketMQ 存储内核的核心机制：mmap CommitLog 顺序写、ConsumeQueue 定长索引、异步/组提交刷盘、长轮询挂起唤醒。它的定位不是 MQ 产品线，而是 **jaws 协议的高吞吐实战验证件**——类比 harbor 之于 wire 协议的 Nacos 兼容性验证，store 用真实 MQ 负载去压 jaws benchmark 压不到的路径。
 
 五篇前置精读（[发送链路](mq/rocketmq-发送链路精读.md)、[消费链路](mq/rocketmq-消费链路精读.md)、[刷盘与复制](mq/rocketmq-刷盘与复制精读.md)、[挂起请求唤醒链路](mq/rocketmq-挂起请求唤醒链路.md)、[高性能高吞吐成因分析](mq/rocketmq-高性能高吞吐成因分析.md)）是它的设计文档；本文反过来讲实现落了什么、简化了什么、验证出了什么。
 
@@ -10,7 +10,7 @@ jaws-store 是 jaws 仓库内的存储引擎实践模块（约 3.7k 行 main + 1
 |---|---|---|
 | 存储内核 | mmap CommitLog + ConsumeQueue + 异步 reput 建索引（失败持位重试、越界熔断写，§4.2）+ 过期文件回收 / 磁盘水位（§6.1） | IndexFile（按 key/tag 旁路检索）、多路径存储 |
 | 持久性 | 异步刷盘节拍器 + SYNC_FLUSH 组提交 | HA 主从复制、Dledger |
-| 消费模型 | 长轮询拉取、批量拉取、**broker 端位点权威 + 提交链路**（§7.3），客户端不留副本；订阅类型取 Pulsar 四式中的 **Exclusive**（§7.1） | Pop 消费、rebalance、Shared / Failover / Key_Shared 三式、位点过期清理、按 earliest/时间戳重置位点 |
+| 消费模型 | 长轮询拉取、批量拉取、**broker 端位点权威 + 提交链路**（§7.3），客户端不留副本；订阅类型取 Pulsar 四式中的 **Exclusive，且做成服务端不变量**——消费者身份 + 租约，同组第二个并发 attach 被 broker 拒绝（§7.1） | Pop 消费、rebalance、Shared / Failover / Key_Shared 三式、位点过期清理、按 earliest/时间戳重置位点 |
 | 消息类型 | 普通消息 | 事务消息、延迟消息、顺序消息（及其所依赖的锁机制） |
 | 接入 | jaws 协议直连或注册中心发现（多 master 分片，§7.1） | NameServer 专用路由、topic 路由下发 |
 | 可观测性 | 日志，加上一个 `MessageStore.getPullCount()` 测试探针（证明请求真的到了 broker） | 运维查询契约、stats 快照、逐条延迟直方图、外部监控系统对接 |
@@ -233,8 +233,8 @@ RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/Stor
 - **发送端**：`StoreProducer(registries)` 复用 jaws cluster 负载均衡，`check=false` 允许先于 broker 启动。普通发送不承诺跨 broker 顺序；顺序发送用 `loadBalance=consistentHash`——`StoreMessage.toString()` 返回 `topic@queueId` 即哈希钩子，同一队列钉扎同一 broker。
 - **消费端**：每 (broker, queue) 一条连接 + 一个泵；broker 上线建连并展开全部订阅，下线停泵但位点保留（回来续读）；位点权威在持有队列的那个 broker 上（§7.3），键 `group@topic@queueId` 天然按 broker 分治，跨 broker 同名队列互不覆盖；发现重复 brokerName 直接拒绝接入。
 - **明确不做**：rebalance（每个消费实例消费所有 broker 的所有队列，一个 group 只跑一个实例）、复制/DLedger（实例宕机 = 该分片暂不可读写，已落盘消息不丢，重启续读）、retry/DLQ。
-- **订阅类型 = Exclusive**（按 Pulsar 的订阅类型口径，官方文档 concepts-messaging 的 Subscription types 一节）：四式只取独占——一个 group 同时只应有一个消费者，**并行度来自队列数而不是实例数**，与 Pulsar 在 partitioned topic 下"所有分区都交给那唯一一个已连上的消费者"同构（这里的"分区"就是多 master 分片展开出的队列）。这不是随手省的，而是**位点形状定的**：消费进度是单一偏移 `group@topic@queueId -> long`，每次提交说的都是"到这条为止全做完了"，正是 Pulsar 的 cumulative acknowledgment；而 Pulsar 明确禁止 Shared / Key_Shared 用 cumulative ack（那两式必须逐条确认，因为同一订阅内有多个读者）。要支持那三式，先得有"一条消息一个 ack"的契约。至于 Failover，本模块只做到**人工接管**（§7.3 的 `secondInstanceResumesFromTheBroker`：新实例从 broker 位点续读、不重放），没有故障检测与 standby，所以不算。
-- **排他是使用契约，不是服务端不变量**：Pulsar 的 Exclusive 由 broker 强制（订阅本身是"一组消费者对一个 topic 的租约"，第二个消费者并发 attach 直接报错），而 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java) 的 `pullAsync` 只带 `topic/queueId/offset`，契约里**没有任何消费者身份**，broker 无从拒绝谁。实测同组并起两个 `StoreConsumer`：各收全量（a=5、b=5），提交位点仍是 5——不报错、不分摊，只是重复投递。要做到 Pulsar 那样的强制，前置是消费者身份 + 租约（即此前搁置的心跳注册与 cidAll），否则区分不了"新消费者"与"旧消费者已死"。
+- **订阅类型 = Exclusive**（按 Pulsar 的订阅类型口径，官方文档 concepts-messaging 的 Subscription types 一节）：四式只取独占——一个 group 同时只应有一个消费者，**并行度来自队列数而不是实例数**，与 Pulsar 在 partitioned topic 下"所有分区都交给那唯一一个已连上的消费者"同构（这里的"分区"就是多 master 分片展开出的队列）。这不是随手省的，而是**位点形状定的**：消费进度是单一偏移 `group@topic@queueId -> long`，每次提交说的都是"到这条为止全做完了"，正是 Pulsar 的 cumulative acknowledgment；而 Pulsar 明确禁止 Shared / Key_Shared 用 cumulative ack（那两式必须逐条确认，因为同一订阅内有多个读者）。要支持那三式，先得有"一条消息一个 ack"的契约。至于 Failover，租约到期后的自动接管（下一条）能让下一个 attach 上的消费者在旧持有者消失后续读零重放，但仍无故障检测、也无 standby 待命消费者，所以算不上 Pulsar 那种 Failover。
+- **排他做成服务端不变量：消费者身份 + 租约**：Pulsar 的 Exclusive 由 broker 强制（订阅本身是"一组消费者对一个 topic 的租约"，第二个消费者并发 attach 直接报错）——jaws-store 现已照此实现。每个 [StoreConsumer](../jaws-store/src/main/java/org/hongxi/jaws/store/client/StoreConsumer.java) 带一个 `consumerId`，`addBroker` 在起泵前对每个订阅队列向 broker 认领租约（[ConsumerLeaseStore](../jaws-store/src/main/java/org/hongxi/jaws/store/ConsumerLeaseStore.java)，键 `group@topic@queueId`，与位点表同键但是另一张表）：队列已被别的活跃消费者持有就直接抛 `IllegalStateException`、这个 broker 保持未 attach——同组并起第二个实例在 attach 处就被拒，不再各收全量。认领由续约节拍（每 lease/3）保活、`shutdown` 主动归还；持租者宕机就停止续约，租约到期即可被下一个接管（`claim` 幂等，同 `consumerId` 重连不会自己打自己）。**围栏不止 attach**：`pullAsync` 与 `commitOffsetAsync` 都带上 `group`+`consumerId`，broker 在非持有者时把 pull 打成 `NOT_LEASED`、把 commit 原样回退不写位点——于是一个网络分区的僵尸消费者，即便手里还压着未提交的批次，也无法在新 holder 接管后把组位点推到自己读到、对方没读过的地方。测试见 §10 的 ConsumerLeaseStoreTest 与 StoreOffsetRpcTest（同组第二个 `start()` 抛错、租约丢失后 pull/commit 被围栏）。
 - **升级注意**：本地位点文件（`{group}/offsets.properties`）与 `-Djaws.store.client.path` 一并删除，`setRemoteOffsets(false)` 退路随之消失。老部署升级后若 broker 端表里还没有这个组，就按新组从队列尾部起（§7.3），本地那份尚未消费完的旧位点不再被采纳——要保留进度只能先把旧文件的值用一次 `commitOffsetAsync` 写上去（契约公开，几行代码），否则就接受跳过。
 
 测试见 StoreMultiBrokerTest（§10），一键演示 `./run-sample.sh store-cluster`（§9）。
@@ -255,13 +255,13 @@ RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/Stor
 
 **服务端表**（[ConsumerOffsetStore](../jaws-store/src/main/java/org/hongxi/jaws/store/ConsumerOffsetStore.java)）：`ConcurrentMap<String, Long>`，键 `group@topic@queueId`，复刻 RocketMQ `ConsumerOffsetManager` 的角色。刻意留在 [MessageStore](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) 之外——位点是消费者元数据而非日志状态，不参与 put/pull 路径，也不参与持久性屏障，丢一个快照只赔重放、不赔数据；这个规模下上 KV 引擎（RocketMQ 的 `ConsumerOffsetManagerV2`）买不到东西。写入走 `merge`：`increaseOnly=true` 时取 `Math.max`，落后的写入者（乱序 RPC、或一个跑慢了的实例）不可能把已前进的组拽回去；`false` 才覆盖，留给 `OFFSET_ILLEGAL` 那种目标位点已被回收、必须后退的重置（§6.1）。持久化沿用早前客户端自管版本的形状而非 RocketMQ 的 JSON：properties + tmp + `ATOMIC_MOVE`，崩溃不会留下半张表；`offsetFlushIntervalMillis`（默认 5s，对齐 `flushConsumerOffsetInterval`）节拍刷 + shutdown 终刷，畸形行只 warn 跳过而不丢整表。
 
-**契约**（[StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java)）：`queryOffsetAsync(group, topic, queueId)` 与 `commitOffsetAsync(group, topic, queueId, offset, increaseOnly)`。二者不像 `pullAsync` 那样挂起——内存表读写即刻完成，实现里直接 `completedFuture` 内联回答，不占业务线程。返回的 [OffsetResult](../jaws-store/src/main/java/org/hongxi/jaws/store/OffsetResult.java) 带 `found` 标记：**"从未提交过"与"已提交 0"必须可区分**——前者是引导新组的信号，而 0 是一个真实位置；commit 回的也是 update 后的权威值，而不是调用方自己报的数。第三个 `maxOffsetAsync(topic, queueId)` 读的是队列而不是组：永远有答案（空队列是 0），专门给"从未提交过"的组定起点，对应 RocketMQ `computePullFromWhere` 走 `CONSUME_FROM_LAST_OFFSET` 时发的 `GET_MAX_OFFSET`。它只读 CQ 前沿、不碰 CommitLog，也不占用拉取计数。
+**契约**（[StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java)）：`queryOffsetAsync(group, topic, queueId)` 与 `commitOffsetAsync(group, consumerId, topic, queueId, offset, increaseOnly)`。二者不像 `pullAsync` 那样挂起——内存表读写即刻完成，实现里直接 `completedFuture` 内联回答，不占业务线程。返回的 [OffsetResult](../jaws-store/src/main/java/org/hongxi/jaws/store/OffsetResult.java) 带 `found` 标记：**"从未提交过"与"已提交 0"必须可区分**——前者是引导新组的信号，而 0 是一个真实位置；commit 回的也是 update 后的权威值，而不是调用方自己报的数。`queryOffsetAsync` 只读不设卡（观测与 attach 都要能读），但 `commitOffsetAsync` 被租约围栏（§7.1）：`consumerId` 不在当前持有者之列就不写位点、原样回当前权威值，所以一个被接管后迟到的僵尸提交推不前组。第三个 `maxOffsetAsync(topic, queueId)` 读的是队列而不是组：永远有答案（空队列是 0），专门给"从未提交过"的组定起点，对应 RocketMQ `computePullFromWhere` 走 `CONSUME_FROM_LAST_OFFSET` 时发的 `GET_MAX_OFFSET`。它只读 CQ 前沿、不碰 CommitLog，也不占用拉取计数。
 
-**客户端**（[StoreConsumer](../jaws-store/src/main/java/org/hongxi/jaws/store/client/StoreConsumer.java)）：`addBroker` 在挂订阅前用 `startOffsets()` 一次定完每个队列的起点——先把所有 `queryOffsetAsync` future 发出去再逐个 `get(3s)`，所以一个不可达 broker 只付一次超时而不是每队列一次；有记录就用，无记录再发一轮 `maxOffsetAsync` 取队列尾部。两轮里任何一次读不到答案就抛 `IllegalStateException`：这个 broker 保持未 attach（注册中心模式下下一轮 5s 刷新重试），因为"猜一个起点"正是这次改动要消灭的东西。消费侧 FOUND 落位后 fire-and-forget 提交 `increaseOnly=true`，`OFFSET_ILLEGAL` 重置提交 `increaseOnly=false`。提交失败只 warn：内存里的 `pullOffset` 已前进，下一轮成功提交自然补齐；若进程恰好死在这个窗口里，赔的是一段差值重放。
+**客户端**（[StoreConsumer](../jaws-store/src/main/java/org/hongxi/jaws/store/client/StoreConsumer.java)）：`addBroker` 在挂订阅前先用 `startOffsets()` 定完每个队列的起点、再对每个队列 `claimLeaseAsync` 认领独占租约（§7.1）——两者任一失败都抛 `IllegalStateException`、这个 broker 保持未 attach。起点：先把所有 `queryOffsetAsync` future 发出去再逐个 `get(3s)`，所以一个不可达 broker 只付一次超时而不是每队列一次；有记录就用，无记录再发一轮 `maxOffsetAsync` 取队列尾部。认领成功后，续约节拍每 lease/3 走一次 `renewLeaseAsync`（fire-and-forget，只在 pump 线程派发不阻塞），`shutdown` 则对每个活跃订阅 `releaseLeaseAsync` 主动归还。消费侧 FOUND 落位后 fire-and-forget 提交 `increaseOnly=true`，`OFFSET_ILLEGAL` 重置提交 `increaseOnly=false`；拿到 `NOT_LEASED` 时先试重新认领——本地停顿导致租约刚好过期且无人接管就续上，否则（被别的消费者拿走）置 `active=false` 永久停掉这一路泵。提交失败只 warn：内存里的 `pullOffset` 已前进，下一轮成功提交自然补齐；若进程恰好死在这个窗口里，赔的是一段差值重放。
 
 **为什么客户端不再留副本**：RocketMQ 的 `RemoteBrokerOffsetStore` 确实有一张内存表（`ConcurrentMap<MessageQueue, ControllableOffset>`，`updateOffset` 只写内存不发 RPC，`persistAll` 每 5s 批量落 broker），但它存在的理由是**攒批提交需要一个聚合点**——而且这个类的 `load()` 是空实现、全文没有任何文件 IO，落盘那半专属 BROADCASTING 的 `LocalFileOffsetStore`。本模块每批立即提交，聚合点就是 `pullOffset` 自身，`subscription.pullOffset` 已经是运行期驱动拉取的那份内存状态；再养一张表只会多出第二个答案，而"一个组只有一个位置"的卖点恰恰是唯一答案。
 
-**起点引导策略**：无记录 = 新组 = 从队列尾部起，与 `CONSUME_FROM_LAST_OFFSET` 同结论——**代价是一个新组不会重放已存在的积压**（RocketMQ 用户熟悉的坑，这里按它的默认值复刻）。刻意不开放 `CONSUME_FROM_FIRST_OFFSET` / `CONSUME_FROM_TIMESTAMP`，也没有 resetOffsetByTime：要历史数据只能让应用自己拿 `pullAsync` 从 0 拉（契约本来就接受任意 offset）。仍然不做的还有：topic 删除时级联清位点（`cleanOffsetByTopic`）、广播模式 per-clientId 位点及其过期扫描（`BroadcastOffsetManager`）、位点过期清理。测试见 §10 的 ConsumerOffsetStoreTest（引擎侧 6 例）与 StoreOffsetRpcTest（协议侧 7 例）——后者 `secondInstanceResumesFromTheBroker` 断言零重放，`newGroupStartsAtTheQueueTail` 断言积压被跳过。
+**起点引导策略**：无记录 = 新组 = 从队列尾部起，与 `CONSUME_FROM_LAST_OFFSET` 同结论——**代价是一个新组不会重放已存在的积压**（RocketMQ 用户熟悉的坑，这里按它的默认值复刻）。刻意不开放 `CONSUME_FROM_FIRST_OFFSET` / `CONSUME_FROM_TIMESTAMP`，也没有 resetOffsetByTime：要历史数据只能让应用自己拿 `pullAsync` 从 0 拉（契约本来就接受任意 offset）。仍然不做的还有：topic 删除时级联清位点（`cleanOffsetByTopic`）、广播模式 per-clientId 位点及其过期扫描（`BroadcastOffsetManager`）、位点过期清理。测试见 §10 的 ConsumerOffsetStoreTest（引擎侧 6 例）与 StoreOffsetRpcTest（协议侧 9 例，含两个租约用例）——后者 `secondInstanceResumesFromTheBroker` 断言零重放，`newGroupStartsAtTheQueueTail` 断言积压被跳过。
 
 ## 8. 协议验证发现：冷启动突发熔断案例
 
@@ -312,7 +312,7 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 
 环境：macOS arm64（Apple Silicon）/ Temurin JDK 21 / loopback 直连 / fastjson2 JSONB / 单 topic 单队列 / 消息体约 10 字节。数据为 `run-sample.sh store` 实测（producer 端计时，含 RPC 往返）。
 
-**单元测试**：35 个用例全部通过（jaws-core 272 个同时全绿）——
+**单元测试**：41 个用例全部通过（jaws-core 272 个同时全绿）——
 
 | 测试类 | 覆盖 |
 |---|---|
@@ -321,7 +321,8 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 | StoreRpcTest（3） | 走真实 jaws 协议的 broker + producer + consumer 端到端（consumer 先启动触发长轮询挂起）；短轮询空结果按间隔退避、不忙等；**批量发送经协议端到端投递（§7.2）** |
 | StoreMultiBrokerTest（4） | brokerName 身份持久化与改名拒启、跨 broker 位点隔离与重启续读、注册中心发现与 broker 下线后 survivor 续消费、consistentHash 队列钉扎单 broker |
 | ConsumerOffsetStoreTest（6） | 缺失与 0 可区分、increaseOnly 单调不后退、重置可覆盖、组/队列键隔离、快照重启回环与文件内容、脏行不丢整表（§7.3） |
-| StoreOffsetRpcTest（7） | 位点 RPC 真实协议回环（含幂等/重置/组隔离）、尾部查询回环且与组提交互不干扰（`maxOffsetAsync` 不随 commit 移动）、泵把进度提交到 broker（消费先于发送以避开新组引导）、**第二个实例从 broker 续读零重放**、**新组从队列尾部起并跳过积压**、broker 重启后快照生效、双 broker 记录互不串（§7.3） |
+| ConsumerLeaseStoreTest（4） | 首个认领胜出、第二个被拒到释放为止、同 `consumerId` 重认领幂等、过期租约可被下一个接管、续约只对当前持有者开放且不能续回已过期的、仅持有者可释放（§7.1） |
+| StoreOffsetRpcTest（9） | 位点 RPC 真实协议回环（含幂等/重置/组隔离，均先认领租约以过围栏）、尾部查询回环且与组提交互不干扰（`maxOffsetAsync` 不随 commit 移动）、泵把进度提交到 broker（消费先于发送以避开新组引导）、**第二个实例从 broker 续读零重放**、**新组从队列尾部起并跳过积压**、broker 重启后快照生效、双 broker 记录互不串、**同组第二个 `StoreConsumer.start()` 被拒**、**租约丢失后非持有者的 pull 回 `NOT_LEASED`、commit 被回退**（§7.1、§7.3） |
 
 **吞吐实测**：
 
@@ -349,7 +350,7 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 | 刷盘 | 异步/同步/组提交 + 刷盘链 | 节拍器 + swap-list 组提交 | 无 transientStorePool（读写分离堆外池） |
 | 高可用 | 主从复制 / Dledger Raft | 无（多 master 分片不是 HA） | 单实例数据无冗余，宕机期间该分片不可用 |
 | 集群组织 | broker 组主从 + NameServer 路由 + rebalance | 多 master 分片 + 注册中心发现，每实例全量消费 | 无队列级并行扩展，一个 group 一个消费实例 |
-| 订阅类型 | 无此概念，改用两种 messageModel：集群消费（rebalance 把队列在实例间分摊）、广播消费（每实例全量） | 按 Pulsar 四式取 Exclusive：一组一消费者，并行度 = 队列数；位点是单一偏移，即 cumulative 确认形状（§7.1） | 服务端不强制排他（契约里无消费者身份）：同组并起两个实例不报错也不分摊，实测各收全量；且两个读者共享一个 cumulative 位点，任一方推前即全体推前——落后那台实例未处理完的区间，重启后不会再来一遍 |
+| 订阅类型 | 无此概念，改用两种 messageModel：集群消费（rebalance 把队列在实例间分摊）、广播消费（每实例全量） | 按 Pulsar 四式取 Exclusive 并做成服务端不变量：消费者身份 + 内存租约表（ConsumerLeaseStore），一组一队列一个活跃持有者，同组第二个 attach 被拒、非持有者的 pull/commit 被围栏；并行度 = 队列数，位点是单一偏移即 cumulative 形状（§7.1） | 租约只在内存、不落盘：broker 重启即清空，靠客户端续约/重新认领恢复；到期接管有 lease 空窗（旧持有者停续到下一个 claim 成功之间），且仍是"下一台先到先得"、无 standby 与优先级；不对外暴露当前持有者（无 metrics，见"可观测"行），只能从日志与 `NOT_LEASED` 反推 |
 | 索引落空处理 | 派发内原地重试 30 次 × 1s，仍失败则跳过该单元并 `makeLogicsQueueError` 熔断写入（RocksDB 版则抛异常、位置持住由外层 1ms 重试） | 50ms 起指数退避（上限 1s）重试同一条记录，越界（默认 30 次）则置不可写位、写入回 `SERVICE_NOT_AVAILABLE`；位点始终持住，自愈自动清位（§4.2） | 熔断只关写入口，不对外暴露健康状态（无 metrics，见"可观测"行），运维侧只能从那条 ERROR 日志发现 |
 | 空间回收 | DeleteMapFileService 定期删过期文件 + disk full 优先 | mappedFile 粒度过期删除 + 磁盘水位强制删（§6.1），联动 CQ 与 min offset | 无 per-queue 精细过期 / 切片竞态，整文件为粒度 |
 | 可观测 | 多维度 metrics + 外部监控对接 | 无：只有日志，加上 `getPullCount()` 一个测试探针 | 哑雷式故障（磁盘撑爆、reput 滞后、page cache 失速）只能从日志与拒收状态码反推 |

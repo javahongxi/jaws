@@ -72,6 +72,11 @@ public class StoreConfig {
      * bound so the fuse can lift on its own. Must be positive. */
     private int indexDispatchMaxRetries = 30;
 
+    /** Interval between ConsumerLeaseStore expiry sweeps. Expiry itself is checked
+     * lazily on every claim/renew/isHeld, so this only reclaims entries of queues
+     * nobody touches and makes a loss show up in the log; 0 leaves the ticker off. */
+    private int leaseScanIntervalMillis = 5000;
+
     public String getStorePath() {
         return storePath;
     }
@@ -198,5 +203,13 @@ public class StoreConfig {
 
     public void setIndexDispatchMaxRetries(int indexDispatchMaxRetries) {
         this.indexDispatchMaxRetries = Math.max(1, indexDispatchMaxRetries);
+    }
+
+    public int getLeaseScanIntervalMillis() {
+        return leaseScanIntervalMillis;
+    }
+
+    public void setLeaseScanIntervalMillis(int leaseScanIntervalMillis) {
+        this.leaseScanIntervalMillis = leaseScanIntervalMillis;
     }
 }

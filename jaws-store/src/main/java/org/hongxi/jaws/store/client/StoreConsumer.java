@@ -6,6 +6,7 @@ import org.hongxi.jaws.config.ReferenceConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.store.BrokerInfo;
+import org.hongxi.jaws.store.LeaseResult;
 import org.hongxi.jaws.store.MessageView;
 import org.hongxi.jaws.store.OffsetResult;
 import org.hongxi.jaws.store.PullResult;
@@ -14,12 +15,14 @@ import org.hongxi.jaws.store.StoreService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -47,10 +50,17 @@ import java.util.concurrent.atomic.AtomicInteger;
  * adding consumers to one queue. The cumulative position is what pins this shape:
  * the group's progress is a single offset meaning "done up to here", which is only
  * meaningful for a single reader — Pulsar itself forbids cumulative acknowledgment
- * for its Shared and Key_Shared types. Exclusivity is nevertheless a usage contract
- * here, not a server-side invariant: the pull contract carries no consumer identity,
- * so a second live consumer of the same group is served the same records instead of
- * being rejected.
+ * for its Shared and Key_Shared types.
+ *
+ * <p>Exclusivity is enforced on the broker, not left to convention. Each instance
+ * carries a consumerId and, before a broker's pumps start, claims that broker's
+ * lease for every subscribed queue; a queue already held by another live consumer
+ * is refused, so a second concurrent instance of the group fails to attach rather
+ * than silently receiving a duplicate stream. The claim is kept alive by a renew
+ * ticker (every third of the lease) and handed back on shutdown; a crashed or
+ * partitioned instance simply stops renewing, and once its lease lapses another
+ * can claim it — its in-flight pulls and commits are then fenced off with
+ * {@code NOT_LEASED}, so a zombie can never advance the group after handover.
  *
  * <p>Progress lives on the broker, not here. On attach the consumer reads the
  * group's stored offset from that broker and treats it as authoritative; every
@@ -117,6 +127,14 @@ public class StoreConsumer {
     private final Map<String, Template> templates = new ConcurrentHashMap<>();
     private final Map<String, BrokerConnection> brokers = new ConcurrentHashMap<>();
     private final Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();
+
+    /** This instance's identity in the group; the lease is granted to it. Distinct
+     * per process by default, overridable so an operator can name a consumer. */
+    private volatile String consumerId = defaultConsumerId();
+
+    /** How long a claimed lease lasts before it must be renewed; the renew ticker
+     * runs at a third of this so three ticks can be missed before the queue frees. */
+    private long consumerLeaseMillis = 30_000;
 
     private int pullBatchSize = 32;
     private int pullThresholdForQueue = 1000;
@@ -229,8 +247,14 @@ public class StoreConsumer {
             pumpExecutor.scheduleAtFixedRate(this::refreshBrokers, 0,
                     DISCOVERY_REFRESH_INTERVAL_SECONDS, TimeUnit.SECONDS);
         }
-        logger.info("StoreConsumer started, {} template(s), mode={}", templates.size(),
-                registries == null ? "direct" : "registry");
+        // Keep every claimed lease alive. Dispatched on the pump executor like the
+        // pumps themselves, and non-blocking (fire-and-forget), so it never stalls a
+        // re-arm; a renewal that lands after the lease lapsed simply reports denial
+        // and the next pull drives the real re-claim-or-stand-down decision.
+        long renewInterval = Math.max(1000, consumerLeaseMillis / 3);
+        pumpExecutor.scheduleAtFixedRate(this::renewLeases, renewInterval, renewInterval, TimeUnit.MILLISECONDS);
+        logger.info("StoreConsumer started (consumerId={}), {} template(s), mode={}", consumerId,
+                templates.size(), registries == null ? "direct" : "registry");
     }
 
     private ReferenceConfig<StoreService> baseReference() {
@@ -283,6 +307,10 @@ public class StoreConsumer {
         Map<String, Long> starts;
         try {
             starts = startOffsets(connection);
+            // Claim before any pump runs: a queue another live consumer holds must
+            // leave this broker unattached rather than half-started, the same rule that
+            // keeps a failed offset read from guessing a position.
+            claimLeases(connection);
         } catch (RuntimeException e) {
             // Half attaching is worse than not attaching: a subscription without a
             // decided position would have to guess one.
@@ -372,6 +400,92 @@ public class StoreConsumer {
     }
 
     /**
+     * Take this broker's lease for every subscribed queue, before any pump is armed.
+     * A denial means another live consumer of the same group already holds that queue:
+     * the queues claimed so far on this broker are handed back and the caller leaves
+     * the broker unattached — so a second instance never consumes alongside the first.
+     * Re-claiming a queue this same consumerId already holds is granted (idempotent),
+     * so a registry re-attach of a surviving instance does not fight itself.
+     */
+    private void claimLeases(BrokerConnection connection) {
+        List<Template> claimed = new ArrayList<>();
+        for (Template template : templates.values()) {
+            LeaseResult result;
+            try {
+                result = connection.storeService.claimLeaseAsync(consumerGroup, template.topic, template.queueId,
+                        consumerId, consumerLeaseMillis).get(OFFSET_QUERY_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                releaseLeases(connection, claimed);
+                throw new IllegalStateException("Interrupted claiming lease for " + template.topic + "@"
+                        + template.queueId + " on " + connection.brokerName, e);
+            } catch (Exception e) {
+                releaseLeases(connection, claimed);
+                throw new IllegalStateException("Lease claim failed for " + template.topic + "@"
+                        + template.queueId + " on " + connection.brokerName, e);
+            }
+            if (!result.isGranted()) {
+                releaseLeases(connection, claimed);
+                throw new IllegalStateException("Queue " + template.topic + "@" + template.queueId + " on "
+                        + connection.brokerName + " is held by another consumer of group " + consumerGroup
+                        + (result.getHolder() == null ? "" : " (" + result.getHolder() + ")"));
+            }
+            claimed.add(template);
+        }
+    }
+
+    /**
+     * Renew every live lease. Fire-and-forget on the pump executor: a renewal failure
+     * is not acted on here — the next pull either re-claims (if the lapse was a stall
+     * and nobody took the queue) or stands the pump down (if another consumer won it).
+     */
+    private void renewLeases() {
+        if (stopped) {
+            return;
+        }
+        for (Subscription subscription : subscriptions.values()) {
+            if (!subscription.active) {
+                continue;
+            }
+            subscription.broker.storeService.renewLeaseAsync(consumerGroup, subscription.topic,
+                            subscription.queueId, consumerId)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            logger.warn("Lease renew failed for {}@{}@{}",
+                                    subscription.broker.brokerName, subscription.topic, subscription.queueId, ex);
+                        } else if (!result.isGranted()) {
+                            logger.warn("Lease renew rejected for {}@{}@{}, a pull will re-claim or stand down",
+                                    subscription.broker.brokerName, subscription.topic, subscription.queueId);
+                        }
+                    });
+        }
+    }
+
+    /** Give back the queues this instance claimed on one broker (attach rollback, shutdown). */
+    private void releaseLeases(BrokerConnection connection, List<Template> templatesToRelease) {
+        for (Template template : templatesToRelease) {
+            try {
+                connection.storeService.releaseLeaseAsync(consumerGroup, template.topic, template.queueId, consumerId)
+                        .get(2, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                logger.warn("Lease release failed for {}@{}@{} on {}",
+                        connection.brokerName, template.topic, template.queueId, consumerId, e);
+            }
+        }
+    }
+
+    /** Distinct-per-process default identity: hostname plus a random suffix. */
+    private static String defaultConsumerId() {
+        String host;
+        try {
+            host = InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            host = "unknown-host";
+        }
+        return host + "-" + UUID.randomUUID();
+    }
+
+    /**
      * Mirror progress onto the broker that owns the queue. Fire-and-forget: the
      * pump already moved ahead in memory, so a failed commit costs a server-side
      * gap that the next successful commit closes — and, if the process dies
@@ -384,7 +498,7 @@ public class StoreConsumer {
         if (!subscription.active) {
             return;
         }
-        subscription.broker.storeService.commitOffsetAsync(consumerGroup, subscription.topic,
+        subscription.broker.storeService.commitOffsetAsync(consumerGroup, consumerId, subscription.topic,
                         subscription.queueId, offset, increaseOnly)
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
@@ -452,7 +566,8 @@ public class StoreConsumer {
             pumpExecutor.schedule(() -> pump(subscription), 50, TimeUnit.MILLISECONDS);
             return;
         }
-        subscription.broker.storeService.pullAsync(subscription.topic, subscription.queueId, subscription.pullOffset,
+        subscription.broker.storeService.pullAsync(consumerGroup, consumerId, subscription.topic,
+                        subscription.queueId, subscription.pullOffset,
                         pullBatchSize, suspendTimeoutMillis)
                 .whenComplete((result, ex) -> onPullResult(subscription, result, ex));
     }
@@ -501,6 +616,31 @@ public class StoreConsumer {
                 // cleaned), so this one must overwrite rather than merge upward.
                 commitOffset(subscription, result.getNextBeginOffset(), false);
             }
+            case NOT_LEASED -> {
+                // This instance no longer holds the queue. Try to reclaim: if the lapse
+                // was a local stall and nobody took the queue, the claim is granted and
+                // the pump resumes; if another consumer holds it, the claim is denied and
+                // this pump stands down for good — exclusivity means one reader per queue.
+                LeaseResult reclaim;
+                try {
+                    reclaim = subscription.broker.storeService.claimLeaseAsync(consumerGroup, subscription.topic,
+                            subscription.queueId, consumerId, consumerLeaseMillis)
+                            .get(OFFSET_QUERY_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+                } catch (Exception e) {
+                    reclaim = null;
+                }
+                if (reclaim != null && reclaim.isGranted()) {
+                    logger.info("Reclaimed lease for {}@{}@{}, resuming pump", brokerName,
+                            subscription.topic, subscription.queueId);
+                    pumpExecutor.execute(() -> pump(subscription));
+                } else {
+                    subscription.active = false;
+                    logger.error("Lost lease for {}@{}@{}: consumer {} is not the holder{}, pump stopped",
+                            brokerName, subscription.topic, subscription.queueId, consumerId,
+                            reclaim == null ? " (reclaim unreachable)" : " (held by " + reclaim.getHolder() + ")");
+                }
+                return;
+            }
         }
         // Re-arm the pump. In long-polling mode the round-trip already blocked on the
         // broker, so an immediate re-pump is correct. Only a short-polling empty read
@@ -529,10 +669,26 @@ public class StoreConsumer {
                 consumeExecutor.shutdownNow();
             }
         }
+        // Hand the queues back before the connections go, so a clean stop does not
+        // make the next instance of the group wait out the lease. Best-effort: a broker
+        // already gone simply never answers and its in-memory lease dies with it.
+        for (Subscription subscription : subscriptions.values()) {
+            if (!subscription.active) {
+                continue;
+            }
+            try {
+                subscription.broker.storeService.releaseLeaseAsync(consumerGroup, subscription.topic,
+                        subscription.queueId, consumerId).get(2, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                logger.warn("Lease release on shutdown failed for {}@{}@{}",
+                        subscription.broker.brokerName, subscription.topic, subscription.queueId, e);
+            }
+        }
         for (BrokerConnection connection : brokers.values()) {
             connection.referenceConfig.destroy();
         }
         brokers.clear();
+        subscriptions.clear();
         if (discoveryReference != null) {
             discoveryReference.destroy();
         }
@@ -554,5 +710,27 @@ public class StoreConsumer {
     /** Round gap applied only in short-polling mode; ignored while a hold is requested. */
     public void setShortPollingIntervalMillis(long shortPollingIntervalMillis) {
         this.shortPollingIntervalMillis = shortPollingIntervalMillis;
+    }
+
+    /** This instance's identity in the group; set before start to name a consumer. */
+    public void setConsumerId(String consumerId) {
+        this.consumerId = consumerId;
+    }
+
+    public String getConsumerId() {
+        return consumerId;
+    }
+
+    /**
+     * Lease duration claimed per queue, applied at start. Must exceed the round trip
+     * it must survive; the renew ticker runs at a third of it. Set short in tests to
+     * watch a lapse hand the queue over without waiting on a real crash.
+     */
+    public void setConsumerLeaseMillis(long consumerLeaseMillis) {
+        this.consumerLeaseMillis = Math.max(1000, consumerLeaseMillis);
+    }
+
+    public long getConsumerLeaseMillis() {
+        return consumerLeaseMillis;
     }
 }

@@ -24,9 +24,12 @@ import java.util.concurrent.CompletableFuture;
  * multi-master sharding — each instance owns an independent CommitLog and
  * a stable brokerName; there is no replication between instances.
  *
- * <p>Alongside the log it hosts {@link ConsumerOffsetStore}, so a group's
- * consumption progress lives on the broker that owns the queue rather than
- * inside one client instance.
+ * <p>Alongside the log it hosts {@link ConsumerOffsetStore} and
+ * {@link ConsumerLeaseStore}: a group's consumption progress and its exclusive
+ * per-queue consumer lease both live on the broker that owns the queue rather
+ * than inside one client instance. The lease is what enforces Exclusive — a pull
+ * or commit from a consumer that does not hold it is refused (see
+ * {@link StoreService#pullAsync}).
  *
  * <p>Typical scenario: embedded in a demo main or a test to run a real
  * broker on a local port, with StoreProducer/StoreConsumer on the other end.
@@ -40,6 +43,7 @@ public class StoreBroker {
 
     private final MessageStore messageStore;
     private final ConsumerOffsetStore offsetStore;
+    private final ConsumerLeaseStore leaseStore;
     private final ServiceConfig<StoreService> serviceConfig;
     private final String serialization;
     private final String brokerName;
@@ -57,6 +61,7 @@ public class StoreBroker {
     public StoreBroker(StoreConfig storeConfig, int port, String serialization, List<RegistryConfig> registries) {
         this.messageStore = new MessageStore(storeConfig);
         this.offsetStore = new ConsumerOffsetStore(storeConfig);
+        this.leaseStore = new ConsumerLeaseStore(storeConfig);
         this.serialization = serialization;
         this.brokerName = storeConfig.getBrokerName();
         this.port = port;
@@ -98,6 +103,7 @@ public class StoreBroker {
     public void start() throws IOException {
         messageStore.start();
         offsetStore.start();
+        leaseStore.start();
         warmUpSerialization();
         serviceConfig.export();
         logger.info("StoreBroker listening on port {}", port);
@@ -121,7 +127,8 @@ public class StoreBroker {
                 new PullResult(PullStatus.FOUND, 0, 0, 0),
                 new MessageView(),
                 new BrokerInfo("warmup"),
-                OffsetResult.found(0)
+                OffsetResult.found(0),
+                LeaseResult.granted()
         };
         for (Object sample : samples) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -139,6 +146,7 @@ public class StoreBroker {
 
     public void shutdown() {
         serviceConfig.unexport();
+        leaseStore.shutdown();
         offsetStore.shutdown();
         messageStore.shutdown();
     }
@@ -149,6 +157,10 @@ public class StoreBroker {
 
     public ConsumerOffsetStore getOffsetStore() {
         return offsetStore;
+    }
+
+    public ConsumerLeaseStore getLeaseStore() {
+        return leaseStore;
     }
 
     public int getPort() {
@@ -168,9 +180,31 @@ public class StoreBroker {
         }
 
         @Override
-        public CompletableFuture<PullResult> pullAsync(String topic, int queueId, long offset,
-                                                       int maxCount, long suspendTimeoutMillis) {
+        public CompletableFuture<PullResult> pullAsync(String group, String consumerId, String topic, int queueId,
+                                                       long offset, int maxCount, long suspendTimeoutMillis) {
+            // Lease fence ahead of the log walk: a consumer that does not hold this
+            // queue (never attached, or superseded) is turned away with NOT_LEASED, and
+            // the request is never suspended, so a rejected pump costs nothing.
+            if (!leaseStore.isHeld(group, topic, queueId, consumerId)) {
+                return CompletableFuture.completedFuture(new PullResult(PullStatus.NOT_LEASED, offset, 0, 0));
+            }
             return messageStore.getMessageAsync(topic, queueId, offset, maxCount, suspendTimeoutMillis);
+        }
+
+        @Override
+        public CompletableFuture<LeaseResult> claimLeaseAsync(String group, String topic, int queueId,
+                                                             String consumerId, long leaseMillis) {
+            return CompletableFuture.completedFuture(leaseStore.claim(group, topic, queueId, consumerId, leaseMillis));
+        }
+
+        @Override
+        public CompletableFuture<LeaseResult> renewLeaseAsync(String group, String topic, int queueId, String consumerId) {
+            return CompletableFuture.completedFuture(leaseStore.renew(group, topic, queueId, consumerId));
+        }
+
+        @Override
+        public CompletableFuture<Boolean> releaseLeaseAsync(String group, String topic, int queueId, String consumerId) {
+            return CompletableFuture.completedFuture(leaseStore.release(group, topic, queueId, consumerId));
         }
 
         @Override
@@ -187,8 +221,16 @@ public class StoreBroker {
         }
 
         @Override
-        public CompletableFuture<OffsetResult> commitOffsetAsync(String group, String topic, int queueId,
-                                                                long offset, boolean increaseOnly) {
+        public CompletableFuture<OffsetResult> commitOffsetAsync(String group, String consumerId, String topic,
+                                                                int queueId, long offset, boolean increaseOnly) {
+            // Lease fence: a caller outside the lease cannot move the group. Report the
+            // authoritative offset unchanged so a superseded holder never advances past
+            // where the current one stands; absence stays absence.
+            if (!leaseStore.isHeld(group, topic, queueId, consumerId)) {
+                Long current = offsetStore.queryOffset(group, topic, queueId);
+                return CompletableFuture.completedFuture(
+                        current == null ? OffsetResult.notFound() : OffsetResult.found(current));
+            }
             long authoritative = offsetStore.updateOffset(group, topic, queueId, offset, increaseOnly);
             return CompletableFuture.completedFuture(OffsetResult.found(authoritative));
         }

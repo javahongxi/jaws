@@ -17,14 +17,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for broker-side offsets over the real jaws protocol: the query, tail
  * and commit round trips including the increaseOnly rule, the pump committing
- * what it consumed, and the two rules a consumer's position rests on — a group
- * with a stored offset resumes there, a group the broker has never seen starts at
- * the queue tail instead of replaying the backlog.
+ * what it consumed, the two rules a consumer's position rests on — a group with a
+ * stored offset resumes there, a group the broker has never seen starts at the queue
+ * tail instead of replaying the backlog — and the exclusive lease that fences them:
+ * a second same-group consumer refused at attach, and a superseded holder whose pulls
+ * and commits the broker turns away after handover.
  */
 class StoreOffsetRpcTest {
 
@@ -65,6 +68,18 @@ class StoreOffsetRpcTest {
         config.setMaxMessageSize(4096);
         config.setHoldScanIntervalMillis(50);
         return config;
+    }
+
+    /**
+     * Take a queue's lease over the wire so a subsequent offset commit is inside the
+     * fence. The offset tests are about commit/query semantics, not exclusivity, so
+     * each just attaches a lone consumer before writing progress.
+     */
+    private static void claimFor(StoreService service, String group, String topic, int queueId, String consumerId)
+            throws Exception {
+        assertTrue(service.claimLeaseAsync(group, topic, queueId, consumerId, 30_000)
+                        .get(5, TimeUnit.SECONDS).isGranted(),
+                "a lone consumer must win an unheld lease");
     }
 
     /**
@@ -113,22 +128,24 @@ class StoreOffsetRpcTest {
             assertFalse(absent.isFound(), "an untouched group must read as not found");
             assertEquals(-1L, absent.getOffset());
 
-            assertEquals(5L, service.commitOffsetAsync("g1", "demo", 0, 5L, true)
+            claimFor(service, "g1", "demo", 0, "c-g1");
+            assertEquals(5L, service.commitOffsetAsync("g1", "c-g1", "demo", 0, 5L, true)
                     .get(5, TimeUnit.SECONDS).getOffset());
             assertEquals(5L, service.queryOffsetAsync("g1", "demo", 0).get(5, TimeUnit.SECONDS).getOffset());
 
             // increaseOnly: the reply reports where the group actually stands.
-            OffsetResult lost = service.commitOffsetAsync("g1", "demo", 0, 3L, true).get(5, TimeUnit.SECONDS);
+            OffsetResult lost = service.commitOffsetAsync("g1", "c-g1", "demo", 0, 3L, true).get(5, TimeUnit.SECONDS);
             assertTrue(lost.isFound());
             assertEquals(5L, lost.getOffset(), "a lagging commit must not rewind the group");
 
             // A deliberate reset may go backwards.
-            assertEquals(2L, service.commitOffsetAsync("g1", "demo", 0, 2L, false)
+            assertEquals(2L, service.commitOffsetAsync("g1", "c-g1", "demo", 0, 2L, false)
                     .get(5, TimeUnit.SECONDS).getOffset());
 
             // Groups are isolated, and a stored 0 stays distinguishable from absence.
             assertFalse(service.queryOffsetAsync("g2", "demo", 0).get(5, TimeUnit.SECONDS).isFound());
-            assertEquals(0L, service.commitOffsetAsync("g2", "demo", 0, 0L, true)
+            claimFor(service, "g2", "demo", 0, "c-g2");
+            assertEquals(0L, service.commitOffsetAsync("g2", "c-g2", "demo", 0, 0L, true)
                     .get(5, TimeUnit.SECONDS).getOffset());
             assertTrue(service.queryOffsetAsync("g2", "demo", 0).get(5, TimeUnit.SECONDS).isFound());
         } finally {
@@ -160,7 +177,8 @@ class StoreOffsetRpcTest {
             assertEquals(3L, service.maxOffsetAsync("tail", 0).get(5, TimeUnit.SECONDS));
 
             // A commit records a group's position; it does not move the log.
-            service.commitOffsetAsync("g1", "tail", 0, 99L, true).get(5, TimeUnit.SECONDS);
+            claimFor(service, "g1", "tail", 0, "c-tail");
+            service.commitOffsetAsync("g1", "c-tail", "tail", 0, 99L, true).get(5, TimeUnit.SECONDS);
             assertEquals(3L, service.maxOffsetAsync("tail", 0).get(5, TimeUnit.SECONDS));
             assertEquals(0L, service.maxOffsetAsync("tail", 1).get(5, TimeUnit.SECONDS));
         } finally {
@@ -284,7 +302,8 @@ class StoreOffsetRpcTest {
         StoreBroker first = new StoreBroker(config, freePort());
         first.start();
         ReferenceConfig<StoreService> ref = storeReference("127.0.0.1:" + first.getPort());
-        ref.getRef().commitOffsetAsync("g1", "demo", 0, 17L, true).get(5, TimeUnit.SECONDS);
+        claimFor(ref.getRef(), "g1", "demo", 0, "c-restart");
+        ref.getRef().commitOffsetAsync("g1", "c-restart", "demo", 0, 17L, true).get(5, TimeUnit.SECONDS);
         ref.destroy();
         first.shutdown();
 
@@ -315,7 +334,8 @@ class StoreOffsetRpcTest {
         ReferenceConfig<StoreService> refA = storeReference("127.0.0.1:" + brokerA.getPort());
         ReferenceConfig<StoreService> refB = storeReference("127.0.0.1:" + brokerB.getPort());
         try {
-            refA.getRef().commitOffsetAsync("shared", "same", 0, 4L, true).get(5, TimeUnit.SECONDS);
+            claimFor(refA.getRef(), "shared", "same", 0, "c-pair");
+            refA.getRef().commitOffsetAsync("shared", "c-pair", "same", 0, 4L, true).get(5, TimeUnit.SECONDS);
 
             assertEquals(4L, refA.getRef().queryOffsetAsync("shared", "same", 0).get(5, TimeUnit.SECONDS).getOffset());
             assertFalse(refB.getRef().queryOffsetAsync("shared", "same", 0).get(5, TimeUnit.SECONDS).isFound(),
@@ -327,6 +347,107 @@ class StoreOffsetRpcTest {
             refB.destroy();
             brokerA.shutdown();
             brokerB.shutdown();
+        }
+    }
+
+    /**
+     * The user-facing consequence of the lease: a second StoreConsumer of the same
+     * group cannot attach while the first is live, so exclusivity is enforced rather
+     * than advised. A clean shutdown hands the queue back and the next instance takes
+     * it, resuming at the committed offset instead of replaying.
+     */
+    @Test
+    void concurrentConsumerOfSameGroupIsRejectedAtAttach() throws Exception {
+        StoreBroker broker = new StoreBroker(config("excl", "excl-broker"), freePort());
+        broker.start();
+        String url = "127.0.0.1:" + broker.getPort();
+        StoreProducer producer = new StoreProducer(url);
+        StoreConsumer holder = new StoreConsumer(url, "excl-group");
+        StoreConsumer interloper = new StoreConsumer(url, "excl-group");
+        try {
+            CountDownLatch latch = new CountDownLatch(3);
+            holder.subscribe("excl", 0, messages -> messages.forEach(m -> latch.countDown()));
+            holder.start();
+            for (int i = 0; i < 3; i++) {
+                assertEquals(PutStatus.PUT_OK, producer.sendSync(StoreMessage.of("excl", 0, "e-" + i)).getStatus());
+            }
+            assertTrue(latch.await(10, TimeUnit.SECONDS), "the holder should consume all three");
+            assertEquals(3L, awaitBrokerOffset(broker, "excl-group", "excl", 0, 3L));
+
+            // A second live consumer of the same group is refused at attach: the queue's
+            // lease is held, and claimLeases throws rather than arming a duplicate pump.
+            AtomicInteger interloperGot = new AtomicInteger();
+            interloper.subscribe("excl", 0, messages -> interloperGot.addAndGet(messages.size()));
+            assertThrows(IllegalStateException.class, interloper::start,
+                    "a concurrent same-group consumer must be rejected, not served a duplicate stream");
+            Thread.sleep(800);
+            assertEquals(0, interloperGot.get(), "the rejected consumer never pulls");
+
+            // Once the holder leaves cleanly the queue frees and a successor resumes past
+            // the committed offset — no replay, because the record was never lost.
+            holder.shutdown();
+            StoreConsumer successor = new StoreConsumer(url, "excl-group");
+            AtomicInteger redelivered = new AtomicInteger();
+            successor.subscribe("excl", 0, messages -> redelivered.addAndGet(messages.size()));
+            successor.start();
+            Thread.sleep(1500);
+            assertEquals(0, redelivered.get(), "the successor resumes at the committed offset");
+            successor.shutdown();
+        } finally {
+            holder.shutdown();
+            interloper.shutdown();
+            producer.shutdown();
+            broker.shutdown();
+        }
+    }
+
+    /**
+     * The fence at the contract level, driven with a short lease: while a consumer
+     * holds the queue it pulls and commits freely and no other claim wins; once its
+     * lease lapses the next consumer takes over, and the old holder's pull comes back
+     * NOT_LEASED while its commit is refused — so a partitioned zombie can never move
+     * the group past where the live consumer actually stands.
+     */
+    @Test
+    void leaseFencingBlocksPullsAndCommitsAfterTakeover() throws Exception {
+        StoreBroker broker = new StoreBroker(config("fence", "fence-broker"), freePort());
+        broker.start();
+        String url = "127.0.0.1:" + broker.getPort();
+        StoreProducer producer = new StoreProducer(url);
+        for (int i = 0; i < 2; i++) {
+            assertEquals(PutStatus.PUT_OK, producer.sendSync(StoreMessage.of("fence", 0, "f-" + i)).getStatus());
+        }
+        awaitTail(broker, "fence", 0, 2L);
+        ReferenceConfig<StoreService> ref = storeReference(url);
+        StoreService service = ref.getRef();
+        try {
+            assertTrue(service.claimLeaseAsync("fg", "fence", 0, "c1", 1000).get(5, TimeUnit.SECONDS).isGranted());
+            assertEquals(PullStatus.FOUND,
+                    service.pullAsync("fg", "c1", "fence", 0, 0, 10, 0).get(5, TimeUnit.SECONDS).getStatus());
+            assertEquals(2L, service.commitOffsetAsync("fg", "c1", "fence", 0, 2L, true)
+                    .get(5, TimeUnit.SECONDS).getOffset());
+
+            assertFalse(service.claimLeaseAsync("fg", "fence", 0, "c2", 1000).get(5, TimeUnit.SECONDS).isGranted(),
+                    "a live holder blocks the second consumer");
+
+            Thread.sleep(1300);   // c1 stops renewing; its short lease lapses
+            assertTrue(service.claimLeaseAsync("fg", "fence", 0, "c2", 30_000).get(5, TimeUnit.SECONDS).isGranted(),
+                    "the lapsed queue is takeable");
+
+            assertEquals(PullStatus.NOT_LEASED,
+                    service.pullAsync("fg", "c1", "fence", 0, 0, 10, 0).get(5, TimeUnit.SECONDS).getStatus(),
+                    "the superseded consumer's pull is turned away");
+            service.commitOffsetAsync("fg", "c1", "fence", 0, 99L, true).get(5, TimeUnit.SECONDS);
+            assertEquals(2L, broker.getOffsetStore().queryOffset("fg", "fence", 0),
+                    "a zombie commit must not advance the group");
+
+            assertEquals(PullStatus.FOUND,
+                    service.pullAsync("fg", "c2", "fence", 0, 0, 10, 0).get(5, TimeUnit.SECONDS).getStatus(),
+                    "the new holder acts freely");
+        } finally {
+            ref.destroy();
+            producer.shutdown();
+            broker.shutdown();
         }
     }
 }
