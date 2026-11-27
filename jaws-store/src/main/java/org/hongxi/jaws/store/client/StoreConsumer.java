@@ -5,6 +5,7 @@ import org.hongxi.jaws.config.ProtocolConfig;
 import org.hongxi.jaws.config.ReferenceConfig;
 import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.rpc.Reference;
+import org.hongxi.jaws.exception.JawsAbstractException;
 import org.hongxi.jaws.store.BrokerInfo;
 import org.hongxi.jaws.store.LeaseResult;
 import org.hongxi.jaws.store.MessageView;
@@ -25,11 +26,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -486,6 +489,21 @@ public class StoreConsumer {
     }
 
     /**
+     * Whether a failed lease hand-back on shutdown means the broker simply could not
+     * be reached, rather than rejecting the call. A live broker answers this
+     * value-returning RPC without throwing, so any throwable here is a delivery
+     * failure: no live reference to route to, a broken/unconnectable socket, or a
+     * reply that never arrived. Those all leave the broker's in-memory lease to lapse
+     * on its own, so the hand-back is harmless and should not warn.
+     */
+    private static boolean isBrokerUnreachable(Throwable e) {
+        Throwable cause = (e instanceof ExecutionException && e.getCause() != null) ? e.getCause() : e;
+        return cause instanceof TimeoutException
+                || cause instanceof java.io.IOException
+                || cause instanceof JawsAbstractException;
+    }
+
+    /**
      * Mirror progress onto the broker that owns the queue. Fire-and-forget: the
      * pump already moved ahead in memory, so a failed commit costs a server-side
      * gap that the next successful commit closes — and, if the process dies
@@ -670,8 +688,12 @@ public class StoreConsumer {
             }
         }
         // Hand the queues back before the connections go, so a clean stop does not
-        // make the next instance of the group wait out the lease. Best-effort: a broker
-        // already gone simply never answers and its in-memory lease dies with it.
+        // make the next instance of the group wait out the lease. Best-effort: when the
+        // broker is already gone the hand-back cannot land, and its in-memory lease dies
+        // with it — that is the expected path, not a fault, so it is skipped quietly
+        // (debug, no stack) rather than alarming on every shutdown. A reachable broker
+        // answers this value-returning call without throwing, so only an undeliverable
+        // one (no live reference, connect failure, or reply timeout) counts as gone.
         for (Subscription subscription : subscriptions.values()) {
             if (!subscription.active) {
                 continue;
@@ -680,8 +702,13 @@ public class StoreConsumer {
                 subscription.broker.storeService.releaseLeaseAsync(consumerGroup, subscription.topic,
                         subscription.queueId, consumerId).get(2, TimeUnit.SECONDS);
             } catch (Exception e) {
-                logger.warn("Lease release on shutdown failed for {}@{}@{}",
-                        subscription.broker.brokerName, subscription.topic, subscription.queueId, e);
+                if (isBrokerUnreachable(e)) {
+                    logger.debug("Skipping lease hand-back for {}@{}@{}: broker unreachable",
+                            subscription.broker.brokerName, subscription.topic, subscription.queueId);
+                } else {
+                    logger.warn("Lease release on shutdown failed for {}@{}@{}",
+                            subscription.broker.brokerName, subscription.topic, subscription.queueId, e);
+                }
             }
         }
         for (BrokerConnection connection : brokers.values()) {

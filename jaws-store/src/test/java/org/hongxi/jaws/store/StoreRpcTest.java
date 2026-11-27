@@ -2,8 +2,13 @@ package org.hongxi.jaws.store;
 
 import org.hongxi.jaws.store.client.StoreConsumer;
 import org.hongxi.jaws.store.client.StoreProducer;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -14,6 +19,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -158,6 +164,67 @@ class StoreRpcTest {
             consumer.shutdown();
             producer.shutdown();
             broker.shutdown();
+        }
+    }
+
+    /**
+     * Regression for shutdown noise: when a broker is already gone the lease hand-back
+     * cannot land, and its in-memory lease dies with it — an expected outcome, not a
+     * fault. Attaching a direct-mode consumer then taking the broker down before
+     * consumer.shutdown() reproduces the path that used to log a WARN with a stack. The
+     * release must instead take the quiet debug skip, producing no WARN at all.
+     */
+    @Test
+    void shutdownAgainstDownBrokerSkipsLeaseReleaseQuietly() throws Exception {
+        StoreConfig config = new StoreConfig();
+        config.setStorePath(tempDir.resolve("store-quiet").toString());
+        config.setHoldScanIntervalMillis(200);
+
+        int port = freePort();
+        StoreBroker broker = new StoreBroker(config, port);
+        broker.start();
+        String directUrl = "127.0.0.1:" + port;
+        StoreConsumer consumer = new StoreConsumer(directUrl, "quiet-shutdown-group");
+
+        // Capture StoreConsumer's own log while the shutdown path runs.
+        Logger log = (Logger) LoggerFactory.getLogger(StoreConsumer.class);
+        Level previous = log.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        log.setLevel(Level.DEBUG);
+
+        boolean brokerDown = false;
+        boolean consumerDown = false;
+        try {
+            consumer.subscribe("quiet-demo", 0, messages -> { });
+            consumer.start();
+
+            // Broker dies while the consumer still holds the queue attached: direct mode
+            // never re-detects the loss, so shutdown still attempts the hand-back.
+            broker.shutdown();
+            brokerDown = true;
+            consumer.shutdown();
+            consumerDown = true;
+
+            boolean warned = appender.list.stream().anyMatch(e ->
+                    e.getLevel() == Level.WARN
+                            && e.getFormattedMessage().contains("Lease release on shutdown failed"));
+            boolean skipped = appender.list.stream().anyMatch(e ->
+                    e.getLevel() == Level.DEBUG
+                            && e.getFormattedMessage().contains("Skipping lease hand-back"));
+            assertFalse(warned, "shutdown must not warn when the broker is unreachable");
+            assertTrue(skipped, "the unreachable hand-back should take the quiet debug skip");
+        } finally {
+            log.detachAppender(appender);
+            appender.stop();
+            log.setLevel(previous);
+            if (!consumerDown) {
+                consumer.shutdown();
+            }
+            if (!brokerDown) {
+                broker.shutdown();
+            }
         }
     }
 }
