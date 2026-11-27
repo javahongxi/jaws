@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -151,7 +152,19 @@ public class MappedFile {
             fileChannel.force(false);
             flushedPosition.set(wrote);
         } catch (IOException e) {
-            if (!closed) {
+            if (e instanceof ClosedByInterruptException) {
+                // The JDK closes the channel when a thread is interrupted inside
+                // force(). MessageStore.shutdown() interrupts the flush tickers
+                // on purpose, so this is an expected exit, not a disk failure —
+                // same stopped-before-interrupt rationale as the reput guard.
+                // Mirror the closed channel so the final flush attempted by
+                // MappedFileQueue.shutdown stays silent instead of reporting a
+                // ClosedChannelException against the dead channel as an error.
+                // Losing the tail flush is harmless: page cache survives process
+                // exit, and ConsumeQueue is rebuilt from the CommitLog anyway.
+                closed = true;
+                logger.debug("Flush of {} interrupted by shutdown, channel closed", file.getName());
+            } else if (!closed) {
                 logger.error("Failed to flush {}", file.getName(), e);
             }
         }

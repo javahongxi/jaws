@@ -105,7 +105,7 @@ consumer ◀──pullAsync─── getMessage：CQ 数组式寻址 → CommitL
 
 [ConsumeQueue](../jaws-store/src/main/java/org/hongxi/jaws/store/ConsumeQueue.java) 每单元定长 20B：`commitLogOffset(8) + size(4) + tagsCode(8, 保留 0)`。定位 queueOffset N 就是 `N × 20` 的数组寻址，无解析无查找。写入复用单 reput 线程持有的 `unitBuffer`，无 per-message 分配。
 
-CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持久性承诺——所有持久性成本由 CommitLog 独家支付，重启时 CQ 删掉重建（见 §6）。
+CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持久性承诺——所有持久性成本由 CommitLog 独家支付，重启时 CQ 删掉重建（见 §6）。关机时 `shutdown()` 会中断刷盘节拍线程；中断落在 `force()` 里属于预期退出，[MappedFile.flush](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFile.java) 把这种 JDK 强制关通道的情形记为 debug 并镜像 `closed` 状态，后续终刷静默跳过，不报成磁盘故障（与 §4.2 末段的 reput 关机噪声同款口径；测试见 §10 的 MappedFileTest）。
 
 ### 4.2 先建索引，后发通知，落空则持位重试、越界则熔断写入
 
@@ -314,10 +314,11 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 
 环境：macOS arm64（Apple Silicon）/ Temurin JDK 21 / loopback 直连 / fastjson2 JSONB / 单 topic 单队列 / 消息体约 10 字节。数据为 `run-sample.sh store` 实测（producer 端计时，含 RPC 往返）。
 
-**单元测试**：43 个用例全部通过（jaws-core 272 个同时全绿）——
+**单元测试**：44 个用例全部通过（jaws-core 272 个同时全绿）——
 
 | 测试类 | 覆盖 |
 |---|---|
+| MappedFileTest（1） | 刷盘被关机中断时记 debug 不记 ERROR，并镜像通道关闭状态使后续终刷静默（§4.1） |
 | CommitLogTest（5） | 写读回环、文件滚动保内容与位点、恢复接续 queueOffset、超大消息拒绝、多队列位点独立 |
 | MessageStoreTest（11） | 跨文件边界拉取、组提交满足整批、重启重放重建索引、长轮询到达唤醒、长轮询超时返回、非法位点上报、**批量回环保序（§7.2）**、清理回收文件并推进 min offset（§6.1）、**索引落空持位重试不留空洞（§4.2）**、**重试越界熔断写入并自愈（§4.2）**、**同队列并发写不暴露索引空洞（§3.2）** |
 | StoreRpcTest（4） | 走真实 jaws 协议的 broker + producer + consumer 端到端（consumer 先启动触发长轮询挂起）；短轮询空结果按间隔退避、不忙等；**批量发送经协议端到端投递（§7.2）**；**broker 已宕机时 shutdown 归还租约按不可达静默跳过、不再产生该 WARN（§7.3，捕获 StoreConsumer 日志断言无 WARN 且走了 debug 跳过分支）** |
