@@ -18,9 +18,10 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * Broker-side consumer offsets: group@topic@queueId to the next offset to pull.
  * This is the authoritative record of a group's progress — RocketMQ's
- * ConsumerOffsetManager role — so a fresh consumer instance (or one whose local
- * file was discarded with its container) resumes where the group actually left
- * off instead of replaying the whole queue.
+ * ConsumerOffsetManager role — so a fresh consumer instance (a rebuilt container,
+ * another host, a second process) resumes where the group actually left off
+ * instead of replaying the whole queue. No client-side copy backs it up: this
+ * table is the only place a group's position survives a restart.
  *
  * <p>Deliberately kept out of {@link MessageStore}: offsets are consumer
  * metadata, not log state. Nothing here is touched by the put or pull path, it
@@ -34,9 +35,9 @@ import java.util.concurrent.ConcurrentMap;
  * a group that has already moved ahead. Reset paths pass {@code false} to
  * overwrite deliberately.
  *
- * <p>Persistence mirrors the client's {@code LocalOffsetStore} rather than
- * RocketMQ's JSON snapshot: a properties file written through a temp file plus
- * atomic move, so a crash never leaves a half-written offset table behind.
+ * <p>Persistence is a properties file written through a temp file plus an atomic
+ * move rather than RocketMQ's JSON snapshot, so a crash never leaves a
+ * half-written offset table behind.
  */
 public class ConsumerOffsetStore {
 

@@ -220,6 +220,13 @@ public class StoreBroker {
             long authoritative = offsetStore.updateOffset(group, topic, queueId, offset, increaseOnly);
             return CompletableFuture.completedFuture(OffsetResult.found(authoritative));
         }
+
+        @Override
+        public CompletableFuture<Long> maxOffsetAsync(String topic, int queueId) {
+            // One concurrent-map read plus a volatile position; like the offset
+            // queries it never touches the commit log, so it answers inline.
+            return CompletableFuture.completedFuture(messageStore.getMaxOffsetInQueue(topic, queueId));
+        }
     }
 
     private class StoreAdminServiceImpl implements StoreAdminService {

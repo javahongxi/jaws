@@ -16,12 +16,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   -DdirectUrl=127.0.0.1:10911   broker address(es), comma-separated
  *   -Dregistry=harbor://127.0.0.1:19848   registry mode, overrides directUrl
  *   -Dexpected=1000               messages to wait for
- *   -Dgroup=store-demo-group      consumer group (offset file namespace)
+ *   -Dgroup=store-demo-group      consumer group (broker-side offset key)
  *   -Dtopic=store-demo            source topic, queue 0
  * </pre>
  *
- * <p>Offsets are client-managed and persisted, so a re-run resumes where
- * the previous run stopped instead of re-reading the whole queue.
+ * <p>Progress lives on the broker, so a re-run resumes where the group left off.
+ * A group the broker has never seen starts at the queue tail and skips whatever
+ * is already in the log — start this consumer before the producer when the demo
+ * needs every message (which is also what the long-polling hold wants).
  */
 public class StoreConsumerMain {
 

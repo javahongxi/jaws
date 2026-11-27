@@ -7,12 +7,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -59,6 +57,48 @@ class StoreMultiBrokerTest {
         return registry;
     }
 
+    /**
+     * Commits are fire-and-forget: wait for the group's record on one broker and
+     * report the last observed value on timeout.
+     */
+    private static long awaitBrokerOffset(StoreBroker broker, String group, String topic, int queueId,
+                                          long expected) throws InterruptedException {
+        long last = -1L;
+        for (int i = 0; i < 50; i++) {
+            Long offset = broker.getOffsetStore().queryOffset(group, topic, queueId);
+            if (offset != null) {
+                last = offset;
+                if (offset == expected) {
+                    return offset;
+                }
+            }
+            Thread.sleep(100);
+        }
+        return last;
+    }
+
+    /**
+     * Wait until a pump from the consumer has reached every listed broker. In
+     * registry mode discovery runs on the pump executor, so without this the
+     * sends below could land before the attach and be skipped as a new group's
+     * backlog. A served pull proves the broker is attached.
+     */
+    private static void awaitPumpsReached(StoreBroker... brokers) throws InterruptedException {
+        for (int i = 0; i < 100; i++) {
+            boolean reached = true;
+            for (StoreBroker broker : brokers) {
+                if (broker.getMessageStore().getPullCount() == 0) {
+                    reached = false;
+                }
+            }
+            if (reached) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("no pump reached the brokers within 10s");
+    }
+
     @Test
     void brokerIdentityPersistedAndEnforced() throws Exception {
         StoreConfig config = config("identity", "alpha");
@@ -80,7 +120,6 @@ class StoreMultiBrokerTest {
 
     @Test
     void offsetsIsolatedAcrossBrokers() throws Exception {
-        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client-iso").toString());
         StoreBroker brokerA = new StoreBroker(config("iso-a", "broker-a"), freePort());
         StoreBroker brokerB = new StoreBroker(config("iso-b", "broker-b"), freePort());
         brokerA.start();
@@ -91,10 +130,6 @@ class StoreMultiBrokerTest {
         StoreProducer producerB = new StoreProducer(urlB);
         StoreConsumer consumer = new StoreConsumer(urlA + "," + urlB, "iso-group");
         try {
-            for (int i = 0; i < 5; i++) {
-                producerA.sendSync(StoreMessage.of("iso", 0, "a-" + i));
-                producerB.sendSync(StoreMessage.of("iso", 0, "b-" + i));
-            }
             AtomicInteger received = new AtomicInteger();
             CountDownLatch latch = new CountDownLatch(10);
             consumer.subscribe("iso", 0, messages -> {
@@ -102,17 +137,19 @@ class StoreMultiBrokerTest {
                 messages.forEach(m -> latch.countDown());
             });
             consumer.start();
+            for (int i = 0; i < 5; i++) {
+                producerA.sendSync(StoreMessage.of("iso", 0, "a-" + i));
+                producerB.sendSync(StoreMessage.of("iso", 0, "b-" + i));
+            }
             assertTrue(latch.await(10, TimeUnit.SECONDS), "expected 10 messages from both brokers");
             assertEquals(10, received.get());
             consumer.shutdown();
 
-            Properties offsets = new Properties();
-            Path offsetFile = tempDir.resolve("client-iso/iso-group/offsets.properties");
-            try (InputStream in = Files.newInputStream(offsetFile)) {
-                offsets.load(in);
-            }
-            assertEquals("5", offsets.getProperty("broker-a@iso@0"));
-            assertEquals("5", offsets.getProperty("broker-b@iso@0"));
+            // Same topic, same queueId, same group: two records, each on the broker
+            // that owns the queue. A shared key space would have let whichever pump
+            // committed last move the other broker's position.
+            assertEquals(5L, awaitBrokerOffset(brokerA, "iso-group", "iso", 0, 5L));
+            assertEquals(5L, awaitBrokerOffset(brokerB, "iso-group", "iso", 0, 5L));
 
             // restart with the same group: both per-broker offsets resume at 5,
             // nothing is re-consumed
@@ -129,13 +166,11 @@ class StoreMultiBrokerTest {
             producerB.shutdown();
             brokerA.shutdown();
             brokerB.shutdown();
-            restoreClientPath(previous);
         }
     }
 
     @Test
     void registryDiscoveryAndBrokerFailover() throws Exception {
-        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client-reg").toString());
         RegistryConfig registry = localRegistry(freePort());
         StoreBroker brokerA = new StoreBroker(config("reg-a", "reg-a"), freePort(), "fastjson2", List.of(registry));
         StoreBroker brokerB = new StoreBroker(config("reg-b", "reg-b"), freePort(), "fastjson2", List.of(registry));
@@ -155,6 +190,7 @@ class StoreMultiBrokerTest {
                 });
             });
             consumer.start();
+            awaitPumpsReached(brokerA, brokerB);
             for (int i = 0; i < 10; i++) {
                 producer.sendSync(StoreMessage.of("reg", 0, "m-" + i));
             }
@@ -178,7 +214,6 @@ class StoreMultiBrokerTest {
             consumer.shutdown();
             producer.shutdown();
             brokerA.shutdown();
-            restoreClientPath(previous);
         }
     }
 
@@ -219,13 +254,5 @@ class StoreMultiBrokerTest {
         PullResult result = broker.getMessageStore().getMessageAsync(topic, 0, 0, 100, 0)
                 .get(5, TimeUnit.SECONDS);
         return result.getStatus() == PullStatus.FOUND ? result.getMessages().size() : 0;
-    }
-
-    private static void restoreClientPath(String previous) {
-        if (previous == null) {
-            System.clearProperty("jaws.store.client.path");
-        } else {
-            System.setProperty("jaws.store.client.path", previous);
-        }
     }
 }

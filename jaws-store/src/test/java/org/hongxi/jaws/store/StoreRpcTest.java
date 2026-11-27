@@ -34,7 +34,6 @@ class StoreRpcTest {
 
     @Test
     void produceConsumeOverJawsProtocol() throws Exception {
-        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client").toString());
         StoreConfig config = new StoreConfig();
         config.setStorePath(tempDir.resolve("store").toString());
         config.setHoldScanIntervalMillis(200);
@@ -68,11 +67,6 @@ class StoreRpcTest {
             consumer.shutdown();
             producer.shutdown();
             broker.shutdown();
-            if (previous == null) {
-                System.clearProperty("jaws.store.client.path");
-            } else {
-                System.setProperty("jaws.store.client.path", previous);
-            }
         }
     }
 
@@ -85,7 +79,6 @@ class StoreRpcTest {
      */
     @Test
     void shortPollingSpacesOutEmptyPulls() throws Exception {
-        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client-sp").toString());
         StoreConfig config = new StoreConfig();
         config.setStorePath(tempDir.resolve("store-sp").toString());
         config.setHoldScanIntervalMillis(200);
@@ -112,11 +105,6 @@ class StoreRpcTest {
         } finally {
             consumer.shutdown();
             broker.shutdown();
-            if (previous == null) {
-                System.clearProperty("jaws.store.client.path");
-            } else {
-                System.setProperty("jaws.store.client.path", previous);
-            }
         }
     }
 
@@ -127,7 +115,6 @@ class StoreRpcTest {
      */
     @Test
     void batchSendDeliveredOverJawsProtocol() throws Exception {
-        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client-batch").toString());
         StoreConfig config = new StoreConfig();
         config.setStorePath(tempDir.resolve("store-batch").toString());
         config.setHoldScanIntervalMillis(200);
@@ -171,11 +158,6 @@ class StoreRpcTest {
             consumer.shutdown();
             producer.shutdown();
             broker.shutdown();
-            if (previous == null) {
-                System.clearProperty("jaws.store.client.path");
-            } else {
-                System.setProperty("jaws.store.client.path", previous);
-            }
         }
     }
 }

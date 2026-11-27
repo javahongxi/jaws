@@ -618,7 +618,6 @@ cmd_store() {
     local consumer_pid_file=".consumer-store.pid"
     java -cp "$cp:$STORE_MODULE/target/classes" \
         -DdirectUrl="127.0.0.1:$port" -Dexpected="$count" \
-        -Djaws.store.client.path="$run_dir/client" \
         "$STORE_CONSUMER_MAIN" > "$consumer_log" 2>&1 &
     local consumer_pid=$!
     echo "$consumer_pid" > "$consumer_pid_file"
@@ -808,7 +807,6 @@ cmd_store_cluster() {
     local consumer_pid_file=".consumer-store-cluster.pid"
     java -cp "$cp:$STORE_MODULE/target/classes" \
         -Dregistry="harbor://127.0.0.1:$harbor_port" -Dexpected="$count" \
-        -Djaws.store.client.path="$run_dir/client" \
         "$STORE_CONSUMER_MAIN" > "$consumer_log" 2>&1 &
     local consumer_pid=$!
     echo "$consumer_pid" > "$consumer_pid_file"

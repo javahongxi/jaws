@@ -56,7 +56,6 @@ class StoreAdminRpcTest {
 
     @Test
     void viewMessageByOffsetOverJawsProtocol() throws Exception {
-        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client").toString());
         StoreConfig config = new StoreConfig();
         config.setStorePath(tempDir.resolve("store").toString());
         config.setHoldScanIntervalMillis(200);
@@ -90,11 +89,6 @@ class StoreAdminRpcTest {
             adminRef.destroy();
             producer.shutdown();
             broker.shutdown();
-            if (previous == null) {
-                System.clearProperty("jaws.store.client.path");
-            } else {
-                System.setProperty("jaws.store.client.path", previous);
-            }
         }
     }
 
@@ -105,7 +99,6 @@ class StoreAdminRpcTest {
      */
     @Test
     void statsOverJawsProtocol() throws Exception {
-        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client-stats").toString());
         StoreConfig config = new StoreConfig();
         config.setStorePath(tempDir.resolve("store-stats").toString());
         config.setHoldScanIntervalMillis(200);
@@ -133,11 +126,6 @@ class StoreAdminRpcTest {
             adminRef.destroy();
             producer.shutdown();
             broker.shutdown();
-            if (previous == null) {
-                System.clearProperty("jaws.store.client.path");
-            } else {
-                System.setProperty("jaws.store.client.path", previous);
-            }
         }
     }
 }

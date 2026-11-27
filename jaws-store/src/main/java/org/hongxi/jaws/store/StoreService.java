@@ -9,9 +9,9 @@ import java.util.concurrent.CompletableFuture;
  * the long-polling pull may stay pending for seconds — a load shape ordinary
  * RPC benchmarks never exercise.
  *
- * <p>The two offset methods carry a group's consumption progress. Unlike the
- * pull they never suspend: a map lookup and one merge, answered inline the way
- * the admin queries are.
+ * <p>The three offset methods never suspend the way a pull does: two carry a
+ * group's consumption progress, one reports a queue's tail. Each is a map lookup
+ * or an atomic read, answered inline the way the admin queries are.
  *
  * <p>Client-side send semantics (sync/async/oneway) are layered on top by
  * StoreProducer; the wire contract stays uniformly async.
@@ -56,4 +56,13 @@ public interface StoreService {
      */
     CompletableFuture<OffsetResult> commitOffsetAsync(String group, String topic, int queueId,
                                                      long offset, boolean increaseOnly);
+
+    /**
+     * The queue's tail on this broker — the offset one past the last written
+     * record. Queue-scoped rather than group-scoped, and always answerable: a
+     * queue nothing has been written to has a tail of 0. A consumer whose group
+     * has no stored offset starts here instead of replaying the backlog, which is
+     * what RocketMQ's CONSUME_FROM_LAST_OFFSET does with GET_MAX_OFFSET.
+     */
+    CompletableFuture<Long> maxOffsetAsync(String topic, int queueId);
 }
