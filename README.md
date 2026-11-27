@@ -206,33 +206,34 @@ public class MyRunner implements CommandLineRunner {
 
 ## 深入了解更多
 
-| 主题                                                       | 说明                                                  |
-|------------------------------------------------------------|-------------------------------------------------------|
-| [架构总览](doc/architecture.md)                            | Maven 模块地图 + core 六层骨架 + 门面口径             |
-| [与 Dubbo 对比](doc/dubbo-comparison.md)                   | 八个维度的系统性能力对比                              |
-| [全链路异步](doc/async-full-chain.md)                      | 一根 CompletableFuture 贯穿七层                       |
-| [编解码设计](doc/codec-comparison.md)                      | Jaws 与 Dubbo 编解码架构对比分析                      |
-| [Netty 解码器精读](doc/jaws-decoder.md)                    | 半包/粘包定帧机制与手写解码器的取舍                   |
-| [HTTP/2 与裸 TCP 对比](doc/http2-vs-tcp.md)                | 帧结构 / 关联机制 / HPACK / HTTP/1.1 明文             |
-| [gRPC 线格式兼容](doc/wire-grpc-compat.md)                 | 零 grpc-java 实现，与 Go 对端双向实测                 |
-| [Netty 性能解读](doc/netty-performance.md)                 | 传输层性能实践与踩坑                                  |
-| [tomcat 线程模型](doc/tomcat-thread-model.md)              | Poller/worker 线程归属 / 过载链条 / 虚拟线程          |
-| [grpc-java 线程模型](doc/grpc-java-thread-model.md)        | event loop + 池化任务，与 jaws 三种传输对照           |
-| [性能测试](doc/benchmark.md)                               | Benchmark 环境变量与参数选择建议                      |
-| [尾延迟归因](doc/tail-latency.md)                          | P99.9 毛刺的分层归因方法与 jaws 实测案例              |
-| [应用级服务发现](doc/app-level-discovery.md)               | local 元数据模式最小切片：存储模型与 Dubbo 对照       |
-| [注册中心对比](doc/registry-comparison.md)                 | Nacos 与 ZooKeeper 实现对比                           |
-| [自研注册中心解读](doc/harbor-vs-nacos.md)                 | 内置注册中心与 Nacos 的详细设计对比                   |
-| [Harbor Raft 精读](doc/harbor-raft.md)                     | 持久实例与配置中心的自研 Raft CP 设计精读             |
-| [Nacos Config 原理解读](doc/nacos-config.md)               | 配置域从写 DB 到客户端收变更的设计剖析                |
-| [动态配置](doc/dynamic-config.md)                          | 全局/服务级/方法级三层热更新                          |
-| [泛化调用](doc/generic-invocation.md)                      | 无需接口 JAR 包即可发起 RPC 调用                      |
-| [MCP 支持](doc/mcp.md)                                     | 服务方法自动注册为 AI 工具，Stateless Streamable HTTP |
-| [优雅停机](doc/graceful-shutdown.md)                       | 四阶段零损伤发布                                      |
-| [服务鉴权](doc/token-auth.md)                              | 基于 Token 的服务认证                                 |
-| [连接预热](doc/warm-up.md)                                 | Provider 冷启动权重渐增                               |
-| [可观测性](doc/observability.md)                           | Micrometer 指标 + OpenTelemetry 链路追踪              |
-| [jaws-store 存储引擎](doc/jaws-store.md)                   | RocketMQ 风格存储内核设计与 jaws 协议高吞吐验证       |
+| 主题                                                | 说明                                                  |
+|-----------------------------------------------------|-------------------------------------------------------|
+| [架构总览](doc/architecture.md)                     | Maven 模块地图 + core 六层骨架 + 门面口径             |
+| [与 Dubbo 对比](doc/dubbo-comparison.md)            | 八个维度的系统性能力对比                              |
+| [全链路异步](doc/async-full-chain.md)               | 一根 CompletableFuture 贯穿七层                       |
+| [编解码设计](doc/codec-comparison.md)               | Jaws 与 Dubbo 编解码架构对比分析                      |
+| [Netty 解码器精读](doc/jaws-decoder.md)             | 半包/粘包定帧机制与手写解码器的取舍                   |
+| [HTTP/2 与裸 TCP 对比](doc/http2-vs-tcp.md)         | 帧结构 / 关联机制 / HPACK / HTTP/1.1 明文             |
+| [gRPC 线格式兼容](doc/wire-grpc-compat.md)          | 零 grpc-java 实现，与 Go 对端双向实测                 |
+| [Netty 性能解读](doc/netty-performance.md)          | 传输层性能实践与踩坑                                  |
+| [tomcat 线程模型](doc/tomcat-thread-model.md)       | Poller/worker 线程归属 / 过载链条 / 虚拟线程          |
+| [grpc-java 线程模型](doc/grpc-java-thread-model.md) | event loop + 池化任务，与 jaws 三种传输对照           |
+| [性能测试](doc/benchmark.md)                        | Benchmark 环境变量与参数选择建议                      |
+| [尾延迟归因](doc/tail-latency.md)                   | P99.9 毛刺的分层归因方法与 jaws 实测案例              |
+| [应用级服务发现](doc/app-level-discovery.md)        | local 元数据模式最小切片：存储模型与 Dubbo 对照       |
+| [注册中心对比](doc/registry-comparison.md)          | Nacos 与 ZooKeeper 实现对比                           |
+| [自研注册中心解读](doc/harbor-vs-nacos.md)          | 内置注册中心与 Nacos 的详细设计对比                   |
+| [Harbor Raft 精读](doc/harbor-raft.md)              | 持久实例与配置中心的自研 Raft CP 设计精读             |
+| [Nacos Config 原理解读](doc/nacos-config.md)        | 配置域从写 DB 到客户端收变更的设计剖析                |
+| [动态配置](doc/dynamic-config.md)                   | 全局/服务级/方法级三层热更新                          |
+| [泛化调用](doc/generic-invocation.md)               | 无需接口 JAR 包即可发起 RPC 调用                      |
+| [MCP 支持](doc/mcp.md)                              | 服务方法自动注册为 AI 工具，Stateless Streamable HTTP |
+| [优雅停机](doc/graceful-shutdown.md)                | 四阶段零损伤发布                                      |
+| [服务鉴权](doc/token-auth.md)                       | 基于 Token 的服务认证                                 |
+| [连接预热](doc/warm-up.md)                          | Provider 冷启动权重渐增                               |
+| [可观测性](doc/observability.md)                    | Micrometer 指标 + OpenTelemetry 链路追踪              |
+| [jaws-store 存储引擎](doc/jaws-store.md)            | RocketMQ 风格存储内核设计与 jaws 协议高吞吐验证       |
+| [存储内核压测](doc/jaws-store-benchmark.md)         | jaws-store 内核极限吞吐约 1.9M msg/s：方法与瓶颈归因  |
 
 
 &copy; [hongxi.org](http://hongxi.org)

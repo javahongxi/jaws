@@ -23,14 +23,18 @@ import java.util.zip.CRC32;
  * 45+n    topic            bytes
  * </pre>
  *
- * <p>physicalOffset and storeTimestamp are patched inside the global put
- * lock (their values are only known there); everything else is encoded
- * outside it, under the per-topic-queue lock.
+ * <p>physicalOffset, storeTimestamp and queueOffset are patched inside the
+ * global put lock (their values are only known there); everything else is
+ * encoded outside it. Assigning the queue offset under the global lock is
+ * what keeps same-queue offsets in physical order — an offset taken earlier
+ * but appended later would leave a not-yet-written unit ahead of the ConsumeQueue
+ * write position, and a reader following that position would hit a zero hole.
  */
 public final class MessageCodec {
 
     public static final int MESSAGE_MAGIC = 0x4A415753; // "JAWS"
     public static final int HEADER_SIZE = 44;
+    public static final int QUEUE_OFFSET_POS = 16;
     public static final int PHYSICAL_OFFSET_POS = 24;
     public static final int STORE_TIMESTAMP_POS = 32;
 
@@ -44,7 +48,9 @@ public final class MessageCodec {
 
     /**
      * Encode into the given buffer starting at its current position.
-     * physicalOffset/storeTimestamp are left as zero placeholders.
+     * physicalOffset/storeTimestamp are left as zero placeholders, and
+     * queueOffset is passed as one too by the put path, which assigns and
+     * patches it inside the global lock (see CommitLog#putMessage).
      */
     public static void encode(StoreMessage message, long queueOffset, ByteBuffer buffer) {
         byte[] body = message.getBody();

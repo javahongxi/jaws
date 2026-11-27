@@ -101,6 +101,7 @@ RAFTX_CONSUMER_MAIN="org.hongxi.jaws.sample.raftx.consumer.RaftxConsumer"
 STORE_BROKER_MAIN="org.hongxi.jaws.sample.store.StoreBrokerMain"
 STORE_PRODUCER_MAIN="org.hongxi.jaws.sample.store.StoreProducerMain"
 STORE_CONSUMER_MAIN="org.hongxi.jaws.sample.store.StoreConsumerMain"
+STORE_BENCH_MAIN="org.hongxi.jaws.sample.store.StoreBenchmark"
 
 usage() {
     cat <<'EOF'
@@ -142,6 +143,7 @@ usage() {
     bench-jaws         Benchmark - jaws protocol (default netty transport)
     bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
     bench-grpc         Benchmark - grpc-java client, server=wire (interop) or server=grpc (pure gRPC reference)
+    bench-store        Benchmark - jaws-store storage kernel (open-loop staged ramp, drives MessageStore directly, no RPC)
 
   Benchmark Options (passed via environment variables):
     THREADS            Concurrency thread count (default 4)
@@ -155,6 +157,14 @@ usage() {
     ROLE               Run role (default all, same process; provider/consumer for separate processes)
     SERVER             Server stack for bench-grpc: wire (default, interop) or grpc (pure gRPC reference)
     HOST               Provider address (default 127.0.0.1, separate-process mode only)
+    STORE_PATH         bench-store data dir (default /tmp/jaws-store-bench, wiped at start)
+    MSG_SIZE           bench-store message body bytes (default 128)
+    QUEUES             bench-store queue count (default 8)
+    PRODUCERS          bench-store producer thread count (default 16)
+    STEPS              bench-store staged target rates msg/s, comma separated, 0 = free-run (default 50000,100000,200000,400000,0)
+    STEP_SECONDS       bench-store seconds per paced stage (default 30)
+    RETENTION_MILLIS   bench-store commitlog file retention, keep short to bound disk (default 60000)
+    CLEANUP_MILLIS     bench-store cleanup sweep interval (default 3000)
 
   Examples:
     ./run-sample.sh build
@@ -188,6 +198,7 @@ usage() {
     ./run-sample.sh store              # One-shot jaws-store broker + consumer + producer
     COUNT=5000 MODE=async ./run-sample.sh store   # Store demo with 5000 async sends
     ./run-sample.sh store-cluster      # Multi-master: harbor + 2 brokers + registry-mode clients
+    ./run-sample.sh bench-store        # Storage kernel limit-throughput bench (direct engine drive, no RPC)
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -1529,6 +1540,24 @@ cmd_consumer() {
     $MVN exec:java -pl "$CONSUMER_MODULE" -Dexec.mainClass="$CONSUMER_MAIN" -q
 }
 
+cmd_bench_store() {
+    ensure_built
+    local cp
+    cp=$(build_classpath "$STORE_MODULE")
+    echo "Running Benchmark [jaws-store kernel] path=${STORE_PATH:-/tmp/jaws-store-bench} msgSize=${MSG_SIZE:-128} queues=${QUEUES:-8} producers=${PRODUCERS:-16} steps=${STEPS:-50000,100000,200000,400000,0}"
+    echo "--------------------------------------------"
+    java -cp "$cp:$STORE_MODULE/target/classes" \
+        -DstorePath="${STORE_PATH:-/tmp/jaws-store-bench}" \
+        -DmsgSize="${MSG_SIZE:-128}" \
+        -Dqueues="${QUEUES:-8}" \
+        -Dproducers="${PRODUCERS:-16}" \
+        -Dsteps="${STEPS:-50000,100000,200000,400000,0}" \
+        -DstepSeconds="${STEP_SECONDS:-30}" \
+        -DretentionMillis="${RETENTION_MILLIS:-60000}" \
+        -DcleanupIntervalMillis="${CLEANUP_MILLIS:-3000}" \
+        "$STORE_BENCH_MAIN"
+}
+
 cmd_bench_injvm() {
     ensure_built
     local threads="${THREADS:-4}"
@@ -1657,6 +1686,7 @@ case "${1:-}" in
     raftx)           shift; cmd_raftx "$@" ;;
     store)           cmd_store "${2:-}" ;;
     store-cluster)   cmd_store_cluster "${2:-}" ;;
+    bench-store) cmd_bench_store ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;

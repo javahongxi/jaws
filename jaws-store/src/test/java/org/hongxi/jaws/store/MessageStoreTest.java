@@ -9,10 +9,15 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -79,6 +84,77 @@ class MessageStoreTest {
         List<String> bodies = pullAll(store, "topic-a", 0, 25);
         for (int i = 0; i < 25; i++) {
             assertEquals("m-" + i, bodies.get(i));
+        }
+        store.shutdown();
+    }
+
+    /**
+     * Concurrent writers on ONE queue must be pullable at any moment while they run:
+     * the queue offset is assigned inside the global append lock, so same-queue offset
+     * order equals physical order and ConsumeQueue units land contiguously. A
+     * pre-assigned offset could instead let the thread that took unit N append last,
+     * and a pull reading the already-advanced queue tail would decode a zero unit
+     * (commitLogOffset 0, size 0) as a record — BufferUnderflowException.
+     */
+    @Test
+    void concurrentProducersOnOneQueueNeverExposeIndexHoles() throws Exception {
+        MessageStore store = started(config());
+        int writers = 4;
+        int perWriter = 150;
+        ExecutorService pool = Executors.newFixedThreadPool(writers + 1);
+        CountDownLatch done = new CountDownLatch(writers);
+        for (int w = 0; w < writers; w++) {
+            final int id = w;
+            pool.submit(() -> {
+                try {
+                    for (int i = 0; i < perWriter; i++) {
+                        PutResult result = store.putMessageAsync(
+                                StoreMessage.of("topic-race", 0, "w" + id + "-" + i)).get(2, TimeUnit.SECONDS);
+                        assertEquals(PutStatus.PUT_OK, result.getStatus());
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+        AtomicReference<Throwable> readerFailure = new AtomicReference<>();
+        pool.submit(() -> {
+            long offset = 0;
+            try {
+                while (offset < (long) writers * perWriter) {
+                    PullResult pull = store.getMessage("topic-race", 0, offset, 16);
+                    if (pull.getStatus() == PullStatus.NO_NEW_MSG) {
+                        Thread.sleep(1);
+                        continue;
+                    }
+                    offset = pull.getNextBeginOffset();
+                }
+            } catch (Throwable t) {
+                readerFailure.set(t);
+            }
+        });
+        assertTrue(done.await(30, TimeUnit.SECONDS), "writers must finish");
+        pool.shutdown();
+        pool.awaitTermination(10, TimeUnit.SECONDS);
+        assertNull(readerFailure.get(), "pull racing concurrent writers hit an unwritten slot: "
+                + readerFailure.get());
+        awaitIndex(store, "topic-race", 0, (long) writers * perWriter);
+        // every offset landed exactly once, contiguous from 0: no wasted, no duplicated unit
+        List<Long> offsets = new ArrayList<>();
+        long offset = 0;
+        while (offsets.size() < writers * perWriter) {
+            PullResult pull = store.getMessage("topic-race", 0, offset, 32);
+            assertEquals(PullStatus.FOUND, pull.getStatus());
+            for (MessageView view : pull.getMessages()) {
+                offsets.add(view.getQueueOffset());
+            }
+            offset = pull.getNextBeginOffset();
+        }
+        offsets.sort(null);
+        for (int i = 0; i < offsets.size(); i++) {
+            assertEquals((long) i, offsets.get(i));
         }
         store.shutdown();
     }

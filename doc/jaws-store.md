@@ -23,7 +23,7 @@ jaws-store 是 jaws 仓库内的存储引擎实践模块（约 4.3k 行 main + 1
 一条消息的完整旅程：
 
 ```
-producer ──putAsync──▶ CommitLog.putMessage（两层锁 + memcpy 进 page cache）
+producer ──putAsync──▶ CommitLog.putMessage（锁外编码 + 全局锁内 memcpy 进 page cache）
                           │
                           ├─ ASYNC_FLUSH：返回即完成，后台节拍器刷盘
                           └─ SYNC_FLUSH：submitFlush 进组提交批次，一次 fsync 满足整批
@@ -43,7 +43,7 @@ consumer ◀──pullAsync─── getMessage：CQ 数组式寻址 → CommitL
 | 文件 | 职责 |
 |---|---|
 | [MappedFile](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFile.java) / [MappedFileQueue](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFileQueue.java) | 单文件 mmap 与文件序列管理，创建即预热 |
-| [CommitLog](../jaws-store/src/main/java/org/hongxi/jaws/store/CommitLog.java) / [MessageCodec](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageCodec.java) | 全局物理日志、记录编解码、两层锁写入 |
+| [CommitLog](../jaws-store/src/main/java/org/hongxi/jaws/store/CommitLog.java) / [MessageCodec](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageCodec.java) | 全局物理日志、记录编解码、锁外编码 + 全局锁写入 |
 | [ConsumeQueue](../jaws-store/src/main/java/org/hongxi/jaws/store/ConsumeQueue.java) / [ReputMessageService](../jaws-store/src/main/java/org/hongxi/jaws/store/ReputMessageService.java) | 逻辑索引与异步派发 |
 | [AsyncFlushService](../jaws-store/src/main/java/org/hongxi/jaws/store/AsyncFlushService.java) / [GroupCommitService](../jaws-store/src/main/java/org/hongxi/jaws/store/GroupCommitService.java) | 两种刷盘策略，共享 [FlushService](../jaws-store/src/main/java/org/hongxi/jaws/store/FlushService.java) 基类 |
 | [PullRequestHoldService](../jaws-store/src/main/java/org/hongxi/jaws/store/PullRequestHoldService.java) | 长轮询挂起/唤醒/兜底扫描 |
@@ -66,7 +66,7 @@ consumer ◀──pullAsync─── getMessage：CQ 数组式寻址 → CommitL
 | 4 | magic | int | `0x4A415753`（"JAWS"），合法性校验 |
 | 8 | queueId | int | 逻辑队列号 |
 | 12 | bodyCrc | int | body CRC32（读路径暂不复核） |
-| 16 | queueOffset | long | 队列内逻辑位点 |
+| 16 | queueOffset | long | **全局锁内 patch**（编码时只有占位 0，见 §3.2） |
 | 24 | physicalOffset | long | **全局锁内 patch**（编码时只有占位 0） |
 | 32 | storeTimestamp | long | **全局锁内 patch** |
 | 40 | bodyLen | int | body 长度 |
@@ -74,14 +74,16 @@ consumer ◀──pullAsync─── getMessage：CQ 数组式寻址 → CommitL
 
 对比 RocketMQ 的 CommitLog 编码：去掉了 bornHost/storeHost、sysFlag、properties 等字段，保留"定长头 + 变长 body + 尾部 topic"的骨架——恢复扫描和 reput 派发依赖的正是 totalSize/magic/queueOffset 这几个字段。
 
-### 3.2 两层锁：全局临界区只剩一次 memcpy
+### 3.2 写入锁：全局临界区 = 位点分配 + 一次 memcpy
 
-[CommitLog.putMessage](../jaws-store/src/main/java/org/hongxi/jaws/store/CommitLog.java) 把锁拆成两层：
+[CommitLog.putMessage](../jaws-store/src/main/java/org/hongxi/jaws/store/CommitLog.java) 的临界区只有一把全局锁：
 
-1. **per topic-queue 锁**：分配 `queueOffset`（AtomicLong getAndIncrement）+ 编码进线程本地 direct buffer。CPU 工作按队列并行，不同队列互不阻塞。
-2. **全局 putMessageLock**：只做三件事——patch physicalOffset/storeTimestamp、memcpy 进 mmap 切片、必要时滚动文件。
+1. **锁外**：查/建 topic-queue 的位点计数器（`ConcurrentHashMap.computeIfAbsent`），把消息体编码进线程本地 direct buffer——queueOffset、physicalOffset、storeTimestamp 三个字段先留占位 0。CPU 工作全部在锁外完成。
+2. **全局 putMessageLock**：确认/滚动文件后，在同一把锁内分配 `queueOffset`（该队列计数器 getAndIncrement）、patch 三个字段、memcpy 进 mmap 切片。**失败或被拒的写入根本不进入这段，不消耗任何位点**——回滚机制因此被整体删除。
 
-编码复用 `ThreadLocal<ByteBuffer>`（direct，容量 maxMessageSize），数据路径不经过 JVM 堆：direct buffer → page cache。这是 RocketMQ `encode` 在 putMessageLock 外完成、锁内只 `appendMessage` 的同款思路。
+**为什么 queueOffset 必须在全局锁内分配**：曾经的做法是两层锁——queueOffset 在 per topic-queue 锁里预分配、全局锁里才落盘，于是同一队列上"先拿位点、后落盘"成为可能。reput 按物理序派发，把 CQ 可读水位 `accumulateAndGet(max)` 抬到了未写槽之上；数组寻址（§4.1）把水位当作"之前单元全部完整"的承诺，消费者于是读到 size=0 的零单元，decode 直接 BufferUnderflow（压测中高并发同队列必现）。改为锁内分配后，**同一队列的位点顺序恒等于物理顺序**，派发永远落在已写入数据之后，空洞从源头不存在；代价是所有队列的位点分配串行于全局锁——本来 append 就已串行，不新增瓶颈。恢复重放用同一个计数器把位点接上，与写侧语义一致。
+
+编码复用 `ThreadLocal<ByteBuffer>`（direct，容量 maxMessageSize），数据路径不经过 JVM 堆：direct buffer → page cache。这与 RocketMQ `encode` 在 putMessageLock 外完成、锁内只 `appendMessage` 是同一形状；锁内 patch 三个字段对应 RocketMQ 在锁内回填 storeTimestamp/逻辑偏移的同款处理。
 
 两个配套机制：
 
@@ -111,13 +113,13 @@ CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持
 
 两步之外还有第三步：**落空就不推进**。`onDispatch` 上报该单元是否写成功，[ReputMessageService.runLoop](../jaws-store/src/main/java/org/hongxi/jaws/store/ReputMessageService.java) 收到 false 时停在原地、按 50ms 起指数退避（上限 1s）重试同一条记录。原因在 §4.1 的数组寻址：跳过一条等于在定长数组里留一个 20B 零单元，而队列尾部由写入位置推出、会**越过**这个空洞继续前进——pull 于是读到 `commitLogOffset=0 / size=0` 的槽位，`getMessage(0, 0)` 拿空 slice 去 decode 直接抛 BufferUnderflowException，该队列从空洞起再也读不下去，只能等重启全量重放修复。跳过还会骗过 §6.1 的保护位点：它的本意是"未派发的字节不删"，推进即宣称已派发。
 
-代价是把活性让给完整性。dispatcher 单线程，一条持位期间其后所有 topic 的新消息都不建索引（写路径暂时不受牵连：仍 `PUT_OK`，queueOffset 由 per topic-queue 的写侧计数器给出，见 §3.2）；保护位点同时钉在原地，过期文件回收一并停住。故障若是暂时的，清除后自动续上，队列内顺序不变。
+代价是把活性让给完整性。dispatcher 单线程，一条持位期间其后所有 topic 的新消息都不建索引（写路径暂时不受牵连：仍 `PUT_OK`，queueOffset 在全局锁内照常分配，见 §3.2）；保护位点同时钉在原地，过期文件回收一并停住。故障若是暂时的，清除后自动续上，队列内顺序不变。
 
 **对照 RocketMQ**（develop 分支本地源码核实）：它既不是纯跳过也不是无限持位，而是**有界重试 + 熔断**。文件版 CQ 在派发调用内部对同一条记录原地重试 30 次、每次 `Thread.sleep(1000)`（`ConsumeQueue.putMessagePositionInfoWrapper` L725）；`reputFromOffset += size` 排在 `doDispatch` 之后，所以重试期间位置天然是持住的（`DefaultMessageStore.ReputMessageService.doReput`）。30 次仍写不下就打 `[BUG]consume queue can not write` 并 `runningFlags.makeLogicsQueueError()`；该位一旦置起 `isWriteable()` 即为 false（`RunningFlags` L80），broker 侧 `HookUtils.beforePutMessage`（L76）从此对每次写入直接回 `SERVICE_NOT_AVAILABLE`，而 `isCQWriteable()` 又使后续记录的重试循环整体短路、位置被推过去——**新写停接、存量索引跳过**。RocksDB 版走另一条路：`putMessagePositionInfoWrapper` 抛 `RocksDBException`，`doReput` catch 后直接 return（位置不推进），外层 `run()` 的 `catch (Throwable)` + 1ms 节拍把它变成近似无限持位。
 
 无限持位唯一的失控在写侧：索引不再前进，CommitLog 却还能无限长，保护位点钉住后回收也停住，最后撑满的是磁盘。所以把 RocketMQ 的另一半也取了——**越界熔断**。同一条记录重试到 `indexDispatchMaxRetries`（默认 30，取自 `ConsumeQueue.putMessagePositionInfoWrapper` 的重试次数）仍落不下，[ReputMessageService](../jaws-store/src/main/java/org/hongxi/jaws/store/ReputMessageService.java) 打一条 ERROR 并通过 `onIndexHealthChanged(false)` 通知 [MessageStore](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) 置起不可写位（`isWriteable()` 变 false）；此后 `putMessageAsync` / `putMessagesAsync` 在任何 append 之前直接回 `PutStatus.SERVICE_NOT_AVAILABLE`，与 broker 在 `HookUtils.beforePutMessage` 里判 `RunningFlags.isWriteable()` 同一形状。
 
-只取它的"停接新写"，仍不取它的"跳过"：位点继续持住、重试继续做，第一条落下的记录触发 `onIndexHealthChanged(true)` 自动清位，写入重新放行。熔断后每 1s 一次的空转重试是全部额外开销，换来的是队列连续——被拒的写入不占 queueOffset（偏移在写侧才分配），自愈后不留零单元；这一点跳过做不到。与 RocketMQ 的差别只剩两处：它的 30 次重试是内联 `sleep(1000)`，这里由 reput 自己的退避驱动（50ms 起、上限 1s）；它置位后还会让后续记录短路跳过，这里的熔断只管拒写。
+只取它的"停接新写"，仍不取它的"跳过"：位点继续持住、重试继续做，第一条落下的记录触发 `onIndexHealthChanged(true)` 自动清位，写入重新放行。熔断后每 1s 一次的空转重试是全部额外开销，换来的是队列连续——被拒的写入不占 queueOffset（偏移在写侧的全局锁内才分配，见 §3.2），自愈后不留零单元；这一点跳过做不到。与 RocketMQ 的差别只剩两处：它的 30 次重试是内联 `sleep(1000)`，这里由 reput 自己的退避驱动（50ms 起、上限 1s）；它置位后还会让后续记录短路跳过，这里的熔断只管拒写。
 
 `stopped` 判在两处——内层循环每条记录前判一次，派发失败时也先判再决定要不要重试。关机中断落在建文件上属于预期退出（CQ 是派生物，重启重建），不该触发重试，更不该报成故障。测试见 §10 的 `heldIndexDispatchIsRetriedAndLeavesNoHole` 与 `exhaustedIndexRetriesFuseWritesUntilTheyHeal`。
 
@@ -312,12 +314,12 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 
 环境：macOS arm64（Apple Silicon）/ Temurin JDK 21 / loopback 直连 / fastjson2 JSONB / 单 topic 单队列 / 消息体约 10 字节。数据为 `run-sample.sh store` 实测（producer 端计时，含 RPC 往返）。
 
-**单元测试**：42 个用例全部通过（jaws-core 272 个同时全绿）——
+**单元测试**：43 个用例全部通过（jaws-core 272 个同时全绿）——
 
 | 测试类 | 覆盖 |
 |---|---|
 | CommitLogTest（5） | 写读回环、文件滚动保内容与位点、恢复接续 queueOffset、超大消息拒绝、多队列位点独立 |
-| MessageStoreTest（10） | 跨文件边界拉取、组提交满足整批、重启重放重建索引、长轮询到达唤醒、长轮询超时返回、非法位点上报、**批量回环保序（§7.2）**、清理回收文件并推进 min offset（§6.1）、**索引落空持位重试不留空洞（§4.2）**、**重试越界熔断写入并自愈（§4.2）** |
+| MessageStoreTest（11） | 跨文件边界拉取、组提交满足整批、重启重放重建索引、长轮询到达唤醒、长轮询超时返回、非法位点上报、**批量回环保序（§7.2）**、清理回收文件并推进 min offset（§6.1）、**索引落空持位重试不留空洞（§4.2）**、**重试越界熔断写入并自愈（§4.2）**、**同队列并发写不暴露索引空洞（§3.2）** |
 | StoreRpcTest（4） | 走真实 jaws 协议的 broker + producer + consumer 端到端（consumer 先启动触发长轮询挂起）；短轮询空结果按间隔退避、不忙等；**批量发送经协议端到端投递（§7.2）**；**broker 已宕机时 shutdown 归还租约按不可达静默跳过、不再产生该 WARN（§7.3，捕获 StoreConsumer 日志断言无 WARN 且走了 debug 跳过分支）** |
 | StoreMultiBrokerTest（4） | brokerName 身份持久化与改名拒启、跨 broker 位点隔离与重启续读、注册中心发现与 broker 下线后 survivor 续消费、consistentHash 队列钉扎单 broker |
 | ConsumerOffsetStoreTest（6） | 缺失与 0 可区分、increaseOnly 单调不后退、重置可覆盖、组/队列键隔离、快照重启回环与文件内容、脏行不丢整表（§7.3） |
@@ -337,6 +339,8 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 
 - **SYNC_FLUSH 不慢于 ASYNC_FLUSH**（14.5k vs 13.7k）：组提交把 fsync 摊薄到整批，突发下反而占优——正是精读文章里"组提交是同步刷盘高吞吐的成因"的实证；
 - **吞吐随批量上升**（5000 条 13.7k → 20000 条 31.9k）：固定成本（建连、预热、JIT）被更大批量摊薄，且 inflight 窗口让管道持续满载。
+
+本节是含 RPC 往返的 demo 口径（单连接天花板量级）。绕过网络、单 JVM 直驱 `MessageStore` 内核的极限吞吐（≈1.9~2.0M msg/s，瓶颈在写侧全局锁）另见 [jaws-store-benchmark.md](jaws-store-benchmark.md)，压测工具为 `run-sample.sh bench-store`。
 
 ## 11. 与 RocketMQ 的简化对照
 

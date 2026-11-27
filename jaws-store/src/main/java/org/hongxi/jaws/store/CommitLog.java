@@ -16,20 +16,24 @@ import java.util.concurrent.locks.ReentrantLock;
  * The single physical log all topics append to — sequential writes regardless
  * of topic/queue count, the root of RocketMQ's write-scaling story.
  *
- * <p>Two-layer locking keeps the global critical section down to one memcpy:
+ * <p>Two-layer locking keeps the global critical section minimal:
  * <ul>
- *   <li>per topic-queue lock: assign queueOffset + encode (CPU work, parallel
- *       across queues)</li>
- *   <li>global putMessageLock: patch physicalOffset/storeTimestamp + memcpy
- *       into the mmap slice + file roll when needed</li>
+ *   <li>encode into a thread-local buffer outside any lock (CPU work,
+ *       parallel across queues; the per-queue slot only holds an offset
+ *       counter now)</li>
+ *   <li>global putMessageLock: assign queueOffset + patch the position
+ *       fields + memcpy into the mmap slice + file roll when needed</li>
  * </ul>
  *
  * <p>Encoding reuses a thread-local direct buffer, so the data path never
  * touches the JVM heap: direct buffer → page cache.
  *
- * <p>Simplification vs RocketMQ: on a rare append failure after offset
- * assignment the slot offset is rolled back best-effort (CAS); a lost race
- * leaves a hole in the queue and is logged instead of repaired.
+ * <p>The queue offset is deliberately assigned INSIDE the global lock, after
+ * the append target has capacity: same-queue offsets then follow physical
+ * order, reput dispatches each queue's units strictly in place, and a reader
+ * can never see a not-yet-written ConsumeQueue slot ahead of its write
+ * position. An append refused before assignment consumes no offset, so
+ * failed puts leave no holes either.
  */
 public class CommitLog {
 
@@ -51,7 +55,6 @@ public class CommitLog {
     private volatile long beginTimeInLock;
 
     private static class TopicQueueSlot {
-        final ReentrantLock lock = new ReentrantLock();
         final AtomicLong nextQueueOffset = new AtomicLong(0);
     }
 
@@ -123,23 +126,17 @@ public class CommitLog {
             return new PutResult(PutStatus.MESSAGE_SIZE_EXCEEDED);
         }
 
-        /* Layer 1: per topic-queue lock — offset assignment + encode */
+        /* Encode with a placeholder queueOffset; the slot is created eagerly so
+           recover()-style max bookkeeping stays valid, but no offset is consumed
+           outside the global lock. */
         TopicQueueSlot slot = queueSlots.computeIfAbsent(
                 topicQueueKey(message.getTopic(), message.getQueueId()), k -> new TopicQueueSlot());
-        long queueOffset;
-        ByteBuffer buffer;
-        slot.lock.lock();
-        try {
-            queueOffset = slot.nextQueueOffset.getAndIncrement();
-            buffer = encoderBuffer.get();
-            buffer.clear();
-            MessageCodec.encode(message, queueOffset, buffer);
-            buffer.flip();
-        } finally {
-            slot.lock.unlock();
-        }
+        ByteBuffer buffer = encoderBuffer.get();
+        buffer.clear();
+        MessageCodec.encode(message, 0L, buffer);
+        buffer.flip();
 
-        /* Layer 2: global lock — patch position fields + memcpy into mmap */
+        /* Global lock: offset assignment + position patching + memcpy into mmap */
         putMessageLock.lock();
         try {
             beginTimeInLock = System.currentTimeMillis();
@@ -148,10 +145,11 @@ public class CommitLog {
                 lastFile = mappedFileQueue.rollNextFile();
             }
             if (lastFile == null || lastFile.getRemaining() < totalSize) {
-                rollbackOffset(slot, queueOffset);
                 return new PutResult(PutStatus.CREATE_FILE_FAILED);
             }
+            long queueOffset = slot.nextQueueOffset.getAndIncrement();
             long physicalOffset = lastFile.getFileFromOffset() + lastFile.getWrotePosition();
+            buffer.putLong(MessageCodec.QUEUE_OFFSET_POS, queueOffset);
             buffer.putLong(MessageCodec.PHYSICAL_OFFSET_POS, physicalOffset);
             buffer.putLong(MessageCodec.STORE_TIMESTAMP_POS, System.currentTimeMillis());
             lastFile.appendMessage(buffer);
@@ -159,12 +157,6 @@ public class CommitLog {
         } finally {
             beginTimeInLock = 0;
             putMessageLock.unlock();
-        }
-    }
-
-    private void rollbackOffset(TopicQueueSlot slot, long queueOffset) {
-        if (!slot.nextQueueOffset.compareAndSet(queueOffset + 1, queueOffset)) {
-            logger.warn("Queue offset {} wasted after append failure, a hole is left in the queue", queueOffset);
         }
     }
 
