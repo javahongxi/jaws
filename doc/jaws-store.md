@@ -140,6 +140,14 @@ CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持
 - **怎么读**：[CommitLog.viewMessage(offset)](../jaws-store/src/main/java/org/hongxi/jaws/store/CommitLog.java) 用记录自带的 `totalSize` 头定长，校验 magic 与 `wrotePosition` 边界后切片解码；越界、落在滚动文件尾部空洞、或 magic 不符一律回 `NOT_FOUND`——是正常响应，不是异常。
 - **同端口共存**：admin 与 StoreService 导出到同一 host:port，`AbstractTransportFactory` 按 host:port 复用同一个 server，服务键 `group/interfaceName/version` 仅靠 interfaceName 区分，两个 provider 挂同一通道互不干扰。测试见 StoreAdminRpcTest（§10）；可运行示例见 sample 的 `StoreAdminMain`（走 producer/consumer 同款 jaws 二进制客户端，无需额外端口）。
 
+### 4.6 长/短轮询：一个参数两种形态，短轮询靠调度退避
+
+没有 RocketMQ 5.0 Pop 那种具名 `longPollingEnable` 布尔开关——本模块复刻的是经典 pull hold，长/短轮询由 [getMessageAsync](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) 的 `suspendTimeoutMillis` 单参数驱动：`> 0` 时空读挂进 hold（默认 15s，见 §4.4），`<= 0` 时命中短路当场返回、不登记 hold，即短轮询。[StoreConsumer](../jaws-store/src/main/java/org/hongxi/jaws/store/client/StoreConsumer.java) 每轮把该值带上 RPC，`setSuspendTimeoutMillis(0)` 即整体退化短轮询。
+
+要害在**泵尾重投节奏**：长轮询这轮已在 broker 阻塞到 ~15s，回来立即重投本身就是节流；短轮询空读是即时返回，若也立即重投就成了打爆 broker 的忙等。RocketMQ 的 Push 消费者恰恰不给空轮询退避（`NO_NEW_MSG → executePullRequestImmediately`），靠长轮询恒开规避高频空转，真要短轮询则交给 LitePullConsumer 由应用 `poll(timeout)` 定频驱动——且**全程无 `Thread.sleep`，所有"稍后再拉"都是 `PullMessageService` 的 `ScheduledExecutorService.schedule(delay)` 把 PullRequest 重新入队**（档位：暂停 1s / 缓存流控 50ms / broker 流控 20ms / 异常 3s）。
+
+jaws-store 按同款语义补齐：`StoreConsumer` 的 `pumpExecutor` 本就是 `ScheduledExecutorService`（缓存阈值 50ms、错误重投 1s 已在用），仅在**短轮询且空结果**时把下一轮改为 `schedule(shortPollingIntervalMillis)`（默认 1s，对齐 RocketMQ 暂停档），其余一律立即重投——长轮询默认路径行为不变。测试见 §10 的 `shortPollingSpacesOutEmptyPulls`。
+
 ## 5. 刷盘：两种策略一个基类
 
 先钉死数据路径的两个阶段。mmap 映射后，全局锁内那次 memcpy（`mappedByteBuffer.slice().put(...)`）**写的就是 page cache 本身**——堆外切片经页表直接映射到内核页，没有 write 系统调用，也不存在"堆 → page cache"的第二次拷贝（普通 write 路径才有这次内核拷贝）；但此时数据只是脏页，断电即丢。真正的落盘步骤是 [MappedFile.flush()](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFile.java) 里的 `fileChannel.force(false)`——mmap 场景下 fsync 的对应物（msync），把该文件脏页写回磁盘并等待设备确认，毫秒级重操作；`false` 表示不额外强刷元数据：文件长度在 map 时已定死，追加写不改文件尺寸。下表中"已进 page cache"指只完成第一阶段，两种策略里的"fsync"一律指第二阶段的 `force(false)`。
@@ -190,7 +198,7 @@ swap-list（requestsWrite/requestsRead 双列表 + ReentrantLock/Condition）让
 |---|---|---|
 | [StoreProducer](../jaws-store/src/main/java/org/hongxi/jaws/store/client/StoreProducer.java) | 线上调用恒为 async；sync = future.get(timeout)，oneway = 只记失败日志 | 三种发送语义同款，去掉 autoBatch/压缩/MQFaultStrategy |
 | inflight 窗口 | Semaphore（默认 512），窗口满则发送方阻塞——背压的最简形态 | 对应异步发送的信号量 + 重试机制 |
-| [StoreConsumer](../jaws-store/src/main/java/org/hongxi/jaws/store/client/StoreConsumer.java) | 拉取泵：每 (broker, queue) 一个泵，每次回调后继续装填下一轮 pull；batch=32，本地缓存超 1000 暂停（自身流控） | PullMessageService + ProcessQueue 流控的最小切片 |
+| [StoreConsumer](../jaws-store/src/main/java/org/hongxi/jaws/store/client/StoreConsumer.java) | 拉取泵：每 (broker, queue) 一个泵，每次回调后继续装填下一轮 pull；batch=32，本地缓存超 1000 暂停（自身流控）；短轮询（suspend<=0）时空结果按 `shortPollingIntervalMillis` 调度退避、不忙等（§4.6） | PullMessageService + ProcessQueue 流控的最小切片 |
 | broker 发现 | directUrl 逗号分隔多 broker，或注册中心 5s diff 刷新；上线建连展开订阅、下线停泵保留位点 | NameServer 路由 + rebalance 触发的最小替代（不做队列分配） |
 | [LocalOffsetStore](../jaws-store/src/main/java/org/hongxi/jaws/store/client/LocalOffsetStore.java) | **客户端自管位点**（Kafka 风格）：Properties 文件 + temp file 原子 move，键 `brokerName@topic@queueId` | 声明式偏离：不做 broker 端位点存储 |
 
@@ -257,13 +265,13 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 
 环境：macOS arm64（Apple Silicon）/ Temurin JDK 21 / loopback 直连 / fastjson2 JSONB / 单 topic 单队列 / 消息体约 10 字节。数据为 `run-sample.sh store` 实测（producer 端计时，含 RPC 往返）。
 
-**单元测试**：17 个用例全部通过——
+**单元测试**：18 个用例全部通过——
 
 | 测试类 | 覆盖 |
 |---|---|
 | CommitLogTest（5） | 写读回环、文件滚动保内容与位点、恢复接续 queueOffset、超大消息拒绝、多队列位点独立 |
 | MessageStoreTest（6） | 跨文件边界拉取、组提交满足整批、重启重放重建索引、长轮询到达唤醒、长轮询超时返回、非法位点上报 |
-| StoreRpcTest（1） | 走真实 jaws 协议的 broker + producer + consumer 端到端（consumer 先启动触发长轮询挂起） |
+| StoreRpcTest（2） | 走真实 jaws 协议的 broker + producer + consumer 端到端（consumer 先启动触发长轮询挂起）；短轮询空结果按间隔退避、不忙等 |
 | StoreAdminRpcTest（1） | 同端口 StoreService/StoreAdminService 双导出共存、按偏移直读命中、越界 NOT_FOUND |
 | StoreMultiBrokerTest（4） | brokerName 身份持久化与改名拒启、跨 broker 位点隔离与重启续读、注册中心发现与 broker 下线后 survivor 续消费、consistentHash 队列钉扎单 broker |
 
@@ -289,6 +297,7 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 | 恢复 | checkpoint + 正常/异常退出分支 | 只扫描末文件 + CQ 全量重放 | 启动 O(全量)，无 checkpoint 簿记 |
 | 位点 | broker 端集中存储 + 提交链路 | 客户端本地 Properties | 无跨实例位点一致性 |
 | 消费流控 | ProcessQueue 多维阈值 | 本地缓存计数单阈值 | 够演示，不够生产 |
+| 长/短轮询切换 | 经典 suspend 值驱动 + LitePullConsumer 应用 poll 定频；Pop 模式另有具名 longPollingEnable 开关 | suspend 值单参数驱动；短轮询空结果靠 ScheduledExecutor 定频退避（非 sleep） | 无 Pop 模式与具名开关 |
 | 刷盘 | 异步/同步/组提交 + 刷盘链 | 节拍器 + swap-list 组提交 | 无 transientStorePool（读写分离堆外池） |
 | 高可用 | 主从复制 / Dledger Raft | 无（多 master 分片不是 HA） | 单实例数据无冗余，宕机期间该分片不可用 |
 | 集群组织 | broker 组主从 + NameServer 路由 + rebalance | 多 master 分片 + 注册中心发现，每实例全量消费 | 无队列级并行扩展，一个 group 一个消费实例 |

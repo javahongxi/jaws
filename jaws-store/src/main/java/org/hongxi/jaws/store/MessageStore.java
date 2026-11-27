@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 /**
@@ -34,6 +35,8 @@ public class MessageStore implements ReputMessageService.DispatchListener {
     private final ConcurrentMap<String, ConsumeQueue> consumeQueueTable = new ConcurrentHashMap<>();
     private final ReputMessageService reputMessageService;
     private final PullRequestHoldService pullRequestHoldService;
+    /** Total pull requests served; a lightweight broker-side observability counter. */
+    private final AtomicLong pullCount = new AtomicLong();
     private volatile boolean stopped;
     private Thread cqFlushThread;
 
@@ -202,6 +205,7 @@ public class MessageStore implements ReputMessageService.DispatchListener {
      */
     public CompletableFuture<PullResult> getMessageAsync(String topic, int queueId, long offset,
                                                          int maxCount, long suspendTimeoutMillis) {
+        pullCount.incrementAndGet();
         PullResult result = getMessage(topic, queueId, offset, maxCount);
         if (result.getStatus() != PullStatus.NO_NEW_MSG || suspendTimeoutMillis <= 0) {
             return CompletableFuture.completedFuture(result);
@@ -220,6 +224,11 @@ public class MessageStore implements ReputMessageService.DispatchListener {
     public long getMaxOffsetInQueue(String topic, int queueId) {
         ConsumeQueue consumeQueue = consumeQueueTable.get(CommitLog.topicQueueKey(topic, queueId));
         return consumeQueue == null ? 0 : consumeQueue.getMaxOffsetInQueue();
+    }
+
+    /** Number of pull requests served so far (observability / short-polling assertions). */
+    public long getPullCount() {
+        return pullCount.get();
     }
 
     /**

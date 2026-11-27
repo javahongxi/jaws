@@ -66,6 +66,13 @@ public class StoreConsumer {
      */
     private static final long CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND = 30_000;
 
+    /**
+     * Round gap used only in short-polling mode (suspendTimeoutMillis <= 0) after an
+     * empty pull. Mirrors RocketMQ's PULL_TIME_DELAY_MILLS_WHEN_SUSPEND (1s): the next
+     * pump is scheduled on the pump executor, never a blocking Thread.sleep.
+     */
+    private static final long SHORT_POLLING_INTERVAL_MILLIS = 1_000;
+
     private final String directUrls;
     private final List<RegistryConfig> registries;
     private final String serialization;
@@ -77,6 +84,7 @@ public class StoreConsumer {
     private int pullBatchSize = 32;
     private int pullThresholdForQueue = 1000;
     private long suspendTimeoutMillis = BROKER_SUSPEND_MAX_TIME_MILLIS;
+    private long shortPollingIntervalMillis = SHORT_POLLING_INTERVAL_MILLIS;
 
     private ReferenceConfig<StoreService> discoveryReference;
     private ScheduledExecutorService pumpExecutor;
@@ -320,6 +328,7 @@ public class StoreConsumer {
             pumpExecutor.schedule(() -> pump(subscription), 1000, TimeUnit.MILLISECONDS);
             return;
         }
+        boolean emptyShortPoll = false;
         switch (result.getStatus()) {
             case FOUND -> {
                 long nextOffset = result.getNextBeginOffset();
@@ -338,7 +347,13 @@ public class StoreConsumer {
                     offsetStore.update(brokerName, subscription.topic, subscription.queueId, nextOffset);
                 });
             }
-            case NO_NEW_MSG -> subscription.pullOffset = result.getNextBeginOffset();
+            case NO_NEW_MSG -> {
+                subscription.pullOffset = result.getNextBeginOffset();
+                // Short polling: an empty read returns instantly, so flag the tail to
+                // back off. Long polling blocks the round-trip up to the hold window,
+                // which is itself the throttle, so no backoff is needed there.
+                emptyShortPoll = suspendTimeoutMillis <= 0;
+            }
             case OFFSET_ILLEGAL -> {
                 logger.warn("Offset reset for {}@{}@{}: {} -> {}", brokerName, subscription.topic, subscription.queueId,
                         subscription.pullOffset, result.getNextBeginOffset());
@@ -346,7 +361,15 @@ public class StoreConsumer {
                 offsetStore.update(brokerName, subscription.topic, subscription.queueId, result.getNextBeginOffset());
             }
         }
-        pumpExecutor.execute(() -> pump(subscription));
+        // Re-arm the pump. In long-polling mode the round-trip already blocked on the
+        // broker, so an immediate re-pump is correct. Only a short-polling empty read
+        // backs off -- scheduled on the pump executor (like RocketMQ's
+        // executePullRequestLater), never a blocking Thread.sleep.
+        if (emptyShortPoll) {
+            pumpExecutor.schedule(() -> pump(subscription), shortPollingIntervalMillis, TimeUnit.MILLISECONDS);
+        } else {
+            pumpExecutor.execute(() -> pump(subscription));
+        }
     }
 
     public void shutdown() {
@@ -386,5 +409,10 @@ public class StoreConsumer {
 
     public void setSuspendTimeoutMillis(long suspendTimeoutMillis) {
         this.suspendTimeoutMillis = suspendTimeoutMillis;
+    }
+
+    /** Round gap applied only in short-polling mode; ignored while a hold is requested. */
+    public void setShortPollingIntervalMillis(long shortPollingIntervalMillis) {
+        this.shortPollingIntervalMillis = shortPollingIntervalMillis;
     }
 }

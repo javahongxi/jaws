@@ -75,4 +75,48 @@ class StoreRpcTest {
             }
         }
     }
+
+    /**
+     * Short polling (suspendTimeoutMillis <= 0): the broker never holds an empty
+     * read, so it returns instantly. The consumer must space out the next pump by
+     * the configured interval instead of hammering the broker. A busy loop would
+     * fire hundreds of pulls in the same window; we assert the count stays in the
+     * range the interval implies.
+     */
+    @Test
+    void shortPollingSpacesOutEmptyPulls() throws Exception {
+        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client-sp").toString());
+        StoreConfig config = new StoreConfig();
+        config.setStorePath(tempDir.resolve("store-sp").toString());
+        config.setHoldScanIntervalMillis(200);
+
+        int port = freePort();
+        StoreBroker broker = new StoreBroker(config, port);
+        broker.start();
+        String directUrl = "127.0.0.1:" + port;
+        StoreConsumer consumer = new StoreConsumer(directUrl, "short-poll-group");
+        try {
+            consumer.setSuspendTimeoutMillis(0);        // disable the broker hold
+            consumer.setShortPollingIntervalMillis(500); // one empty round every 500ms
+            consumer.subscribe("sp-demo", 0, messages -> { });
+            consumer.start();
+
+            Thread.sleep(2100);
+            long pulls = broker.getMessageStore().getPullCount();
+            // ~2100ms / 500ms = ~4-5 rounds (+ initial kick). Lower bound proves the
+            // pump is actually running; the tight upper bound proves it backed off
+            // instead of busy-looping (which would be in the hundreds).
+            assertTrue(pulls >= 2, "expected multiple short-poll rounds, got " + pulls);
+            assertTrue(pulls <= 15, "short polling should be spaced by the interval, got "
+                    + pulls + " pulls in ~2.1s");
+        } finally {
+            consumer.shutdown();
+            broker.shutdown();
+            if (previous == null) {
+                System.clearProperty("jaws.store.client.path");
+            } else {
+                System.setProperty("jaws.store.client.path", previous);
+            }
+        }
+    }
 }
