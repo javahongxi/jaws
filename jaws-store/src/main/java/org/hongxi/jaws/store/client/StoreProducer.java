@@ -31,7 +31,7 @@ import java.util.concurrent.TimeoutException;
  * semaphore-plus-retry machinery, reduced to its simplest form here.
  *
  * <p>Deliberately absent vs RocketMQ producer: autoBatch, compression and
- * MQFaultStrategy — cost-amortization knobs discussed in doc/rocketmq stay
+ * MQFaultStrategy — cost-amortization knobs discussed in doc/mq stay
  * article-level knowledge, not code here.
  *
  * <p>Multi-master mode: construct with registries instead of a directUrl;

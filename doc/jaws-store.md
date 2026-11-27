@@ -2,7 +2,7 @@
 
 jaws-store 是 jaws 仓库内的存储引擎实践模块（约 3.6k 行 main + 0.9k 行测试），复刻 RocketMQ 存储内核的核心机制：mmap CommitLog 顺序写、ConsumeQueue 定长索引、异步/组提交刷盘、长轮询挂起唤醒。它的定位不是 MQ 产品线，而是 **jaws 协议的高吞吐实战验证件**——类比 harbor 之于 wire 协议的 Nacos 兼容性验证，store 用真实 MQ 负载去压 jaws benchmark 压不到的路径。
 
-五篇前置精读（[发送链路](rocketmq/rocketmq-发送链路精读.md)、[消费链路](rocketmq/rocketmq-消费链路精读.md)、[刷盘与复制](rocketmq/rocketmq-刷盘与复制精读.md)、[挂起请求唤醒链路](rocketmq/rocketmq-挂起请求唤醒链路.md)、[高性能高吞吐成因分析](rocketmq/rocketmq-高性能高吞吐成因分析.md)）是它的设计文档；本文反过来讲实现落了什么、简化了什么、验证出了什么。
+五篇前置精读（[发送链路](mq/rocketmq-发送链路精读.md)、[消费链路](mq/rocketmq-消费链路精读.md)、[刷盘与复制](mq/rocketmq-刷盘与复制精读.md)、[挂起请求唤醒链路](mq/rocketmq-挂起请求唤醒链路.md)、[高性能高吞吐成因分析](mq/rocketmq-高性能高吞吐成因分析.md)）是它的设计文档；本文反过来讲实现落了什么、简化了什么、验证出了什么。
 
 ## 1. 定位与边界
 

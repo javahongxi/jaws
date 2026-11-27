@@ -2,7 +2,7 @@ package org.hongxi.jaws.store;
 
 /**
  * Storage engine configuration. Defaults mirror the RocketMQ 5.x conventions
- * studied in doc/rocketmq, with sizes kept configurable so tests can run on
+ * studied in doc/mq, with sizes kept configurable so tests can run on
  * small files.
  */
 public class StoreConfig {
