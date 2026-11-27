@@ -13,14 +13,28 @@ import org.slf4j.LoggerFactory;
  * <p>Ordering contract (mirrors RocketMQ's ReputMessageService): the listener
  * must finish index dispatch BEFORE firing message-arrival notifications, so
  * a woken-up pull always finds its index ready.
+ *
+ * <p>Integrity contract: dispatch is acknowledged per unit. A unit the listener
+ * could not write holds the position — the record is retried instead of skipped,
+ * because a skipped slot becomes a permanent zero unit that every later pull
+ * reads back as commitLogOffset 0 / size 0.
  */
 public class ReputMessageService {
 
     private static final Logger logger = LoggerFactory.getLogger(ReputMessageService.class);
 
+    /** Idle poll step, and the retry spacing bounds for a held position. */
+    private static final long IDLE_SLEEP_MILLIS = 1;
+    private static final long RETRY_BACKOFF_MIN_MILLIS = 50;
+    private static final long RETRY_BACKOFF_MAX_MILLIS = 1000;
+
     /** Implemented by the store: build CQ first, then notify arrival. */
     public interface DispatchListener {
-        void onDispatch(DispatchEntry entry);
+        /**
+         * @return true when the index unit landed; false keeps the reput position
+         *         on this record so it gets retried after a backoff
+         */
+        boolean onDispatch(DispatchEntry entry);
     }
 
     private final CommitLog commitLog;
@@ -54,8 +68,11 @@ public class ReputMessageService {
     }
 
     private void runLoop() {
+        long retryBackoffMillis = RETRY_BACKOFF_MIN_MILLIS;
+        boolean stalled = false;
         while (!stopped) {
             boolean dispatched = false;
+            boolean indexFailed = false;
             while (reputFromOffset < commitLog.getMaxOffset()) {
                 DispatchEntry entry = commitLog.readEntry(reputFromOffset);
                 if (entry == null) {
@@ -67,13 +84,42 @@ public class ReputMessageService {
                     }
                     break;
                 }
-                listener.onDispatch(entry);
+                if (!listener.onDispatch(entry)) {
+                    indexFailed = true;
+                    break;
+                }
                 reputFromOffset += entry.getSize();
                 dispatched = true;
             }
+            if (indexFailed) {
+                if (stopped) {
+                    // Teardown: the interrupt behind this failure is the shutdown
+                    // itself, so neither retry nor warn — the index is derived and
+                    // rebuilt by replay on the next start.
+                    break;
+                }
+                // Transient by nature (disk pressure, a directory that only just
+                // became unwritable), so retry rather than abandon the tail. The
+                // spacing widens so a fault that will not clear cannot turn into
+                // a hot loop of failed file creations.
+                if (!stalled) {
+                    logger.warn("Reput held at offset {}: index dispatch failed, retrying", reputFromOffset);
+                    stalled = true;
+                }
+                try {
+                    Thread.sleep(retryBackoffMillis);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                retryBackoffMillis = Math.min(retryBackoffMillis * 2, RETRY_BACKOFF_MAX_MILLIS);
+                continue;
+            }
+            stalled = false;
+            retryBackoffMillis = RETRY_BACKOFF_MIN_MILLIS;
             if (!dispatched) {
                 try {
-                    Thread.sleep(1);
+                    Thread.sleep(IDLE_SLEEP_MILLIS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -195,6 +196,54 @@ class MessageStoreTest {
         // the broker stays writable after reclamation
         PutResult again = store.putMessageAsync(StoreMessage.of("topic-a", 0, "live")).get(2, TimeUnit.SECONDS);
         assertEquals(PutStatus.PUT_OK, again.getStatus());
+        store.shutdown();
+    }
+
+    /**
+     * An index unit that cannot be written must hold the dispatcher rather than be
+     * skipped: advancing past it would leave a zero unit inside the ConsumeQueue
+     * (tail past an unwritten slot), which every later pull reads as a record at
+     * commitLogOffset 0 with size 0. Once the fault clears, the held records are
+     * indexed in their original order with no gap.
+     */
+    @Test
+    void heldIndexDispatchIsRetriedAndLeavesNoHole() throws Exception {
+        MessageStore store = started(config());
+        store.putMessageAsync(StoreMessage.of("warm-topic", 0, "warm-0")).get(2, TimeUnit.SECONDS);
+        awaitIndex(store, "warm-topic", 0, 1);
+
+        // Fault injection: a regular file where a new topic's ConsumeQueue directory
+        // belongs makes MappedFile.init fail, so dispatch reports false while the
+        // CommitLog already carries the record.
+        Path blocker = tempDir.resolve("consumequeue").resolve("blocked-topic");
+        Files.write(blocker, new byte[0]);
+        for (int i = 0; i < 3; i++) {
+            PutResult result = store.putMessageAsync(StoreMessage.of("blocked-topic", 0, "b-" + i))
+                    .get(2, TimeUnit.SECONDS);
+            assertEquals(PutStatus.PUT_OK, result.getStatus(), "index failure must not touch the write path");
+            assertEquals(i, result.getQueueOffset(), "queue offsets are assigned on the write side");
+        }
+        store.putMessageAsync(StoreMessage.of("warm-topic", 0, "warm-1")).get(2, TimeUnit.SECONDS);
+
+        // Span several retry intervals: the position stays held, so no tail advances.
+        Thread.sleep(250);
+        assertEquals(0, store.getMaxOffsetInQueue("blocked-topic", 0),
+                "a held unit must not be counted into the queue tail");
+        assertEquals(1, store.getMaxOffsetInQueue("warm-topic", 0),
+                "the dispatcher parks on the failed record instead of skipping it");
+        assertEquals(PullStatus.NO_NEW_MSG, store.getMessage("blocked-topic", 0, 0, 32).getStatus(),
+                "an unindexed record reads as no new message, not as a corrupt one");
+
+        Files.delete(blocker);
+        // One more write to the same queue while the held units are still pending is
+        // the shape that turns a skipped unit into a readable zero slot: the tail would
+        // jump past three unwritten slots, and a pull from 0 would decode
+        // commitLogOffset 0 / size 0 instead of b-0.
+        store.putMessageAsync(StoreMessage.of("blocked-topic", 0, "b-3")).get(2, TimeUnit.SECONDS);
+        awaitIndex(store, "blocked-topic", 0, 4);
+        awaitIndex(store, "warm-topic", 0, 2);
+        assertEquals(List.of("b-0", "b-1", "b-2", "b-3"), pullAll(store, "blocked-topic", 0, 4));
+        assertEquals(List.of("warm-0", "warm-1"), pullAll(store, "warm-topic", 0, 2));
         store.shutdown();
     }
 }

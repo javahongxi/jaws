@@ -217,12 +217,19 @@ public class MessageStore implements ReputMessageService.DispatchListener {
         return (total - usable) * 100L / total >= ratio;
     }
 
-    /** Reput callback: index dispatch FIRST, arrival notification SECOND. */
+    /**
+     * Reput callback: index dispatch FIRST, arrival notification SECOND. A unit
+     * that did not land is reported back so the dispatcher holds its position;
+     * notifying anyway would wake a pull onto an index that is not there yet.
+     */
     @Override
-    public void onDispatch(DispatchEntry entry) {
+    public boolean onDispatch(DispatchEntry entry) {
         ConsumeQueue consumeQueue = findOrCreateConsumeQueue(entry.getTopic(), entry.getQueueId());
-        consumeQueue.putMessagePositionInfo(entry.getCommitLogOffset(), entry.getSize(), entry.getQueueOffset());
+        if (!consumeQueue.putMessagePositionInfo(entry.getCommitLogOffset(), entry.getSize(), entry.getQueueOffset())) {
+            return false;
+        }
         pullRequestHoldService.notifyMessageArrive(entry.getTopic(), entry.getQueueId(), entry.getQueueOffset() + 1);
+        return true;
     }
 
     private ConsumeQueue findOrCreateConsumeQueue(String topic, int queueId) {
