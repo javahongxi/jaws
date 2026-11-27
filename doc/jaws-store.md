@@ -113,6 +113,10 @@ CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持
 
 代价是把活性让给完整性。dispatcher 单线程，一条持位期间其后所有 topic 的新消息都不建索引（写路径不受牵连：仍 `PUT_OK`，queueOffset 由 per topic-queue 的写侧计数器给出，见 §3.2）；保护位点同时钉在原地，过期文件回收一并停住。故障清除后自动续上，队列内顺序不变。
 
+**对照 RocketMQ**（develop 分支本地源码核实）：它既不是纯跳过也不是无限持位，而是**有界重试 + 熔断**。文件版 CQ 在派发调用内部对同一条记录原地重试 30 次、每次 `Thread.sleep(1000)`（`ConsumeQueue.putMessagePositionInfoWrapper` L725）；`reputFromOffset += size` 排在 `doDispatch` 之后，所以重试期间位置天然是持住的（`DefaultMessageStore.ReputMessageService.doReput`）。30 次仍写不下就打 `[BUG]consume queue can not write` 并 `runningFlags.makeLogicsQueueError()`；该位一旦置起 `isWriteable()` 即为 false（`RunningFlags` L80），broker 侧 `HookUtils.beforePutMessage`（L76）从此对每次写入直接回 `SERVICE_NOT_AVAILABLE`，而 `isCQWriteable()` 又使后续记录的重试循环整体短路、位置被推过去——**新写停接、存量索引跳过**。RocksDB 版走另一条路：`putMessagePositionInfoWrapper` 抛 `RocksDBException`，`doReput` catch 后直接 return（位置不推进），外层 `run()` 的 `catch (Throwable)` + 1ms 节拍把它变成近似无限持位。
+
+jaws-store 取的是"永不跳过"这一半，没取"熔断写"那一半：单进程单 master 的验证件里，让 dispatcher 等下去比骗过客户端更容易归因，而 [MessageStore](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) 也没有 `RunningFlags` 这类全局可写位。代价是**持位无上限**——一次不自愈的故障会一直扣着索引与回收，除了那条 WARN 没有别的信号。要向 RocketMQ 的形状对齐，缺的是有界重试 + 熔断位，而不是回到跳过。
+
 `stopped` 判在两处——内层循环每条记录前判一次，派发失败时也先判再决定要不要重试。关机中断落在建文件上属于预期退出（CQ 是派生物，重启重建），不该触发重试，更不该报成故障。测试见 §10 的 `heldIndexDispatchIsRetriedAndLeavesNoHole`。
 
 ### 4.3 挂起/唤醒的竞态防护
@@ -341,6 +345,7 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 | 刷盘 | 异步/同步/组提交 + 刷盘链 | 节拍器 + swap-list 组提交 | 无 transientStorePool（读写分离堆外池） |
 | 高可用 | 主从复制 / Dledger Raft | 无（多 master 分片不是 HA） | 单实例数据无冗余，宕机期间该分片不可用 |
 | 集群组织 | broker 组主从 + NameServer 路由 + rebalance | 多 master 分片 + 注册中心发现，每实例全量消费 | 无队列级并行扩展，一个 group 一个消费实例 |
+| 索引落空处理 | 派发内原地重试 30 次 × 1s，仍失败则跳过该单元并 `makeLogicsQueueError` 熔断写入（RocksDB 版则抛异常、位置持住由外层 1ms 重试） | 持位不推进 + 50ms 起指数退避（上限 1s）始终重试，不熔断写入（§4.2） | 无有界重试与全局可写位：故障不自愈时索引与过期回收一起停住，除一条 WARN 外无信号 |
 | 空间回收 | DeleteMapFileService 定期删过期文件 + disk full 优先 | mappedFile 粒度过期删除 + 磁盘水位强制删（§6.1），联动 CQ 与 min offset | 无 per-queue 精细过期 / 切片竞态，整文件为粒度 |
 | 可观测 | 多维度 metrics + 外部监控对接 | 无：只有日志，加上 `getPullCount()` 一个测试探针 | 哑雷式故障（磁盘撑爆、reput 滞后、page cache 失速）只能从日志与拒收状态码反推 |
 | 批量发送 | 客户端 autoBatch 自动攒批 + 批量接口 | 仅显式批量（一次 RPC 共享一次 fsync 屏障，§7.2） | 无服务端自动攒批 |
