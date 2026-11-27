@@ -42,6 +42,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * same queue name on different brokers never shares an offset. A broker going
  * away stops its pumps; its offsets stay on that broker for its return.
  *
+ * <p>Subscription type: Exclusive, in Pulsar's vocabulary — one live consumer per
+ * group, and parallelism comes from the queue count (the master shards), never from
+ * adding consumers to one queue. The cumulative position is what pins this shape:
+ * the group's progress is a single offset meaning "done up to here", which is only
+ * meaningful for a single reader — Pulsar itself forbids cumulative acknowledgment
+ * for its Shared and Key_Shared types. Exclusivity is nevertheless a usage contract
+ * here, not a server-side invariant: the pull contract carries no consumer identity,
+ * so a second live consumer of the same group is served the same records instead of
+ * being rejected.
+ *
  * <p>Progress lives on the broker, not here. On attach the consumer reads the
  * group's stored offset from that broker and treats it as authoritative; every
  * successful batch commits it back with increaseOnly. Nothing is persisted

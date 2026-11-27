@@ -10,7 +10,7 @@ jaws-store 是 jaws 仓库内的存储引擎实践模块（约 3.7k 行 main + 1
 |---|---|---|
 | 存储内核 | mmap CommitLog + ConsumeQueue + 异步 reput 建索引（失败持位重试、越界熔断写，§4.2）+ 过期文件回收 / 磁盘水位（§6.1） | IndexFile（按 key/tag 旁路检索）、多路径存储 |
 | 持久性 | 异步刷盘节拍器 + SYNC_FLUSH 组提交 | HA 主从复制、Dledger |
-| 消费模型 | 长轮询拉取、批量拉取、**broker 端位点权威 + 提交链路**（§7.3），客户端不留副本 | Pop 消费、rebalance、位点过期清理、按 earliest/时间戳重置位点 |
+| 消费模型 | 长轮询拉取、批量拉取、**broker 端位点权威 + 提交链路**（§7.3），客户端不留副本；订阅类型取 Pulsar 四式中的 **Exclusive**（§7.1） | Pop 消费、rebalance、Shared / Failover / Key_Shared 三式、位点过期清理、按 earliest/时间戳重置位点 |
 | 消息类型 | 普通消息 | 事务消息、延迟消息、顺序消息（及其所依赖的锁机制） |
 | 接入 | jaws 协议直连或注册中心发现（多 master 分片，§7.1） | NameServer 专用路由、topic 路由下发 |
 | 可观测性 | 日志，加上一个 `MessageStore.getPullCount()` 测试探针（证明请求真的到了 broker） | 运维查询契约、stats 快照、逐条延迟直方图、外部监控系统对接 |
@@ -233,6 +233,8 @@ RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/Stor
 - **发送端**：`StoreProducer(registries)` 复用 jaws cluster 负载均衡，`check=false` 允许先于 broker 启动。普通发送不承诺跨 broker 顺序；顺序发送用 `loadBalance=consistentHash`——`StoreMessage.toString()` 返回 `topic@queueId` 即哈希钩子，同一队列钉扎同一 broker。
 - **消费端**：每 (broker, queue) 一条连接 + 一个泵；broker 上线建连并展开全部订阅，下线停泵但位点保留（回来续读）；位点权威在持有队列的那个 broker 上（§7.3），键 `group@topic@queueId` 天然按 broker 分治，跨 broker 同名队列互不覆盖；发现重复 brokerName 直接拒绝接入。
 - **明确不做**：rebalance（每个消费实例消费所有 broker 的所有队列，一个 group 只跑一个实例）、复制/DLedger（实例宕机 = 该分片暂不可读写，已落盘消息不丢，重启续读）、retry/DLQ。
+- **订阅类型 = Exclusive**（按 Pulsar 的订阅类型口径，官方文档 concepts-messaging 的 Subscription types 一节）：四式只取独占——一个 group 同时只应有一个消费者，**并行度来自队列数而不是实例数**，与 Pulsar 在 partitioned topic 下"所有分区都交给那唯一一个已连上的消费者"同构（这里的"分区"就是多 master 分片展开出的队列）。这不是随手省的，而是**位点形状定的**：消费进度是单一偏移 `group@topic@queueId -> long`，每次提交说的都是"到这条为止全做完了"，正是 Pulsar 的 cumulative acknowledgment；而 Pulsar 明确禁止 Shared / Key_Shared 用 cumulative ack（那两式必须逐条确认，因为同一订阅内有多个读者）。要支持那三式，先得有"一条消息一个 ack"的契约。至于 Failover，本模块只做到**人工接管**（§7.3 的 `secondInstanceResumesFromTheBroker`：新实例从 broker 位点续读、不重放），没有故障检测与 standby，所以不算。
+- **排他是使用契约，不是服务端不变量**：Pulsar 的 Exclusive 由 broker 强制（订阅本身是"一组消费者对一个 topic 的租约"，第二个消费者并发 attach 直接报错），而 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java) 的 `pullAsync` 只带 `topic/queueId/offset`，契约里**没有任何消费者身份**，broker 无从拒绝谁。实测同组并起两个 `StoreConsumer`：各收全量（a=5、b=5），提交位点仍是 5——不报错、不分摊，只是重复投递。要做到 Pulsar 那样的强制，前置是消费者身份 + 租约（即此前搁置的心跳注册与 cidAll），否则区分不了"新消费者"与"旧消费者已死"。
 - **升级注意**：本地位点文件（`{group}/offsets.properties`）与 `-Djaws.store.client.path` 一并删除，`setRemoteOffsets(false)` 退路随之消失。老部署升级后若 broker 端表里还没有这个组，就按新组从队列尾部起（§7.3），本地那份尚未消费完的旧位点不再被采纳——要保留进度只能先把旧文件的值用一次 `commitOffsetAsync` 写上去（契约公开，几行代码），否则就接受跳过。
 
 测试见 StoreMultiBrokerTest（§10），一键演示 `./run-sample.sh store-cluster`（§9）。
@@ -347,6 +349,7 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 | 刷盘 | 异步/同步/组提交 + 刷盘链 | 节拍器 + swap-list 组提交 | 无 transientStorePool（读写分离堆外池） |
 | 高可用 | 主从复制 / Dledger Raft | 无（多 master 分片不是 HA） | 单实例数据无冗余，宕机期间该分片不可用 |
 | 集群组织 | broker 组主从 + NameServer 路由 + rebalance | 多 master 分片 + 注册中心发现，每实例全量消费 | 无队列级并行扩展，一个 group 一个消费实例 |
+| 订阅类型 | 无此概念，改用两种 messageModel：集群消费（rebalance 把队列在实例间分摊）、广播消费（每实例全量） | 按 Pulsar 四式取 Exclusive：一组一消费者，并行度 = 队列数；位点是单一偏移，即 cumulative 确认形状（§7.1） | 服务端不强制排他（契约里无消费者身份）：同组并起两个实例不报错也不分摊，实测各收全量；且两个读者共享一个 cumulative 位点，任一方推前即全体推前——落后那台实例未处理完的区间，重启后不会再来一遍 |
 | 索引落空处理 | 派发内原地重试 30 次 × 1s，仍失败则跳过该单元并 `makeLogicsQueueError` 熔断写入（RocksDB 版则抛异常、位置持住由外层 1ms 重试） | 50ms 起指数退避（上限 1s）重试同一条记录，越界（默认 30 次）则置不可写位、写入回 `SERVICE_NOT_AVAILABLE`；位点始终持住，自愈自动清位（§4.2） | 熔断只关写入口，不对外暴露健康状态（无 metrics，见"可观测"行），运维侧只能从那条 ERROR 日志发现 |
 | 空间回收 | DeleteMapFileService 定期删过期文件 + disk full 优先 | mappedFile 粒度过期删除 + 磁盘水位强制删（§6.1），联动 CQ 与 min offset | 无 per-queue 精细过期 / 切片竞态，整文件为粒度 |
 | 可观测 | 多维度 metrics + 外部监控对接 | 无：只有日志，加上 `getPullCount()` 一个测试探针 | 哑雷式故障（磁盘撑爆、reput 滞后、page cache 失速）只能从日志与拒收状态码反推 |
