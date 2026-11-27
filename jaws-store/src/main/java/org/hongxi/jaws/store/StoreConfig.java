@@ -65,6 +65,13 @@ public class StoreConfig {
      * RocketMQ's flushConsumerOffsetInterval (5s). */
     private int offsetFlushIntervalMillis = 5000;
 
+    /** Attempts reput spends on ONE ConsumeQueue unit before the index is declared
+     * broken and the write path fuses. RocketMQ uses 30 inline retries in
+     * ConsumeQueue.putMessagePositionInfoWrapper; here the retries are spaced by the
+     * reput backoff instead of a fixed 1s, and the unit keeps being retried after the
+     * bound so the fuse can lift on its own. Must be positive. */
+    private int indexDispatchMaxRetries = 30;
+
     public String getStorePath() {
         return storePath;
     }
@@ -183,5 +190,13 @@ public class StoreConfig {
 
     public void setOffsetFlushIntervalMillis(int offsetFlushIntervalMillis) {
         this.offsetFlushIntervalMillis = offsetFlushIntervalMillis;
+    }
+
+    public int getIndexDispatchMaxRetries() {
+        return indexDispatchMaxRetries;
+    }
+
+    public void setIndexDispatchMaxRetries(int indexDispatchMaxRetries) {
+        this.indexDispatchMaxRetries = Math.max(1, indexDispatchMaxRetries);
     }
 }

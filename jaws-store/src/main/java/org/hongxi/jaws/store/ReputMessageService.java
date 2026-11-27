@@ -18,6 +18,12 @@ import org.slf4j.LoggerFactory;
  * could not write holds the position — the record is retried instead of skipped,
  * because a skipped slot becomes a permanent zero unit that every later pull
  * reads back as commitLogOffset 0 / size 0.
+ *
+ * <p>Bounded tolerance: holding forever would let a permanent fault grow an
+ * unbounded CommitLog that the index can never serve, so after
+ * {@code dispatchMaxRetries} attempts on the same unit the listener is told the
+ * index is broken and gates its write path; attempts keep going, and the first
+ * unit that lands reports the index healthy again, lifting the gate.
  */
 public class ReputMessageService {
 
@@ -35,17 +41,26 @@ public class ReputMessageService {
          *         on this record so it gets retried after a backoff
          */
         boolean onDispatch(DispatchEntry entry);
+
+        /**
+         * Edge notification around the retry bound of the held unit: false once
+         * attempts on it exceeded the bound (stop accepting writes), true once a
+         * retried unit lands after such a break.
+         */
+        void onIndexHealthChanged(boolean healthy);
     }
 
     private final CommitLog commitLog;
     private final DispatchListener listener;
+    private final int dispatchMaxRetries;
     private volatile long reputFromOffset;
     private volatile boolean stopped;
     private Thread thread;
 
-    public ReputMessageService(CommitLog commitLog, DispatchListener listener) {
+    public ReputMessageService(CommitLog commitLog, DispatchListener listener, int dispatchMaxRetries) {
         this.commitLog = commitLog;
         this.listener = listener;
+        this.dispatchMaxRetries = Math.max(1, dispatchMaxRetries);
     }
 
     public void setReputFromOffset(long reputFromOffset) {
@@ -70,6 +85,11 @@ public class ReputMessageService {
     private void runLoop() {
         long retryBackoffMillis = RETRY_BACKOFF_MIN_MILLIS;
         boolean stalled = false;
+        boolean fused = false;
+        // Attempts are counted per held unit, so the position itself is the key: any
+        // advance, including a jump over a rolled file's tail, starts a fresh budget.
+        long heldAtOffset = -1;
+        int heldAttempts = 0;
         while (!stopped) {
             boolean dispatched = false;
             boolean indexFailed = false;
@@ -88,6 +108,11 @@ public class ReputMessageService {
                     indexFailed = true;
                     break;
                 }
+                if (fused) {
+                    fused = false;
+                    logger.info("Index dispatch healed at offset {}: write path re-opened", reputFromOffset);
+                    listener.onIndexHealthChanged(true);
+                }
                 reputFromOffset += entry.getSize();
                 dispatched = true;
             }
@@ -98,6 +123,11 @@ public class ReputMessageService {
                     // rebuilt by replay on the next start.
                     break;
                 }
+                if (heldAtOffset != reputFromOffset) {
+                    heldAtOffset = reputFromOffset;
+                    heldAttempts = 0;
+                }
+                heldAttempts++;
                 // Transient by nature (disk pressure, a directory that only just
                 // became unwritable), so retry rather than abandon the tail. The
                 // spacing widens so a fault that will not clear cannot turn into
@@ -105,6 +135,17 @@ public class ReputMessageService {
                 if (!stalled) {
                     logger.warn("Reput held at offset {}: index dispatch failed, retrying", reputFromOffset);
                     stalled = true;
+                }
+                if (!fused && heldAttempts >= dispatchMaxRetries) {
+                    // The escalation RocketMQ reaches for in the same situation, minus its
+                    // skip: after 30 attempts it calls makeLogicsQueueError, which both stops
+                    // accepting writes and lets the dispatcher step over the unit. Stepping
+                    // over is what cannot be afforded here (zero unit in an array-addressed
+                    // queue), so only the write gate is taken and the position keeps being held.
+                    fused = true;
+                    logger.error("Reput exceeded {} attempts on offset {}: index declared broken, write path fused",
+                            dispatchMaxRetries, reputFromOffset);
+                    listener.onIndexHealthChanged(false);
                 }
                 try {
                     Thread.sleep(retryBackoffMillis);
@@ -117,6 +158,8 @@ public class ReputMessageService {
             }
             stalled = false;
             retryBackoffMillis = RETRY_BACKOFF_MIN_MILLIS;
+            heldAtOffset = -1;
+            heldAttempts = 0;
             if (!dispatched) {
                 try {
                     Thread.sleep(IDLE_SLEEP_MILLIS);

@@ -27,6 +27,10 @@ import java.util.stream.Stream;
  * are recomputable" principle: the CommitLog write position is recovered by
  * scanning its last file, then ALL ConsumeQueues are rebuilt by a synchronous
  * replay. No checkpoint bookkeeping is needed at this scale.
+ *
+ * <p>The same derivability backs the index fuse: because a ConsumeQueue can always
+ * be rebuilt, an index that stops advancing is treated as a reason to refuse writes
+ * rather than to abandon the tail — see {@link #isWriteable()}.
  */
 public class MessageStore implements ReputMessageService.DispatchListener {
 
@@ -43,6 +47,15 @@ public class MessageStore implements ReputMessageService.DispatchListener {
      * (short-polling backoff spacing, pump attachment after discovery).
      */
     private final AtomicLong pullCount = new AtomicLong();
+    /**
+     * The write path's view of index health, counterpart of RocketMQ's RunningFlags
+     * WRITE_LOGICS_QUEUE_ERROR_BIT: false while the fuse is set — by the dispatcher,
+     * once it exceeded {@code indexDispatchMaxRetries} attempts on one unit — and true
+     * again once a retried unit lands. While false, appends are refused outright: a log
+     * whose index cannot advance must not keep growing, and a refusal consumes no queue
+     * offset, so healing leaves no gap behind.
+     */
+    private volatile boolean indexHealthy = true;
     private volatile boolean stopped;
     private Thread cqFlushThread;
     private Thread cleanupThread;
@@ -50,7 +63,7 @@ public class MessageStore implements ReputMessageService.DispatchListener {
     public MessageStore(StoreConfig config) {
         this.config = config;
         this.commitLog = new CommitLog(config);
-        this.reputMessageService = new ReputMessageService(commitLog, this);
+        this.reputMessageService = new ReputMessageService(commitLog, this, config.getIndexDispatchMaxRetries());
         this.pullRequestHoldService = new PullRequestHoldService(this, config.getHoldScanIntervalMillis());
     }
 
@@ -238,10 +251,33 @@ public class MessageStore implements ReputMessageService.DispatchListener {
     }
 
     /**
+     * Reput health edge: the dispatcher reports the break and its healing, this
+     * holds the resulting gate. Only the write path reads it.
+     */
+    @Override
+    public void onIndexHealthChanged(boolean healthy) {
+        indexHealthy = healthy;
+    }
+
+    /**
+     * Write gate, the equivalent of RocketMQ's broker testing
+     * {@code RunningFlags.isWriteable()} in HookUtils.beforePutMessage. False while
+     * index dispatch is fused; reads and cleanup are unaffected.
+     */
+    public boolean isWriteable() {
+        return indexHealthy;
+    }
+
+    /**
      * Append + durability barrier. Async flush completes as soon as the
      * memcpy lands in page cache; sync flush joins the group-commit batch.
+     *
+     * <p>Refused outright, before anything is appended, while the index is fused.
      */
     public CompletableFuture<PutResult> putMessageAsync(StoreMessage message) {
+        if (!indexHealthy) {
+            return CompletableFuture.completedFuture(new PutResult(PutStatus.SERVICE_NOT_AVAILABLE));
+        }
         if (commitLog.isOSPageCacheBusy()) {
             return CompletableFuture.completedFuture(new PutResult(PutStatus.OS_PAGE_CACHE_BUSY));
         }
@@ -266,11 +302,19 @@ public class MessageStore implements ReputMessageService.DispatchListener {
      *
      * <p>Results are returned in input order; a per-message failure does not
      * abort the batch. Under page-cache stall the whole batch is fast-failed with
-     * {@link PutStatus#OS_PAGE_CACHE_BUSY}, matching the single-put contract.
+     * {@link PutStatus#OS_PAGE_CACHE_BUSY}, matching the single-put contract; while
+     * the index is fused the whole batch is refused with
+     * {@link PutStatus#SERVICE_NOT_AVAILABLE}, likewise.
      */
     public CompletableFuture<List<PutResult>> putMessagesAsync(List<StoreMessage> messages) {
         List<PutResult> results = new ArrayList<>(messages.size());
         if (messages.isEmpty()) {
+            return CompletableFuture.completedFuture(results);
+        }
+        if (!indexHealthy) {
+            for (int i = 0; i < messages.size(); i++) {
+                results.add(new PutResult(PutStatus.SERVICE_NOT_AVAILABLE));
+            }
             return CompletableFuture.completedFuture(results);
         }
         if (commitLog.isOSPageCacheBusy()) {

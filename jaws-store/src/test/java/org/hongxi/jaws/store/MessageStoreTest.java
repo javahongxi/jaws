@@ -48,6 +48,14 @@ class MessageStoreTest {
         }
     }
 
+    private void awaitWriteable(MessageStore store, boolean expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 3000;
+        while (store.isWriteable() != expected) {
+            assertTrue(System.currentTimeMillis() < deadline, "index fuse did not reach writeable=" + expected);
+            Thread.sleep(10);
+        }
+    }
+
     private List<String> pullAll(MessageStore store, String topic, int queueId, int expected) {
         List<String> bodies = new ArrayList<>();
         long offset = 0;
@@ -244,6 +252,55 @@ class MessageStoreTest {
         awaitIndex(store, "warm-topic", 0, 2);
         assertEquals(List.of("b-0", "b-1", "b-2", "b-3"), pullAll(store, "blocked-topic", 0, 4));
         assertEquals(List.of("warm-0", "warm-1"), pullAll(store, "warm-topic", 0, 2));
+        store.shutdown();
+    }
+
+    /**
+     * Holding forever is only safe if a fault that never clears stops growing the log:
+     * after the retry bound on one unit, reput declares the index broken and the write
+     * path refuses appends with SERVICE_NOT_AVAILABLE. Because the unit keeps being
+     * retried and a refusal consumes no queue offset, clearing the fault lifts the gate
+     * and the queue resumes without a gap.
+     */
+    @Test
+    void exhaustedIndexRetriesFuseWritesUntilTheyHeal() throws Exception {
+        StoreConfig config = config();
+        config.setIndexDispatchMaxRetries(3);   // bound reached within the retry ramp
+        MessageStore store = started(config);
+        store.putMessageAsync(StoreMessage.of("warm-topic", 0, "warm-0")).get(2, TimeUnit.SECONDS);
+        awaitIndex(store, "warm-topic", 0, 1);
+        assertTrue(store.isWriteable(), "a dispatcher that keeps landing must not fuse");
+
+        Path blocker = tempDir.resolve("consumequeue").resolve("blocked-topic");
+        Files.write(blocker, new byte[0]);
+        store.putMessageAsync(StoreMessage.of("blocked-topic", 0, "b-0")).get(2, TimeUnit.SECONDS);
+
+        awaitWriteable(store, false);
+        assertEquals(PutStatus.SERVICE_NOT_AVAILABLE,
+                store.putMessageAsync(StoreMessage.of("other-topic", 0, "refused")).get(2, TimeUnit.SECONDS).getStatus(),
+                "a fused store must not accept appends");
+        List<PutResult> batch = store.putMessagesAsync(List.of(
+                StoreMessage.of("other-topic", 0, "x"), StoreMessage.of("other-topic", 0, "y")))
+                .get(2, TimeUnit.SECONDS);
+        assertEquals(2, batch.size());
+        for (PutResult result : batch) {
+            assertEquals(PutStatus.SERVICE_NOT_AVAILABLE, result.getStatus(), "the batch entry shares the gate");
+        }
+        // The gate is admission only: what is already on disk keeps its shape, so the
+        // refused writes left no queue offsets and no zero units behind.
+        assertEquals(1, store.getMaxOffsetInQueue("warm-topic", 0));
+        assertEquals(0, store.getMaxOffsetInQueue("blocked-topic", 0));
+        assertEquals(PullStatus.NO_NEW_MSG, store.getMessage("other-topic", 0, 0, 32).getStatus(),
+                "refused records are not in the log at all");
+
+        Files.delete(blocker);
+        awaitWriteable(store, true);
+        awaitIndex(store, "blocked-topic", 0, 1);
+        PutResult accepted = store.putMessageAsync(StoreMessage.of("blocked-topic", 0, "b-1")).get(2, TimeUnit.SECONDS);
+        assertEquals(PutStatus.PUT_OK, accepted.getStatus(), "healing re-opens the write path");
+        assertEquals(1, accepted.getQueueOffset(), "the refused records consumed no queue offset");
+        awaitIndex(store, "blocked-topic", 0, 2);
+        assertEquals(List.of("b-0", "b-1"), pullAll(store, "blocked-topic", 0, 2));
         store.shutdown();
     }
 }

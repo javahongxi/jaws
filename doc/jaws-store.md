@@ -1,6 +1,6 @@
 # jaws-store：RocketMQ 风格存储引擎的设计与协议验证
 
-jaws-store 是 jaws 仓库内的存储引擎实践模块（约 3.6k 行 main + 1.3k 行测试），复刻 RocketMQ 存储内核的核心机制：mmap CommitLog 顺序写、ConsumeQueue 定长索引、异步/组提交刷盘、长轮询挂起唤醒。它的定位不是 MQ 产品线，而是 **jaws 协议的高吞吐实战验证件**——类比 harbor 之于 wire 协议的 Nacos 兼容性验证，store 用真实 MQ 负载去压 jaws benchmark 压不到的路径。
+jaws-store 是 jaws 仓库内的存储引擎实践模块（约 3.7k 行 main + 1.3k 行测试），复刻 RocketMQ 存储内核的核心机制：mmap CommitLog 顺序写、ConsumeQueue 定长索引、异步/组提交刷盘、长轮询挂起唤醒。它的定位不是 MQ 产品线，而是 **jaws 协议的高吞吐实战验证件**——类比 harbor 之于 wire 协议的 Nacos 兼容性验证，store 用真实 MQ 负载去压 jaws benchmark 压不到的路径。
 
 五篇前置精读（[发送链路](mq/rocketmq-发送链路精读.md)、[消费链路](mq/rocketmq-消费链路精读.md)、[刷盘与复制](mq/rocketmq-刷盘与复制精读.md)、[挂起请求唤醒链路](mq/rocketmq-挂起请求唤醒链路.md)、[高性能高吞吐成因分析](mq/rocketmq-高性能高吞吐成因分析.md)）是它的设计文档；本文反过来讲实现落了什么、简化了什么、验证出了什么。
 
@@ -8,7 +8,7 @@ jaws-store 是 jaws 仓库内的存储引擎实践模块（约 3.6k 行 main + 1
 
 | 维度 | 做 | 不做（声明式简化） |
 |---|---|---|
-| 存储内核 | mmap CommitLog + ConsumeQueue + 异步 reput 建索引（失败持位重试，§4.2）+ 过期文件回收 / 磁盘水位（§6.1） | IndexFile（按 key/tag 旁路检索）、多路径存储 |
+| 存储内核 | mmap CommitLog + ConsumeQueue + 异步 reput 建索引（失败持位重试、越界熔断写，§4.2）+ 过期文件回收 / 磁盘水位（§6.1） | IndexFile（按 key/tag 旁路检索）、多路径存储 |
 | 持久性 | 异步刷盘节拍器 + SYNC_FLUSH 组提交 | HA 主从复制、Dledger |
 | 消费模型 | 长轮询拉取、批量拉取、**broker 端位点权威 + 提交链路**（§7.3），客户端不留副本 | Pop 消费、rebalance、位点过期清理、按 earliest/时间戳重置位点 |
 | 消息类型 | 普通消息 | 事务消息、延迟消息、顺序消息（及其所依赖的锁机制） |
@@ -105,19 +105,21 @@ consumer ◀──pullAsync─── getMessage：CQ 数组式寻址 → CommitL
 
 CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持久性承诺——所有持久性成本由 CommitLog 独家支付，重启时 CQ 删掉重建（见 §6）。
 
-### 4.2 先建索引，后发通知，落空则持位重试
+### 4.2 先建索引，后发通知，落空则持位重试、越界则熔断写入
 
 [MessageStore.onDispatch](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) 严格两步：先 `putMessagePositionInfo` 落 CQ 单元，再 `notifyMessageArrive`。顺序颠倒会让被唤醒的 pull 查不到索引而空转——这是 RocketMQ doDispatch → notifyMessageArriveIfNecessary 顺序约束的直接复刻。
 
 两步之外还有第三步：**落空就不推进**。`onDispatch` 上报该单元是否写成功，[ReputMessageService.runLoop](../jaws-store/src/main/java/org/hongxi/jaws/store/ReputMessageService.java) 收到 false 时停在原地、按 50ms 起指数退避（上限 1s）重试同一条记录。原因在 §4.1 的数组寻址：跳过一条等于在定长数组里留一个 20B 零单元，而队列尾部由写入位置推出、会**越过**这个空洞继续前进——pull 于是读到 `commitLogOffset=0 / size=0` 的槽位，`getMessage(0, 0)` 拿空 slice 去 decode 直接抛 BufferUnderflowException，该队列从空洞起再也读不下去，只能等重启全量重放修复。跳过还会骗过 §6.1 的保护位点：它的本意是"未派发的字节不删"，推进即宣称已派发。
 
-代价是把活性让给完整性。dispatcher 单线程，一条持位期间其后所有 topic 的新消息都不建索引（写路径不受牵连：仍 `PUT_OK`，queueOffset 由 per topic-queue 的写侧计数器给出，见 §3.2）；保护位点同时钉在原地，过期文件回收一并停住。故障清除后自动续上，队列内顺序不变。
+代价是把活性让给完整性。dispatcher 单线程，一条持位期间其后所有 topic 的新消息都不建索引（写路径暂时不受牵连：仍 `PUT_OK`，queueOffset 由 per topic-queue 的写侧计数器给出，见 §3.2）；保护位点同时钉在原地，过期文件回收一并停住。故障若是暂时的，清除后自动续上，队列内顺序不变。
 
 **对照 RocketMQ**（develop 分支本地源码核实）：它既不是纯跳过也不是无限持位，而是**有界重试 + 熔断**。文件版 CQ 在派发调用内部对同一条记录原地重试 30 次、每次 `Thread.sleep(1000)`（`ConsumeQueue.putMessagePositionInfoWrapper` L725）；`reputFromOffset += size` 排在 `doDispatch` 之后，所以重试期间位置天然是持住的（`DefaultMessageStore.ReputMessageService.doReput`）。30 次仍写不下就打 `[BUG]consume queue can not write` 并 `runningFlags.makeLogicsQueueError()`；该位一旦置起 `isWriteable()` 即为 false（`RunningFlags` L80），broker 侧 `HookUtils.beforePutMessage`（L76）从此对每次写入直接回 `SERVICE_NOT_AVAILABLE`，而 `isCQWriteable()` 又使后续记录的重试循环整体短路、位置被推过去——**新写停接、存量索引跳过**。RocksDB 版走另一条路：`putMessagePositionInfoWrapper` 抛 `RocksDBException`，`doReput` catch 后直接 return（位置不推进），外层 `run()` 的 `catch (Throwable)` + 1ms 节拍把它变成近似无限持位。
 
-jaws-store 取的是"永不跳过"这一半，没取"熔断写"那一半：单进程单 master 的验证件里，让 dispatcher 等下去比骗过客户端更容易归因，而 [MessageStore](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) 也没有 `RunningFlags` 这类全局可写位。代价是**持位无上限**——一次不自愈的故障会一直扣着索引与回收，除了那条 WARN 没有别的信号。要向 RocketMQ 的形状对齐，缺的是有界重试 + 熔断位，而不是回到跳过。
+无限持位唯一的失控在写侧：索引不再前进，CommitLog 却还能无限长，保护位点钉住后回收也停住，最后撑满的是磁盘。所以把 RocketMQ 的另一半也取了——**越界熔断**。同一条记录重试到 `indexDispatchMaxRetries`（默认 30，取自 `ConsumeQueue.putMessagePositionInfoWrapper` 的重试次数）仍落不下，[ReputMessageService](../jaws-store/src/main/java/org/hongxi/jaws/store/ReputMessageService.java) 打一条 ERROR 并通过 `onIndexHealthChanged(false)` 通知 [MessageStore](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) 置起不可写位（`isWriteable()` 变 false）；此后 `putMessageAsync` / `putMessagesAsync` 在任何 append 之前直接回 `PutStatus.SERVICE_NOT_AVAILABLE`，与 broker 在 `HookUtils.beforePutMessage` 里判 `RunningFlags.isWriteable()` 同一形状。
 
-`stopped` 判在两处——内层循环每条记录前判一次，派发失败时也先判再决定要不要重试。关机中断落在建文件上属于预期退出（CQ 是派生物，重启重建），不该触发重试，更不该报成故障。测试见 §10 的 `heldIndexDispatchIsRetriedAndLeavesNoHole`。
+只取它的"停接新写"，仍不取它的"跳过"：位点继续持住、重试继续做，第一条落下的记录触发 `onIndexHealthChanged(true)` 自动清位，写入重新放行。熔断后每 1s 一次的空转重试是全部额外开销，换来的是队列连续——被拒的写入不占 queueOffset（偏移在写侧才分配），自愈后不留零单元；这一点跳过做不到。与 RocketMQ 的差别只剩两处：它的 30 次重试是内联 `sleep(1000)`，这里由 reput 自己的退避驱动（50ms 起、上限 1s）；它置位后还会让后续记录短路跳过，这里的熔断只管拒写。
+
+`stopped` 判在两处——内层循环每条记录前判一次，派发失败时也先判再决定要不要重试。关机中断落在建文件上属于预期退出（CQ 是派生物，重启重建），不该触发重试，更不该报成故障。测试见 §10 的 `heldIndexDispatchIsRetriedAndLeavesNoHole` 与 `exhaustedIndexRetriesFuseWritesUntilTheyHeal`。
 
 ### 4.3 挂起/唤醒的竞态防护
 
@@ -201,7 +203,7 @@ swap-list（requestsWrite/requestsRead 双列表 + ReentrantLock/Condition）让
 
 **驱动**：[MessageStore](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) 启动一个 `cleanupThread`（`startCleanupTicker()`，`cleanupIntervalMillis<=0` 则不启动），周期调 `cleanupFiles()`。两个删除严格有序：**先删 CommitLog 旧文件**（推高其 `getMinOffset()`），**再按 commitLog min offset 删 ConsumeQueue**——因为 CQ 单元只是指向 CommitLog 的偏移，只有当一条消息在 CommitLog 里已不存在，它的索引才能删；颠倒顺序会留下悬空索引。
 
-**判据**（[MappedFileQueue.deleteExpiredFiles](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFileQueue.java)）：一个文件可删当且仅当——非队尾（`mappedFiles.size() > keepMinFiles` 保证当前活跃文件永不入删列）、已过保护位点（`fileFromOffset + fileSize <= protectFromOffset`）、且超龄或磁盘高压。关键：**文件是否滚动封住看有无后继，不看 isFull**——滞动文件因尾部留白（§3.2）`wrotePosition != fileSize`，用 `isFull()` 判合格会误将头文件排除。保护位点 `protectFromOffset = reput.getReputFromOffset()`：reput 尚未派发的字节不能删，否则新写数据丢了索引。也因此，派发失败持位期间（§4.2）该位点原地不动，回收随之停住——这是"持位换索引完整"的第二重代价。
+**判据**（[MappedFileQueue.deleteExpiredFiles](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFileQueue.java)）：一个文件可删当且仅当——非队尾（`mappedFiles.size() > keepMinFiles` 保证当前活跃文件永不入删列）、已过保护位点（`fileFromOffset + fileSize <= protectFromOffset`）、且超龄或磁盘高压。关键：**文件是否滚动封住看有无后继，不看 isFull**——滞动文件因尾部留白（§3.2）`wrotePosition != fileSize`，用 `isFull()` 判合格会误将头文件排除。保护位点 `protectFromOffset = reput.getReputFromOffset()`：reput 尚未派发的字节不能删，否则新写数据丢了索引。也因此，派发失败持位期间（§4.2）该位点原地不动，回收随之停住——这是"持位换索引完整"的第二重代价；而持位越过重试上界后写侧熔断（§4.2）会阻止数据继续增长，所以停住回收不会再以撑爆磁盘收场。
 
 **两个触发条件**（[StoreConfig](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreConfig.java)）：常规按年龄（`fileRetentionMillis`，默认 72h）；磁盘吃紧时 `isDiskPressure()`（`(total - usable) * 100 / total >= diskMaxUsedSpaceRatio`，默认 90%）返回 true，本轮无视年龄强制删至 `cleanupKeepFiles`（默认 2）个地板。与 RocketMQ `DeleteMapFileService` 的 disk full 优先删除同构。
 
@@ -241,7 +243,7 @@ RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/Stor
 
 **一次 RPC 携带多条记录**：[StoreService.putBatchAsync(List\<StoreMessage\>)](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java) 一个请求带一批，回 `List<PutResult>`（与输入同序）。序列化靠 fastjson2 的 `WriteClassName` + autoType：[StoreBroker](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreBroker.java) 写侧内嵌类名，读侧 `List<StoreMessage>` / `List<PutResult>` 靠白名单（`org.hongxi.jaws.` / `java.util.`）直接还原具体元素类型，无需 wrapper POJO。
 
-**共享一次 fsync 屏障**（引擎侧 [MessageStore.putMessagesAsync](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java)）：page cache 失速时整批一次回 `OS_PAGE_CACHE_BUSY`；否则逐条 `commitLog.putMessage`（各自拿自己的 commitLogOffset），同时跟踪批内最大末尾偏移 `maxEndOffset`，SYNC_FLUSH 下只对 `maxEndOffset` 发**一次** `submitFlush`——一次 fsync 就满足整批（物理偏移全局单调，刷过末尾即刷过了前面每一条），这正是把 §5.1 组提交收益从"碰巧并发"提升为"客户端主动保证"。
+**共享一次 fsync 屏障**（引擎侧 [MessageStore.putMessagesAsync](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java)）：page cache 失速时整批一次回 `OS_PAGE_CACHE_BUSY`，索引熔断期间（§4.2）整批一次回 `SERVICE_NOT_AVAILABLE`，两者都发生在任何 append 之前；否则逐条 `commitLog.putMessage`（各自拿自己的 commitLogOffset），同时跟踪批内最大末尾偏移 `maxEndOffset`，SYNC_FLUSH 下只对 `maxEndOffset` 发**一次** `submitFlush`——一次 fsync 就满足整批（物理偏移全局单调，刷过末尾即刷过了前面每一条），这正是把 §5.1 组提交收益从"碰巧并发"提升为"客户端主动保证"。
 
 **客户端语义**（[StoreProducer.sendBatchSync/sendBatchAsync](../jaws-store/src/main/java/org/hongxi/jaws/store/client/StoreProducer.java)）：inflight 窗口**一批只取一个许可**（一次 RPC 就是一个在途请求，不按条数扣），finally 释放。测试见 §10 的 `batchPutRoundTripKeepsOrder`（引擎侧保序）与 `batchSendDeliveredOverJawsProtocol`（真实协议端到端）。
 
@@ -308,12 +310,12 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 
 环境：macOS arm64（Apple Silicon）/ Temurin JDK 21 / loopback 直连 / fastjson2 JSONB / 单 topic 单队列 / 消息体约 10 字节。数据为 `run-sample.sh store` 实测（producer 端计时，含 RPC 往返）。
 
-**单元测试**：34 个用例全部通过（jaws-core 272 个同时全绿）——
+**单元测试**：35 个用例全部通过（jaws-core 272 个同时全绿）——
 
 | 测试类 | 覆盖 |
 |---|---|
 | CommitLogTest（5） | 写读回环、文件滚动保内容与位点、恢复接续 queueOffset、超大消息拒绝、多队列位点独立 |
-| MessageStoreTest（9） | 跨文件边界拉取、组提交满足整批、重启重放重建索引、长轮询到达唤醒、长轮询超时返回、非法位点上报、**批量回环保序（§7.2）**、清理回收文件并推进 min offset（§6.1）、**索引落空持位重试不留空洞（§4.2）** |
+| MessageStoreTest（10） | 跨文件边界拉取、组提交满足整批、重启重放重建索引、长轮询到达唤醒、长轮询超时返回、非法位点上报、**批量回环保序（§7.2）**、清理回收文件并推进 min offset（§6.1）、**索引落空持位重试不留空洞（§4.2）**、**重试越界熔断写入并自愈（§4.2）** |
 | StoreRpcTest（3） | 走真实 jaws 协议的 broker + producer + consumer 端到端（consumer 先启动触发长轮询挂起）；短轮询空结果按间隔退避、不忙等；**批量发送经协议端到端投递（§7.2）** |
 | StoreMultiBrokerTest（4） | brokerName 身份持久化与改名拒启、跨 broker 位点隔离与重启续读、注册中心发现与 broker 下线后 survivor 续消费、consistentHash 队列钉扎单 broker |
 | ConsumerOffsetStoreTest（6） | 缺失与 0 可区分、increaseOnly 单调不后退、重置可覆盖、组/队列键隔离、快照重启回环与文件内容、脏行不丢整表（§7.3） |
@@ -345,7 +347,7 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 | 刷盘 | 异步/同步/组提交 + 刷盘链 | 节拍器 + swap-list 组提交 | 无 transientStorePool（读写分离堆外池） |
 | 高可用 | 主从复制 / Dledger Raft | 无（多 master 分片不是 HA） | 单实例数据无冗余，宕机期间该分片不可用 |
 | 集群组织 | broker 组主从 + NameServer 路由 + rebalance | 多 master 分片 + 注册中心发现，每实例全量消费 | 无队列级并行扩展，一个 group 一个消费实例 |
-| 索引落空处理 | 派发内原地重试 30 次 × 1s，仍失败则跳过该单元并 `makeLogicsQueueError` 熔断写入（RocksDB 版则抛异常、位置持住由外层 1ms 重试） | 持位不推进 + 50ms 起指数退避（上限 1s）始终重试，不熔断写入（§4.2） | 无有界重试与全局可写位：故障不自愈时索引与过期回收一起停住，除一条 WARN 外无信号 |
+| 索引落空处理 | 派发内原地重试 30 次 × 1s，仍失败则跳过该单元并 `makeLogicsQueueError` 熔断写入（RocksDB 版则抛异常、位置持住由外层 1ms 重试） | 50ms 起指数退避（上限 1s）重试同一条记录，越界（默认 30 次）则置不可写位、写入回 `SERVICE_NOT_AVAILABLE`；位点始终持住，自愈自动清位（§4.2） | 熔断只关写入口，不对外暴露健康状态（无 metrics，见"可观测"行），运维侧只能从那条 ERROR 日志发现 |
 | 空间回收 | DeleteMapFileService 定期删过期文件 + disk full 优先 | mappedFile 粒度过期删除 + 磁盘水位强制删（§6.1），联动 CQ 与 min offset | 无 per-queue 精细过期 / 切片竞态，整文件为粒度 |
 | 可观测 | 多维度 metrics + 外部监控对接 | 无：只有日志，加上 `getPullCount()` 一个测试探针 | 哑雷式故障（磁盘撑爆、reput 滞后、page cache 失速）只能从日志与拒收状态码反推 |
 | 批量发送 | 客户端 autoBatch 自动攒批 + 批量接口 | 仅显式批量（一次 RPC 共享一次 fsync 屏障，§7.2） | 无服务端自动攒批 |
