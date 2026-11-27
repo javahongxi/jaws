@@ -32,7 +32,7 @@ jaws-stream-api → jaws-core → jaws-wire → jaws-wire-proto
 | `jaws-registry-nacos`     | ~560         | Registry SPI 的 Nacos 薄封装 + `NacosDynamicConfiguration` 配置 SPI                                                                             | 注册发现/配置 |
 | `jaws-registry-harbor`    | ~510         | Registry SPI 的 Harbor 客户端（对接 `jaws-harbor`）+ `HarborDynamicConfiguration` 配置 SPI，与 nacos/zk 腿同形（config 与 naming 各用各的连接） | 注册发现/配置 |
 | `jaws-harbor`             | ~11.5k 手码  | 兼容 nacos-client 的轻量级注册中心与配置中心（服务端）：临时实例走 Distro AP，持久实例与配置走自研 Raft CP                                      | 注册发现/配置 |
-| `jaws-store`              | ~2.8k        | RocketMQ 风格存储引擎实践模块，以长轮询、高并发异步发送等 MQ 负载对 jaws 协议做高吞吐实战验证                                                   | 配套验证      |
+| `jaws-store`              | ~3.0k        | RocketMQ 风格存储引擎实践模块，以长轮询、高并发异步发送等 MQ 负载对 jaws 协议做高吞吐实战验证                                                   | 配套验证      |
 | `jaws-spring-boot`        | 聚合 + ~1.7k | 两个 starter：声明式接入 + 可观测装配                                                                                                           | 集成          |
 | `jaws-extensions`         | ~280         | 指标 / 链路追踪 Filter                                                                                                                          | 集成          |
 | `jaws-samples`            | 示例         | 一键实跑矩阵，含双向互操作与压测                                                                                                                | 验证          |
