@@ -9,11 +9,14 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Stream;
 
 /**
@@ -37,8 +40,17 @@ public class MessageStore implements ReputMessageService.DispatchListener {
     private final PullRequestHoldService pullRequestHoldService;
     /** Total pull requests served; a lightweight broker-side observability counter. */
     private final AtomicLong pullCount = new AtomicLong();
+    // Hot-path throughput counters use LongAdder: striped, so concurrent writers
+    // never CAS the same cache line. The put path is already serialized by
+    // CommitLog's global lock, but pull pumps run truly concurrent, and read-side
+    // sum() is cheap because stats are sampled rarely. Kept off the lock so no
+    // increment extends the memcpy critical section.
+    private final LongAdder putCount = new LongAdder();
+    private final LongAdder putRejectedCount = new LongAdder();
+    private final LongAdder pageCacheBusyCount = new LongAdder();
     private volatile boolean stopped;
     private Thread cqFlushThread;
+    private Thread cleanupThread;
 
     public MessageStore(StoreConfig config) {
         this.config = config;
@@ -63,6 +75,7 @@ public class MessageStore implements ReputMessageService.DispatchListener {
         commitLog.start();
         pullRequestHoldService.start();
         startCqFlushTicker();
+        startCleanupTicker();
         logger.info("MessageStore started, storePath={}, syncFlush={}", config.getStorePath(), config.isSyncFlush());
     }
 
@@ -134,6 +147,81 @@ public class MessageStore implements ReputMessageService.DispatchListener {
         cqFlushThread.start();
     }
 
+    /**
+     * Periodic reclamation sweep. Disabled when the interval is non-positive.
+     * Runs the same {@link #cleanupFiles()} an operator can trigger manually,
+     * on {@code cleanupIntervalMillis}; exceptions are swallowed so one bad pass
+     * never kills the schedule.
+     */
+    private void startCleanupTicker() {
+        int interval = config.getCleanupIntervalMillis();
+        if (interval <= 0) {
+            return;
+        }
+        cleanupThread = new Thread(() -> {
+            while (!stopped) {
+                try {
+                    Thread.sleep(interval);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                try {
+                    cleanupFiles();
+                } catch (Exception e) {
+                    logger.warn("Cleanup sweep failed, retry next interval", e);
+                }
+            }
+        }, "StoreCleanup");
+        cleanupThread.setDaemon(true);
+        cleanupThread.start();
+    }
+
+    /**
+     * One reclamation pass. CommitLog first: files fully dispatched by reput and
+     * past retention (or forced by disk pressure) are dropped, which advances the
+     * CommitLog min offset. Then each ConsumeQueue sheds the index files whose
+     * referenced CommitLog offsets all fall below that new min — the index never
+     * outlives its data, and the queue min offset moves forward so a lagging
+     * consumer reads OFFSET_ILLEGAL instead of a deleted slot.
+     *
+     * @return the number of CommitLog files deleted in this pass
+     */
+    public int cleanupFiles() {
+        // Never reclaim a file the dispatcher has not read yet.
+        long protectFromOffset = reputMessageService.getReputFromOffset();
+        boolean diskPressure = isDiskPressure();
+        int deleted = commitLog.deleteExpiredFiles(config.getFileRetentionMillis(),
+                config.getCleanupKeepFiles(), diskPressure, protectFromOffset);
+        if (deleted > 0 || diskPressure) {
+            long commitLogMinOffset = commitLog.getMinOffset();
+            for (ConsumeQueue consumeQueue : consumeQueueTable.values()) {
+                consumeQueue.deleteExpiredFiles(commitLogMinOffset, config.getCleanupKeepFiles());
+            }
+        }
+        return deleted;
+    }
+
+    /**
+     * Disk watermark: true when the store volume's used space has reached
+     * {@code diskMaxUsedSpaceRatio}, the signal to ignore retention age and
+     * reclaim aggressively (RocketMQ's diskMaxUsedSpaceRatio trigger). Disabled
+     * when the ratio is unset or 100.
+     */
+    private boolean isDiskPressure() {
+        int ratio = config.getDiskMaxUsedSpaceRatio();
+        if (ratio <= 0 || ratio >= 100) {
+            return false;
+        }
+        File dir = new File(config.getStorePath());
+        long total = dir.getTotalSpace();
+        long usable = dir.getUsableSpace();
+        if (total <= 0 || usable < 0) {
+            return false;
+        }
+        return (total - usable) * 100L / total >= ratio;
+    }
+
     /** Reput callback: index dispatch FIRST, arrival notification SECOND. */
     @Override
     public void onDispatch(DispatchEntry entry) {
@@ -153,9 +241,16 @@ public class MessageStore implements ReputMessageService.DispatchListener {
      */
     public CompletableFuture<PutResult> putMessageAsync(StoreMessage message) {
         if (commitLog.isOSPageCacheBusy()) {
+            pageCacheBusyCount.increment();
+            putRejectedCount.increment();
             return CompletableFuture.completedFuture(new PutResult(PutStatus.OS_PAGE_CACHE_BUSY));
         }
         PutResult result = commitLog.putMessage(message);
+        if (result.isOk()) {
+            putCount.increment();
+        } else {
+            putRejectedCount.increment();
+        }
         if (result.isOk() && config.isSyncFlush()) {
             int size = MessageCodec.calTotalSize(message.getBody().length,
                     message.getTopic().getBytes(StandardCharsets.UTF_8).length);
@@ -164,6 +259,60 @@ public class MessageStore implements ReputMessageService.DispatchListener {
                     .exceptionally(ex -> new PutResult(PutStatus.FLUSH_TIMEOUT));
         }
         return CompletableFuture.completedFuture(result);
+    }
+
+    /**
+     * Append a batch of messages in one call. Each record is still written
+     * individually into the CommitLog (batching is not group commit — see the
+     * design doc), but the batch shares ONE durability barrier: under sync flush
+     * a single fsync to the highest end offset satisfies every message in it,
+     * because physical offsets are globally monotonic. The value over N separate
+     * puts is a single RPC frame and a single fsync, not fewer appends.
+     *
+     * <p>Results are returned in input order; a per-message failure does not
+     * abort the batch. Under page-cache stall the whole batch is fast-failed with
+     * {@link PutStatus#OS_PAGE_CACHE_BUSY}, matching the single-put contract.
+     */
+    public CompletableFuture<List<PutResult>> putMessagesAsync(List<StoreMessage> messages) {
+        List<PutResult> results = new ArrayList<>(messages.size());
+        if (messages.isEmpty()) {
+            return CompletableFuture.completedFuture(results);
+        }
+        if (commitLog.isOSPageCacheBusy()) {
+            pageCacheBusyCount.increment();
+            putRejectedCount.increment();
+            for (int i = 0; i < messages.size(); i++) {
+                results.add(new PutResult(PutStatus.OS_PAGE_CACHE_BUSY));
+            }
+            return CompletableFuture.completedFuture(results);
+        }
+        long maxEndOffset = -1;
+        for (StoreMessage message : messages) {
+            PutResult result = commitLog.putMessage(message);
+            results.add(result);
+            if (result.isOk()) {
+                putCount.increment();
+                int size = MessageCodec.calTotalSize(message.getBody().length,
+                        message.getTopic().getBytes(StandardCharsets.UTF_8).length);
+                maxEndOffset = Math.max(maxEndOffset, result.getCommitLogOffset() + size);
+            } else {
+                putRejectedCount.increment();
+            }
+        }
+        if (config.isSyncFlush() && maxEndOffset >= 0) {
+            long flushOffset = maxEndOffset;
+            return commitLog.submitFlush(flushOffset)
+                    .thenApply(v -> results)
+                    .exceptionally(ex -> {
+                        List<PutResult> timedOut = new ArrayList<>(results.size());
+                        for (int i = 0; i < results.size(); i++) {
+                            timedOut.add(results.get(i).isOk()
+                                    ? new PutResult(PutStatus.FLUSH_TIMEOUT) : results.get(i));
+                        }
+                        return timedOut;
+                    });
+        }
+        return CompletableFuture.completedFuture(results);
     }
 
     /** Synchronous pull core: CQ addressing + CommitLog slice decode. */
@@ -232,6 +381,27 @@ public class MessageStore implements ReputMessageService.DispatchListener {
     }
 
     /**
+     * Assemble a point-in-time observability snapshot. Counters are summed
+     * without resetting; the offset/lag fields are gauges read from live
+     * positions. No log walk, so this never contends with the data path beyond
+     * a few atomic reads.
+     */
+    public StatsResult getStats() {
+        StatsResult stats = new StatsResult();
+        long maxOffset = commitLog.getMaxOffset();
+        stats.setBrokerName(config.getBrokerName());
+        stats.setPutTotal(putCount.sum());
+        stats.setPutRejectedTotal(putRejectedCount.sum());
+        stats.setPageCacheBusyTotal(pageCacheBusyCount.sum());
+        stats.setPullTotal(pullCount.get());
+        stats.setCommitLogMaxOffset(maxOffset);
+        stats.setCommitLogFlushedOffset(commitLog.getFlushedOffset());
+        stats.setDispatchBehindBytes(maxOffset - reputMessageService.getReputFromOffset());
+        stats.setConsumeQueueCount(consumeQueueTable.size());
+        return stats;
+    }
+
+    /**
      * Admin single-record lookup by physical CommitLog offset. Bypasses both the
      * ConsumeQueue index and any IndexFile — the offset is authoritative, so the
      * record is read straight from the log (RocketMQ VIEW_MESSAGE_BY_ID shape).
@@ -245,6 +415,9 @@ public class MessageStore implements ReputMessageService.DispatchListener {
         stopped = true;
         if (cqFlushThread != null) {
             cqFlushThread.interrupt();
+        }
+        if (cleanupThread != null) {
+            cleanupThread.interrupt();
         }
         reputMessageService.shutdown();
         pullRequestHoldService.shutdown();

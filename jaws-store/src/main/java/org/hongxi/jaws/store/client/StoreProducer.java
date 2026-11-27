@@ -133,6 +133,36 @@ public class StoreProducer {
         }
     }
 
+    /**
+     * Append a batch under one wire call; blocks until every record clears its
+     * durability barrier (or the batch times out). Results come back in input
+     * order. The batch consumes a single inflight permit — backpressure is
+     * counted per wire call, not per message, matching the RPC it maps to.
+     */
+    public List<PutResult> sendBatchSync(List<StoreMessage> messages) {
+        acquireInflight();
+        try {
+            return storeService.putBatchAsync(messages).get(requestTimeout, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Batch send interrupted", e);
+        } catch (ExecutionException | TimeoutException e) {
+            throw new IllegalStateException("Batch send failed: " + e.getMessage(), e);
+        } finally {
+            inflight.release();
+        }
+    }
+
+    public CompletableFuture<List<PutResult>> sendBatchAsync(List<StoreMessage> messages) {
+        acquireInflight();
+        try {
+            return storeService.putBatchAsync(messages).whenComplete((r, t) -> inflight.release());
+        } catch (RuntimeException e) {
+            inflight.release();
+            throw e;
+        }
+    }
+
     /** Fire and forget; failures are logged, never propagated. */
     public void sendOneway(StoreMessage message) {
         acquireInflight();

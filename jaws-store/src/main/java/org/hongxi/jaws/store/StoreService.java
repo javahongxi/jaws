@@ -1,5 +1,6 @@
 package org.hongxi.jaws.store;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -15,6 +16,14 @@ public interface StoreService {
 
     /** Append one message; completes after the configured durability barrier. */
     CompletableFuture<PutResult> putAsync(StoreMessage message);
+
+    /**
+     * Append a batch of messages in one RPC. Results come back in input order.
+     * This is batching, not group commit: each record is appended on its own,
+     * but the whole batch shares one wire frame and (under sync flush) one
+     * fsync barrier — a single durability round-trip amortized across the batch.
+     */
+    CompletableFuture<List<PutResult>> putBatchAsync(List<StoreMessage> messages);
 
     /**
      * Pull up to maxCount messages from offset. When nothing is new the

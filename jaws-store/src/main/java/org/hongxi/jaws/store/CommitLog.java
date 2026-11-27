@@ -265,6 +265,28 @@ public class CommitLog {
         return mappedFileQueue.getMaxOffset();
     }
 
+    /** Oldest CommitLog byte still on disk; advances as cleanup reclaims files. */
+    public long getMinOffset() {
+        return mappedFileQueue.getMinOffset();
+    }
+
+    /** Durability frontier: the offset up to which data has been fsynced. */
+    public long getFlushedOffset() {
+        return mappedFileQueue.getFlushedOffset();
+    }
+
+    /**
+     * Reclaim expired CommitLog files, protecting any file the reput dispatcher
+     * has not yet read ({@code protectFromOffset} = current dispatch position).
+     *
+     * @return the number of files deleted
+     */
+    public int deleteExpiredFiles(long retentionMillis, int keepMinFiles, boolean forceByDiskPressure,
+                                  long protectFromOffset) {
+        return mappedFileQueue.deleteExpiredFiles(retentionMillis, keepMinFiles, forceByDiskPressure,
+                protectFromOffset);
+    }
+
     /** Page-cache stall probe: the memcpy-only critical section should take
      * microseconds, so a held lock beyond one second means the kernel is
      * stuck on page fault or writeback. */

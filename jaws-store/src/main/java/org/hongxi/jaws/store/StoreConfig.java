@@ -41,6 +41,25 @@ public class StoreConfig {
     /** Fallback scan interval of the long-polling hold service. */
     private int holdScanIntervalMillis = 5000;
 
+    /** Interval between CommitLog/ConsumeQueue cleanup sweeps; 0 disables the
+     * cleanup ticker. Mirrors RocketMQ's cleanCommitLog/cleanConsumeQueue run
+     * cadence, reduced to one thin sweep thread here. */
+    private int cleanupIntervalMillis = 60_000;
+
+    /** Age after which a fully-written, already-dispatched file may be deleted.
+     * RocketMQ's fileReservedTime (default 72h); kept as an absolute age so a
+     * small demo run can drive it near zero. */
+    private long fileRetentionMillis = 72L * 60 * 60 * 1000;
+
+    /** Minimum number of most-recent files that cleanup never touches; must be
+     * at least 1 so the active (write-target) file always survives. */
+    private int cleanupKeepFiles = 2;
+
+    /** Disk-usage ratio (percent) above which cleanup ignores the retention age
+     * and reclaims the oldest files immediately — the disk watermark, RocketMQ's
+     * diskMaxUsedSpaceRatio. 0 or 100 disables the pressure trigger. */
+    private int diskMaxUsedSpaceRatio = 90;
+
     public String getStorePath() {
         return storePath;
     }
@@ -119,5 +138,37 @@ public class StoreConfig {
 
     public void setHoldScanIntervalMillis(int holdScanIntervalMillis) {
         this.holdScanIntervalMillis = holdScanIntervalMillis;
+    }
+
+    public int getCleanupIntervalMillis() {
+        return cleanupIntervalMillis;
+    }
+
+    public void setCleanupIntervalMillis(int cleanupIntervalMillis) {
+        this.cleanupIntervalMillis = cleanupIntervalMillis;
+    }
+
+    public long getFileRetentionMillis() {
+        return fileRetentionMillis;
+    }
+
+    public void setFileRetentionMillis(long fileRetentionMillis) {
+        this.fileRetentionMillis = fileRetentionMillis;
+    }
+
+    public int getCleanupKeepFiles() {
+        return cleanupKeepFiles;
+    }
+
+    public void setCleanupKeepFiles(int cleanupKeepFiles) {
+        this.cleanupKeepFiles = cleanupKeepFiles;
+    }
+
+    public int getDiskMaxUsedSpaceRatio() {
+        return diskMaxUsedSpaceRatio;
+    }
+
+    public void setDiskMaxUsedSpaceRatio(int diskMaxUsedSpaceRatio) {
+        this.diskMaxUsedSpaceRatio = diskMaxUsedSpaceRatio;
     }
 }

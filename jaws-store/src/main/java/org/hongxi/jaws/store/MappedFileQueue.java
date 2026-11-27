@@ -15,8 +15,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * order equals physical order.
  *
  * <p>Simplification vs RocketMQ: file creation is synchronous under a create
- * lock (no AllocateMappedFileService pre-allocation pipeline yet); files are
- * never deleted, so there is no disk-watermark machinery.
+ * lock (no AllocateMappedFileService pre-allocation pipeline yet). Reclamation
+ * is a single age/watermark sweep driven from outside (see
+ * {@link #deleteExpiredFiles}), not RocketMQ's dedicated clean services; the
+ * newest files are always kept so the write frontier and recent reads survive.
  */
 public class MappedFileQueue {
 
@@ -151,6 +153,80 @@ public class MappedFileQueue {
         for (MappedFile mappedFile : mappedFiles) {
             mappedFile.close();
         }
+    }
+
+    /** Global offset of the oldest byte still on disk; 0 when nothing loaded. */
+    public long getMinOffset() {
+        return mappedFiles.isEmpty() ? 0 : mappedFiles.get(0).getFileFromOffset();
+    }
+
+    /** Global durability frontier: start offset of the last file plus its flush position. */
+    public long getFlushedOffset() {
+        MappedFile last = getLastMappedFile();
+        return last == null ? 0 : last.getFileFromOffset() + last.getFlushedPosition();
+    }
+
+    /**
+     * Reclaim the oldest CommitLog files, from the head of the sequence inward.
+     * A file is deleted only when all of these hold: it is not among the newest
+     * {@code keepMinFiles}, it is fully written, its whole range lies below
+     * {@code protectFromOffset} (so the reput dispatcher has already consumed
+     * it — never delete undispatched data), and either it has aged past
+     * {@code retentionMillis} or {@code forceByDiskPressure} is set.
+     *
+     * <p>The loop breaks on the first non-eligible head file: files are ordered
+     * by offset, so if the oldest is not old enough, none behind it are. A file
+     * is treated as sealed once a successor exists (the {@code keepMinFiles} guard
+     * leaves the active last file untouched) — a rolled file's tail gap means it
+     * is not {@code isFull}, so fullness is not the eligibility test.
+     *
+     * @return the number of files deleted
+     */
+    public int deleteExpiredFiles(long retentionMillis, int keepMinFiles, boolean forceByDiskPressure,
+                                  long protectFromOffset) {
+        int keep = Math.max(1, keepMinFiles);
+        int deleted = 0;
+        while (mappedFiles.size() > keep) {
+            MappedFile first = mappedFiles.get(0);
+            if (first.getFileFromOffset() + first.getFileSize() > protectFromOffset) {
+                break;
+            }
+            if (!forceByDiskPressure
+                    && System.currentTimeMillis() - first.getLastModifiedTime() < retentionMillis) {
+                break;
+            }
+            first.destroy();
+            mappedFiles.remove(0);
+            deleted++;
+            logger.info("Deleted expired file {} (retention={}ms, protectOffset={})",
+                    first.getFileName(), retentionMillis, protectFromOffset);
+        }
+        return deleted;
+    }
+
+    /**
+     * Reclaim ConsumeQueue files from the head while a caller-supplied predicate
+     * approves each oldest file. Mirrors {@link #deleteExpiredFiles} minus the
+     * age/disk logic: the caller decides eligibility by inspecting the file's
+     * index units (a CQ file is only droppable once every CommitLog offset it
+     * references is itself gone). The active last file and the newest
+     * {@code keepMinFiles} are always preserved.
+     *
+     * @return the number of files deleted
+     */
+    public int deleteFilesFromHead(int keepMinFiles, java.util.function.Predicate<MappedFile> canDelete) {
+        int keep = Math.max(1, keepMinFiles);
+        int deleted = 0;
+        while (mappedFiles.size() > keep) {
+            MappedFile first = mappedFiles.get(0);
+            if (!canDelete.test(first)) {
+                break;
+            }
+            first.destroy();
+            mappedFiles.remove(0);
+            deleted++;
+        }
+        return deleted;
     }
 
     public String getStorePath() {

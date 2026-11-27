@@ -119,4 +119,63 @@ class StoreRpcTest {
             }
         }
     }
+
+    /**
+     * Batch send over the real protocol: one wire call carries several records,
+     * results come back in order, and the consumer pump delivers every one. This
+     * exercises the large-frame write path a single put never produces.
+     */
+    @Test
+    void batchSendDeliveredOverJawsProtocol() throws Exception {
+        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client-batch").toString());
+        StoreConfig config = new StoreConfig();
+        config.setStorePath(tempDir.resolve("store-batch").toString());
+        config.setHoldScanIntervalMillis(200);
+
+        int port = freePort();
+        StoreBroker broker = new StoreBroker(config, port);
+        broker.start();
+        String directUrl = "127.0.0.1:" + port;
+        StoreProducer producer = new StoreProducer(directUrl);
+        StoreConsumer consumer = new StoreConsumer(directUrl, "batch-group");
+        try {
+            int total = 20;
+            List<String> received = new CopyOnWriteArrayList<>();
+            CountDownLatch latch = new CountDownLatch(total);
+            consumer.subscribe("batch-demo", 0, messages -> {
+                for (MessageView view : messages) {
+                    received.add(view.bodyAsString());
+                    latch.countDown();
+                }
+            });
+            consumer.start();
+
+            List<StoreMessage> batch = new java.util.ArrayList<>();
+            for (int i = 0; i < total; i++) {
+                batch.add(StoreMessage.of("batch-demo", 0, "bm-" + i));
+            }
+            List<PutResult> results = producer.sendBatchSync(batch);
+            assertEquals(total, results.size());
+            for (int i = 0; i < total; i++) {
+                assertEquals(PutStatus.PUT_OK, results.get(i).getStatus());
+                assertEquals(i, results.get(i).getQueueOffset(), "batch offsets stay dense and ordered");
+            }
+            assertTrue(latch.await(15, TimeUnit.SECONDS), "consumer should receive the whole batch");
+            assertEquals(total, received.size());
+            List<String> expected = new java.util.ArrayList<>();
+            for (int i = 0; i < total; i++) {
+                expected.add("bm-" + i);
+            }
+            assertTrue(received.containsAll(expected), "every batch body must be delivered");
+        } finally {
+            consumer.shutdown();
+            producer.shutdown();
+            broker.shutdown();
+            if (previous == null) {
+                System.clearProperty("jaws.store.client.path");
+            } else {
+                System.setProperty("jaws.store.client.path", previous);
+            }
+        }
+    }
 }

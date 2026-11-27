@@ -38,6 +38,15 @@ public class ReputMessageService {
         this.reputFromOffset = reputFromOffset;
     }
 
+    /**
+     * Current dispatch position — the offset up to which records have been read
+     * and indexed. Doubles as the reput lag basis (maxOffset minus this) and as
+     * the safety boundary that CommitLog cleanup must never reclaim behind.
+     */
+    public long getReputFromOffset() {
+        return reputFromOffset;
+    }
+
     public void start() {
         thread = new Thread(this::runLoop, "StoreReput");
         thread.setDaemon(true);

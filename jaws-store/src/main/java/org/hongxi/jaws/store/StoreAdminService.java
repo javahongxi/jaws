@@ -23,4 +23,12 @@ public interface StoreAdminService {
      * the log, inside a rolled-file tail hole, or a bad magic.
      */
     CompletableFuture<AdminViewResult> viewMessageAsync(long commitLogOffset);
+
+    /**
+     * Snapshot the broker's operating counters — throughput, rejections, the
+     * durability frontier and the reput dispatch lag. A low-frequency read
+     * intended for an operator or a stress harness; taking it never walks the
+     * log, so it does not perturb the measurements it reports.
+     */
+    CompletableFuture<StatsResult> statsAsync();
 }

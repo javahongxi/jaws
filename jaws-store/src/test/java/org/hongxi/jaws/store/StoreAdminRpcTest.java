@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -85,6 +86,49 @@ class StoreAdminRpcTest {
             AdminViewResult missing = admin.viewMessageAsync(Long.MAX_VALUE / 2).get();
             assertFalse(missing.isFound(), "a bogus offset must not resolve to a record");
             assertEquals(ViewStatus.NOT_FOUND, missing.getStatus());
+        } finally {
+            adminRef.destroy();
+            producer.shutdown();
+            broker.shutdown();
+            if (previous == null) {
+                System.clearProperty("jaws.store.client.path");
+            } else {
+                System.setProperty("jaws.store.client.path", previous);
+            }
+        }
+    }
+
+    /**
+     * The stats surface over the same jaws port: a couple of puts and pulls move
+     * the reported counters, proving the observability read travels the wire and
+     * reflects real traffic without perturbing it.
+     */
+    @Test
+    void statsOverJawsProtocol() throws Exception {
+        String previous = System.setProperty("jaws.store.client.path", tempDir.resolve("client-stats").toString());
+        StoreConfig config = new StoreConfig();
+        config.setStorePath(tempDir.resolve("store-stats").toString());
+        config.setHoldScanIntervalMillis(200);
+
+        int port = freePort();
+        StoreBroker broker = new StoreBroker(config, port);
+        broker.start();
+        String directUrl = "127.0.0.1:" + port;
+        StoreProducer producer = new StoreProducer(directUrl);
+        ReferenceConfig<StoreAdminService> adminRef = adminReference(directUrl);
+        StoreAdminService admin = adminRef.getRef();
+        try {
+            for (int i = 0; i < 3; i++) {
+                assertEquals(PutStatus.PUT_OK, producer.sendSync(StoreMessage.of("stats-demo", 0, "x-" + i)).getStatus());
+            }
+            broker.getMessageStore().getMessageAsync("stats-demo", 0, 0, 32, 0).get(5, TimeUnit.SECONDS);
+
+            StatsResult stats = admin.statsAsync().get(5, TimeUnit.SECONDS);
+            assertEquals("broker", stats.getBrokerName());
+            assertEquals(3, stats.getPutTotal());
+            assertEquals(0, stats.getPutRejectedTotal());
+            assertTrue(stats.getPullTotal() >= 1);
+            assertTrue(stats.getCommitLogMaxOffset() > 0);
         } finally {
             adminRef.destroy();
             producer.shutdown();

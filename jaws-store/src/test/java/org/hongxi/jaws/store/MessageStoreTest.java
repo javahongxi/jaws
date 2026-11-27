@@ -144,4 +144,82 @@ class MessageStoreTest {
         assertEquals(1, result.getNextBeginOffset());
         store.shutdown();
     }
+
+    @Test
+    void batchPutRoundTripKeepsOrder() throws Exception {
+        MessageStore store = started(config());
+        List<StoreMessage> batch = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            batch.add(StoreMessage.of("topic-a", 0, "b-" + i));
+        }
+        List<PutResult> results = store.putMessagesAsync(batch).get(2, TimeUnit.SECONDS);
+        assertEquals(5, results.size());
+        for (int i = 0; i < 5; i++) {
+            assertEquals(PutStatus.PUT_OK, results.get(i).getStatus());
+            assertEquals(i, results.get(i).getQueueOffset());
+        }
+        awaitIndex(store, "topic-a", 0, 5);
+        List<String> bodies = pullAll(store, "topic-a", 0, 5);
+        for (int i = 0; i < 5; i++) {
+            assertEquals("b-" + i, bodies.get(i));
+        }
+        store.shutdown();
+    }
+
+    @Test
+    void statsReflectTraffic() throws Exception {
+        MessageStore store = started(config());
+        for (int i = 0; i < 6; i++) {
+            store.putMessageAsync(StoreMessage.of("topic-a", 0, "s-" + i)).get(2, TimeUnit.SECONDS);
+        }
+        store.getMessageAsync("topic-a", 0, 0, 32, 0).get(2, TimeUnit.SECONDS);
+        awaitIndex(store, "topic-a", 0, 6);
+        StatsResult stats = store.getStats();
+        assertEquals("broker", stats.getBrokerName());
+        assertEquals(6, stats.getPutTotal());
+        assertEquals(0, stats.getPutRejectedTotal());
+        assertTrue(stats.getPullTotal() >= 1, "a pull was served, count must be non-zero");
+        assertEquals(1, stats.getConsumeQueueCount());
+        assertTrue(stats.getCommitLogMaxOffset() > 0);
+        // reput catches up shortly after awaitIndex; poll the lag gauge to zero so
+        // the assertion is not racing the last reputFromOffset increment
+        long deadline = System.currentTimeMillis() + 1000;
+        while (store.getStats().getDispatchBehindBytes() > 0 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        assertEquals(0, store.getStats().getDispatchBehindBytes(), "dispatcher should drain to maxOffset");
+        store.shutdown();
+    }
+
+    @Test
+    void cleanupReclaimsFilesAndAdvancesMinOffsets() throws Exception {
+        StoreConfig config = config();
+        config.setCleanupKeepFiles(1);      // retain only the active file
+        config.setFileRetentionMillis(0);   // treat every file as past retention
+        config.setCleanupIntervalMillis(0); // no ticker; drive cleanupFiles() directly
+        MessageStore store = started(config);
+        // 60 records over 1024B files (~55B each) roll several files past the head
+        int total = 60;
+        for (int i = 0; i < total; i++) {
+            store.putMessageAsync(StoreMessage.of("topic-a", 0, "c-" + i)).get(2, TimeUnit.SECONDS);
+        }
+        // reput must reach maxOffset before head files are dispatchable-and-deletable
+        awaitIndex(store, "topic-a", 0, total);
+        assertTrue(store.getStats().getCommitLogMaxOffset() > 2L * 1024,
+                "expected multiple rolled commitlog files");
+
+        int deleted = store.cleanupFiles();
+        assertTrue(deleted > 0, "cleanup should reclaim expired commitlog files");
+
+        // data below the reclaimed boundary is gone: a pull from offset 0 now reads
+        // past the advanced CQ min, so it reports OFFSET_ILLEGAL rather than a hole
+        PullResult pull = store.getMessage("topic-a", 0, 0, 32);
+        assertEquals(PullStatus.OFFSET_ILLEGAL, pull.getStatus());
+        assertTrue(pull.getMinOffset() > 0, "CQ min offset should advance after reclamation");
+
+        // the broker stays writable after reclamation
+        PutResult again = store.putMessageAsync(StoreMessage.of("topic-a", 0, "live")).get(2, TimeUnit.SECONDS);
+        assertEquals(PutStatus.PUT_OK, again.getStatus());
+        store.shutdown();
+    }
 }

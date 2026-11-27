@@ -84,9 +84,33 @@ public class ConsumeQueue {
         return mappedFileQueue.getMaxOffset() / CQ_STORE_UNIT_SIZE;
     }
 
-    /** Files are never deleted in this engine, so the min offset stays 0. */
+    /**
+     * Lowest queue offset still resolvable to an index unit. It stays 0 while
+     * no CQ file has been reclaimed, and advances once the cleanup ticker drops
+     * head files — so an offset whose index is gone surfaces as OFFSET_ILLEGAL
+     * rather than silently reading a deleted slot.
+     */
     public long getMinOffsetInQueue() {
-        return 0;
+        return mappedFileQueue.getMinOffset() / CQ_STORE_UNIT_SIZE;
+    }
+
+    /**
+     * Reclaim CQ files whose every index unit points into already-deleted
+     * CommitLog space. A full file is droppable when the last unit it holds
+     * (at fileSize-20: commitLogOffset 8B + size 4B) ends at or below
+     * {@code commitLogMinOffset} — units are offset-ordered within a file, so
+     * the last one is the high-water mark. The active file is always kept.
+     *
+     * @param commitLogMinOffset the oldest CommitLog byte still on disk
+     * @return the number of CQ files deleted
+     */
+    public int deleteExpiredFiles(long commitLogMinOffset, int keepMinFiles) {
+        return mappedFileQueue.deleteFilesFromHead(keepMinFiles, file -> {
+            int lastUnitPos = file.getFileSize() - CQ_STORE_UNIT_SIZE;
+            long lastCommitLogOffset = file.getLong(lastUnitPos);
+            int lastSize = file.getInt(lastUnitPos + 8);
+            return lastCommitLogOffset + lastSize <= commitLogMinOffset;
+        });
     }
 
     public void flush() {

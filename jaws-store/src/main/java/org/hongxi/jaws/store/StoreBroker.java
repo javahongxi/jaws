@@ -139,7 +139,8 @@ public class StoreBroker {
                 new PullResult(PullStatus.FOUND, 0, 0, 0),
                 new MessageView(),
                 new BrokerInfo("warmup"),
-                AdminViewResult.found(new MessageView())
+                AdminViewResult.found(new MessageView()),
+                new StatsResult()
         };
         for (Object sample : samples) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -177,6 +178,11 @@ public class StoreBroker {
         }
 
         @Override
+        public CompletableFuture<List<PutResult>> putBatchAsync(List<StoreMessage> messages) {
+            return messageStore.putMessagesAsync(messages);
+        }
+
+        @Override
         public CompletableFuture<PullResult> pullAsync(String topic, int queueId, long offset,
                                                        int maxCount, long suspendTimeoutMillis) {
             return messageStore.getMessageAsync(topic, queueId, offset, maxCount, suspendTimeoutMillis);
@@ -197,6 +203,12 @@ public class StoreBroker {
             MessageView view = messageStore.viewMessage(commitLogOffset);
             return CompletableFuture.completedFuture(
                     view == null ? AdminViewResult.notFound() : AdminViewResult.found(view));
+        }
+
+        @Override
+        public CompletableFuture<StatsResult> statsAsync() {
+            // A handful of atomic reads, no log walk — inline like the view path.
+            return CompletableFuture.completedFuture(messageStore.getStats());
         }
     }
 }

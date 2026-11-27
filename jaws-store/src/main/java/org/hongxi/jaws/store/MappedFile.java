@@ -18,10 +18,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * heap copy; dirty pages are written back by the kernel. This is the Java
  * counterpart of RocketMQ's DefaultMappedFile.
  *
- * <p>Simplification vs RocketMQ: mapped files are append-only and never
- * deleted, so a selected slice stays valid until shutdown and no reference
- * counting is needed. Explicit unmapping is left to GC (JDK has no public
- * unmap API); the channel is closed on shutdown.
+ * <p>Simplification vs RocketMQ: mapped files are append-only; a selected slice
+ * stays valid for the life of the mapping and no reference counting is done.
+ * Explicit unmapping is left to GC (JDK has no public unmap API); the channel is
+ * closed on shutdown or when the cleanup ticker reclaims an expired file. A
+ * reader that grabs a slice of a file the sweeper deletes concurrently is the
+ * accepted risk of that simplification — cleanup only targets files whose data
+ * is already fully dispatched and out of retention, which live readers have
+ * moved past.
  *
  * <p>Freshly created files are warmed page by page at creation time (the
  * counterpart of RocketMQ's mlock/MAP_POPULATE warm-up): a sparse 1G mapping
@@ -161,6 +165,27 @@ public class MappedFile {
         } catch (IOException e) {
             logger.warn("Failed to close {}", file.getName(), e);
         }
+    }
+
+    /**
+     * Close the channel and delete the backing file. Used by the cleanup ticker
+     * to reclaim an expired CommitLog or ConsumeQueue file; the caller removes
+     * it from its queue only after this returns.
+     *
+     * @return true when the file was removed from disk
+     */
+    public boolean destroy() {
+        close();
+        boolean deleted = file.delete();
+        if (!deleted) {
+            logger.warn("Failed to delete mapped file {}", file.getName());
+        }
+        return deleted;
+    }
+
+    /** Last-modified time of the backing file, the age basis for retention. */
+    public long getLastModifiedTime() {
+        return file.lastModified();
     }
 
     public boolean isFull() {
