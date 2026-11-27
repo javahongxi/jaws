@@ -4,10 +4,14 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * The store's RPC contract, carried by the jaws protocol. Both methods are
+ * The store's RPC contract, carried by the jaws protocol. Every method is
  * future-based end to end: the provider never blocks a business thread, and
  * the long-polling pull may stay pending for seconds — a load shape ordinary
  * RPC benchmarks never exercise.
+ *
+ * <p>The two offset methods carry a group's consumption progress. Unlike the
+ * pull they never suspend: a map lookup and one merge, answered inline the way
+ * the admin queries are.
  *
  * <p>Client-side send semantics (sync/async/oneway) are layered on top by
  * StoreProducer; the wire contract stays uniformly async.
@@ -35,4 +39,21 @@ public interface StoreService {
 
     /** Report the stable broker identity; consumers key offsets by it. */
     CompletableFuture<BrokerInfo> brokerInfoAsync();
+
+    /**
+     * Read this broker's stored offset for group@topic@queueId. Absence is
+     * reported as {@code notFound()} rather than 0, because 0 is a real
+     * position meaning nothing has been consumed yet.
+     */
+    CompletableFuture<OffsetResult> queryOffsetAsync(String group, String topic, int queueId);
+
+    /**
+     * Record a group's progress on this broker. {@code increaseOnly} keeps the
+     * record monotonic — a lagging writer cannot rewind a group that already
+     * moved ahead — while {@code false} overwrites it, for a deliberate reset
+     * after an offset the log rejected. The response holds the authoritative
+     * offset after the update, which is the caller's value only when it won.
+     */
+    CompletableFuture<OffsetResult> commitOffsetAsync(String group, String topic, int queueId,
+                                                     long offset, boolean increaseOnly);
 }

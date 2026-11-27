@@ -16,18 +16,20 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Client-managed offsets persisted to a local properties file. Keeping them
- * on the client removes a broker KV table and a commit protocol from the
- * engine scope while preserving restart-resume semantics.
+ * Client-side offset cache persisted to a local properties file. The broker
+ * holds the authoritative record of a group's progress
+ * ({@code ConsumerOffsetStore}); this file bootstraps a broker that has never
+ * seen the group, carries progress across a window where the commit RPC failed,
+ * and becomes the whole store when {@code StoreConsumer.setRemoteOffsets(false)}.
  *
- * <p>RocketMQ splits this by message model: CLUSTERING uses
- * RemoteBrokerOffsetStore (broker-side config/consumerOffset.json, one
- * progress per group), BROADCASTING uses LocalFileOffsetStore (client-side
+ * <p>RocketMQ splits offset storage by message model: CLUSTERING uses
+ * RemoteBrokerOffsetStore (broker-side config/consumerOffset.json, one progress
+ * per group), BROADCASTING uses LocalFileOffsetStore (client-side
  * ~/.rocketmq_offsets/&lt;clientId&gt;/&lt;group&gt;/offsets.json, one progress per
- * instance). This store takes the group-scoped key of the former and the
- * client-local medium of the latter, so it is sound only while a group runs
- * a single instance; several instances per group need broker-side offsets,
- * as each would otherwise keep its own copy of shared progress.
+ * instance). This module takes the clustering shape: a group has exactly one
+ * shared position, no instance identity appears in any key, and the local file
+ * is subordinate to the broker's copy — which is what lets a rebuilt container
+ * or a second instance resume where the group left off instead of replaying.
  *
  * <p>Keys are brokerName@topic@queueId: in multi-master mode the same
  * (topic, queueId) exists on every broker with an independent offset space,

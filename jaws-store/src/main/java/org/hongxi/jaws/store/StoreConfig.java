@@ -60,6 +60,11 @@ public class StoreConfig {
      * diskMaxUsedSpaceRatio. 0 or 100 disables the pressure trigger. */
     private int diskMaxUsedSpaceRatio = 90;
 
+    /** Interval between consumer-offset snapshots under storePath/config;
+     * 0 disables the ticker, leaving only the flush taken at shutdown. Mirrors
+     * RocketMQ's flushConsumerOffsetInterval (5s). */
+    private int offsetFlushIntervalMillis = 5000;
+
     public String getStorePath() {
         return storePath;
     }
@@ -170,5 +175,13 @@ public class StoreConfig {
 
     public void setDiskMaxUsedSpaceRatio(int diskMaxUsedSpaceRatio) {
         this.diskMaxUsedSpaceRatio = diskMaxUsedSpaceRatio;
+    }
+
+    public int getOffsetFlushIntervalMillis() {
+        return offsetFlushIntervalMillis;
+    }
+
+    public void setOffsetFlushIntervalMillis(int offsetFlushIntervalMillis) {
+        this.offsetFlushIntervalMillis = offsetFlushIntervalMillis;
     }
 }

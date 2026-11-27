@@ -7,16 +7,19 @@ import org.hongxi.jaws.config.RegistryConfig;
 import org.hongxi.jaws.rpc.Reference;
 import org.hongxi.jaws.store.BrokerInfo;
 import org.hongxi.jaws.store.MessageView;
+import org.hongxi.jaws.store.OffsetResult;
 import org.hongxi.jaws.store.PullResult;
 import org.hongxi.jaws.store.StoreBroker;
 import org.hongxi.jaws.store.StoreService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,6 +40,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * via brokerInfoAsync, and offsets are keyed brokerName@topic@queueId so the
  * same queue on different brokers never shares an offset. A broker going
  * away stops its pumps; its offsets survive for when it returns.
+ *
+ * <p>Progress lives on the broker, not here. On attach the consumer reads the
+ * group's stored offset from that broker and treats it as authoritative; every
+ * successful batch commits back with increaseOnly. {@link LocalOffsetStore} is
+ * therefore a cache — it bootstraps a broker that has never seen the group and
+ * covers a window where the commit RPC failed, and it is what a
+ * remote-offsets-disabled run (see {@link #setRemoteOffsets(boolean)}) relies on
+ * entirely. Letting the broker win even when the local value is higher keeps
+ * exactly one answer to "where is this group"; the cost is a replay of the
+ * difference, which the increaseOnly commit immediately closes again.
  *
  * <p>Flow control: when dispatched-but-unconsumed messages reach
  * pullThresholdForQueue the pump pauses briefly — the consumer's own
@@ -73,9 +86,17 @@ public class StoreConsumer {
      */
     private static final long SHORT_POLLING_INTERVAL_MILLIS = 1_000;
 
+    /**
+     * Budget for the offset queries issued before a broker's pumps start. They
+     * run concurrently, so this bounds one round trip rather than one per queue;
+     * on expiry the pump falls back to the local cache instead of stalling.
+     */
+    private static final long OFFSET_QUERY_TIMEOUT_MILLIS = 3_000;
+
     private final String directUrls;
     private final List<RegistryConfig> registries;
     private final String serialization;
+    private final String consumerGroup;
     private final LocalOffsetStore offsetStore;
     private final Map<String, Template> templates = new ConcurrentHashMap<>();
     private final Map<String, BrokerConnection> brokers = new ConcurrentHashMap<>();
@@ -85,6 +106,7 @@ public class StoreConsumer {
     private int pullThresholdForQueue = 1000;
     private long suspendTimeoutMillis = BROKER_SUSPEND_MAX_TIME_MILLIS;
     private long shortPollingIntervalMillis = SHORT_POLLING_INTERVAL_MILLIS;
+    private volatile boolean remoteOffsets = true;
 
     private ReferenceConfig<StoreService> discoveryReference;
     private ScheduledExecutorService pumpExecutor;
@@ -145,6 +167,7 @@ public class StoreConsumer {
         this.directUrls = directUrl;
         this.registries = null;
         this.serialization = serialization;
+        this.consumerGroup = consumerGroup;
         this.offsetStore = new LocalOffsetStore(consumerGroup);
     }
 
@@ -157,6 +180,7 @@ public class StoreConsumer {
         this.directUrls = null;
         this.registries = registries;
         this.serialization = serialization;
+        this.consumerGroup = consumerGroup;
         this.offsetStore = new LocalOffsetStore(consumerGroup);
     }
 
@@ -246,13 +270,77 @@ public class StoreConsumer {
         }
         BrokerConnection connection = new BrokerConnection(address, reference, storeService, brokerName);
         brokers.put(address, connection);
+        Map<String, Long> stored = storedOffsets(connection);
         for (Template template : templates.values()) {
             Subscription subscription = new Subscription(connection, template.topic, template.queueId, template.listener);
             subscription.pullOffset = offsetStore.get(brokerName, template.topic, template.queueId);
+            Long authoritative = stored.get(template.topic + "@" + template.queueId);
+            if (authoritative != null && authoritative != subscription.pullOffset) {
+                logger.info("Resuming {}@{}@{} from the broker offset {} (local cache held {})",
+                        brokerName, template.topic, template.queueId, authoritative, subscription.pullOffset);
+                subscription.pullOffset = authoritative;
+                offsetStore.update(brokerName, template.topic, template.queueId, authoritative);
+            }
             subscriptions.put(brokerName + "@" + template.topic + "@" + template.queueId, subscription);
             pumpExecutor.execute(() -> pump(subscription));
         }
         logger.info("Broker attached: {} ({}), {} subscription(s)", brokerName, address, templates.size());
+    }
+
+    /**
+     * Ask one broker where this group stands on every subscribed queue. All
+     * queries go out before any is awaited, so an unreachable broker costs one
+     * timeout in total. A queue that is absent, timed out or errored simply does
+     * not appear in the result — the caller then keeps its local value, which is
+     * also how a broker that has never seen this group gets bootstrapped.
+     */
+    private Map<String, Long> storedOffsets(BrokerConnection connection) {
+        if (!remoteOffsets || templates.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, CompletableFuture<OffsetResult>> futures = new HashMap<>();
+        for (Template template : templates.values()) {
+            futures.put(template.topic + "@" + template.queueId,
+                    connection.storeService.queryOffsetAsync(consumerGroup, template.topic, template.queueId));
+        }
+        Map<String, Long> result = new HashMap<>();
+        for (Map.Entry<String, CompletableFuture<OffsetResult>> entry : futures.entrySet()) {
+            try {
+                OffsetResult offset = entry.getValue().get(OFFSET_QUERY_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+                if (offset != null && offset.isFound()) {
+                    result.put(entry.getKey(), offset.getOffset());
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                logger.warn("Offset query failed for {} on {}, falling back to the local cache",
+                        entry.getKey(), connection.brokerName, e);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Mirror progress onto the broker that owns the queue. Fire-and-forget: the
+     * local cache already holds the value, so a failed commit only costs a
+     * server-side gap that the next successful commit closes.
+     *
+     * <p>Commits from concurrent batches may reach the broker out of order;
+     * increaseOnly makes that harmless, since the highest offset always wins.
+     */
+    private void commitOffset(Subscription subscription, long offset, boolean increaseOnly) {
+        if (!remoteOffsets || !subscription.active) {
+            return;
+        }
+        subscription.broker.storeService.commitOffsetAsync(consumerGroup, subscription.topic,
+                        subscription.queueId, offset, increaseOnly)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        logger.warn("Offset commit failed for {}@{}@{} = {}",
+                                subscription.broker.brokerName, subscription.topic, subscription.queueId, offset, ex);
+                    }
+                });
     }
 
     /** Drop one broker's pumps and connection; its offsets stay for its return. */
@@ -345,6 +433,7 @@ public class StoreConsumer {
                     }
                     subscription.cachedCount.addAndGet(-messages.size());
                     offsetStore.update(brokerName, subscription.topic, subscription.queueId, nextOffset);
+                    commitOffset(subscription, nextOffset, true);
                 });
             }
             case NO_NEW_MSG -> {
@@ -359,6 +448,9 @@ public class StoreConsumer {
                         subscription.pullOffset, result.getNextBeginOffset());
                 subscription.pullOffset = result.getNextBeginOffset();
                 offsetStore.update(brokerName, subscription.topic, subscription.queueId, result.getNextBeginOffset());
+                // A reset may move backwards (the requested offset was already
+                // cleaned), so this one must overwrite rather than merge upward.
+                commitOffset(subscription, result.getNextBeginOffset(), false);
             }
         }
         // Re-arm the pump. In long-polling mode the round-trip already blocked on the
@@ -414,5 +506,14 @@ public class StoreConsumer {
     /** Round gap applied only in short-polling mode; ignored while a hold is requested. */
     public void setShortPollingIntervalMillis(long shortPollingIntervalMillis) {
         this.shortPollingIntervalMillis = shortPollingIntervalMillis;
+    }
+
+    /**
+     * Turn broker-side progress tracking off to keep the consumer purely
+     * client-managed (the pre-offset-store behaviour): no query on attach, no
+     * commit per batch, {@link LocalOffsetStore} authoritative again.
+     */
+    public void setRemoteOffsets(boolean remoteOffsets) {
+        this.remoteOffsets = remoteOffsets;
     }
 }

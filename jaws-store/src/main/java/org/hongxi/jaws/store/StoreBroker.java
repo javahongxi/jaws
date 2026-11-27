@@ -24,6 +24,10 @@ import java.util.concurrent.CompletableFuture;
  * multi-master sharding — each instance owns an independent CommitLog and
  * a stable brokerName; there is no replication between instances.
  *
+ * <p>Alongside the log it hosts {@link ConsumerOffsetStore}, so a group's
+ * consumption progress lives on the broker that owns the queue rather than
+ * inside one client instance.
+ *
  * <p>Typical scenario: embedded in a demo main or a test to run a real
  * broker on a local port, with StoreProducer/StoreConsumer on the other end.
  */
@@ -35,6 +39,7 @@ public class StoreBroker {
     public static final String VERSION = "1.0";
 
     private final MessageStore messageStore;
+    private final ConsumerOffsetStore offsetStore;
     private final ServiceConfig<StoreService> serviceConfig;
     private final ServiceConfig<StoreAdminService> adminServiceConfig;
     private final String serialization;
@@ -52,6 +57,7 @@ public class StoreBroker {
     /** Registry mode: export and register to every given registry. */
     public StoreBroker(StoreConfig storeConfig, int port, String serialization, List<RegistryConfig> registries) {
         this.messageStore = new MessageStore(storeConfig);
+        this.offsetStore = new ConsumerOffsetStore(storeConfig);
         this.serialization = serialization;
         this.brokerName = storeConfig.getBrokerName();
         this.port = port;
@@ -115,6 +121,7 @@ public class StoreBroker {
 
     public void start() throws IOException {
         messageStore.start();
+        offsetStore.start();
         warmUpSerialization();
         serviceConfig.export();
         adminServiceConfig.export();
@@ -140,6 +147,7 @@ public class StoreBroker {
                 new MessageView(),
                 new BrokerInfo("warmup"),
                 AdminViewResult.found(new MessageView()),
+                OffsetResult.found(0),
                 new StatsResult()
         };
         for (Object sample : samples) {
@@ -159,11 +167,16 @@ public class StoreBroker {
     public void shutdown() {
         adminServiceConfig.unexport();
         serviceConfig.unexport();
+        offsetStore.shutdown();
         messageStore.shutdown();
     }
 
     public MessageStore getMessageStore() {
         return messageStore;
+    }
+
+    public ConsumerOffsetStore getOffsetStore() {
+        return offsetStore;
     }
 
     public int getPort() {
@@ -191,6 +204,21 @@ public class StoreBroker {
         @Override
         public CompletableFuture<BrokerInfo> brokerInfoAsync() {
             return CompletableFuture.completedFuture(new BrokerInfo(brokerName));
+        }
+
+        @Override
+        public CompletableFuture<OffsetResult> queryOffsetAsync(String group, String topic, int queueId) {
+            // One map read, no log walk: answer inline like the admin queries.
+            Long offset = offsetStore.queryOffset(group, topic, queueId);
+            return CompletableFuture.completedFuture(offset == null
+                    ? OffsetResult.notFound() : OffsetResult.found(offset));
+        }
+
+        @Override
+        public CompletableFuture<OffsetResult> commitOffsetAsync(String group, String topic, int queueId,
+                                                                long offset, boolean increaseOnly) {
+            long authoritative = offsetStore.updateOffset(group, topic, queueId, offset, increaseOnly);
+            return CompletableFuture.completedFuture(OffsetResult.found(authoritative));
         }
     }
 
