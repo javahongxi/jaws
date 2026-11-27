@@ -16,10 +16,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Client-managed offsets persisted to a local properties file — the Kafka
- * style, a declared deviation from RocketMQ's broker-side offset store.
- * It removes a broker KV table and a commit protocol from the engine scope
- * while keeping restart-resume semantics.
+ * Client-managed offsets persisted to a local properties file. Keeping them
+ * on the client removes a broker KV table and a commit protocol from the
+ * engine scope while preserving restart-resume semantics.
+ *
+ * <p>RocketMQ splits this by message model: CLUSTERING uses
+ * RemoteBrokerOffsetStore (broker-side config/consumerOffset.json, one
+ * progress per group), BROADCASTING uses LocalFileOffsetStore (client-side
+ * ~/.rocketmq_offsets/&lt;clientId&gt;/&lt;group&gt;/offsets.json, one progress per
+ * instance). This store takes the group-scoped key of the former and the
+ * client-local medium of the latter, so it is sound only while a group runs
+ * a single instance; several instances per group need broker-side offsets,
+ * as each would otherwise keep its own copy of shared progress.
  *
  * <p>Keys are brokerName@topic@queueId: in multi-master mode the same
  * (topic, queueId) exists on every broker with an independent offset space,
