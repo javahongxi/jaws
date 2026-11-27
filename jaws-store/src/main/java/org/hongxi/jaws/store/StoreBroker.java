@@ -36,6 +36,7 @@ public class StoreBroker {
 
     private final MessageStore messageStore;
     private final ServiceConfig<StoreService> serviceConfig;
+    private final ServiceConfig<StoreAdminService> adminServiceConfig;
     private final String serialization;
     private final String brokerName;
     private final int port;
@@ -87,12 +88,36 @@ public class StoreBroker {
         if (registries != null && !registries.isEmpty()) {
             serviceConfig.setRegistries(registries);
         }
+
+        // Admin query contract, exported on the same port. AbstractTransportFactory
+        // shares one server per host:port (the StoreService export above creates it),
+        // so this second export just registers an added provider on the same channel;
+        // the two are kept apart purely by interface name in the service key.
+        ProtocolConfig adminProtocolConfig = new ProtocolConfig();
+        adminProtocolConfig.setName(JawsConstants.PROTOCOL_JAWS);
+        adminProtocolConfig.setId(adminProtocolConfig.getName());
+        adminProtocolConfig.setTransportFactory("netty");
+        adminProtocolConfig.setSerialization(serialization);
+        adminProtocolConfig.setPort(port);
+
+        adminServiceConfig = new ServiceConfig<>();
+        adminServiceConfig.setRef(new StoreAdminServiceImpl());
+        adminServiceConfig.setApplication("jaws-store");
+        adminServiceConfig.setModule("store");
+        adminServiceConfig.setInterface(StoreAdminService.class);
+        adminServiceConfig.setGroup(GROUP);
+        adminServiceConfig.setVersion(VERSION);
+        adminServiceConfig.setProtocol(adminProtocolConfig);
+        if (registries != null && !registries.isEmpty()) {
+            adminServiceConfig.setRegistries(registries);
+        }
     }
 
     public void start() throws IOException {
         messageStore.start();
         warmUpSerialization();
         serviceConfig.export();
+        adminServiceConfig.export();
         logger.info("StoreBroker listening on port {}", port);
     }
 
@@ -113,7 +138,8 @@ public class StoreBroker {
                 new PutResult(PutStatus.PUT_OK, 0, 0),
                 new PullResult(PullStatus.FOUND, 0, 0, 0),
                 new MessageView(),
-                new BrokerInfo("warmup")
+                new BrokerInfo("warmup"),
+                AdminViewResult.found(new MessageView())
         };
         for (Object sample : samples) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -130,6 +156,7 @@ public class StoreBroker {
     }
 
     public void shutdown() {
+        adminServiceConfig.unexport();
         serviceConfig.unexport();
         messageStore.shutdown();
     }
@@ -158,6 +185,18 @@ public class StoreBroker {
         @Override
         public CompletableFuture<BrokerInfo> brokerInfoAsync() {
             return CompletableFuture.completedFuture(new BrokerInfo(brokerName));
+        }
+    }
+
+    private class StoreAdminServiceImpl implements StoreAdminService {
+
+        @Override
+        public CompletableFuture<AdminViewResult> viewMessageAsync(long commitLogOffset) {
+            // A fast mmap slice read; run inline and hand back a completed future
+            // rather than park a worker, matching the async contract without cost.
+            MessageView view = messageStore.viewMessage(commitLogOffset);
+            return CompletableFuture.completedFuture(
+                    view == null ? AdminViewResult.notFound() : AdminViewResult.found(view));
         }
     }
 }

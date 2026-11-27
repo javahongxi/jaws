@@ -48,6 +48,7 @@ consumer ◀──pullAsync─── getMessage：CQ 数组式寻址 → CommitL
 | [PullRequestHoldService](../jaws-store/src/main/java/org/hongxi/jaws/store/PullRequestHoldService.java) | 长轮询挂起/唤醒/兜底扫描 |
 | [MessageStore](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageStore.java) | 门面装配 + 重启恢复重放 |
 | [StoreBroker](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreBroker.java) / [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java) / [BrokerInfo](../jaws-store/src/main/java/org/hongxi/jaws/store/BrokerInfo.java) | jaws 协议导出与 RPC 契约（全 CompletableFuture），BrokerInfo 上报 brokerName |
+| [StoreAdminService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreAdminService.java) / [AdminViewResult](../jaws-store/src/main/java/org/hongxi/jaws/store/AdminViewResult.java) | 同端口导出的运维查询契约：按 CommitLog 偏移直读单条消息（§4.5） |
 | [client/](../jaws-store/src/main/java/org/hongxi/jaws/store/client/) | StoreProducer / StoreConsumer / LocalOffsetStore / MessageListener |
 
 数据目录：`{storePath}/commitlog/` 放物理日志（文件名为 20 位零填充起始偏移，默认单文件 1GB），`{storePath}/consumequeue/{topic}/{queueId}/` 放索引（默认 300000 单元 × 20B = 6MB/文件）。
@@ -131,6 +132,14 @@ CQ 是**派生物**：独立 1s 刷盘节拍、不参与组提交、无任何持
 
 三级预算严格递增：`挂起 15s（最坏 +5s 扫描兜底 = 20s）< provider 看门狗 25s < 客户端超时 30s`。两处错开都有实账：看门狗低于挂起上限时，每次空转长轮询都被误判为 40003（这条踩过——默认 1000ms 短于当时的 5s 挂起）；看门狗与客户端超时同值时，两边在同一时刻抢答，报错归因不确定。该参数是服务级的，`putAsync` 同受 25s 约束，但写路径另有 `syncFlushTimeout=5s` 内部了断，不会真等到 25s。
 
+### 4.5 按偏移直读：StoreAdminService
+
+与消费链路（走 ConsumeQueue 顺序读）和运维检索（§1 提到的 IndexFile 按 key/tag 旁路，本模块不做）都不同，broker 另导出一个 [StoreAdminService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreAdminService.java)，提供 `viewMessageAsync(commitLogOffset)`——按物理偏移单读一条消息，复刻 RocketMQ `VIEW_MESSAGE_BY_ID` 的思路：msgId 是自描述的（偏移直接编在里面），查询不经任何索引。
+
+- **偏移从哪来**：`PutResult` 已带 `commitLogOffset`（生产端发送成功即拿到），无需给 [MessageCodec](../jaws-store/src/main/java/org/hongxi/jaws/store/MessageCodec.java) 的 44B 定长头新增 uniqKey——那会牵动恢复扫描、reput 派发与 CQ 保留的 tagsCode，成本与收益不匹配。
+- **怎么读**：[CommitLog.viewMessage(offset)](../jaws-store/src/main/java/org/hongxi/jaws/store/CommitLog.java) 用记录自带的 `totalSize` 头定长，校验 magic 与 `wrotePosition` 边界后切片解码；越界、落在滚动文件尾部空洞、或 magic 不符一律回 `NOT_FOUND`——是正常响应，不是异常。
+- **同端口共存**：admin 与 StoreService 导出到同一 host:port，`AbstractTransportFactory` 按 host:port 复用同一个 server，服务键 `group/interfaceName/version` 仅靠 interfaceName 区分，两个 provider 挂同一通道互不干扰。测试见 StoreAdminRpcTest（§10）；可运行示例见 sample 的 `StoreAdminMain`（走 producer/consumer 同款 jaws 二进制客户端，无需额外端口）。
+
 ## 5. 刷盘：两种策略一个基类
 
 先钉死数据路径的两个阶段。mmap 映射后，全局锁内那次 memcpy（`mappedByteBuffer.slice().put(...)`）**写的就是 page cache 本身**——堆外切片经页表直接映射到内核页，没有 write 系统调用，也不存在"堆 → page cache"的第二次拷贝（普通 write 路径才有这次内核拷贝）；但此时数据只是脏页，断电即丢。真正的落盘步骤是 [MappedFile.flush()](../jaws-store/src/main/java/org/hongxi/jaws/store/MappedFile.java) 里的 `fileChannel.force(false)`——mmap 场景下 fsync 的对应物（msync），把该文件脏页写回磁盘并等待设备确认，毫秒级重操作；`false` 表示不额外强刷元数据：文件长度在 map 时已定死，追加写不改文件尺寸。下表中"已进 page cache"指只完成第一阶段，两种策略里的"fsync"一律指第二阶段的 `force(false)`。
@@ -185,7 +194,7 @@ swap-list（requestsWrite/requestsRead 双列表 + ReentrantLock/Condition）让
 | broker 发现 | directUrl 逗号分隔多 broker，或注册中心 5s diff 刷新；上线建连展开订阅、下线停泵保留位点 | NameServer 路由 + rebalance 触发的最小替代（不做队列分配） |
 | [LocalOffsetStore](../jaws-store/src/main/java/org/hongxi/jaws/store/client/LocalOffsetStore.java) | **客户端自管位点**（Kafka 风格）：Properties 文件 + temp file 原子 move，键 `brokerName@topic@queueId` | 声明式偏离：不做 broker 端位点存储 |
 
-RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java) 只有三个方法，均返回 CompletableFuture：`putAsync(StoreMessage)`、`pullAsync(topic, queueId, offset, maxBatch, suspendTimeoutMillis)` 与 `brokerInfoAsync()`（上报 brokerName，消费端位点的身份锚点）。长轮询的挂起对 jaws 协议就是一次"响应来得晚的普通异步调用"——provider 端全链路异步（返回 future 即挂起，不占业务线程等待）在这里拿到了真实场景，15s/30s/25s 的三级预算见 §4.4。
+RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreService.java) 只有三个方法，均返回 CompletableFuture：`putAsync(StoreMessage)`、`pullAsync(topic, queueId, offset, maxBatch, suspendTimeoutMillis)` 与 `brokerInfoAsync()`（上报 brokerName，消费端位点的身份锚点）。长轮询的挂起对 jaws 协议就是一次"响应来得晚的普通异步调用"——provider 端全链路异步（返回 future 即挂起，不占业务线程等待）在这里拿到了真实场景，15s/30s/25s 的三级预算见 §4.4。另有一个同端口导出、按偏移直读单条的运维查询契约 [StoreAdminService](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreAdminService.java)（见 §4.5），与数据链路解耦。
 
 ### 7.1 多 master 分片：多实例扩展，不是 HA
 
@@ -209,7 +218,7 @@ RPC 契约 [StoreService](../jaws-store/src/main/java/org/hongxi/jaws/store/Stor
 
 | # | 根因 | 证据 | 修复 |
 |---|---|---|---|
-| 1 | fastjson2 类初始化风暴：首个 JSONB 请求触发 `JSONFactory.<clinit>`，200 线程同堵 class-init monitor | dump 中全员 `waiting on the Class initialization monitor for com.alibaba.fastjson2.JSONFactory` | [StoreBroker](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreBroker.java) 导出前对 5 个 wire POJO 做序列化 round-trip 预热 |
+| 1 | fastjson2 类初始化风暴：首个 JSONB 请求触发 `JSONFactory.<clinit>`，200 线程同堵 class-init monitor | dump 中全员 `waiting on the Class initialization monitor for com.alibaba.fastjson2.JSONFactory` | [StoreBroker](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreBroker.java) 导出前对 6 个 wire POJO 做序列化 round-trip 预热 |
 | 2 | 零容量队列准入上限：jaws 默认 `workerQueueSize=0`，`maxSubmittedTasks = maxWorkerThreads + queueSize = 200`，在途超 200 即 fail-fast | EXHAUSTED 日志 `task: 542 (completed: 342)`；EagerThreadPoolExecutor 容量公式 | broker 配 `workerQueueSize=1000` + `minWorkerThreads=200`（prestart 全池，首波不付建线程成本） |
 | 3 | 客户端无流控：tight async loop 无限放大突发 | 窗口 512 仍打满 200 线程的对照实验 | StoreProducer 加 Semaphore inflight 窗口 |
 
@@ -248,13 +257,14 @@ java ... org.hongxi.jaws.sample.store.StoreProducerMain
 
 环境：macOS arm64（Apple Silicon）/ Temurin JDK 21 / loopback 直连 / fastjson2 JSONB / 单 topic 单队列 / 消息体约 10 字节。数据为 `run-sample.sh store` 实测（producer 端计时，含 RPC 往返）。
 
-**单元测试**：16 个用例全部通过——
+**单元测试**：17 个用例全部通过——
 
 | 测试类 | 覆盖 |
 |---|---|
 | CommitLogTest（5） | 写读回环、文件滚动保内容与位点、恢复接续 queueOffset、超大消息拒绝、多队列位点独立 |
 | MessageStoreTest（6） | 跨文件边界拉取、组提交满足整批、重启重放重建索引、长轮询到达唤醒、长轮询超时返回、非法位点上报 |
 | StoreRpcTest（1） | 走真实 jaws 协议的 broker + producer + consumer 端到端（consumer 先启动触发长轮询挂起） |
+| StoreAdminRpcTest（1） | 同端口 StoreService/StoreAdminService 双导出共存、按偏移直读命中、越界 NOT_FOUND |
 | StoreMultiBrokerTest（4） | brokerName 身份持久化与改名拒启、跨 broker 位点隔离与重启续读、注册中心发现与 broker 下线后 survivor 续消费、consistentHash 队列钉扎单 broker |
 
 **吞吐实测**：

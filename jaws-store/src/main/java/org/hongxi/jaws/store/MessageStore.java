@@ -222,6 +222,16 @@ public class MessageStore implements ReputMessageService.DispatchListener {
         return consumeQueue == null ? 0 : consumeQueue.getMaxOffsetInQueue();
     }
 
+    /**
+     * Admin single-record lookup by physical CommitLog offset. Bypasses both the
+     * ConsumeQueue index and any IndexFile — the offset is authoritative, so the
+     * record is read straight from the log (RocketMQ VIEW_MESSAGE_BY_ID shape).
+     * Null when no valid record starts at the offset.
+     */
+    public MessageView viewMessage(long commitLogOffset) {
+        return commitLog.viewMessage(commitLogOffset);
+    }
+
     public void shutdown() {
         stopped = true;
         if (cqFlushThread != null) {
