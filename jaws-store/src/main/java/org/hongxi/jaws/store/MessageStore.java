@@ -34,7 +34,7 @@ import java.util.stream.Stream;
  */
 public class MessageStore implements ReputMessageService.DispatchListener {
 
-    private static final Logger logger = LoggerFactory.getLogger(MessageStore.class);
+    private static final Logger log = LoggerFactory.getLogger(MessageStore.class);
 
     private final StoreConfig config;
     private final CommitLog commitLog;
@@ -84,7 +84,7 @@ public class MessageStore implements ReputMessageService.DispatchListener {
         pullRequestHoldService.start();
         startCqFlushTicker();
         startCleanupTicker();
-        logger.info("MessageStore started, storePath={}, syncFlush={}", config.getStorePath(), config.isSyncFlush());
+        log.info("MessageStore started, storePath={}, syncFlush={}", config.getStorePath(), config.isSyncFlush());
     }
 
     /**
@@ -134,7 +134,7 @@ public class MessageStore implements ReputMessageService.DispatchListener {
             offset += entry.getSize();
             replayed++;
         }
-        logger.info("Replayed {} messages to rebuild ConsumeQueues", replayed);
+        log.info("Replayed {} messages to rebuild ConsumeQueues", replayed);
     }
 
     private void startCqFlushTicker() {
@@ -177,7 +177,7 @@ public class MessageStore implements ReputMessageService.DispatchListener {
                 try {
                     cleanupFiles();
                 } catch (Exception e) {
-                    logger.warn("Cleanup sweep failed, retry next interval", e);
+                    log.warn("Cleanup sweep failed, retry next interval", e);
                 }
             }
         }, "StoreCleanup");
@@ -433,7 +433,7 @@ public class MessageStore implements ReputMessageService.DispatchListener {
             consumeQueue.shutdown();
         }
         commitLog.shutdown();
-        logger.info("MessageStore stopped");
+        log.info("MessageStore stopped");
     }
 
     public StoreConfig getConfig() {

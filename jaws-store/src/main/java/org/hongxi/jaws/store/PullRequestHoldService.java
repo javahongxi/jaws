@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class PullRequestHoldService {
 
-    private static final Logger logger = LoggerFactory.getLogger(PullRequestHoldService.class);
+    private static final Logger log = LoggerFactory.getLogger(PullRequestHoldService.class);
 
     /** One suspended pull. {@code completed} guards the wakeup/timeout race:
      * exactly one path may complete the future. */
@@ -124,6 +124,6 @@ public class PullRequestHoldService {
                 wakeup(request);
             }
         }
-        logger.info("PullRequestHoldService stopped");
+        log.info("PullRequestHoldService stopped");
     }
 }

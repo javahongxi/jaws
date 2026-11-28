@@ -37,7 +37,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class CommitLog {
 
-    private static final Logger logger = LoggerFactory.getLogger(CommitLog.class);
+    private static final Logger log = LoggerFactory.getLogger(CommitLog.class);
 
     /** Held-lock duration beyond which the page cache is considered stalled. */
     private static final long PAGE_CACHE_BUSY_MILLIS = 1000;
@@ -111,7 +111,7 @@ public class CommitLog {
         }
         last.setWrotePosition(pos);
         long maxOffset = last.getFileFromOffset() + pos;
-        logger.info("CommitLog recovered, maxOffset={}", maxOffset);
+        log.info("CommitLog recovered, maxOffset={}", maxOffset);
         return maxOffset;
     }
 

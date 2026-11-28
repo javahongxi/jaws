@@ -17,7 +17,7 @@ import java.nio.ByteBuffer;
  */
 public class ConsumeQueue {
 
-    private static final Logger logger = LoggerFactory.getLogger(ConsumeQueue.class);
+    private static final Logger log = LoggerFactory.getLogger(ConsumeQueue.class);
 
     public static final int CQ_STORE_UNIT_SIZE = 20;
 
@@ -48,7 +48,7 @@ public class ConsumeQueue {
         long bytePos = queueOffset * CQ_STORE_UNIT_SIZE;
         MappedFile mappedFile = mappedFileQueue.getLastMappedFile(bytePos);
         if (mappedFile == null) {
-            logger.error("Failed to create ConsumeQueue file for {}@{}", topic, queueId);
+            log.error("Failed to create ConsumeQueue file for {}@{}", topic, queueId);
             return false;
         }
         unitBuffer.clear();

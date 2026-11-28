@@ -38,7 +38,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class ConsumerLeaseStore {
 
-    private static final Logger logger = LoggerFactory.getLogger(ConsumerLeaseStore.class);
+    private static final Logger log = LoggerFactory.getLogger(ConsumerLeaseStore.class);
 
     /** Holder plus its deadline; a lease is never held past {@code deadlineMillis}. */
     private static final class Lease {
@@ -188,7 +188,7 @@ public class ConsumerLeaseStore {
                 }
             }
             if (expired > 0) {
-                logger.info("{} consumer lease(s) expired, queues released to the next claim", expired);
+                log.info("{} consumer lease(s) expired, queues released to the next claim", expired);
             }
         }
     }

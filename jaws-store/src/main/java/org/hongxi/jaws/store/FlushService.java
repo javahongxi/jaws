@@ -11,7 +11,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public abstract class FlushService {
 
-    private static final Logger logger = LoggerFactory.getLogger(FlushService.class);
+    private static final Logger log = LoggerFactory.getLogger(FlushService.class);
 
     protected final CommitLog commitLog;
     private final String serviceName;
@@ -48,7 +48,7 @@ public abstract class FlushService {
             }
         }
         commitLog.flush();
-        logger.info("{} stopped", serviceName);
+        log.info("{} stopped", serviceName);
     }
 
     protected boolean isStopped() {

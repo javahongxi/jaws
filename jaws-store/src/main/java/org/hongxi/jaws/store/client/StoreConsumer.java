@@ -90,7 +90,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class StoreConsumer {
 
-    private static final Logger logger = LoggerFactory.getLogger(StoreConsumer.class);
+    private static final Logger log = LoggerFactory.getLogger(StoreConsumer.class);
 
     /** Interval between registry discovery refreshes. */
     private static final long DISCOVERY_REFRESH_INTERVAL_SECONDS = 5;
@@ -256,7 +256,7 @@ public class StoreConsumer {
         // and the next pull drives the real re-claim-or-stand-down decision.
         long renewInterval = Math.max(1000, consumerLeaseMillis / 3);
         pumpExecutor.scheduleAtFixedRate(this::renewLeases, renewInterval, renewInterval, TimeUnit.MILLISECONDS);
-        logger.info("StoreConsumer started (consumerId={}), {} template(s), mode={}", consumerId,
+        log.info("StoreConsumer started (consumerId={}), {} template(s), mode={}", consumerId,
                 templates.size(), registries == null ? "direct" : "registry");
     }
 
@@ -327,7 +327,7 @@ public class StoreConsumer {
             subscriptions.put(brokerName + "@" + template.topic + "@" + template.queueId, subscription);
             pumpExecutor.execute(() -> pump(subscription));
         }
-        logger.info("Broker attached: {} ({}), {} subscription(s)", brokerName, address, templates.size());
+        log.info("Broker attached: {} ({}), {} subscription(s)", brokerName, address, templates.size());
     }
 
     /**
@@ -385,7 +385,7 @@ public class StoreConsumer {
             starts.put(entry.getKey(), tail);
             bootstrapped.put(entry.getKey(), tail);
         }
-        logger.info("Group {} is new on {}, starting {} queue(s) at the tail: {}",
+        log.info("Group {} is new on {}, starting {} queue(s) at the tail: {}",
                 consumerGroup, connection.brokerName, bootstrapped.size(), bootstrapped);
         return starts;
     }
@@ -454,10 +454,10 @@ public class StoreConsumer {
                             subscription.queueId, consumerId)
                     .whenComplete((result, ex) -> {
                         if (ex != null) {
-                            logger.warn("Lease renew failed for {}@{}@{}",
+                            log.warn("Lease renew failed for {}@{}@{}",
                                     subscription.broker.brokerName, subscription.topic, subscription.queueId, ex);
                         } else if (!result.isGranted()) {
-                            logger.warn("Lease renew rejected for {}@{}@{}, a pull will re-claim or stand down",
+                            log.warn("Lease renew rejected for {}@{}@{}, a pull will re-claim or stand down",
                                     subscription.broker.brokerName, subscription.topic, subscription.queueId);
                         }
                     });
@@ -471,7 +471,7 @@ public class StoreConsumer {
                 connection.storeService.releaseLeaseAsync(consumerGroup, template.topic, template.queueId, consumerId)
                         .get(2, TimeUnit.SECONDS);
             } catch (Exception e) {
-                logger.warn("Lease release failed for {}@{}@{} on {}",
+                log.warn("Lease release failed for {}@{}@{} on {}",
                         connection.brokerName, template.topic, template.queueId, consumerId, e);
             }
         }
@@ -520,7 +520,7 @@ public class StoreConsumer {
                         subscription.queueId, offset, increaseOnly)
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
-                        logger.warn("Offset commit failed for {}@{}@{} = {}",
+                        log.warn("Offset commit failed for {}@{}@{} = {}",
                                 subscription.broker.brokerName, subscription.topic, subscription.queueId, offset, ex);
                     }
                 });
@@ -539,7 +539,7 @@ public class StoreConsumer {
             }
         }
         connection.referenceConfig.destroy();
-        logger.info("Broker detached: {} ({})", connection.brokerName, address);
+        log.info("Broker detached: {} ({})", connection.brokerName, address);
     }
 
     /**
@@ -562,7 +562,7 @@ public class StoreConsumer {
                     try {
                         addBroker(address);
                     } catch (Exception e) {
-                        logger.warn("Failed to attach broker {}, retry next refresh", address, e);
+                        log.warn("Failed to attach broker {}, retry next refresh", address, e);
                     }
                 }
             }
@@ -572,7 +572,7 @@ public class StoreConsumer {
                 }
             }
         } catch (Exception e) {
-            logger.warn("Broker discovery refresh failed, retry next interval", e);
+            log.warn("Broker discovery refresh failed, retry next interval", e);
         }
     }
 
@@ -596,7 +596,7 @@ public class StoreConsumer {
         }
         String brokerName = subscription.broker.brokerName;
         if (ex != null) {
-            logger.warn("Pull failed for {}@{}@{}, retry in 1s", brokerName, subscription.topic, subscription.queueId, ex);
+            log.warn("Pull failed for {}@{}@{}, retry in 1s", brokerName, subscription.topic, subscription.queueId, ex);
             pumpExecutor.schedule(() -> pump(subscription), 1000, TimeUnit.MILLISECONDS);
             return;
         }
@@ -611,7 +611,7 @@ public class StoreConsumer {
                     try {
                         subscription.listener.onMessage(messages);
                     } catch (Throwable t) {
-                        logger.error("Listener failed for {}@{}@{}, offset not advanced",
+                        log.error("Listener failed for {}@{}@{}, offset not advanced",
                                 brokerName, subscription.topic, subscription.queueId, t);
                         return;
                     }
@@ -627,7 +627,7 @@ public class StoreConsumer {
                 emptyShortPoll = suspendTimeoutMillis <= 0;
             }
             case OFFSET_ILLEGAL -> {
-                logger.warn("Offset reset for {}@{}@{}: {} -> {}", brokerName, subscription.topic, subscription.queueId,
+                log.warn("Offset reset for {}@{}@{}: {} -> {}", brokerName, subscription.topic, subscription.queueId,
                         subscription.pullOffset, result.getNextBeginOffset());
                 subscription.pullOffset = result.getNextBeginOffset();
                 // A reset may move backwards (the requested offset was already
@@ -648,12 +648,12 @@ public class StoreConsumer {
                     reclaim = null;
                 }
                 if (reclaim != null && reclaim.isGranted()) {
-                    logger.info("Reclaimed lease for {}@{}@{}, resuming pump", brokerName,
+                    log.info("Reclaimed lease for {}@{}@{}, resuming pump", brokerName,
                             subscription.topic, subscription.queueId);
                     pumpExecutor.execute(() -> pump(subscription));
                 } else {
                     subscription.active = false;
-                    logger.error("Lost lease for {}@{}@{}: consumer {} is not the holder{}, pump stopped",
+                    log.error("Lost lease for {}@{}@{}: consumer {} is not the holder{}, pump stopped",
                             brokerName, subscription.topic, subscription.queueId, consumerId,
                             reclaim == null ? " (reclaim unreachable)" : " (held by " + reclaim.getHolder() + ")");
                 }
@@ -703,10 +703,10 @@ public class StoreConsumer {
                         subscription.queueId, consumerId).get(2, TimeUnit.SECONDS);
             } catch (Exception e) {
                 if (isBrokerUnreachable(e)) {
-                    logger.debug("Skipping lease hand-back for {}@{}@{}: broker unreachable",
+                    log.debug("Skipping lease hand-back for {}@{}@{}: broker unreachable",
                             subscription.broker.brokerName, subscription.topic, subscription.queueId);
                 } else {
-                    logger.warn("Lease release on shutdown failed for {}@{}@{}",
+                    log.warn("Lease release on shutdown failed for {}@{}@{}",
                             subscription.broker.brokerName, subscription.topic, subscription.queueId, e);
                 }
             }
@@ -719,7 +719,7 @@ public class StoreConsumer {
         if (discoveryReference != null) {
             discoveryReference.destroy();
         }
-        logger.info("StoreConsumer stopped");
+        log.info("StoreConsumer stopped");
     }
 
     public void setPullBatchSize(int pullBatchSize) {

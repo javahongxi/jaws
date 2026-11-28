@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class StoreBroker {
 
-    private static final Logger logger = LoggerFactory.getLogger(StoreBroker.class);
+    private static final Logger log = LoggerFactory.getLogger(StoreBroker.class);
 
     public static final String GROUP = "store";
     public static final String VERSION = "1.0";
@@ -135,7 +135,7 @@ public class StoreBroker {
         leaseStore.start();
         warmUpSerialization();
         serviceConfig.export();
-        logger.info("StoreBroker listening on port {}", port);
+        log.info("StoreBroker listening on port {}", port);
     }
 
     /**
@@ -170,7 +170,7 @@ public class StoreBroker {
                 throw new IOException("Serialization warm-up failed for " + sample.getClass(), e);
             }
         }
-        logger.info("Serialization warmed up for {} wire types", samples.length);
+        log.info("Serialization warmed up for {} wire types", samples.length);
     }
 
     public void shutdown() {

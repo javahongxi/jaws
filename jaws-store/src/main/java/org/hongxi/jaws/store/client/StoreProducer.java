@@ -22,7 +22,7 @@ import java.util.concurrent.TimeoutException;
  * Thin producer over the jaws reference proxy. The wire call is always
  * async; the three send semantics are client-side sugar:
  * sync = future.get with timeout, async = the future itself, oneway = fire
- * and forget with a failure logger.
+ * and forget with a failure log.
  *
  * <p>An inflight semaphore caps concurrent wire calls: without it a tight
  * async loop outruns the broker's bounded business pool, whose fail-fast
@@ -42,7 +42,7 @@ import java.util.concurrent.TimeoutException;
  */
 public class StoreProducer {
 
-    private static final Logger logger = LoggerFactory.getLogger(StoreProducer.class);
+    private static final Logger log = LoggerFactory.getLogger(StoreProducer.class);
 
     /** Default cap on concurrent wire calls (inflight window). */
     public static final int DEFAULT_MAX_INFLIGHT = 512;
@@ -170,9 +170,9 @@ public class StoreProducer {
             storeService.putAsync(message).whenComplete((result, ex) -> {
                 inflight.release();
                 if (ex != null) {
-                    logger.warn("Oneway send failed", ex);
+                    log.warn("Oneway send failed", ex);
                 } else if (!result.isOk()) {
-                    logger.warn("Oneway send rejected: {}", result.getStatus());
+                    log.warn("Oneway send rejected: {}", result.getStatus());
                 }
             });
         } catch (RuntimeException e) {

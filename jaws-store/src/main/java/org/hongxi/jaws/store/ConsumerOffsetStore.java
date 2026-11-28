@@ -41,7 +41,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class ConsumerOffsetStore {
 
-    private static final Logger logger = LoggerFactory.getLogger(ConsumerOffsetStore.class);
+    private static final Logger log = LoggerFactory.getLogger(ConsumerOffsetStore.class);
 
     private final StoreConfig config;
     private final ConcurrentMap<String, Long> offsetTable = new ConcurrentHashMap<>();
@@ -71,7 +71,7 @@ public class ConsumerOffsetStore {
                     persist();
                 } catch (Exception e) {
                     // One failed snapshot must not stop the group from tracking progress.
-                    logger.warn("Offset snapshot failed, retry next interval", e);
+                    log.warn("Offset snapshot failed, retry next interval", e);
                 }
             }
         }, "StoreOffsetFlush");
@@ -124,7 +124,7 @@ public class ConsumerOffsetStore {
             }
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            logger.warn("Failed to persist offsets to {}", file, e);
+            log.warn("Failed to persist offsets to {}", file, e);
         }
     }
 
@@ -137,17 +137,17 @@ public class ConsumerOffsetStore {
         try (InputStream in = Files.newInputStream(file)) {
             properties.load(in);
         } catch (IOException e) {
-            logger.warn("Failed to load offsets from {}", file, e);
+            log.warn("Failed to load offsets from {}", file, e);
             return;
         }
         for (Map.Entry<Object, Object> entry : properties.entrySet()) {
             try {
                 offsetTable.put(String.valueOf(entry.getKey()), Long.parseLong(String.valueOf(entry.getValue())));
             } catch (NumberFormatException e) {
-                logger.warn("Ignoring malformed offset entry {}={}", entry.getKey(), entry.getValue());
+                log.warn("Ignoring malformed offset entry {}={}", entry.getKey(), entry.getValue());
             }
         }
-        logger.info("Loaded {} consumer offsets from {}", offsetTable.size(), file);
+        log.info("Loaded {} consumer offsets from {}", offsetTable.size(), file);
     }
 
     /** Stop the ticker and take a final snapshot. */

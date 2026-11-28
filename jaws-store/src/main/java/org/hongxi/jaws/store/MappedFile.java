@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class MappedFile {
 
-    private static final Logger logger = LoggerFactory.getLogger(MappedFile.class);
+    private static final Logger log = LoggerFactory.getLogger(MappedFile.class);
 
     private final File file;
     private final int fileSize;
@@ -72,7 +72,7 @@ public class MappedFile {
         }
         if (created) {
             warmUp();
-            logger.info("Created mapped file {}, size {}", file.getName(), fileSize);
+            log.info("Created mapped file {}, size {}", file.getName(), fileSize);
         }
     }
 
@@ -163,9 +163,9 @@ public class MappedFile {
                 // Losing the tail flush is harmless: page cache survives process
                 // exit, and ConsumeQueue is rebuilt from the CommitLog anyway.
                 closed = true;
-                logger.debug("Flush of {} interrupted by shutdown, channel closed", file.getName());
+                log.debug("Flush of {} interrupted by shutdown, channel closed", file.getName());
             } else if (!closed) {
-                logger.error("Failed to flush {}", file.getName(), e);
+                log.error("Failed to flush {}", file.getName(), e);
             }
         }
         return flushedPosition.get();
@@ -176,7 +176,7 @@ public class MappedFile {
         try {
             fileChannel.close();
         } catch (IOException e) {
-            logger.warn("Failed to close {}", file.getName(), e);
+            log.warn("Failed to close {}", file.getName(), e);
         }
     }
 
@@ -191,7 +191,7 @@ public class MappedFile {
         close();
         boolean deleted = file.delete();
         if (!deleted) {
-            logger.warn("Failed to delete mapped file {}", file.getName());
+            log.warn("Failed to delete mapped file {}", file.getName());
         }
         return deleted;
     }

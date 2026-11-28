@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
  */
 public class ReputMessageService {
 
-    private static final Logger logger = LoggerFactory.getLogger(ReputMessageService.class);
+    private static final Logger log = LoggerFactory.getLogger(ReputMessageService.class);
 
     /** Idle poll step, and the retry spacing bounds for a held position. */
     private static final long IDLE_SLEEP_MILLIS = 1;
@@ -110,7 +110,7 @@ public class ReputMessageService {
                 }
                 if (fused) {
                     fused = false;
-                    logger.info("Index dispatch healed at offset {}: write path re-opened", reputFromOffset);
+                    log.info("Index dispatch healed at offset {}: write path re-opened", reputFromOffset);
                     listener.onIndexHealthChanged(true);
                 }
                 reputFromOffset += entry.getSize();
@@ -133,7 +133,7 @@ public class ReputMessageService {
                 // spacing widens so a fault that will not clear cannot turn into
                 // a hot loop of failed file creations.
                 if (!stalled) {
-                    logger.warn("Reput held at offset {}: index dispatch failed, retrying", reputFromOffset);
+                    log.warn("Reput held at offset {}: index dispatch failed, retrying", reputFromOffset);
                     stalled = true;
                 }
                 if (!fused && heldAttempts >= dispatchMaxRetries) {
@@ -143,7 +143,7 @@ public class ReputMessageService {
                     // over is what cannot be afforded here (zero unit in an array-addressed
                     // queue), so only the write gate is taken and the position keeps being held.
                     fused = true;
-                    logger.error("Reput exceeded {} attempts on offset {}: index declared broken, write path fused",
+                    log.error("Reput exceeded {} attempts on offset {}: index declared broken, write path fused",
                             dispatchMaxRetries, reputFromOffset);
                     listener.onIndexHealthChanged(false);
                 }
@@ -169,7 +169,7 @@ public class ReputMessageService {
                 }
             }
         }
-        logger.info("ReputMessageService stopped at offset {}", reputFromOffset);
+        log.info("ReputMessageService stopped at offset {}", reputFromOffset);
     }
 
     public void shutdown() {

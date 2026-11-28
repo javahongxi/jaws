@@ -22,7 +22,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class MappedFileQueue {
 
-    private static final Logger logger = LoggerFactory.getLogger(MappedFileQueue.class);
+    private static final Logger log = LoggerFactory.getLogger(MappedFileQueue.class);
 
     private final String storePath;
     private final int mappedFileSize;
@@ -45,7 +45,7 @@ public class MappedFileQueue {
         Arrays.sort(files);
         for (File file : files) {
             if (file.length() != mappedFileSize) {
-                logger.warn("Skip file {} with unexpected length {}", file.getName(), file.length());
+                log.warn("Skip file {} with unexpected length {}", file.getName(), file.length());
                 continue;
             }
             try {
@@ -53,7 +53,7 @@ public class MappedFileQueue {
                 mappedFile.setWrotePosition(mappedFileSize);
                 mappedFiles.add(mappedFile);
             } catch (IOException e) {
-                logger.error("Failed to load mapped file {}", file.getName(), e);
+                log.error("Failed to load mapped file {}", file.getName(), e);
                 return false;
             }
         }
@@ -111,7 +111,7 @@ public class MappedFileQueue {
             mappedFiles.add(created);
             return created;
         } catch (IOException e) {
-            logger.error("Failed to create mapped file {}", fileName, e);
+            log.error("Failed to create mapped file {}", fileName, e);
             return null;
         }
     }
@@ -198,7 +198,7 @@ public class MappedFileQueue {
             first.destroy();
             mappedFiles.remove(0);
             deleted++;
-            logger.info("Deleted expired file {} (retention={}ms, protectOffset={})",
+            log.info("Deleted expired file {} (retention={}ms, protectOffset={})",
                     first.getFileName(), retentionMillis, protectFromOffset);
         }
         return deleted;
