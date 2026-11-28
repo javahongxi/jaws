@@ -162,7 +162,7 @@ ROLE=producer PRODUCERS=2 STORE_PATH=/tmp/jaws-bench-rpc PORT=10911 ./run-sample
 
 ## 11. 写读分池 + 派发池弹性化：消除 §9 的 40002
 
-§9 的 `SEND_FAILED`/`40002` 不是「线程不够」，而是**写任务在共享派发池上占锁饿死读**：`putMessageAsync` 在 ASYNC_FLUSH 下同步于 RPC worker 线程跑完 `commitLog.putMessage`（序列化后「进全局 `putMessageLock` + memcpy」整段占着 worker，`submitFlush` 只在 SYNC_FLUSH 才 offload）。16 生产者写压把 200 个 worker 全堵在锁上排队，`pull`/`query`/`commit` 拿不到线程 → broker 报 `40002 full thread pool`。长轮询挂起本身不占 worker（空 pull 注册 `HoldRequest` 拿 future 即返回，由 reput/扫描线程事后 complete），这与 RocketMQ `PullRequestHoldService` 的非阻塞模型同款——所以该学的「挂起不占线程」一半早已对齐，缺的是**写别占着派发线程**。
+`40002` 的表象确实是 worker 被打满（池子满了），但**真因不是线程池容量不够（加线程解决不了）**，而是**写任务在共享派发池上占锁饿死读**：`putMessageAsync` 在 ASYNC_FLUSH 下同步于 RPC worker 线程跑完 `commitLog.putMessage`（序列化后「进全局 `putMessageLock` + memcpy」整段占着 worker，`submitFlush` 只在 SYNC_FLUSH 才 offload）。16 生产者写压把 200 个 worker 全堵在锁上排队，`pull`/`query`/`commit` 拿不到线程 → broker 报 `40002 full thread pool`。长轮询挂起本身不占 worker（空 pull 注册 `HoldRequest` 拿 future 即返回，由 reput/扫描线程事后 complete），这与 RocketMQ `PullRequestHoldService` 的非阻塞模型同款——所以该学的「挂起不占线程」一半早已对齐，缺的是**写别占着派发线程**。
 
 改动（[StoreBroker](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreBroker.java)，均在 store 模块内，不动 jaws-core）：
 
