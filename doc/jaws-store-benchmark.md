@@ -190,3 +190,64 @@ Consumer 监控：**`cons≈prod` 全程贴合（逐秒 ~100–130k），backlog
 2. **读侧无回退**：派发池 min 降到 32 后，单消费者仍在整段可达产量内跟平、backlog≈0，弹性池 + 深队列没饿到读。**验收通过**。
 3. **吞吐天花板不变**：自由跑 ~107k/s，与 §9 的 ~125k、§10 的 ~128k 同处 ~100–130k 的 RPC 写天花板带内（序列化 + 全局锁串行决定，与线程数无关）。本轮 107k 略低于 §9 属写多一跳 + run 波动，**不是读侧问题**（读完全跟平）；这批改动的价值是隔离性与内存卫生，不是提速率。
 4. **对照 RocketMQ**：RocketMQ 按请求类型拆 ~14 个专用池；jaws-store 只拆最关键的写/读一刀（一个写池 + 共享派发），不做全框架多池化——够用且契合单 master 定位。
+
+## 12. 读延迟随写负载的抬升：固定读 + 阶梯写（StoreReadIsolationBenchmark）
+
+§11 把写 offload 到独立池消除了 40002，随之而来的问题是——**读路径现在是否已完全不受写影响，从而不必再考虑方法级线程池隔离**？静态层面 §11 已证读不持写锁（`CommitLog.getMessage` 走 mmap slice，与 `putMessageLock` 无关），但「完全不受影响」只能靠实测。工具 [StoreReadIsolationBenchmark](../jaws-samples/jaws-sample-store/src/main/java/org/hongxi/jaws/sample/store/StoreReadIsolationBenchmark.java)：钉住**读负载**不变，逐档叠加**写 QPS**，比较各档读延迟分位是否被写抬高——读侧负载恒定，故任何漂移只可能来自 broker 吸收并发写。环境同 §1（M2 NVMe / JDK 21）。
+
+**分进程是硬要求，不是优化**。同一个 JVM 内所有指向同一 `host:port` 的 `ReferenceConfig` 复用一条客户端连接（[AbstractTransportFactory](../jaws-core/src/main/java/org/hongxi/jaws/transport/AbstractTransportFactory.java) 的连接池以 hostPort 为键），读写若同进程会在**客户端 EventLoop 上串行**、伪造出「写拖累读」的假信号。故三进程各司一职、各持独立连接：broker / reader / writer，相位用统一 `startAt` 墙钟对齐（`currentPhase = (now-startAt)/phaseSeconds`，两进程同式）。读侧从预播种、已全量派发进索引的 `[0, seedPerQueue)` 区间循环 pull（`suspendTimeout=0` 短轮询，每条 pull 都是真读），`nf%≈0` 印证全程 FOUND。
+
+三轮实测（queues=8 / seed/queue=20000 / readerThreads=4 / readRps=3000 / pullBatch=16 / writerConns=4 / phase=20s；单位 µs）：
+
+读 **p50**（行=轮次，列=写档 target）：
+
+| 轮 | 0 | 10k | 30k | 60k | 100k |
+|---|---|---|---|---|---|
+| r1 | 136.0 | 67.5 | 67.8 | 79.8 | **107.4** |
+| r2 | 143.0 | 156.9 | 73.0 | 74.9 | **112.5** |
+| r3 | 129.8 | 98.9 | 69.0 | 85.6 | **114.8** |
+
+读 **p99**：
+
+| 轮 | 0 | 10k | 30k | 60k | 100k |
+|---|---|---|---|---|---|
+| r1 | 197.9 | 167.1 | 133.6 | 212.8 | **261.0** |
+| r2 | 438.8 | 278.2 | 184.3 | 293.1 | **273.8** |
+| r3 | 189.3 | 192.9 | 141.3 | 377.7 | **369.0** |
+
+p999/max 三轮均无单调规律（数百 µs 到 ~18ms 抖动），按纪律属单点值不归因。写侧实测到达 9.9k/29.9k/59.5k/98.9k per-s，`failed` 全 0——唯 r2 在 60k 档失败 40,871、r3 在 100k 档失败 75,507，属间歇性写侧背压。
+
+**结论**：
+
+1. **baseline（写=0）读数不可信为「无写基线」**：phase 0 恰是第一个被记录窗口，JIT/page-cache 未沉淀，p50 反而最高（130–143µs）；稳定低点在 30k 档（p50 67–73、p99 134–184）。判趋势须排除 phase 0 这个窗口排序伪影。
+2. **排除 baseline 后确有轻微、可复现的抬升**：100k 档在三轮里都给出相位 1–4 的最高 p50（107/112/115），相对 30k 档约 **+50~60% p50**、p99 从 ~140–180µs 抬到 ~260–370µs。方向一致，幅度亚毫秒。
+3. **读侧全程健康**：`nf%≈0`、`stall%` 仅 0.0x%，最高写档也没出现读被拒或持续失速——抬升是「变慢一点」而非「断崖」。
+4. **耦合点不是存储锁、不是客户端连接**：读不持写锁（§11），读写已分连接。残留耦合来自 **broker 侧共享派发池**（`NettyChannelHandler` 把 pull 与 put 都投进同一 `serverExecutor`）叠加写对 page cache 的挤占——正是 §11 遗留的那道「选池在 decode 前、头部无 service 标识」的缝。写侧 60k+ 的间歇拒写亦与此同源（读 pull 计入后，聚合 RPC 更贴近 §9/§11 的 ~100–130k 天花板带）。
+5. **对线程池隔离的判定**：「读完全不受写影响」严格不成立——存在随写 QPS 的温和抬升，源于共享派发池而非写锁。但量级（亚毫秒漂移、零读失败）远低于典型 RPC 超时预算。当前工作负载下，§11 的写 offload 已消除饿死型干扰，剩余派发池耦合属可接受轻度耦合，**不必为「证明完全隔离」再上方法级线程池拆分**；只有把写压到 100k+ 且对读尾延迟有硬 SLA 时，才值得引入 ExecutorSelector 读写分池。
+
+复跑（三终端；`MODE` 选角色，读写各持独立连接，靠 `startAt` 对齐相位；先起 broker，再记一个未来时刻 `T=now+20000ms`，reader/writer 传同一 `startAt=$T`）：
+
+```bash
+# 先编译（单模块需先 install 依赖）
+./mvnw -o -pl jaws-store,jaws-samples/jaws-sample-store -am install -DskipTests
+CP="jaws-samples/jaws-sample-store/target/classes:$(./mvnw -q -o -pl jaws-samples/jaws-sample-store dependency:build-classpath -Dmdep.outputFile=/dev/stdout)"
+MAIN=org.hongxi.jaws.sample.store.StoreReadIsolationBenchmark
+
+# 终端 1：broker
+java -cp "$CP" -Drole=broker -Dport=10911 -DstorePath=/tmp/jaws-store-iso -Dqueues=8 $MAIN
+
+# 记一个统一起点（留足时间播种 + 起另一进程）
+T=$(( $(python3 -c 'import time;print(int(time.time()*1000))') + 20000 ))
+STEPS=0,10000,30000,60000,100000
+
+# 终端 2：reader（负责 lease + 播种 160k + 测读延迟分位）
+java -cp "$CP" -Drole=client -Dmode=reader -Dport=10911 -DstartAt=$T \
+  -Dqueues=8 -DseedPerQueue=20000 -DreaderThreads=4 -DreadRps=3000 -DpullBatch=16 \
+  -DwriteSteps=$STEPS -DphaseSeconds=20 $MAIN
+
+# 终端 3：writer（叠加阶梯写 overlay，同 startAt 对齐）
+java -cp "$CP" -Drole=client -Dmode=writer -Dport=10911 -DstartAt=$T \
+  -Dqueues=8 -DmsgSize=128 -DwriterConns=4 -DwriteSteps=$STEPS -DphaseSeconds=20 $MAIN
+```
+
+单进程冒烟可用 `-Drole=all -Dmode=all`（自带 in-process broker，读写共用一条连接，绝对值偏悲观、仅供流程验证）；正式数据一律走上述分进程。
