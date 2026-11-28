@@ -14,8 +14,13 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Assembles the storage engine and exposes it over the jaws protocol —
@@ -48,6 +53,15 @@ public class StoreBroker {
     private final String serialization;
     private final String brokerName;
     private final int port;
+    /**
+     * Dedicated pool that runs the append path (serialize-free but {@code putMessageLock}
+     * bound). Offloading it here — rather than letting it run inline on the shared RPC
+     * dispatch pool — is what keeps a write burst from parking every dispatch worker on the
+     * global lock and starving reads with a 40002. Throughput stays lock-bound (this adds no
+     * speed); the pool only isolates, mirroring RocketMQ's separate sendMessageThreadPool.
+     * Overflow rejects with a clean broker-busy code instead of an RPC pool exhaustion.
+     */
+    private final ThreadPoolExecutor writeExecutor;
 
     public StoreBroker(StoreConfig storeConfig, int port) {
         this(storeConfig, port, "fastjson2");
@@ -72,13 +86,28 @@ public class StoreBroker {
         protocolConfig.setTransportFactory("netty");
         protocolConfig.setSerialization(serialization);
         protocolConfig.setPort(port);
-        // A storage broker lives on bursts: the default zero-capacity worker
-        // queue caps in-flight tasks at maxWorkerThreads and fail-fasts the
-        // rest, so give the pool a real buffer (RocketMQ's sendMessagePool
-        // queues 10000). Pre-start the full pool so the first burst does not
-        // pay on-demand thread creation either.
-        protocolConfig.setWorkerQueueSize(1000);
-        protocolConfig.setMinWorkerThreads(200);
+        // A storage broker lives on bursts. Three buffers, mirroring RocketMQ: (1) the RPC
+        // dispatch queue is deep (RocketMQ's sendThreadPoolQueueCapacity=10000) so a burst
+        // is absorbed rather than fail-fasted; (2) the dispatch pool is elastic — a modest
+        // core (min) that grows to a full ceiling (max) on a wave, then decays back, since
+        // with writes offloaded (below) its steady job is only decode + short/ suspended
+        // reads, far under the old flat 200; (3) the append path runs on a bounded
+        // writeExecutor so writes cannot starve the dispatch workers serving pulls/queries.
+        protocolConfig.setWorkerQueueSize(10_000);
+        protocolConfig.setMinWorkerThreads(32);
+        protocolConfig.setMaxWorkerThreads(200);
+        // Append is lock-serialized, so a handful of feeding threads already saturate the
+        // global lock; more would only queue on it. Size to CPU, cap the in-flight depth so
+        // sustained overload sheds with SERVICE_NOT_AVAILABLE rather than an unbounded queue.
+        int writeThreads = Math.max(4, Math.min(Runtime.getRuntime().availableProcessors(), 8));
+        this.writeExecutor = new ThreadPoolExecutor(writeThreads, writeThreads, 0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(10_000),
+                r -> {
+                    Thread t = new Thread(r, "StorePutWorker");
+                    t.setDaemon(true);
+                    return t;
+                },
+                new ThreadPoolExecutor.AbortPolicy());
         // The provider-side async guard (DefaultProvider's orTimeout) defaults
         // to 1000ms, far below the long-poll hold (15s) and its 5s scan
         // fallback, so every suspended pull would surface as a 40003 provider
@@ -146,6 +175,7 @@ public class StoreBroker {
 
     public void shutdown() {
         serviceConfig.unexport();
+        writeExecutor.shutdown();
         leaseStore.shutdown();
         offsetStore.shutdown();
         messageStore.shutdown();
@@ -167,16 +197,46 @@ public class StoreBroker {
         return port;
     }
 
+    /** Relay an engine future's outcome onto the RPC-facing future (write-pool hop). */
+    private static <T> void complete(CompletableFuture<T> future, T value, Throwable ex) {
+        if (ex != null) {
+            future.completeExceptionally(ex);
+        } else {
+            future.complete(value);
+        }
+    }
+
     private class StoreServiceImpl implements StoreService {
 
         @Override
         public CompletableFuture<PutResult> putAsync(StoreMessage message) {
-            return messageStore.putMessageAsync(message);
+            // Park the append on the write pool so the dispatch worker returns immediately
+            // and a write burst cannot starve pulls/queries. A full write queue sheds with a
+            // clean broker-busy code, matching the engine's own fuse responses.
+            CompletableFuture<PutResult> future = new CompletableFuture<>();
+            try {
+                writeExecutor.execute(() -> messageStore.putMessageAsync(message)
+                        .whenComplete((result, ex) -> complete(future, result, ex)));
+            } catch (RejectedExecutionException busy) {
+                future.complete(new PutResult(PutStatus.SERVICE_NOT_AVAILABLE));
+            }
+            return future;
         }
 
         @Override
         public CompletableFuture<List<PutResult>> putBatchAsync(List<StoreMessage> messages) {
-            return messageStore.putMessagesAsync(messages);
+            CompletableFuture<List<PutResult>> future = new CompletableFuture<>();
+            try {
+                writeExecutor.execute(() -> messageStore.putMessagesAsync(messages)
+                        .whenComplete((results, ex) -> complete(future, results, ex)));
+            } catch (RejectedExecutionException busy) {
+                List<PutResult> refused = new ArrayList<>(messages.size());
+                for (int i = 0; i < messages.size(); i++) {
+                    refused.add(new PutResult(PutStatus.SERVICE_NOT_AVAILABLE));
+                }
+                future.complete(refused);
+            }
+            return future;
         }
 
         @Override

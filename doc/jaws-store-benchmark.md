@@ -159,3 +159,34 @@ ROLE=broker   STORE_PATH=/tmp/jaws-bench-rpc PORT=10911 ./run-sample.sh bench-st
 ROLE=consumer STORE_PATH=/tmp/jaws-bench-rpc PORT=10911 ./run-sample.sh bench-store-rpc
 ROLE=producer PRODUCERS=2 STORE_PATH=/tmp/jaws-bench-rpc PORT=10911 ./run-sample.sh bench-store-rpc
 ```
+
+## 11. 写读分池 + 派发池弹性化：消除 §9 的 40002
+
+§9 的 `SEND_FAILED`/`40002` 不是「线程不够」，而是**写任务在共享派发池上占锁饿死读**：`putMessageAsync` 在 ASYNC_FLUSH 下同步于 RPC worker 线程跑完 `commitLog.putMessage`（序列化后「进全局 `putMessageLock` + memcpy」整段占着 worker，`submitFlush` 只在 SYNC_FLUSH 才 offload）。16 生产者写压把 200 个 worker 全堵在锁上排队，`pull`/`query`/`commit` 拿不到线程 → broker 报 `40002 full thread pool`。长轮询挂起本身不占 worker（空 pull 注册 `HoldRequest` 拿 future 即返回，由 reput/扫描线程事后 complete），这与 RocketMQ `PullRequestHoldService` 的非阻塞模型同款——所以该学的「挂起不占线程」一半早已对齐，缺的是**写别占着派发线程**。
+
+改动（[StoreBroker](../jaws-store/src/main/java/org/hongxi/jaws/store/StoreBroker.java)，均在 store 模块内，不动 jaws-core）：
+
+1. **写 offload**：新增有界 `writeExecutor`（`max(4, min(CPU, 8))` 线程 + 10000 队列），`putAsync`/`putBatchAsync` 把 append 挂到写池、worker 立即返回；写池溢出以 `SERVICE_NOT_AVAILABLE` 干净熔断（替代 40002）。provider 全程异步，future 由 store 私有线程 complete 是 RPC 层允许的（SYNC_FLUSH 本就在 flush 线程写响应）。
+2. **派发池弹性化**：`minWorkerThreads` 200 → **32**，显式 `maxWorkerThreads=200`，`queue=10000`。写 offload 后派发线程只剩 decode/反序列化 + 投递写任务 + 读路径（挂起不占、命中一次内联 mmap 读），稳态并发远小于 200；`EagerThreadPoolExecutor` 先扩到 max 再入队，突发上限不变。
+3. **写池不加大**：append 临界区在全局锁下串行，4–8 喂线程已喂满锁，更多只在锁上排队 + 多路上下文切换，吞吐不涨。
+
+复验（`PRODUCERS=16` 三进程，与 §9 同负载形状，仅改了上述池配置）：
+
+| step | target | offered/s | accepted/s | failed | verdict |
+|---|---|---|---|---|---|
+| 0 | 50k | 49,068 | 49,068 | 0 | OFFER_OK |
+| 1 | 100k | 97,695 | 97,693 | 0 | OFFER_OK |
+| 2 | 200k | 103,720 | 103,459 | 0 | PACER_SHORTFALL |
+| 3 | 400k | 101,399 | 101,390 | 0 | PACER_SHORTFALL |
+| 4 | 600k | 98,150 | 98,148 | 0 | PACER_SHORTFALL |
+| 5 | 800k | 101,923 | 101,923 | 0 | PACER_SHORTFALL |
+| 6 | free | **107,174** | 107,174 | 0 | OFFER_OK |
+
+Consumer 监控：**`cons≈prod` 全程贴合（逐秒 ~100–130k），backlog 全程峰值仅 827 且瞬时排空到 0**；broker 侧 `40002 / full thread pool` 计数 **0**。
+
+**结论**：
+
+1. **40002 消失**：§9 满屏 `SEND_FAILED` 变为全档 `failed=0`——证实那确系「写占派发线程饿死读」，把写 offload 到独立池即消除，非靠堆线程。
+2. **读侧无回退**：派发池 min 降到 32 后，单消费者仍在整段可达产量内跟平、backlog≈0，弹性池 + 深队列没饿到读。**验收通过**。
+3. **吞吐天花板不变**：自由跑 ~107k/s，与 §9 的 ~125k、§10 的 ~128k 同处 ~100–130k 的 RPC 写天花板带内（序列化 + 全局锁串行决定，与线程数无关）。本轮 107k 略低于 §9 属写多一跳 + run 波动，**不是读侧问题**（读完全跟平）；这批改动的价值是隔离性与内存卫生，不是提速率。
+4. **对照 RocketMQ**：RocketMQ 按请求类型拆 ~14 个专用池；jaws-store 只拆最关键的写/读一刀（一个写池 + 共享派发），不做全框架多池化——够用且契合单 master 定位。
