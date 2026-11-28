@@ -218,6 +218,7 @@ public class MyRunner implements CommandLineRunner {
 | [Netty 性能解读](doc/netty-performance.md)          | 传输层性能实践与踩坑                                  |
 | [tomcat 线程模型](doc/tomcat-thread-model.md)       | Poller/worker 线程归属 / 过载链条 / 虚拟线程          |
 | [grpc-java 线程模型](doc/grpc-java-thread-model.md) | event loop + 池化任务，与 jaws 三种传输对照           |
+| [线程池隔离设计](doc/thread-pool-isolation.md)      | 接口级分池：身份窥探 + 派发选池（方案记录，未实施）   |
 | [性能测试](doc/benchmark.md)                        | Benchmark 环境变量与参数选择建议                      |
 | [尾延迟归因](doc/tail-latency.md)                   | P99.9 毛刺的分层归因方法与 jaws 实测案例              |
 | [应用级服务发现](doc/app-level-discovery.md)        | local 元数据模式最小切片：存储模型与 Dubbo 对照       |
