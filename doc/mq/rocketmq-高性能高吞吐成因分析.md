@@ -115,6 +115,8 @@ append 之后的两个慢 IO 这样处理：
 | Netty serverSelectorThreads | 3 | NettyServerConfig L29 | IO 线程只做读写帧，解码都挪去独立 EventExecutorGroup（发送篇 §2.3） |
 | HA 数据面 | 独立裸 NIO 线程 | 刷盘篇 §4 | 主从复制流量不占业务 event loop 一个核 |
 
+**分池本身就是读写隔离**：send 与 pull 不只是线程数不同，而是 `BrokerController` 里两个互不相通的 `ThreadPoolExecutor`——`sendMessageExecutor`（L276/566）与 `pullMessageExecutor`（L277/574）；`registerProcessor` 按 RequestCode 分流，`SEND_MESSAGE` 挂写池（L1175）、`PULL_MESSAGE` 挂读池（L1188）。于是写侧被 `putMessageLock` 拖慢、`sendThreadPoolQueue` 积压时，占满的是自己的池，**饿不到 pull 的线程**。配额（上表）管每侧并发上限，分池管饥饿不互相传染——两件事正交。这也是 §4 快速失败能只清 `sendThreadPoolQueue`（`[PCBUSY_CLEAN_QUEUE]`）而不牵连读的结构前提：若读写同池（如共享派发池），一侧打满即双向拖累，就没有这种隔离。
+
 **写线程少不是缺陷而是结论**：临界区微秒级（§1.3）时，一把锁的串行吞吐 ≈ 单核 memcpy 带宽，远超磁盘与网卡瓶颈——加线程无收益。读线程多是因为读路径天然可并行且耗时在 IO。配额差异本身就是"写串行、读并行"架构的指纹。
 
 ### 3.3 客户端的成本摊还
@@ -149,6 +151,7 @@ append 之后的两个慢 IO 这样处理：
 | 消费堆拷贝 | mmap 切片直写（transferMsgByHeap=false 可选） | ManyMessageTransfer L66 |
 | RPC 往返/空转 | 攒批发送 + pullBatchSize=32 + 长轮询 | DefaultMQProducer L160 / PushConsumer L237 |
 | 线程等待慢 IO | 全链路异步，线程数与并发数解耦 | 发送篇 §2.4/§3.4 |
+| 写侧打满饿死读 | send/pull 两个独立池，按 RequestCode 分派，饥饿不跨侧传染 | BrokerController L276/566 · L277/574 · L1175/1188 |
 | 过载雪崩 | 页缓存探针 + 快速失败 + 三级水位 | SendMessageProcessor L135 / BrokerFastFailure L93 |
 
 **一句话收口**：RocketMQ 的高性能不是单点魔法，而是"顺序写 + page cache 外包内存管理 + 临界区极小化 + 一切慢操作异步化 + 一切固定成本批量化"五件事在每一层重复执行；高吞吐的可持续性则由"每层自带闸门、早拒早失败"兜底。
