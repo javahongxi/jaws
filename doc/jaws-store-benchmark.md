@@ -92,3 +92,70 @@ STEPS=200000,400000,0 MSG_SIZE=256 PRODUCERS=16 ./run-sample.sh bench-store
 ```
 
 参数全集见 [StoreBenchmark](../jaws-samples/jaws-sample-store/src/main/java/org/hongxi/jaws/sample/store/StoreBenchmark.java) 类头与 `run-sample.sh` usage。数据目录 `STORE_PATH`（默认 `/tmp/jaws-store-bench`）开局自动清空，跑完手工删除。
+
+## 9. RPC 闭环压测（StorePipelineBenchmark）：极限生产下消费跟不跟得上
+
+本节口径与前 8 节**不同**：前文绕过 RPC 直驱内核测引擎天花板，这里走真实的 `StoreProducer → StoreBroker → StoreConsumer` RPC 链路（工具 [StorePipelineBenchmark](../jaws-samples/jaws-sample-store/src/main/java/org/hongxi/jaws/sample/store/StorePipelineBenchmark.java)，`run-sample.sh bench-store-rpc`），回答的是另一个问题——**极限生产下，单个 StoreConsumer 消费端能否跟平**。它与 [benchmark.md](benchmark.md)（RPC 端到端 QPS ~14 万）互补：benchmark.md 测小消息 RPC 往返，本节测存储链路在写读并发下的端到端吞吐与积压行为。
+
+**分进程 + 单消费者排他模型**。三进程同机（broker → consumer 先 attach → producer），各自独立 JVM，规避同进程 CPU/GC 争抢压低读数。消费侧是**单个 StoreConsumer**：Exclusive 模型下一队列只允许一个 reader，同组第二实例会被 broker 租约围栏拒绝，故并行度只来自队列数——一个消费者订阅全部 8 队列，跑 8 个泵（pumps=queues），全部复用**一条 broker 连接**。分进程下 backlog 由 broker 位点测：`sum(maxOffset) − sum(committed offset)`。阶梯 50k→800k→自由跑，每档 30s，判定沿用 §2 的开环口径（`OFFER_OK`/`SEND_FAILED`）叠加消费 verdict。
+
+首轮数据（producers=16 async / msgSize=128 / queues=8）：
+
+| step | target | accepted/s | failed | send avg | verdict |
+|---|---|---|---|---|---|
+| 0 | 50k | 49,469 | 0 | 2.99ms | OFFER_OK |
+| 1 | 100k | 99,726 | 0 | 1.73ms | OFFER_OK |
+| 2 | 200k | **118,914** | 197,503 | 64.6ms | SEND_FAILED |
+| 3 | 400k | 123,642 | 318,286 | 65.1ms | SEND_FAILED |
+| 4 | 600k | 118,525 | 2,143 | 68.8ms | SEND_FAILED |
+| 5 | 800k | 114,381 | 1,106,168 | 69.5ms | SEND_FAILED |
+| 6 | free | **125,622** | 2,199,990 | 64.8ms | SEND_FAILED |
+
+| 消费阶段 | 实际 prod/s | 实际 cons/s | maxBacklog | 判定 |
+|---|---|---|---|---|
+| 50k | ~49k | ~49k | ≈0 | KEEP_UP，backlog 持平 |
+| 100k | 97,090 | 97,090 | 3,056 | KEEP_UP，cons=prod |
+| 200k（实到 ~116k）| 116,632 | 115,185 | 55,833（瞬时）| cons≈prod，尖峰可排空 |
+| 400k~free | — | — | — | 位点查询持续 40002 → 监控断样 |
+
+**结论**：
+
+1. **本轮未夹到单连接消费的真·天花板**——瓶颈先到在 broker。约 **125k/s 聚合 RPC** 处 broker worker 线程池（200 线程 + 1000 队列）被「16 生产者写入 + 消费者 pull + 位点 commit/query」共用打满，返回 `error_code 40002: request rejected by server due to full thread pool`，写侧 accepted 封顶 ~114–126k/s，故阶梯 200k 起 producer 全部 `SEND_FAILED`。
+2. **可达区间内单消费者完全跟得上**：50k、100k 处 consRate=prodRate、backlog≈0；逼近 ~120k/s 时仍贴着生产速率走，backlog 仅因个别 pull/commit 被拒瞬时抬到 ~55k 随即排空——**消费连接不是约束，broker 共享线程池才是**。
+3. **t≈90s 后监控断样**：400k+ 档 broker 持续饱和，consumer 侧查询连接连续 40002/被标记 unavailable，压测端跳过所有样（进程未崩，正常跑完并 `Consumer monitor complete`）。
+
+**方法学注记**：写侧与读侧在同一批 broker 线程上争抢，16 生产者的写压先顶到 40002，掩盖了纯读上限。要隔离单连接消费极限，须把 `producers` 压到 2–4 让写侧不饱和、把唯一瓶颈留给消费连接——复测见 §10。
+
+## 10. `PRODUCERS=2` 隔离复测：单连接消费上限远高于写侧
+
+同机三进程、单 StoreConsumer（1 连接、pumps=queues=8），仅把 producers 降到 2（async / inflight 512）。目的：让 broker worker 池不被写压打满，把瓶颈留给消费连接。
+
+Producer 报告：
+
+| step | target | offered/s | accepted/s | failed | verdict |
+|---|---|---|---|---|---|
+| 0 | 50k | 47,860 | 47,860 | 0 | OFFER_OK |
+| 1 | 100k | 94,338 | 94,338 | 0 | OFFER_OK |
+| 2 | 200k | 114,346 | 114,345 | 0 | PACER_SHORTFALL |
+| 3 | 400k | 124,655 | 124,623 | 0 | PACER_SHORTFALL |
+| 4 | 600k | 126,143 | 126,142 | 0 | PACER_SHORTFALL |
+| 5 | 800k | 128,731 | 128,731 | 0 | PACER_SHORTFALL |
+| 6 | free | **127,968** | 127,970 | 0 | OFFER_OK |
+
+Consumer 监控（全程）：**cons≈prod，backlog 峰值仅 917 条且立即排空**，停产后归 0；无任何 40002 / unavailable。
+
+**结论**：
+
+1. **写侧零失败**：2 生产者不再打满 broker 线程池，§9 的 40002/SEND_FAILED 确系「16 生产者 + 消费者」共用线程池饱和所致，非链路本身。
+2. **瓶颈换人**：2 条 async 连接发牌上限 ~128k/s（step2–5 `PACER_SHORTFALL`，每条连接 ~65k/s），阶梯 200k+ 根本喂不满——**这次是生产侧触顶，不是消费侧**。
+3. **单连接消费上限 > 系统写侧吞吐**：消费端把整段 ~128k/s 全跟平、backlog≈0，说明单消费者（单连接、8 泵）的处理能力至少 ≥ ~130k/s，高于本轮可达产量。两轮合观：`producers=16` 自由跑 accepted ~125,622/s、`producers=2` 自由跑 offered/accepted ~127,968/s——**2 条连接≈ 16 条连接的聚合产出**，说明 ~125–130k/s 是 **broker 经 RPC 写入路径本身的天花板**（序列化 + 分发 + ASYNC_FLUSH 流水），与 §1–§8 内核直驱 1.9M/s 的 ~15× 差距即这笔 RPC 税（量级对齐 [benchmark.md](benchmark.md) 的 ~14 万 QPS）。
+4. **诚实标注**：本轮仍未从上方夹到消费拐点——因为写侧/生产侧先在 ~128k/s 触顶，单消费者始终有余量。结论是「**单连接消费能力高于整个 RPC 写链路能交付的速率，消费不是短板**」；要真正测出消费上限，需比单 broker 写入更快的生产源（多 master 分片，见 [jaws-store.md §7.1](jaws-store.md)），超出本验证件单实例口径。
+
+复跑：
+
+```bash
+# 三终端（同一 storePath/port）
+ROLE=broker   STORE_PATH=/tmp/jaws-bench-rpc PORT=10911 ./run-sample.sh bench-store-rpc
+ROLE=consumer STORE_PATH=/tmp/jaws-bench-rpc PORT=10911 ./run-sample.sh bench-store-rpc
+ROLE=producer PRODUCERS=2 STORE_PATH=/tmp/jaws-bench-rpc PORT=10911 ./run-sample.sh bench-store-rpc
+```

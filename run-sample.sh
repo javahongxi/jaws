@@ -102,6 +102,7 @@ STORE_BROKER_MAIN="org.hongxi.jaws.sample.store.StoreBrokerMain"
 STORE_PRODUCER_MAIN="org.hongxi.jaws.sample.store.StoreProducerMain"
 STORE_CONSUMER_MAIN="org.hongxi.jaws.sample.store.StoreConsumerMain"
 STORE_BENCH_MAIN="org.hongxi.jaws.sample.store.StoreBenchmark"
+STORE_PIPELINE_BENCH_MAIN="org.hongxi.jaws.sample.store.StorePipelineBenchmark"
 
 usage() {
     cat <<'EOF'
@@ -144,6 +145,7 @@ usage() {
     bench-wire         Benchmark - wire protocol (gRPC wire format over HTTP/2)
     bench-grpc         Benchmark - grpc-java client, server=wire (interop) or server=grpc (pure gRPC reference)
     bench-store        Benchmark - jaws-store storage kernel (open-loop staged ramp, drives MessageStore directly, no RPC)
+    bench-store-rpc    Benchmark - jaws-store RPC closed loop (StoreProducer -> StoreBroker -> StoreConsumer; ROLE=all|broker|producer|consumer)
 
   Benchmark Options (passed via environment variables):
     THREADS            Concurrency thread count (default 4)
@@ -165,6 +167,12 @@ usage() {
     STEP_SECONDS       bench-store seconds per paced stage (default 30)
     RETENTION_MILLIS   bench-store commitlog file retention, keep short to bound disk (default 60000)
     CLEANUP_MILLIS     bench-store cleanup sweep interval (default 3000)
+    GROUP              bench-store-rpc single Exclusive consumer group (pumps = queues; no instance sharding)
+    ROLE               bench-store-rpc run role (default all in one JVM; broker/producer/consumer for split processes)
+    HOST               bench-store-rpc broker host for producer/consumer roles (default 127.0.0.1)
+    SEND_MODE          bench-store-rpc send semantics: async (default) or oneway
+    PULL_BATCH         bench-store-rpc StoreConsumer pullBatchSize (default 32)
+    SUSPEND_TIMEOUT    bench-store-rpc long-polling hold ms, <=0 switches to short polling (default 15000)
 
   Examples:
     ./run-sample.sh build
@@ -199,6 +207,12 @@ usage() {
     COUNT=5000 MODE=async ./run-sample.sh store   # Store demo with 5000 async sends
     ./run-sample.sh store-cluster      # Multi-master: harbor + 2 brokers + registry-mode clients
     ./run-sample.sh bench-store        # Storage kernel limit-throughput bench (direct engine drive, no RPC)
+    ./run-sample.sh bench-store-rpc    # RPC closed-loop bench, single JVM (does StoreConsumer keep up?)
+    QUEUES=16 ./run-sample.sh bench-store-rpc  # raise read-side pumps (one per queue) in the single consumer
+    # Split-process (3 terminals, same host): broker -> consumer (attach first) -> producer
+    ROLE=broker   ./run-sample.sh bench-store-rpc
+    ROLE=consumer ./run-sample.sh bench-store-rpc
+    ROLE=producer ./run-sample.sh bench-store-rpc
     THREADS=8 DURATION=20 ./run-sample.sh bench-jaws
     SERIALIZATION=hessian2 ./run-sample.sh bench-jaws
     TRANSPORT=http2 THREADS=20 DURATION=40 ./run-sample.sh bench-jaws
@@ -1558,6 +1572,31 @@ cmd_bench_store() {
         "$STORE_BENCH_MAIN"
 }
 
+cmd_bench_store_rpc() {
+    ensure_built
+    local cp
+    cp=$(build_classpath "$STORE_MODULE")
+    echo "Running Benchmark [jaws-store RPC closed loop] role=${ROLE:-all} host=${HOST:-127.0.0.1} port=${PORT:-10911} path=${STORE_PATH:-/tmp/jaws-store-bench-rpc} queues=${QUEUES:-8} producers=${PRODUCERS:-16} group=${GROUP:-bench-group} sendMode=${SEND_MODE:-async} steps=${STEPS:-50000,100000,200000,400000,600000,800000,0}"
+    echo "--------------------------------------------"
+    java -cp "$cp:$STORE_MODULE/target/classes" \
+        -Drole="${ROLE:-all}" \
+        -Dhost="${HOST:-127.0.0.1}" \
+        -DstorePath="${STORE_PATH:-/tmp/jaws-store-bench-rpc}" \
+        -Dport="${PORT:-10911}" \
+        -DmsgSize="${MSG_SIZE:-128}" \
+        -Dqueues="${QUEUES:-8}" \
+        -Dproducers="${PRODUCERS:-16}" \
+        -Dgroup="${GROUP:-bench-group}" \
+        -DsendMode="${SEND_MODE:-async}" \
+        -DpullBatch="${PULL_BATCH:-32}" \
+        -DsuspendTimeout="${SUSPEND_TIMEOUT:-15000}" \
+        -Dsteps="${STEPS:-50000,100000,200000,400000,600000,800000,0}" \
+        -DstepSeconds="${STEP_SECONDS:-30}" \
+        -DretentionMillis="${RETENTION_MILLIS:-60000}" \
+        -DcleanupIntervalMillis="${CLEANUP_MILLIS:-3000}" \
+        "$STORE_PIPELINE_BENCH_MAIN"
+}
+
 cmd_bench_injvm() {
     ensure_built
     local threads="${THREADS:-4}"
@@ -1687,6 +1726,7 @@ case "${1:-}" in
     store)           cmd_store "${2:-}" ;;
     store-cluster)   cmd_store_cluster "${2:-}" ;;
     bench-store) cmd_bench_store ;;
+    bench-store-rpc) cmd_bench_store_rpc ;;
     bench-injvm) cmd_bench_injvm ;;
     bench-jaws)  cmd_bench_jaws ;;
     bench-wire)  cmd_bench_wire ;;
