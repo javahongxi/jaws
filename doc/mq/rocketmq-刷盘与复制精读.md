@@ -253,14 +253,50 @@ disk-full 位置起后写侧双闸门拒单：send hook 查 `isWriteable()`（Ho
 
 **边界**：controller 集群全灭不影响消息收发，只失去自动切换（退化人工）。与 ZooKeeper 方案比：共识内建、专职专域；与 Kafka KRaft 比：KRaft controller 连 topic 元数据全家托管且进程内嵌 broker，RocketMQ 是**独立进程 + 只管主从状态机 + NameServer 一行没动**——最小侵入的演进策略。
 
-## 8. 通用设计提炼（本主题收口）
+## 8. 高频问答：丢失风险与从库视角
+
+前两节把机制摊开，这节收两个最容易说反/说绝对的问题——它们其实是同一批事实的两面。
+
+### 8.1 "同步刷盘就不丢、异步刷盘才丢"——只对了一半
+
+数据流是 `append → pageCache(内存) → flush → 磁盘`。所谓"丢"，丢的是**已返回 SEND_OK、但还没真正到盘**那段；风险由两个变量共同决定：**ack 契约**（什么时候才回成功）× **故障类型**（进程崩 vs 断电）。
+
+- **异步刷盘"会丢"要精确到故障类型**：进 pageCache 即 PUT_OK，后台线程按 `500ms / 脏页<4页跳过 / 10s 全量` 节拍才 fsync（§3.2），丢失窗口上界 = 一个节拍。但**只有断电/宕机/内核崩溃才兑现**——JVM 进程崩溃（OOM、kill -9）时脏页仍归内核管，OS 会继续把它刷下去，**不丢**。这正是 §3.2"断电损失由 OS 兜底"的含义。
+- **同步刷盘"不丢"说绝对了**：GroupCommitService fsync 完成后才回 PUT_OK（§3.1），消除的是"未落本机盘"这一段的丢失，且只到**本机维度**。两个缺口仍在：① **本机盘/机器物理坏**——数据只有一份在本机盘上，要防这个必须配**同步复制**（§2 那个坑：光配 `SYNC_MASTER`、`inSyncReplicas` 默认 1 其实一个从库都不等），真正不丢 = **同步刷盘 + 同步复制**；② 同步刷盘本身盘慢/卡会回 `FLUSH_DISK_TIMEOUT`——这是**显式失败**、交生产者重试，不是静默丢，反而异步路径永不出现此码（§3.2）。
+
+| | 进程/JVM 崩溃 | 断电/宕机 | 本机盘物理坏 |
+|---|---|---|---|
+| 异步刷盘 | 不丢（OS 兜底） | **丢 ≤1 个节拍** | 丢 |
+| 同步刷盘 | 不丢 | 不丢（本机） | **仍丢，需配同步复制** |
+
+一句话：同步刷盘消除的是"未落本机盘"这段，不等于整条链路零丢失；要做到不丢得同步刷盘 + 同步复制一起上，代价是每次 ack 付一次 fsync，同步复制再加一个多数派 RTT。
+
+### 8.2 同步/异步复制下，slave 自身处理有无区别——没有
+
+**从 slave 视角看没有区别**。同步/异步复制是纯 master 侧一个"等不等票"的开关（§2 门3：`BrokerRole != SYNC_MASTER → 跳`），从库那条代码路径两种模式下一字不差，它甚至不知道自己是"同步从库"还是"异步从库"：
+
+- **ASYNC_MASTER**：master 写完本地、把数据挂到 HA 推队列后就直接返回 PUT_OK，不等从库任何上报；
+- **SYNC_MASTER**（且 `inSyncReplicas≥2`）：master 的 `GroupTransferService` 在 deadline 内 spin **等从库的 ack 票**（§4.4），凑够才回生产者。
+
+从库始终是 `DefaultHAClient` 被动四步（§4.1/§4.3）：主动拨号连主（§4.2）→ 收帧连续性断言 → `appendToCommitLog` 落字节级镜像 → 每落完一帧立刻回写 8B（事件驱动，非定时）。**关键**：从库上报的是"已 append 到本地 store（pageCache）"，**不是"已 fsync 落盘"**——从库自己刷不刷、何时刷由**从库自身的 flushConfig** 决定（默认也异步，§3.2）。所以哪怕 master 是 SYNC_MASTER，"同步复制"保证的也只是**多副本进了从库 pageCache**，而非多副本都落了两块盘。
+
+| 维度 | 属于谁决定 | SYNC / ASYNC 复制下是否变化 |
+|---|---|---|
+| master 回生产者前等不等从库票 | master（brokerRole + inSyncReplicas） | **变**（唯一区别） |
+| 从库连接/收数/append/上报路径 | slave | 不变 |
+| 从库自身刷盘时机 | slave 自己的 flushConfig | 不变 |
+| 从库 CQ 派发 | slave 自己的 Reput（§5） | 不变 |
+
+结论：从库始终是同一个被动镜像执行者，逻辑无任何分叉；真正的差别只在 master 等不等票，以及由此带来的生产者侧延迟账（同步复制每条多付一个"推-收-回报"往返 RTT）。
+
+## 9. 通用设计提炼（本主题收口）
 
 1. **一个 DTO 两种等待**：把「等条件达成」抽象成通用原语 `WaitRequest(target, deadline, ackNums)`——本篇里刷盘等 `flushedWhere`、复制等 slave ack，两处复用同一个 `GroupCommitRequest` 即是示范。
 2. **发起 / 执行 / 兜底完成三角色**：写线程发起、GroupCommitService 执行、FlushDiskWatcher 守 deadline 兜底。推论：凡是调用方不阻塞等待的 future，必须有一个独立受托人保证它"最迟在某时刻被完成"——否则执行线程一挂，请求就永久悬挂。
 3. **预检给专错码**：`IN_SYNC_REPLICAS_NOT_ENOUGH` 在动手前就告知「条件不满足」并返回专用码，好过让调用方拿一个语义模糊的超时。
 4. **节拍模式要有唤醒纪律**：`flushCommitLogTimed=true` 下 `wakeup()` 全部空放——要么用 `waitForRunning`，要么干脆不提供唤醒接口，别留一个不生效的开关。
 
-## 9. 未钻清单（后续候选）
+## 10. 未钻清单（后续候选）
 
 - [ ] `WriteSocketService` 写侧的 mmap 切片生命周期细节（`selectMappedBufferResult.release` 时机、半写续传 `lastWriteOver` 的完整边界）
 - [ ] `AutoSwitchHAService` 截断路径：Catchup 状态下 epoch 分叉怎么定位截断点（`EpochFileCache`/`truncatePrefix`）
